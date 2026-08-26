@@ -8,7 +8,7 @@ export async function createClient() {
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
         getAll() {
@@ -29,15 +29,15 @@ export async function createClient() {
   )
 }
 
-// Service-role client — bypasses RLS. Use only for privileged server-side
+// Secret-key client — bypasses RLS. Use only for privileged server-side
 // operations such as writing audit events or provisioning users.
-// NEVER expose the service role key to the browser.
+// NEVER expose the secret key to the browser (no NEXT_PUBLIC_ prefix).
 export async function createServiceClient() {
   const cookieStore = await cookies()
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.SUPABASE_SECRET_KEY!,
     {
       cookies: {
         getAll() {
