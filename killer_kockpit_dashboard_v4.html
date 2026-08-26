@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Killer Koach — Dashboard Prototype</title>
+<style>
+  :root{
+    --bg:#f5f3ee; --panel:#ffffff; --ink:#171717; --muted:#77736c;
+    --line:#e6e2da; --soft:#efede7; --accent:#171717; --good:#2f6d4c;
+    --warn:#8a5b16; --bad:#8d3737;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  button,input{font:inherit}
+  .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  aside{border-right:1px solid var(--line);padding:24px 18px;position:sticky;top:0;height:100vh;background:#f1efe9}
+  .brand{font-weight:900;letter-spacing:-.04em;font-size:24px;margin:4px 8px 28px}
+  .brand small{display:block;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-top:4px}
+  nav button{width:100%;text-align:left;border:0;background:transparent;padding:11px 12px;border-radius:10px;margin:2px 0;cursor:pointer;color:#4d4a45}
+  nav button.active{background:var(--ink);color:white}
+  .bottom{position:absolute;bottom:22px;left:18px;right:18px}
+  .person{display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--line)}
+  .avatar{width:34px;height:34px;border-radius:50%;background:#d8d4cb;display:grid;place-items:center;font-weight:800}
+  main{padding:28px 30px 60px;max-width:1500px;width:100%;margin:0 auto}
+  .top{display:flex;gap:18px;align-items:center;justify-content:space-between;margin-bottom:26px}
+  .title h1{font-size:30px;letter-spacing:-.04em;margin:0 0 4px}
+  .title p{margin:0;color:var(--muted)}
+  .ask{min-width:380px;max-width:520px;flex:1;display:flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px 5px 5px 14px}
+  .ask input{border:0;outline:0;flex:1;background:transparent}
+  .ask button{border:0;background:var(--ink);color:white;border-radius:8px;padding:9px 14px;cursor:pointer}
+  .grid{display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;min-width:0}
+  .card h2{font-size:15px;margin:0 0 14px;letter-spacing:-.01em}
+  .meta{font-size:12px;color:var(--muted)}
+  .event,.task,.mail,.personrow,.project{padding:12px 0;border-top:1px solid var(--line)}
+  .event:first-of-type,.task:first-of-type,.mail:first-of-type,.personrow:first-of-type,.project:first-of-type{border-top:0}
+  .event{display:grid;grid-template-columns:65px 1fr auto;gap:12px;align-items:start}
+  .time{font-size:13px;font-weight:800}
+  .pill{font-size:11px;padding:4px 8px;border-radius:999px;background:var(--soft);white-space:nowrap}
+  .good{color:var(--good);background:#e7f1eb}.warn{color:var(--warn);background:#f7eedf}.bad{color:var(--bad);background:#f5e7e7}
+  .task{display:flex;gap:10px;align-items:flex-start}
+  .task input{margin-top:3px}
+  .task b,.mail b{font-size:13px}
+  .mail{cursor:pointer}
+  .mail:hover{background:#faf9f6;margin:0 -8px;padding-left:8px;padding-right:8px}
+  .mail .row{display:flex;justify-content:space-between;gap:10px}
+  .mail p{font-size:12px;color:var(--muted);margin:5px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .personrow{display:grid;grid-template-columns:1fr auto;gap:10px}
+  .loc{font-size:12px;color:var(--muted);margin-top:3px}
+  .progress{height:7px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:9px}
+  .progress span{display:block;height:100%;background:var(--ink)}
+  .project .row{display:flex;justify-content:space-between;gap:10px}
+  .wide{grid-column:span 2}
+  .full{grid-column:1/-1}
+  .agenda{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .agenda .box{background:#faf9f6;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .agenda ol{padding-left:20px;margin:8px 0 0}
+  .agenda li{margin:8px 0;font-size:13px}
+  .detect{border-left:4px solid var(--ink);background:#faf9f6;padding:14px;border-radius:10px;margin-top:12px}
+  .actions{display:flex;gap:8px;margin-top:12px}
+  .btn{border:1px solid var(--line);background:white;border-radius:8px;padding:8px 10px;cursor:pointer}
+  .btn.primary{background:var(--ink);color:white;border-color:var(--ink)}
+  .view{display:none}.view.active{display:block}
+  .sectiongrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi .card strong{font-size:28px;display:block;letter-spacing:-.04em}
+  @media(max-width:1050px){.app{grid-template-columns:85px 1fr}aside{padding:20px 10px}.brand{font-size:0}.brand:before{content:"KK";font-size:22px}.brand small{display:none}nav button{font-size:0;text-align:center}nav button:before{font-size:18px}.top{align-items:flex-start;flex-direction:column}.ask{min-width:0;width:100%}.grid{grid-template-columns:1fr 1fr}.full{grid-column:1/-1}}
+  @media(max-width:700px){.app{display:block}aside{display:none}main{padding:18px}.grid,.sectiongrid,.agenda,.kpi{grid-template-columns:1fr}.wide,.full{grid-column:auto}}
+
+  .recorder{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#faf9f6;border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:12px}
+  .recordleft{display:flex;align-items:center;gap:12px}
+  .recorddot{width:12px;height:12px;border-radius:50%;background:#9a9a9a;box-shadow:0 0 0 4px #ece9e2}
+  .recorddot.live{background:#b3261e;box-shadow:0 0 0 4px #f3dddd}
+  .recordstatus b{display:block;font-size:13px}
+  .recordstatus span{font-size:12px;color:var(--muted)}
+  .minutes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  .minutes .panel{border:1px solid var(--line);border-radius:12px;padding:14px;background:#fff}
+  .minutes h3{font-size:13px;margin:0 0 8px}
+  .minutes ul{margin:6px 0 0;padding-left:18px}
+  .minutes li{font-size:13px;margin:7px 0}
+  .transcript{font-size:12px;line-height:1.55;color:#4d4a45;max-height:180px;overflow:auto;background:#faf9f6;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px}
+
+
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px}
+  .seg button{border:0;background:transparent;padding:8px 12px;border-radius:8px;cursor:pointer;color:#4d4a45}
+  .seg button.active{background:var(--ink);color:#fff}
+  .capturebar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+  .capturebar .btn{background:#fff}
+  .feed{margin-top:6px}
+  .feeditem{display:grid;grid-template-columns:74px 1fr;gap:12px;border-top:1px solid var(--line);padding:12px 0}
+  .feeditem:first-child{border-top:0}
+  .feeditem .tag{font-size:11px;padding:4px 7px;border-radius:999px;background:var(--soft);display:inline-block}
+  .brief{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+  .brief .panel{background:#faf9f6;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .brief h3,.queue h3,.searchresults h3{font-size:13px;margin:0 0 8px}
+  .brief ul,.queue ul,.searchresults ul{margin:8px 0 0;padding-left:18px}
+  .brief li,.queue li,.searchresults li{font-size:13px;margin:7px 0}
+  .queue{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .decision{padding:12px 0;border-top:1px solid var(--line)}
+  .decision:first-of-type{border-top:0}
+  .searchbox{display:flex;gap:8px;background:#faf9f6;border:1px solid var(--line);border-radius:12px;padding:8px}
+  .searchbox input{flex:1;border:0;outline:0;background:transparent}
+  .searchresults .result{border-top:1px solid var(--line);padding:12px 0}
+  .searchresults .result:first-child{border-top:0}
+  @media(max-width:700px){.brief,.queue{grid-template-columns:1fr}}
+
+
+  .peoplegrid{display:grid;grid-template-columns:280px 1fr;gap:16px}
+  .peoplelist{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px}
+  .peopleitem{padding:12px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+  .peopleitem:hover{background:#faf9f6}
+  .peopleitem.active{background:var(--ink);color:#fff}
+  .peopleitem .meta{margin-top:3px}
+  .peopleitem.active .meta{color:#d3d0ca}
+  .profilehead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}
+  .profileid{display:flex;gap:14px;align-items:center}
+  .profileavatar{width:54px;height:54px;border-radius:50%;background:#dedad1;display:grid;place-items:center;font-weight:900;font-size:18px}
+  .profilehead h2{font-size:22px;margin:0 0 4px;letter-spacing:-.03em}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:14px;padding-bottom:10px}
+  .tabs button{border:0;background:transparent;padding:8px 10px;border-radius:8px;cursor:pointer;color:#55514c}
+  .tabs button.active{background:var(--soft);color:var(--ink);font-weight:700}
+  .statrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+  .statbox{background:#faf9f6;border:1px solid var(--line);border-radius:10px;padding:12px}
+  .statbox b{display:block;font-size:20px;margin-top:3px}
+  .timelineitem{display:grid;grid-template-columns:90px 1fr;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+  .timelineitem:first-child{border-top:0}
+  .timelineitem .kind{font-size:11px;padding:4px 7px;border-radius:999px;background:var(--soft);display:inline-block}
+  .hrnotice{background:#faf9f6;border:1px solid var(--line);border-left:4px solid var(--ink);padding:14px;border-radius:10px}
+  .proposal{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px}
+  .proposal blockquote{margin:10px 0;padding-left:12px;border-left:3px solid var(--line);color:#4e4b46;font-size:13px}
+  .sourcechip{font-size:11px;padding:4px 7px;border-radius:999px;background:var(--soft);display:inline-block;margin-right:6px;margin-top:6px}
+  @media(max-width:900px){.peoplegrid{grid-template-columns:1fr}.statrow{grid-template-columns:1fr}}
+
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <div class="brand">Killer Koach<small>Killer Kebab OS</small></div>
+  <nav>
+    <button class="active" data-view="today">Today</button>
+    <button data-view="inbox">Inbox</button>
+    <button data-view="projects">Projects</button>
+    <button data-view="team">Team</button>
+    <button data-view="people">People</button>
+    <button data-view="meetings">Meetings</button>
+    <button data-view="knowledge">Knowledge</button>
+  </nav>
+  <div class="bottom">
+    <div class="person"><div class="avatar">U</div><div><b>Ulv</b><div class="meta">Admin</div></div></div>
+  </div>
+</aside>
+
+<main>
+  <div class="top">
+    <div class="title"><h1 id="pageTitle">Today</h1><p id="pageSub">What needs your attention right now.</p></div>
+    <div class="toolbar">
+      <div class="seg" id="roleToggle">
+        <button class="active" data-role="management" onclick="setRole('management', this)">Management view</button>
+        <button data-role="personal" onclick="setRole('personal', this)">Personal view</button>
+      </div>
+      <div class="ask"><input placeholder="Ask Killer Koach anything…"><button onclick="alert('Later this becomes the ChatGPT / Claude command bar.')">Ask</button></div>
+    </div>
+  </div>
+
+  <div class="capturebar">
+    <button class="btn primary" onclick="alert('Prototype: create a new task anywhere in the system.')">+ Task</button>
+    <button class="btn" onclick="alert('Prototype: create a new project anywhere in the system.')">+ Project</button>
+    <button class="btn" onclick="alert('Prototype: capture a quick note.')">+ Note</button>
+    <button class="btn" onclick="alert('Prototype: log a decision.')">+ Decision</button>
+  </div>
+
+  <section id="today" class="view active">
+    <div class="grid">
+      <div class="card wide">
+        <h2>Today</h2>
+        <div class="event"><div class="time">09:30</div><div><b>Upper management</b><div class="meta">Weekly meeting · Google Meet</div></div><span class="pill">5 people</span></div>
+        <div class="event"><div class="time">12:00</div><div><b>Airport quality follow-up</b><div class="meta">With Operations · CPH</div></div><span class="pill warn">Follow-up</span></div>
+        <div class="event"><div class="time">15:00</div><div><b>Content review</b><div class="meta">Marketing · Office</div></div><span class="pill">45 min</span></div>
+      </div>
+
+      <div class="card">
+        <h2>My tasks <span class="meta">· 6 open</span></h2>
+        <label class="task"><input type="checkbox"><div><b>Approve September marketing plan</b><div class="meta">Due today</div></div></label>
+        <label class="task"><input type="checkbox"><div><b>Review airport follow-up</b><div class="meta">Due today</div></div></label>
+        <label class="task"><input type="checkbox"><div><b>Finish Google Workspace rollout</b><div class="meta">This week</div></div></label>
+      </div>
+
+      <div class="card">
+        <h2>Needs decision</h2>
+        <div class="mail"><div class="row"><b>Approve September marketing plan</b><span class="pill bad">Today</span></div><p>Blocking content production for next week.</p></div>
+        <div class="mail"><div class="row"><b>Airport visit cadence</b><span class="pill warn">This week</span></div><p>Sara needs decision on monitoring frequency post Sept 1.</p></div>
+        <div class="mail"><div class="row"><b>Budget for new burner</b><span class="pill">Pending</span></div><p>Ops waiting for approval before ordering.</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Team today</h2>
+        <div class="personrow"><div><b>Lydia</b><div class="loc">Office → store visits</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Adam</b><div class="loc">Training · Frederiksberg</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Sara</b><div class="loc">Airport</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Kasper</b><div class="loc">Off today</div></div><span class="pill">OOO</span></div>
+      </div>
+
+      <div class="card wide">
+        <h2>Projects requiring attention</h2>
+        <div class="project"><div class="row"><b>Google Workspace migration</b><span class="meta">78%</span></div><div class="progress"><span style="width:78%"></span></div></div>
+        <div class="project"><div class="row"><b>Airport quality stabilisation</b><span class="meta">55%</span></div><div class="progress"><span style="width:55%"></span></div></div>
+        <div class="project"><div class="row"><b>Autumn marketing plan</b><span class="meta">35%</span></div><div class="progress"><span style="width:35%"></span></div></div>
+      </div>
+
+      <div class="card">
+        <h2>Waiting on</h2>
+        <div class="mail"><div class="row"><b>Lydia · equipment install update</b><span class="pill warn">Due Fri</span></div><p>Commitment captured from email.</p></div>
+        <div class="mail"><div class="row"><b>Bjarke · loan view</b><span class="pill">Follow-up</span></div><p>No answer yet to last update.</p></div>
+        <div class="mail"><div class="row"><b>Landlord · signage response</b><span class="pill bad">Overdue</span></div><p>Chaser recommended.</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Decisions log</h2>
+        <div class="decision"><b>Airport follow-up cadence increases after Sept 1</b><div class="meta">Aug 21 · Ops meeting · linked to Airport quality</div></div>
+        <div class="decision"><b>Google Workspace becomes the company stack</b><div class="meta">Today · Management · linked to Infrastructure</div></div>
+        <div class="decision"><b>No need for a separate leave system for now</b><div class="meta">Today · Management</div></div>
+      </div>
+
+      <div class="card full">
+        <h2>Next meeting · Upper management</h2>
+        <div class="agenda">
+          <div class="box">
+            <b>Suggested agenda</b>
+            <ol>
+              <li>Airport quality — progress since last meeting</li>
+              <li>Google Workspace rollout — remaining blockers</li>
+              <li>Marketing September — decisions required</li>
+              <li>Overdue team tasks and owners</li>
+            </ol>
+          </div>
+          <div class="box">
+            <b>AI preparation</b>
+            <p class="meta">Built from recent emails, open tasks, project changes and previous meeting actions.</p>
+            <div class="actions"><button class="btn primary">Generate agenda</button><button class="btn">Open meeting</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card full">
+        <h2>Weekly brief</h2>
+        <div class="brief">
+          <div class="panel">
+            <h3>What changed</h3>
+            <ul>
+              <li>5 management users created in Google Workspace</li>
+              <li>Shared drives and internal calendar sharing configured</li>
+              <li>3 new forwarding groups created</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>Risks & blockers</h3>
+            <ul>
+              <li>Store forwarding groups still need to be created</li>
+              <li>MX cutover waiting on user onboarding</li>
+              <li>Airport follow-up cadence needs confirmation</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>What needs attention next</h3>
+            <ul>
+              <li>Approve September marketing plan</li>
+              <li>Finish Workspace mail cutover</li>
+              <li>Chase overdue signage response</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="inbox" class="view">
+    <div class="sectiongrid">
+      <div class="card">
+        <h2>Needs your reply</h2>
+        <div class="mail"><div class="row"><b>CPH airport follow-up</b><span class="pill bad">High</span></div><p>AI: Needs a decision on visit cadence.</p></div>
+        <div class="mail"><div class="row"><b>Catering enquiry · 80 people</b><span class="pill warn">Today</span></div><p>AI: Commercial lead. Suggested response ready.</p></div>
+        <div class="mail"><div class="row"><b>Landlord · signage</b><span class="pill">Reply</span></div><p>AI: They answered your previous question but not the core issue.</p></div>
+      </div>
+      <div class="card">
+        <h2>Suggested response</h2>
+        <p style="font-size:13px;line-height:1.6">Thanks — that makes sense. Before we confirm, I just want to make sure we are aligned on the timeline and who owns the next step...</p>
+        <div class="actions"><button class="btn primary">Use draft</button><button class="btn">Rewrite</button></div>
+      </div>
+      <div class="card">
+        <h2>Waiting on detected from emails</h2>
+        <div class="mail"><div class="row"><b>“I’ll have this done by Friday.”</b><span class="pill warn">Captured</span></div><p>AI suggests creating a commitment for Lydia.</p></div>
+        <div class="mail"><div class="row"><b>“Let me get back to you Monday.”</b><span class="pill">Captured</span></div><p>AI suggests follow-up on Monday if no reply.</p></div>
+      </div>
+      <div class="card full">
+        <h2>Task detected in an email</h2>
+        <div class="detect">
+          <b>“Lydia, please make sure the new equipment is installed by Friday.”</b>
+          <div class="meta" style="margin-top:7px">Suggested task: Install new equipment · Owner: Lydia · Due: Friday · Project: Operations</div>
+          <div class="actions"><button class="btn primary">Create task</button><button class="btn">Edit</button><button class="btn">Ignore</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="projects" class="view">
+    <div class="kpi">
+      <div class="card"><span class="meta">Active</span><strong>8</strong></div>
+      <div class="card"><span class="meta">On track</span><strong>5</strong></div>
+      <div class="card"><span class="meta">At risk</span><strong>2</strong></div>
+      <div class="card"><span class="meta">Blocked</span><strong>1</strong></div>
+    </div>
+    <div class="sectiongrid">
+      <div class="card"><h2>Operations</h2><div class="project"><div class="row"><b>Airport quality</b><span class="pill warn">At risk</span></div><p class="meta">Owner: Sara · 5 open tasks</p><div class="progress"><span style="width:55%"></span></div></div></div>
+      <div class="card"><h2>Marketing</h2><div class="project"><div class="row"><b>September brand push</b><span class="pill good">On track</span></div><p class="meta">Owner: Ulv · 7 open tasks</p><div class="progress"><span style="width:65%"></span></div></div></div>
+      <div class="card"><h2>Infrastructure</h2><div class="project"><div class="row"><b>Google Workspace</b><span class="pill good">On track</span></div><p class="meta">Owner: Ulv · 3 open tasks</p><div class="progress"><span style="width:78%"></span></div></div></div>
+      <div class="card"><h2>Growth</h2><div class="project"><div class="row"><b>Killer Katering</b><span class="pill">Planning</span></div><p class="meta">Owner: Team · 4 open tasks</p><div class="progress"><span style="width:30%"></span></div></div></div>
+      <div class="card full">
+        <h2>Project history / activity feed · Google Workspace migration</h2>
+        <div class="feed">
+          <div class="feeditem"><div><span class="tag">Today</span></div><div><b>Decision logged:</b> Google Workspace becomes the company stack.<div class="meta">Management · Decision</div></div></div>
+          <div class="feeditem"><div><span class="tag">11:40</span></div><div><b>Task completed:</b> Created shared drives and calendar sharing defaults.<div class="meta">Ulv · Task update</div></div></div>
+          <div class="feeditem"><div><span class="tag">11:10</span></div><div><b>Email event:</b> Message sent to management asking everyone to onboard Gmail and Calendar.<div class="meta">Inbox → action</div></div></div>
+          <div class="feeditem"><div><span class="tag">10:55</span></div><div><b>File event:</b> “Killer Koach dashboard prototype” saved to Shared Drive.<div class="meta">Drive · file</div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="team" class="view">
+    <div class="sectiongrid">
+      <div class="card">
+        <h2>Availability</h2>
+        <div class="personrow"><div><b>Ulv</b><div class="loc">Office · available after 16:00</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Lydia</b><div class="loc">Store visits</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Adam</b><div class="loc">Training</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Sara</b><div class="loc">Airport</div></div><span class="pill good">Working</span></div>
+        <div class="personrow"><div><b>Kasper</b><div class="loc">Off today</div></div><span class="pill">OOO</span></div>
+      </div>
+      <div class="card">
+        <h2>Workload</h2>
+        <div class="project"><div class="row"><b>Lydia</b><span class="meta">7 open</span></div><div class="progress"><span style="width:62%"></span></div></div>
+        <div class="project"><div class="row"><b>Adam</b><span class="meta">4 open</span></div><div class="progress"><span style="width:40%"></span></div></div>
+        <div class="project"><div class="row"><b>Sara</b><span class="meta">9 open</span></div><div class="progress"><span style="width:80%"></span></div></div>
+      </div>
+      <div class="card full">
+        <h2>View logic</h2>
+        <p class="meta">Management view shows the whole organisation. Personal view reduces the dashboard to the current user’s tasks, meetings, waiting-ons and priorities. This lets the same system serve you and the rest of the team without changing the underlying data model.</p>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="people" class="view">
+    <div class="peoplegrid">
+      <div class="peoplelist">
+        <div class="meta" style="padding:8px 10px 10px">Employee profiles · Management only</div>
+        <div class="peopleitem active" onclick="selectPerson(this,'Emma Jensen','Crew · Frederiksberg','E','Strong performance','No active concerns','Next review Sep 20')">
+          <b>Emma Jensen</b>
+          <div class="meta">Crew · Frederiksberg</div>
+        </div>
+        <div class="peopleitem" onclick="selectPerson(this,'Peter Nielsen','Crew · Nørrebro','P','Needs follow-up','1 active concern','Check-in Sep 5')">
+          <b>Peter Nielsen</b>
+          <div class="meta">Crew · Nørrebro</div>
+        </div>
+        <div class="peopleitem" onclick="selectPerson(this,'Mohammed Ali','Crew · Frederiksberg','M','Performing strongly','No active concerns','Next review Sep 18')">
+          <b>Mohammed Ali</b>
+          <div class="meta">Crew · Frederiksberg</div>
+        </div>
+        <div class="peopleitem" onclick="selectPerson(this,'Sofia Larsen','Shift lead · Vesterbro','S','Stable','No active concerns','Next review Oct 2')">
+          <b>Sofia Larsen</b>
+          <div class="meta">Shift lead · Vesterbro</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="profilehead">
+            <div class="profileid">
+              <div class="profileavatar" id="personAvatar">E</div>
+              <div>
+                <h2 id="personName">Emma Jensen</h2>
+                <div class="meta" id="personRole">Crew · Frederiksberg</div>
+              </div>
+            </div>
+            <span class="pill good" id="personStatus">Strong performance</span>
+          </div>
+
+          <div class="statrow">
+            <div class="statbox"><span class="meta">Current status</span><b id="statusText">Strong performance</b></div>
+            <div class="statbox"><span class="meta">Active concerns</span><b id="concernText">0</b></div>
+            <div class="statbox"><span class="meta">Next follow-up</span><b id="reviewText">Sep 20</b></div>
+          </div>
+
+          <div class="tabs">
+            <button class="active">Overview</button>
+            <button>Strengths</button>
+            <button>Concerns</button>
+            <button>Conversations</button>
+            <button>Actions</button>
+            <button>Documents</button>
+            <button>Timeline</button>
+          </div>
+
+          <div class="sectiongrid">
+            <div class="card">
+              <h2>Snapshot</h2>
+              <div class="decision"><b>Overall</b><div class="meta">Performing strongly. Two positive mentions in the last six weeks.</div></div>
+              <div class="decision"><b>Positive</b><div class="meta">Handled a difficult Saturday service exceptionally well.</div></div>
+              <div class="decision"><b>Open follow-up</b><div class="meta">No unresolved performance issue. Next routine review Sep 20.</div></div>
+            </div>
+
+            <div class="card">
+              <h2>Recent</h2>
+              <div class="decision"><b>⭐ Positive feedback</b><div class="meta">Aug 26 · Reported by Lydia</div></div>
+              <div class="decision"><b>💬 Coaching conversation</b><div class="meta">Aug 10 · Sara</div></div>
+              <div class="decision"><b>✅ Follow-up completed</b><div class="meta">Aug 4 · No further action needed</div></div>
+            </div>
+
+            <div class="card full">
+              <h2>Management timeline</h2>
+              <div class="timelineitem">
+                <div><span class="kind">Aug 26</span></div>
+                <div><b>Positive performance observation</b><div class="meta">Lydia reported that Emma effectively held the shift together during a difficult Saturday service.</div><span class="sourcechip">Store-manager meeting</span><span class="sourcechip">Reported by Lydia</span></div>
+              </div>
+              <div class="timelineitem">
+                <div><span class="kind">Aug 10</span></div>
+                <div><b>Coaching conversation</b><div class="meta">Sara discussed communication during handover between shifts. No formal action required.</div><span class="sourcechip">Management note</span></div>
+              </div>
+              <div class="timelineitem">
+                <div><span class="kind">Aug 4</span></div>
+                <div><b>Follow-up closed</b><div class="meta">Previous minor issue reviewed. No recurrence observed.</div><span class="sourcechip">Ops follow-up</span></div>
+              </div>
+            </div>
+
+            <div class="card full">
+              <h2>AI-proposed People Memory entry</h2>
+              <div class="proposal">
+                <div class="meta">Detected in recorded meeting · not yet part of the permanent record</div>
+                <blockquote>“By the way, Emma has been absolutely brilliant lately. She basically held the place together on Saturday.”</blockquote>
+                <b>Suggested structured entry</b>
+                <div class="meta" style="margin-top:7px">
+                  Positive performance observation · Reported by Lydia · Aug 26<br>
+                  Store manager reported that Emma performed exceptionally during a difficult Saturday service.
+                </div>
+                <div class="actions">
+                  <button class="btn primary" onclick="alert('Prototype: approved entry is added to the employee timeline and becomes searchable by management.')">Approve & add</button>
+                  <button class="btn">Edit</button>
+                  <button class="btn">Ignore</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card full">
+              <h2>People Memory rules</h2>
+              <div class="hrnotice">
+                <b>AI proposes. Management approves.</b>
+                <div class="meta" style="margin-top:7px">
+                  Entries are stored in neutral, factual language and preserve whether something was an observation, a report from another manager, an employee statement, a management decision, or a formal action. Each entry keeps its date, reporter and source. Sensitive personal information should not be captured casually.
+                </div>
+              </div>
+            </div>
+
+            <div class="card full">
+              <h2>Ask about this employee</h2>
+              <div class="searchbox">
+                <input id="peopleAsk" value="What's the status on Emma Jensen?" />
+                <button class="btn primary" onclick="showPeopleAnswer()">Ask</button>
+              </div>
+              <div id="peopleAnswer" class="detect" style="display:none">
+                <b>Emma Jensen — current management summary</b>
+                <div class="meta" style="margin-top:7px">
+                  Overall: performing strongly. Two positive mentions in the past six weeks and no unresolved active concerns.<br><br>
+                  Latest positive: Lydia reported excellent performance during a difficult Saturday service on Aug 26.<br><br>
+                  Management action: routine follow-up only. Next review Sep 20.
+                </div>
+                <div style="margin-top:8px">
+                  <span class="sourcechip">Store-manager meeting · Aug 26</span>
+                  <span class="sourcechip">Management note · Aug 10</span>
+                  <span class="sourcechip">Ops follow-up · Aug 4</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <h2>People Memory architecture</h2>
+          <p class="meta">
+            The structured employee profile is the source of truth for observations, conversations, actions and management history. The restricted <b>KK – People & HR</b> Shared Drive stores supporting documents such as contracts, PDFs, formal warnings and signed material. Claude/ChatGPT can search both, but should not silently create permanent HR records.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="meetings" class="view">
+    <div class="sectiongrid">
+      <div class="card"><h2>Upcoming</h2><div class="event"><div class="time">Fri</div><div><b>Upper management</b><div class="meta">4 suggested agenda items · 3 unresolved actions</div></div></div><div class="event"><div class="time">Mon</div><div><b>Operations</b><div class="meta">6 project updates since last meeting</div></div></div></div>
+      <div class="card"><h2>Previous actions</h2><label class="task"><input type="checkbox"><div><b>Confirm airport visit plan</b><div class="meta">Owner: Sara · overdue</div></div></label><label class="task"><input type="checkbox"><div><b>Finish Google rollout</b><div class="meta">Owner: Ulv · this week</div></div></label></div>
+
+      <div class="card full">
+        <h2>Run meeting</h2>
+        <div class="recorder">
+          <div class="recordleft">
+            <div id="recordDot" class="recorddot"></div>
+            <div class="recordstatus">
+              <b id="recordLabel">Ready to record</b>
+              <span id="recordTime">Upper management · Friday 09:30</span>
+            </div>
+          </div>
+          <div class="actions" style="margin-top:0">
+            <button id="recordBtn" class="btn primary" onclick="toggleRecording()">Start recording</button>
+            <button class="btn" onclick="generateMinutes()">Generate minutes</button>
+          </div>
+        </div>
+
+        <div class="transcript" id="transcriptBox">
+          <b>Live transcript preview</b><br><br>
+          Recording will appear here during the meeting. In the real version, the transcript can be produced from the room microphone, uploaded audio, or a meeting integration.
+        </div>
+
+        <div class="minutes">
+          <div class="panel">
+            <h3>Draft minutes</h3>
+            <div id="minutesText" class="meta">No minutes generated yet.</div>
+          </div>
+          <div class="panel">
+            <h3>Decisions & actions</h3>
+            <div id="actionsText" class="meta">Killer Koach will extract decisions, owners and deadlines from the meeting.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" onclick="approveMinutes()">Approve & save minutes</button>
+          <button class="btn">Edit minutes</button>
+          <button class="btn">Share with attendees</button>
+        </div>
+      </div>
+
+      <div class="card full">
+        <h2>Approval queue after meeting</h2>
+        <div class="queue">
+          <div class="panel">
+            <h3>Decisions to approve</h3>
+            <ul>
+              <li>Increase airport quality visits after Sept 1</li>
+              <li>Approve Gmail as standard work client</li>
+              <li>Use personal KK work calendars as the shared company view</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>Actions to create</h3>
+            <ul>
+              <li>Sara — confirm airport visit cadence — due Friday</li>
+              <li>Ulv — complete Workspace cutover — due this week</li>
+              <li>Lydia — report equipment-install progress — due Friday</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card full"><h2>Meeting workflow</h2><p class="meta">Before: Killer Koach proposes the agenda from tasks, projects, decisions needed and unresolved waiting-ons. During: record and transcribe the meeting. After: generate minutes, decisions and assigned tasks for approval. Approved decisions go into the Decisions log, approved tasks go into Projects, and unresolved actions automatically return to the next meeting agenda.</p></div>
+    </div>
+  </section>
+
+  <section id="knowledge" class="view">
+    <div class="sectiongrid">
+      <div class="card full">
+        <h2>Company knowledge search</h2>
+        <div class="searchbox">
+          <input placeholder="Search across Drive, emails, meetings, decisions and tasks…">
+          <button class="btn primary" onclick="alert('Prototype: the ask bar becomes cross-system knowledge search.')">Search</button>
+        </div>
+      </div>
+      <div class="card searchresults">
+        <h2>Results</h2>
+        <div class="result"><b>Fisketorvet rent discussion</b><div class="meta">3 email threads · 1 meeting mention · 1 finance file</div></div>
+        <div class="result"><b>Airport quality reports</b><div class="meta">4 files · 2 meeting notes · 6 related tasks</div></div>
+        <div class="result"><b>Google Workspace rollout</b><div class="meta">Minutes, decisions, onboarding message and project history</div></div>
+      </div>
+      <div class="card">
+        <h2>Why this matters</h2>
+        <p class="meta">The same Ask bar can become both a command interface and a knowledge layer: “What did we decide about airport visits?”, “Find the latest signage email”, “What tasks does Lydia owe me?”</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<script>
+
+
+let currentRole = "management";
+function setRole(role, el){
+  currentRole = role;
+  document.querySelectorAll("#roleToggle button").forEach(btn => btn.classList.remove("active"));
+  el.classList.add("active");
+  const sub = document.getElementById("pageSub");
+  const title = document.getElementById("pageTitle").textContent;
+  if(title === "Today"){
+    sub.textContent = role === "management"
+      ? "What needs your attention right now."
+      : "Your personal priorities, meetings and follow-ups.";
+  }
+  alert("Prototype: switched to " + (role === "management" ? "Management" : "Personal") + " view.");
+}
+
+let recording = false;
+let seconds = 0;
+let timer = null;
+
+function formatTime(s){
+  const m = String(Math.floor(s/60)).padStart(2,'0');
+  const sec = String(s%60).padStart(2,'0');
+  return `${m}:${sec}`;
+}
+
+function toggleRecording(){
+  recording = !recording;
+  const btn = document.getElementById("recordBtn");
+  const dot = document.getElementById("recordDot");
+  const label = document.getElementById("recordLabel");
+  const time = document.getElementById("recordTime");
+  const transcript = document.getElementById("transcriptBox");
+
+  if(recording){
+    btn.textContent = "Stop recording";
+    dot.classList.add("live");
+    label.textContent = "Recording meeting";
+    seconds = 0;
+    time.textContent = "00:00 · Live transcription";
+    transcript.innerHTML = "<b>Live transcript</b><br><br><span class='meta'>[00:00]</span> Ulv: Let's start with the airport follow-up...<br><br><span class='meta'>[00:06]</span> Sara: The new manager is improving consistency, but we still need more frequent checks after September 1.";
+    timer = setInterval(()=>{
+      seconds++;
+      time.textContent = formatTime(seconds) + " · Live transcription";
+    },1000);
+  } else {
+    btn.textContent = "Start recording";
+    dot.classList.remove("live");
+    label.textContent = "Recording saved";
+    time.textContent = formatTime(seconds) + " · Ready to generate minutes";
+    clearInterval(timer);
+  }
+}
+
+function generateMinutes(){
+  document.getElementById("minutesText").innerHTML =
+    "<b>Upper management — Draft minutes</b><br><br>" +
+    "1. Airport quality is improving under the new manager, but consistency still needs verification.<br><br>" +
+    "2. Higher-frequency quality visits resume after September 1.<br><br>" +
+    "3. Google Workspace rollout continues this week; all management users must complete onboarding before mail cutover.<br><br>" +
+    "4. September marketing plan requires final approval.<br><br>" +
+    "5. Decision: resume higher-frequency airport quality checks after September 1.";
+
+  document.getElementById("actionsText").innerHTML =
+    "<ul>" +
+    "<li><b>Sara:</b> confirm airport visit cadence · due Friday</li>" +
+    "<li><b>Ulv:</b> complete Google Workspace cutover · due this week</li>" +
+    "<li><b>Ulv:</b> approve September marketing plan · due today</li>" +
+    "</ul><div class='meta'>3 tasks ready to add to Projects.</div>";
+}
+
+function approveMinutes(){
+  alert("Prototype: minutes approved. In the real version, they would be saved to the meeting record, shared with attendees, and approved actions would become tasks.");
+}
+
+
+function selectPerson(el,name,role,initial,status,concern,review){
+  document.querySelectorAll(".peopleitem").forEach(x=>x.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("personName").textContent = name;
+  document.getElementById("personRole").textContent = role;
+  document.getElementById("personAvatar").textContent = initial;
+  document.getElementById("personStatus").textContent = status;
+  document.getElementById("statusText").textContent = status;
+  document.getElementById("concernText").textContent = concern.includes("No") ? "0" : "1";
+  document.getElementById("reviewText").textContent = review.replace("Next review ","").replace("Check-in ","");
+  document.getElementById("peopleAsk").value = "What's the status on " + name + "?";
+  document.getElementById("peopleAnswer").style.display = "none";
+}
+function showPeopleAnswer(){
+  document.getElementById("peopleAnswer").style.display = "block";
+}
+
+const labels={
+ today:["Today","What needs your attention right now."],
+ inbox:["Inbox","AI-assisted triage, drafts and task detection."],
+ projects:["Projects","One source of truth for everything in motion."],
+ team:["Team","Where people are, what they own and what needs attention."],
+ people:["People","Management memory for employee performance, conversations, actions and follow-up."],
+ meetings:["Meetings","Agendas, decisions, actions and follow-through."],
+ knowledge:["Knowledge","Search across mail, files, decisions, tasks and meeting memory."]
+};
+document.querySelectorAll("nav button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+    btn.classList.add("active");
+    const v=btn.dataset.view;
+    document.getElementById(v).classList.add("active");
+    document.getElementById("pageTitle").textContent=labels[v][0];
+    document.getElementById("pageSub").textContent=labels[v][1];
+  });
+});
+</script>
+</body>
+</html>
