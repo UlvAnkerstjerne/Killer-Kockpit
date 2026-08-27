@@ -135,11 +135,6 @@ create table meeting_minutes (
   unique (meeting_id, version)
 );
 
-alter table meetings
-  add constraint meetings_transcript_source_fk
-  foreign key (transcript_source_id) references sources(id)
-  deferrable initially deferred;
-
 -- ─── Waiting Ons (deferred — locked down) ────────────────────────────────────
 
 create table waiting_ons (
@@ -220,6 +215,12 @@ create table sources (
   created_at    timestamptz not null default now(),
   unique (source_type, external_id)
 );
+
+-- sources now exists — safe to add the FK from meetings.transcript_source_id
+alter table meetings
+  add constraint meetings_transcript_source_fk
+  foreign key (transcript_source_id) references sources(id)
+  deferrable initially deferred;
 
 create table entity_sources (
   id          uuid primary key default gen_random_uuid(),
