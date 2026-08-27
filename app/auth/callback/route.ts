@@ -34,7 +34,10 @@ export async function GET(request: Request) {
   }
 
   // Use service role to query/update app_users — bypasses RLS for provisioning.
-  const serviceClient = await createServiceClient()
+  // createServiceClient() returns the base @supabase/supabase-js client with the
+  // service role key. It is intentionally NOT the SSR client so it never reads
+  // session cookies and always runs with full RLS bypass.
+  const serviceClient = createServiceClient()
 
   const { data: appUser, error: lookupError } = await serviceClient
     .from('app_users')
@@ -59,13 +62,22 @@ export async function GET(request: Request) {
     (authUser.user_metadata?.name as string) ||
     appUser.display_name
 
-  await serviceClient
+  const { error: updateError } = await serviceClient
     .from('app_users')
     .update({
       auth_user_id: authUser.id,
       display_name: displayName,
     })
     .eq('id', appUser.id)
+
+  if (updateError) {
+    // This should never happen — the service client bypasses RLS.
+    // If it does, logging in would cause an infinite redirect loop, so we
+    // sign the user out and show an error rather than silently failing.
+    console.error('[auth/callback] Failed to write auth_user_id:', updateError)
+    await supabase.auth.signOut()
+    return NextResponse.redirect(`${origin}/login?error=provisioning_failed`)
+  }
 
   return NextResponse.redirect(`${origin}${next}`)
 }

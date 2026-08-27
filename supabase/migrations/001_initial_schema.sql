@@ -1,11 +1,15 @@
--- Killer Kockpit — Milestone 1 initial schema
--- Based on killer_kockpit_v1_schema.sql with one addition:
---   app_users.auth_user_id stores the Supabase auth.users UUID, enabling
---   clean RLS policies without repeated auth metadata lookups.
+-- Killer Kockpit -- Milestone 1 initial schema
+--
+-- app_users.auth_user_id stores the Supabase auth.users UUID, enabling
+-- clean RLS policies without repeated auth metadata lookups.
+--
+-- Table order is intentional: every foreign key references a table that was
+-- already created earlier in this file. No ALTER TABLE statements are used
+-- for cross-table foreign keys -- everything is declared inline.
 
 create extension if not exists pgcrypto;
 
--- ─── Enum types ──────────────────────────────────────────────────────────────
+-- ---- Enum types -------------------------------------------------------------
 
 create type kk_role as enum ('SUPER_ADMIN', 'UM', 'MEMBER');
 create type project_status as enum ('planned', 'active', 'at_risk', 'blocked', 'completed', 'archived');
@@ -17,23 +21,23 @@ create type proposal_type as enum ('task', 'decision', 'waiting_on', 'people_ent
 create type source_type as enum ('gmail_message', 'gmail_thread', 'calendar_event', 'drive_file', 'meeting_transcript', 'meeting_recording', 'manual_note', 'manual_entry');
 create type people_entry_type as enum ('observation', 'manager_report', 'employee_statement', 'coaching', 'positive_feedback', 'concern', 'management_decision', 'formal_action', 'follow_up');
 
--- ─── Users ───────────────────────────────────────────────────────────────────
+-- ---- Users ------------------------------------------------------------------
 
 create table app_users (
-  id               uuid primary key default gen_random_uuid(),
-  -- auth_user_id links to Supabase auth.users.id — used in RLS policies.
-  auth_user_id     uuid unique references auth.users(id) on delete set null,
+  id                uuid primary key default gen_random_uuid(),
+  -- auth_user_id links to Supabase auth.users.id -- used in RLS policies.
+  auth_user_id      uuid unique references auth.users(id) on delete set null,
   google_subject_id text unique not null,
-  email            text unique not null,
-  display_name     text not null,
-  role             kk_role not null default 'MEMBER',
-  active           boolean not null default true,
-  timezone         text not null default 'Europe/Copenhagen',
-  created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now()
+  email             text unique not null,
+  display_name      text not null,
+  role              kk_role not null default 'MEMBER',
+  active            boolean not null default true,
+  timezone          text not null default 'Europe/Copenhagen',
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
 );
 
--- ─── Employees (deferred — schema exists but locked down) ────────────────────
+-- ---- Employees (deferred -- schema exists but locked down) ------------------
 
 create table employees (
   id                   uuid primary key default gen_random_uuid(),
@@ -47,7 +51,7 @@ create table employees (
   updated_at           timestamptz not null default now()
 );
 
--- ─── Projects ────────────────────────────────────────────────────────────────
+-- ---- Projects ---------------------------------------------------------------
 
 create table projects (
   id                  uuid primary key default gen_random_uuid(),
@@ -65,7 +69,7 @@ create table projects (
   updated_at          timestamptz not null default now()
 );
 
--- ─── Tasks ───────────────────────────────────────────────────────────────────
+-- ---- Tasks ------------------------------------------------------------------
 
 create table tasks (
   id                  uuid primary key default gen_random_uuid(),
@@ -83,7 +87,26 @@ create table tasks (
   updated_at          timestamptz not null default now()
 );
 
--- ─── Meetings (deferred — locked down) ───────────────────────────────────────
+-- ---- Sources (deferred -- locked down) -------------------------------------
+-- Created before meetings so that meetings.transcript_source_id can
+-- reference it with an inline foreign key constraint.
+
+create table sources (
+  id            uuid primary key default gen_random_uuid(),
+  source_type   source_type not null,
+  external_id   text,
+  title         text,
+  url           text,
+  occurred_at   timestamptz,
+  metadata      jsonb not null default '{}'::jsonb,
+  content_hash  text,
+  created_at    timestamptz not null default now(),
+  unique (source_type, external_id)
+);
+
+-- ---- Meetings (deferred -- locked down) ------------------------------------
+-- transcript_source_id is an FK to sources, declared inline now that
+-- sources already exists above.
 
 create table meetings (
   id                   uuid primary key default gen_random_uuid(),
@@ -95,7 +118,7 @@ create table meetings (
   actual_end           timestamptz,
   status               text not null default 'scheduled',
   recording_url        text,
-  transcript_source_id uuid,
+  transcript_source_id uuid references sources(id),
   minutes_status       text not null default 'none',
   created_by_user_id   uuid references app_users(id),
   created_at           timestamptz not null default now(),
@@ -103,8 +126,8 @@ create table meetings (
 );
 
 create table meeting_attendees (
-  meeting_id     uuid references meetings(id) on delete cascade,
-  user_id        uuid references app_users(id),
+  meeting_id     uuid not null references meetings(id) on delete cascade,
+  user_id        uuid not null references app_users(id),
   external_name  text,
   external_email text,
   primary key (meeting_id, user_id)
@@ -135,7 +158,7 @@ create table meeting_minutes (
   unique (meeting_id, version)
 );
 
--- ─── Waiting Ons (deferred — locked down) ────────────────────────────────────
+-- ---- Waiting Ons (deferred -- locked down) ----------------------------------
 
 create table waiting_ons (
   id                      uuid primary key default gen_random_uuid(),
@@ -152,24 +175,24 @@ create table waiting_ons (
   updated_at              timestamptz not null default now()
 );
 
--- ─── Decisions (deferred — locked down) ──────────────────────────────────────
+-- ---- Decisions (deferred -- locked down) ------------------------------------
 
 create table decisions (
-  id                   uuid primary key default gen_random_uuid(),
-  title                text not null,
-  decision_text        text not null,
-  project_id           uuid references projects(id),
-  meeting_id           uuid references meetings(id),
-  decided_at           timestamptz,
-  approved_by_user_id  uuid references app_users(id),
-  status               decision_status not null default 'proposed',
+  id                     uuid primary key default gen_random_uuid(),
+  title                  text not null,
+  decision_text          text not null,
+  project_id             uuid references projects(id),
+  meeting_id             uuid references meetings(id),
+  decided_at             timestamptz,
+  approved_by_user_id    uuid references app_users(id),
+  status                 decision_status not null default 'proposed',
   supersedes_decision_id uuid references decisions(id),
-  archived_at          timestamptz,
-  created_at           timestamptz not null default now(),
-  updated_at           timestamptz not null default now()
+  archived_at            timestamptz,
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now()
 );
 
--- ─── People Memory (deferred — locked down) ──────────────────────────────────
+-- ---- People Memory (deferred -- locked down) --------------------------------
 
 create table people_entries (
   id                  uuid primary key default gen_random_uuid(),
@@ -188,7 +211,7 @@ create table people_entries (
   updated_at          timestamptz not null default now()
 );
 
--- ─── Notes (deferred — locked down) ──────────────────────────────────────────
+-- ---- Notes (deferred -- locked down) ----------------------------------------
 
 create table notes (
   id                  uuid primary key default gen_random_uuid(),
@@ -201,26 +224,7 @@ create table notes (
   updated_at          timestamptz not null default now()
 );
 
--- ─── Sources (deferred — locked down) ────────────────────────────────────────
-
-create table sources (
-  id            uuid primary key default gen_random_uuid(),
-  source_type   source_type not null,
-  external_id   text,
-  title         text,
-  url           text,
-  occurred_at   timestamptz,
-  metadata      jsonb not null default '{}'::jsonb,
-  content_hash  text,
-  created_at    timestamptz not null default now(),
-  unique (source_type, external_id)
-);
-
--- sources now exists — safe to add the FK from meetings.transcript_source_id
-alter table meetings
-  add constraint meetings_transcript_source_fk
-  foreign key (transcript_source_id) references sources(id)
-  deferrable initially deferred;
+-- ---- Entity Sources (deferred -- locked down) -------------------------------
 
 create table entity_sources (
   id          uuid primary key default gen_random_uuid(),
@@ -232,29 +236,29 @@ create table entity_sources (
   unique (entity_type, entity_id, source_id, relation)
 );
 
--- ─── Proposals (deferred — locked down) ──────────────────────────────────────
+-- ---- Proposals (deferred -- locked down) ------------------------------------
 
 create table proposals (
-  id                   uuid primary key default gen_random_uuid(),
-  proposal_type        proposal_type not null,
-  payload_json         jsonb not null,
+  id                    uuid primary key default gen_random_uuid(),
+  proposal_type         proposal_type not null,
+  payload_json          jsonb not null,
   generated_by_provider text,
-  model                text,
-  confidence           numeric(4, 3),
-  status               proposal_status not null default 'pending',
-  approved_by_user_id  uuid references app_users(id),
-  approved_at          timestamptz,
-  created_at           timestamptz not null default now(),
-  updated_at           timestamptz not null default now()
+  model                 text,
+  confidence            numeric(4, 3),
+  status                proposal_status not null default 'pending',
+  approved_by_user_id   uuid references app_users(id),
+  approved_at           timestamptz,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
 );
 
 create table proposal_sources (
-  proposal_id uuid references proposals(id) on delete cascade,
-  source_id   uuid references sources(id) on delete cascade,
+  proposal_id uuid not null references proposals(id) on delete cascade,
+  source_id   uuid not null references sources(id) on delete cascade,
   primary key (proposal_id, source_id)
 );
 
--- ─── Audit Events ────────────────────────────────────────────────────────────
+-- ---- Audit Events -----------------------------------------------------------
 
 create table audit_events (
   id            uuid primary key default gen_random_uuid(),
@@ -267,10 +271,10 @@ create table audit_events (
   after_json    jsonb,
   metadata      jsonb not null default '{}'::jsonb,
   created_at    timestamptz not null default now()
-  -- No updated_at — audit events are immutable.
+  -- No updated_at -- audit events are immutable.
 );
 
--- ─── Integration sync state ───────────────────────────────────────────────────
+-- ---- Integration sync state -------------------------------------------------
 
 create table integration_sync_state (
   id               uuid primary key default gen_random_uuid(),
@@ -284,7 +288,7 @@ create table integration_sync_state (
   unique (integration, user_id)
 );
 
--- ─── Indexes ─────────────────────────────────────────────────────────────────
+-- ---- Indexes ----------------------------------------------------------------
 
 create index tasks_owner_status_idx      on tasks(owner_user_id, status);
 create index tasks_project_idx           on tasks(project_id);
@@ -301,7 +305,7 @@ create index audit_actor_idx             on audit_events(actor_user_id, created_
 create index sources_external_idx        on sources(source_type, external_id);
 create index app_users_auth_id_idx       on app_users(auth_user_id);
 
--- ─── Auto-update updated_at ──────────────────────────────────────────────────
+-- ---- Auto-update updated_at -------------------------------------------------
 
 create or replace function update_updated_at_column()
 returns trigger language plpgsql as $$
@@ -311,13 +315,13 @@ begin
 end;
 $$;
 
-create trigger app_users_updated_at   before update on app_users   for each row execute function update_updated_at_column();
-create trigger projects_updated_at    before update on projects    for each row execute function update_updated_at_column();
-create trigger tasks_updated_at       before update on tasks       for each row execute function update_updated_at_column();
-create trigger meetings_updated_at    before update on meetings    for each row execute function update_updated_at_column();
-create trigger decisions_updated_at   before update on decisions   for each row execute function update_updated_at_column();
-create trigger waiting_ons_updated_at before update on waiting_ons for each row execute function update_updated_at_column();
-create trigger employees_updated_at   before update on employees   for each row execute function update_updated_at_column();
-create trigger notes_updated_at       before update on notes       for each row execute function update_updated_at_column();
-create trigger proposals_updated_at   before update on proposals   for each row execute function update_updated_at_column();
+create trigger app_users_updated_at      before update on app_users      for each row execute function update_updated_at_column();
+create trigger projects_updated_at       before update on projects       for each row execute function update_updated_at_column();
+create trigger tasks_updated_at          before update on tasks          for each row execute function update_updated_at_column();
+create trigger meetings_updated_at       before update on meetings       for each row execute function update_updated_at_column();
+create trigger decisions_updated_at      before update on decisions      for each row execute function update_updated_at_column();
+create trigger waiting_ons_updated_at    before update on waiting_ons    for each row execute function update_updated_at_column();
+create trigger employees_updated_at      before update on employees      for each row execute function update_updated_at_column();
+create trigger notes_updated_at          before update on notes          for each row execute function update_updated_at_column();
+create trigger proposals_updated_at      before update on proposals      for each row execute function update_updated_at_column();
 create trigger people_entries_updated_at before update on people_entries for each row execute function update_updated_at_column();

@@ -38,6 +38,8 @@ export default async function LoginPage({
                 ? 'Access denied. Your account must be approved by an administrator.'
                 : params.error === 'inactive'
                 ? 'Your account has been deactivated. Contact an administrator.'
+                : params.error === 'provisioning_failed'
+                ? 'Sign-in failed during account setup. Please contact an administrator.'
                 : 'An error occurred. Please try again.'}
             </div>
           )}

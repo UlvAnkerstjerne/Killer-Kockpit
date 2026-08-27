@@ -21,7 +21,7 @@ export async function recordAuditEvent({
   afterJson?: Record<string, unknown> | null
   metadata?: Record<string, unknown>
 }) {
-  const supabase = await createServiceClient()
+  const supabase = createServiceClient()
 
   const { error } = await supabase.from('audit_events').insert({
     actor_user_id: actorUserId,
