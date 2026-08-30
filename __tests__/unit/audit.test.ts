@@ -3,8 +3,8 @@
  *
  * Verifies that:
  *   - The correct fields are inserted into audit_events
- *   - A database error is logged but does NOT propagate (audit failures must
- *     never suppress the business operation that triggered them)
+ *   - A database error is logged AND returned (callers can propagate the
+ *     failure; audit errors must not silently swallow)
  *   - createServiceClient is used (not createClient), which is critical for
  *     RLS bypass — audit_events has no INSERT policy for regular users
  */
@@ -106,25 +106,34 @@ describe('recordAuditEvent', () => {
     )
   })
 
-  it('logs the error but does not throw when the insert fails', async () => {
+  it('logs and returns the error when the insert fails', async () => {
     mocks.mockInsert.mockResolvedValue({ error: { message: 'DB error' } })
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const { recordAuditEvent } = await import('@/lib/audit')
-    // Must not throw
-    await expect(
-      recordAuditEvent({
-        actorUserId: 'user-uuid',
-        action: 'project.created',
-        entityType: 'project',
-        entityId: 'project-uuid',
-      })
-    ).resolves.toBeUndefined()
+    const result = await recordAuditEvent({
+      actorUserId: 'user-uuid',
+      action: 'project.created',
+      entityType: 'project',
+      entityId: 'project-uuid',
+    })
 
+    expect(result.error).toBeTruthy()
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('[audit]'),
       expect.anything()
     )
     consoleSpy.mockRestore()
+  })
+
+  it('returns { error: null } on success', async () => {
+    const { recordAuditEvent } = await import('@/lib/audit')
+    const result = await recordAuditEvent({
+      actorUserId: 'user-uuid',
+      action: 'project.created',
+      entityType: 'project',
+      entityId: 'project-uuid',
+    })
+    expect(result.error).toBeNull()
   })
 })

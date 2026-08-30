@@ -1,10 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { recordAuditEvent } from '@/lib/audit'
-import { canEditProject, canArchiveProject } from '@/lib/permissions'
+import { canEditProject, canArchiveProject, isAdminOverride } from '@/lib/permissions'
 import type { ProjectStatus, ActionResult } from '@/lib/types'
 
 type ProjectInput = {
@@ -21,39 +20,28 @@ export async function createProject(input: ProjectInput): Promise<ActionResult<{
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const supabase = await createClient()
+  const serviceClient = createServiceClient()
 
-  const { data, error } = await supabase
-    .from('projects')
-    .insert({
-      title: input.title.trim(),
-      description: input.description?.trim() || null,
-      owner_user_id: input.owner_user_id || user.id,
-      status: input.status || 'planned',
-      start_date: input.start_date || null,
-      due_date: input.due_date || null,
-      progress: input.progress ?? null,
-      created_by_user_id: user.id,
-    })
-    .select('id')
-    .single()
+  const { data: projectId, error } = await serviceClient.rpc('create_project_and_audit', {
+    p_title: input.title.trim(),
+    p_description: input.description?.trim() || null,
+    p_owner_user_id: input.owner_user_id || user.id,
+    p_status: input.status || 'planned',
+    p_start_date: input.start_date || null,
+    p_due_date: input.due_date || null,
+    p_progress: input.progress ?? null,
+    p_created_by_user_id: user.id,
+    p_actor_user_id: user.id,
+  })
 
   if (error) {
     console.error('[createProject]', error)
     return { error: 'Failed to create project. Please try again.' }
   }
 
-  await recordAuditEvent({
-    actorUserId: user.id,
-    action: 'project.created',
-    entityType: 'project',
-    entityId: data.id,
-    afterJson: { title: input.title, status: input.status || 'planned', owner_user_id: input.owner_user_id || user.id },
-  })
-
   revalidatePath('/projects')
   revalidatePath('/today')
-  return { data: { id: data.id } }
+  return { data: { id: projectId as string } }
 }
 
 export async function updateProject(
@@ -77,8 +65,8 @@ export async function updateProject(
     return { error: 'You do not have permission to edit this project.' }
   }
 
-  const updates: Record<string, unknown> = {}
-  const changedFields: Record<string, { from: unknown; to: unknown }> = {}
+  const patch: Record<string, unknown> = {}
+  const before: Record<string, unknown> = {}
 
   const fields = ['title', 'description', 'owner_user_id', 'status', 'start_date', 'due_date', 'progress'] as const
   for (const field of fields) {
@@ -88,34 +76,30 @@ export async function updateProject(
         : input[field as keyof typeof input]
 
       if (newVal !== current[field]) {
-        updates[field] = newVal
-        changedFields[field] = { from: current[field], to: newVal }
+        patch[field] = newVal
+        before[field] = current[field]
       }
     }
   }
 
-  if (Object.keys(updates).length === 0) return {}
+  if (Object.keys(patch).length === 0) return {}
 
-  const { error } = await supabase
-    .from('projects')
-    .update(updates)
-    .eq('id', projectId)
+  const adminOverride = isAdminOverride(user.role, current.owner_user_id, user.id)
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc(
+    adminOverride ? 'update_project_and_audit_as_admin' : 'update_project_and_audit',
+    {
+      p_project_id:    projectId,
+      p_actor_user_id: user.id,
+      p_patch:         patch,
+      p_before:        before,
+      ...(adminOverride ? { p_override_note: 'Administrative override of project' } : {}),
+    }
+  )
 
   if (error) {
     console.error('[updateProject]', error)
     return { error: 'Failed to save changes. Please try again.' }
-  }
-
-  // Record one audit event per changed field
-  for (const [field, diff] of Object.entries(changedFields)) {
-    await recordAuditEvent({
-      actorUserId: user.id,
-      action: `project.${field}.changed`,
-      entityType: 'project',
-      entityId: projectId,
-      beforeJson: { [field]: diff.from },
-      afterJson: { [field]: diff.to },
-    })
   }
 
   revalidatePath('/projects')
@@ -141,21 +125,14 @@ export async function archiveProject(projectId: string): Promise<ActionResult> {
     return { error: 'You do not have permission to archive this project.' }
   }
 
-  const { error } = await supabase
-    .from('projects')
-    .update({ archived_at: new Date().toISOString(), status: 'archived' })
-    .eq('id', projectId)
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('archive_project_and_audit', {
+    p_project_id: projectId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
 
   if (error) return { error: 'Failed to archive project.' }
-
-  await recordAuditEvent({
-    actorUserId: user.id,
-    action: 'project.archived',
-    entityType: 'project',
-    entityId: projectId,
-    beforeJson: { status: current.status },
-    afterJson: { status: 'archived' },
-  })
 
   revalidatePath('/projects')
   revalidatePath(`/projects/${projectId}`)

@@ -1,0 +1,35 @@
+-- Migration 015: Google Meet integration (M5E1-B)
+--
+-- Adds meet_space_name to meetings.
+--
+-- meet_space_name
+--   The permanent Google Meet space resource name, e.g. "spaces/jQCFfuBOdN5z".
+--   This is the canonical identifier for the Meet space associated with this
+--   institutional Calendar event.
+--
+--   NULL  = no Meet conference has been created/adopted for this meeting yet.
+--
+--   The meeting code (e.g. "abc-mnop-xyz") used in the Join URL is NOT stored
+--   separately — it expires after 365 days of non-use and can be derived from
+--   the Meet API (spaces.get) using the space name when needed.
+--
+--   The join URL (Space.meetingUri) is similarly not stored — it is retrieved
+--   on demand from the Meet API when the UI needs to display it.
+--
+-- Population path:
+--   1. Kockpit syncs a meeting to Google Calendar with conferenceData.createRequest
+--   2. Calendar API creates a fresh Meet conference and returns conferenceId
+--      (the meeting code).
+--   3. Kockpit calls Meet spaces.get(meetingCode) to resolve the permanent
+--      space name.
+--   4. meet_space_name is stored here.
+--
+-- Legacy path:
+--   Meetings synced before M5E1-B may already have a Meet link on their
+--   Calendar event (added manually in Google Calendar or by domain default).
+--   On the next sync, Kockpit re-fetches the event, detects the existing
+--   conferenceData, and populates meet_space_name without issuing a new
+--   createRequest.
+
+ALTER TABLE meetings
+  ADD COLUMN IF NOT EXISTS meet_space_name text;

@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import type { AppUser, ViewMode } from '@/lib/types'
+import { canCreateDecision } from '@/lib/permissions'
 import QuickCreateModal from './QuickCreateModal'
 
-type CaptureType = 'task' | 'project'
+type CaptureType = 'task' | 'project' | 'waiting-on' | 'decision'
 
 export default function CaptureBar({
   user,
@@ -13,6 +14,7 @@ export default function CaptureBar({
   currentView?: ViewMode
 }) {
   const [open, setOpen] = useState<CaptureType | null>(null)
+  const canDecide = canCreateDecision(user.role)
 
   return (
     <>
@@ -30,19 +32,27 @@ export default function CaptureBar({
           + Project
         </button>
         <button
-          disabled
-          title="Coming in a later milestone"
-          className="text-sm px-3 py-1.5 bg-white border border-kk-line text-kk-muted rounded-lg cursor-not-allowed opacity-50"
+          onClick={() => setOpen('waiting-on')}
+          className="text-sm px-3 py-1.5 bg-white border border-kk-line text-kk-ink rounded-lg hover:bg-kk-soft transition-colors"
         >
-          + Note
+          + Waiting On
         </button>
-        <button
-          disabled
-          title="Coming in a later milestone"
-          className="text-sm px-3 py-1.5 bg-white border border-kk-line text-kk-muted rounded-lg cursor-not-allowed opacity-50"
-        >
-          + Decision
-        </button>
+        {canDecide ? (
+          <button
+            onClick={() => setOpen('decision')}
+            className="text-sm px-3 py-1.5 bg-white border border-kk-line text-kk-ink rounded-lg hover:bg-kk-soft transition-colors"
+          >
+            + Decision
+          </button>
+        ) : (
+          <button
+            disabled
+            title="Coming in a later milestone"
+            className="text-sm px-3 py-1.5 bg-white border border-kk-line text-kk-muted rounded-lg cursor-not-allowed opacity-50"
+          >
+            + Note
+          </button>
+        )}
       </div>
 
       {open && (

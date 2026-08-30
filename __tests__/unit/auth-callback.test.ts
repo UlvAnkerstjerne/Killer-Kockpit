@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => {
   const mockLookupSingle = vi.fn()
   const mockUpdateEq = vi.fn()
 
+  const mockRpc = vi.fn().mockResolvedValue({ data: null, error: null })
+
   const mockServiceClient = {
     from: vi.fn().mockImplementation((table: string) => {
       if (table !== 'app_users') throw new Error(`Unexpected table: ${table}`)
@@ -35,6 +37,7 @@ const mocks = vi.hoisted(() => {
         update: vi.fn().mockReturnValue({ eq: mockUpdateEq }),
       }
     }),
+    rpc: mockRpc,
   }
 
   return {
@@ -42,6 +45,7 @@ const mocks = vi.hoisted(() => {
     mockExchangeCodeForSession,
     mockLookupSingle,
     mockUpdateEq,
+    mockRpc,
     mockServiceClient,
   }
 })
@@ -190,8 +194,9 @@ describe('GET /auth/callback', () => {
       },
       error: null,
     })
+    // google_subject_id matches the sub in user_metadata → returning-user branch → UPDATE
     mocks.mockLookupSingle.mockResolvedValue({
-      data: { id: 'app-user-uuid', active: true, display_name: 'Admin User' },
+      data: { id: 'app-user-uuid', active: true, display_name: 'Admin User', google_subject_id: '100000000001' },
       error: null,
     })
     // UPDATE fails — simulates the RLS block that caused the original bug
@@ -218,8 +223,9 @@ describe('GET /auth/callback', () => {
       },
       error: null,
     })
+    // Returning user — google_subject_id matches sub → UPDATE branch
     mocks.mockLookupSingle.mockResolvedValue({
-      data: { id: 'app-user-uuid', active: true, display_name: 'Admin User' },
+      data: { id: 'app-user-uuid', active: true, display_name: 'Admin User', google_subject_id: '100000000001' },
       error: null,
     })
     mocks.mockUpdateEq.mockResolvedValue({ data: null, error: null })
@@ -250,8 +256,9 @@ describe('GET /auth/callback', () => {
       },
       error: null,
     })
+    // Returning user — google_subject_id matches sub → UPDATE branch
     mocks.mockLookupSingle.mockResolvedValue({
-      data: { id: 'app-user-uuid', active: true, display_name: 'Admin' },
+      data: { id: 'app-user-uuid', active: true, display_name: 'Admin', google_subject_id: '100000000001' },
       error: null,
     })
     mocks.mockUpdateEq.mockResolvedValue({ data: null, error: null })

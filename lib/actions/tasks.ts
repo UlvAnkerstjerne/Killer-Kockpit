@@ -1,10 +1,13 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { recordAuditEvent } from '@/lib/audit'
-import { canEditTask } from '@/lib/permissions'
+import {
+  canEditTaskTerms,
+  canUpdateTaskStatus,
+  isAdminOverride,
+} from '@/lib/permissions'
 import type { TaskStatus, TaskPriority, ActionResult } from '@/lib/types'
 
 type TaskInput = {
@@ -21,45 +24,29 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const supabase = await createClient()
+  const serviceClient = createServiceClient()
 
-  const { data, error } = await supabase
-    .from('tasks')
-    .insert({
-      title: input.title.trim(),
-      description: input.description?.trim() || null,
-      owner_user_id: input.owner_user_id || user.id,
-      project_id: input.project_id || null,
-      status: input.status || 'open',
-      priority: input.priority || 2,
-      due_at: input.due_at || null,
-      created_by_user_id: user.id,
-    })
-    .select('id')
-    .single()
+  const { data: taskId, error } = await serviceClient.rpc('create_task_and_audit', {
+    p_title: input.title.trim(),
+    p_description: input.description?.trim() || null,
+    p_owner_user_id: input.owner_user_id || user.id,
+    p_project_id: input.project_id || null,
+    p_status: input.status || 'open',
+    p_priority: input.priority || 2,
+    p_due_at: input.due_at || null,
+    p_created_by_user_id: user.id,
+    p_actor_user_id: user.id,
+  })
 
   if (error) {
     console.error('[createTask]', error)
     return { error: 'Failed to create task. Please try again.' }
   }
 
-  await recordAuditEvent({
-    actorUserId: user.id,
-    action: 'task.created',
-    entityType: 'task',
-    entityId: data.id,
-    afterJson: {
-      title: input.title,
-      status: input.status || 'open',
-      owner_user_id: input.owner_user_id || user.id,
-      priority: input.priority || 2,
-    },
-  })
-
   revalidatePath('/tasks')
   revalidatePath('/today')
   if (input.project_id) revalidatePath(`/projects/${input.project_id}`)
-  return { data: { id: data.id } }
+  return { data: { id: taskId as string } }
 }
 
 export async function updateTask(
@@ -78,12 +65,13 @@ export async function updateTask(
 
   if (fetchError || !current) return { error: 'Task not found.' }
 
-  if (!canEditTask(user.role, current.owner_user_id, user.id)) {
+  // Only the creator (or SUPER_ADMIN) may change commitment terms.
+  if (!canEditTaskTerms(user.role, current.created_by_user_id, user.id)) {
     return { error: 'You do not have permission to edit this task.' }
   }
 
-  const updates: Record<string, unknown> = {}
-  const changedFields: Record<string, { from: unknown; to: unknown }> = {}
+  const patch: Record<string, unknown> = {}
+  const before: Record<string, unknown> = {}
 
   const fields = ['title', 'description', 'owner_user_id', 'project_id', 'status', 'priority', 'due_at'] as const
   for (const field of fields) {
@@ -93,33 +81,30 @@ export async function updateTask(
         : input[field as keyof typeof input]
 
       if (newVal !== current[field]) {
-        updates[field] = newVal
-        changedFields[field] = { from: current[field], to: newVal }
+        patch[field] = newVal
+        before[field] = current[field]
       }
     }
   }
 
-  if (Object.keys(updates).length === 0) return {}
+  if (Object.keys(patch).length === 0) return {}
 
-  const { error } = await supabase
-    .from('tasks')
-    .update(updates)
-    .eq('id', taskId)
+  const adminOverride = isAdminOverride(user.role, current.created_by_user_id, user.id)
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc(
+    adminOverride ? 'update_task_and_audit_as_admin' : 'update_task_and_audit',
+    {
+      p_task_id:       taskId,
+      p_actor_user_id: user.id,
+      p_patch:         patch,
+      p_before:        before,
+      ...(adminOverride ? { p_override_note: 'Administrative override of task commitment terms' } : {}),
+    }
+  )
 
   if (error) {
     console.error('[updateTask]', error)
     return { error: 'Failed to save changes. Please try again.' }
-  }
-
-  for (const [field, diff] of Object.entries(changedFields)) {
-    await recordAuditEvent({
-      actorUserId: user.id,
-      action: `task.${field}.changed`,
-      entityType: 'task',
-      entityId: taskId,
-      beforeJson: { [field]: diff.from },
-      afterJson: { [field]: diff.to },
-    })
   }
 
   revalidatePath('/tasks')
@@ -136,32 +121,26 @@ export async function completeTask(taskId: string): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: current, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, owner_user_id, status, project_id')
+    .select('id, owner_user_id, created_by_user_id, status, project_id')
     .eq('id', taskId)
     .single()
 
   if (fetchError || !current) return { error: 'Task not found.' }
 
-  if (!canEditTask(user.role, current.owner_user_id, user.id)) {
+  // Creator or assignee may complete a task.
+  if (!canUpdateTaskStatus(user.role, current.created_by_user_id, current.owner_user_id, user.id)) {
     return { error: 'You do not have permission to complete this task.' }
   }
 
-  const now = new Date().toISOString()
-  const { error } = await supabase
-    .from('tasks')
-    .update({ status: 'done', completed_at: now })
-    .eq('id', taskId)
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('complete_task_and_audit', {
+    p_task_id: taskId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+    p_now: new Date().toISOString(),
+  })
 
   if (error) return { error: 'Failed to complete task.' }
-
-  await recordAuditEvent({
-    actorUserId: user.id,
-    action: 'task.completed',
-    entityType: 'task',
-    entityId: taskId,
-    beforeJson: { status: current.status },
-    afterJson: { status: 'done', completed_at: now },
-  })
 
   revalidatePath('/tasks')
   revalidatePath(`/tasks/${taskId}`)
@@ -177,31 +156,26 @@ export async function cancelTask(taskId: string): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: current, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, owner_user_id, status, project_id')
+    .select('id, owner_user_id, created_by_user_id, status, project_id')
     .eq('id', taskId)
     .single()
 
   if (fetchError || !current) return { error: 'Task not found.' }
 
-  if (!canEditTask(user.role, current.owner_user_id, user.id)) {
+  // Creator or assignee may cancel a task.
+  if (!canUpdateTaskStatus(user.role, current.created_by_user_id, current.owner_user_id, user.id)) {
     return { error: 'You do not have permission to cancel this task.' }
   }
 
-  const { error } = await supabase
-    .from('tasks')
-    .update({ status: 'cancelled', archived_at: new Date().toISOString() })
-    .eq('id', taskId)
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('cancel_task_and_audit', {
+    p_task_id: taskId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+    p_now: new Date().toISOString(),
+  })
 
   if (error) return { error: 'Failed to cancel task.' }
-
-  await recordAuditEvent({
-    actorUserId: user.id,
-    action: 'task.cancelled',
-    entityType: 'task',
-    entityId: taskId,
-    beforeJson: { status: current.status },
-    afterJson: { status: 'cancelled' },
-  })
 
   revalidatePath('/tasks')
   revalidatePath('/today')

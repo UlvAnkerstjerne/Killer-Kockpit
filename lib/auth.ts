@@ -1,10 +1,15 @@
+import { cache } from 'react'
 import { createClient } from './supabase/server'
 import type { AppUser } from './types'
 
 // Fetches the current authenticated user from app_users.
 // Returns null if the user has no session, is not in app_users, or is inactive.
 // This is the single authoritative source of user identity for server components.
-export async function getCurrentUser(): Promise<AppUser | null> {
+//
+// Wrapped in React.cache() so repeated calls within the same server-side render
+// tree (e.g. layout + page) are deduplicated to a single DB round-trip.
+// React.cache() is request-scoped only — no data leaks across requests.
+export const getCurrentUser = cache(async (): Promise<AppUser | null> => {
   const supabase = await createClient()
 
   const {
@@ -24,10 +29,12 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   if (userError || !appUser) return null
 
   return appUser as AppUser
-}
+})
 
 // Fetches all active users — used for owner/assignee dropdowns.
-export async function getActiveUsers(): Promise<Pick<AppUser, 'id' | 'display_name' | 'email'>[]> {
+// Wrapped in React.cache() for the same reason as getCurrentUser: detail pages
+// that both getCurrentUser and getActiveUsers can share the single app_users query.
+export const getActiveUsers = cache(async (): Promise<Pick<AppUser, 'id' | 'display_name' | 'email'>[]> => {
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -38,4 +45,4 @@ export async function getActiveUsers(): Promise<Pick<AppUser, 'id' | 'display_na
 
   if (error || !data) return []
   return data
-}
+})

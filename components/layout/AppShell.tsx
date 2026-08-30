@@ -3,19 +3,23 @@
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { canAccessManagementView } from '@/lib/permissions'
+import { canAccessManagementView, canAccessMarketing } from '@/lib/permissions'
 import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
+import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const NAV_ITEMS = [
-  { href: '/today',     label: 'Today',    milestone: 1 },
-  { href: '/inbox',     label: 'Inbox',    milestone: 2 },
-  { href: '/projects',  label: 'Projects', milestone: 1 },
-  { href: '/tasks',     label: 'Tasks',    milestone: 1 },
-  { href: '/team',      label: 'Team',     milestone: 2 },
-  { href: '/people',    label: 'People',   milestone: 2 },
-  { href: '/meetings',  label: 'Meetings', milestone: 2 },
-  { href: '/knowledge', label: 'Knowledge',milestone: 2 },
+  { href: '/today',        label: 'Today',       active: true  },
+  { href: '/projects',     label: 'Projects',    active: true  },
+  { href: '/tasks',        label: 'Tasks',       active: true  },
+  { href: '/waiting-ons',  label: 'Waiting On',  active: true  },
+  { href: '/decisions',    label: 'Decisions',   active: true  },
+  { href: '/meetings',     label: 'Meetings',    active: true  },
+  { href: '/team',         label: 'Team',        active: true  },
+  { href: '/inbox',        label: 'Inbox',       active: false },
+  { href: '/people',       label: 'People',      active: false },
+  { href: '/knowledge',    label: 'Knowledge',   active: false },
+  { href: '/settings',     label: 'Settings',    active: true  },
 ]
 
 export default function AppShell({
@@ -29,6 +33,7 @@ export default function AppShell({
   const router = useRouter()
   const searchParams = useSearchParams()
   const managementAllowed = canAccessManagementView(user.role)
+  const marketingAllowed = canAccessMarketing(user.role, user.marketing_access)
 
   const currentView = (searchParams.get('view') as ViewMode) ??
     (managementAllowed ? 'management' : 'personal')
@@ -67,8 +72,8 @@ export default function AppShell({
 
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + '/')
-            const isDeferred = item.milestone > 1
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            const isDeferred = !item.active
 
             return (
               <Link
@@ -76,15 +81,13 @@ export default function AppShell({
                 href={item.href}
                 className={[
                   'flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-sm transition-colors',
-                  active
+                  isActive
                     ? 'bg-kk-ink text-white font-medium'
-                    : isDeferred
-                    ? 'text-kk-muted hover:bg-kk-line hover:text-kk-ink'
                     : 'text-kk-muted hover:bg-kk-line hover:text-kk-ink',
                 ].join(' ')}
               >
                 {item.label}
-                {isDeferred && !active && (
+                {isDeferred && !isActive && (
                   <span className="text-xs opacity-50">Soon</span>
                 )}
               </Link>
@@ -119,6 +122,13 @@ export default function AppShell({
                 Mine
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Workspace switcher — only shown to users with marketing access */}
+        {marketingAllowed && (
+          <div className="px-3 pb-3">
+            <WorkspaceSwitcher currentWorkspace="management" />
           </div>
         )}
 

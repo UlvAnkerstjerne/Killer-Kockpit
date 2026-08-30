@@ -4,6 +4,8 @@ import { createServiceClient } from './supabase/server'
 
 // Writes an immutable audit event using the service-role client.
 // Ordinary users cannot write or alter audit events via RLS.
+// Returns { error } so callers can propagate failures rather than silently
+// allowing a mutation to succeed without a corresponding audit record.
 export async function recordAuditEvent({
   actorUserId,
   action,
@@ -20,7 +22,7 @@ export async function recordAuditEvent({
   beforeJson?: Record<string, unknown> | null
   afterJson?: Record<string, unknown> | null
   metadata?: Record<string, unknown>
-}) {
+}): Promise<{ error: unknown }> {
   const supabase = createServiceClient()
 
   const { error } = await supabase.from('audit_events').insert({
@@ -35,8 +37,9 @@ export async function recordAuditEvent({
   })
 
   if (error) {
-    // Audit failures should be logged but must not silently suppress the
-    // underlying operation. Surface the error to server logs.
     console.error('[audit] Failed to record audit event:', error)
+    return { error }
   }
+
+  return { error: null }
 }
