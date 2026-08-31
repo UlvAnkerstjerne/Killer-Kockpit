@@ -297,18 +297,20 @@ export async function fetchFbPosts(
 // v26 metric names. `post_impressions` deprecated; use `views`.
 // Missing metrics → null, not a crash.
 
+// post_views_by_story_type is a story metric, not a post metric — omitted to avoid (#100).
+// post_impressions maps to the views column (total impressions, non-unique).
 const POST_METRICS_TO_REQUEST = [
-  'post_views_by_story_type',      // aggregate views (v26 replacement for post_impressions)
-  'post_impressions_unique',       // reach (may be named differently in v26)
+  'post_impressions',
+  'post_impressions_unique',
   'post_engaged_users',
   'post_reactions_by_type_total',
   'post_clicks_by_type',
 ].join(',')
 
 const STRUCTURED_POST_METRICS: Record<string, keyof FbPostInsights> = {
-  post_views_by_story_type:  'views',
-  post_impressions_unique:   'reach',
-  post_engaged_users:        'engaged_users',
+  post_impressions:        'views',
+  post_impressions_unique: 'reach',
+  post_engaged_users:      'engaged_users',
 }
 
 export async function fetchFbPostInsights(
