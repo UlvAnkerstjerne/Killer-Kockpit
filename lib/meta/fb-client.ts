@@ -297,34 +297,35 @@ export async function fetchFbPosts(
 // v26 metric names. `post_impressions` deprecated; use `views`.
 // Missing metrics → null, not a crash.
 
-// v26 post insights: many "impressions" metric names were deprecated.
-// We split into two groups to prevent one invalid name from blocking the entire request.
-// Group A — engagement metrics (stable in v26):
-const POST_METRICS_A = 'post_impressions_unique,post_engaged_users'
-// Group B — reaction/click breakdown metrics:
-const POST_METRICS_B = 'post_reactions_by_type_total,post_clicks_by_type'
+// v26 post insights: impression and reach metrics (post_impressions_unique,
+// post_engaged_users, post_impressions) return (#100) on /{post-id}/insights.
+// Only interaction breakdown metrics are available on this endpoint in v26.
+// views / reach / engaged_users columns will remain null on this account.
+const POST_METRICS_TO_REQUEST = 'post_reactions_by_type_total,post_clicks_by_type'
 
-const STRUCTURED_POST_METRICS: Record<string, keyof FbPostInsights> = {
-  post_impressions_unique: 'reach',
-  post_engaged_users:      'engaged_users',
-}
+export async function fetchFbPostInsights(
+  postId: string,
+  pageToken: string,
+): Promise<FbPostInsights | null> {
+  let body: unknown
+  try {
+    body = await fbFetchWithToken(`${postId}/insights`, pageToken, { metric: POST_METRICS_TO_REQUEST })
+  } catch (err) {
+    if (err instanceof MetaRateLimitError) throw err
+    console.warn(`[fb-client] Post insights unavailable for ${postId}:`, (err as Error).message)
+    return null
+  }
 
-function parsePostInsightsBody(
-  body: unknown,
-  result: FbPostInsights,
-  other: Record<string, unknown>,
-): void {
   const data = (body as {
     data?: Array<{ name: string; values: Array<{ value: number | Record<string, number> }> }>
   }).data ?? []
 
+  const result: FbPostInsights = {}
+  const other: Record<string, unknown> = {}
+
   for (const item of data) {
     const rawVal = item.values?.[0]?.value
-    const col = STRUCTURED_POST_METRICS[item.name]
-
-    if (col && typeof rawVal === 'number') {
-      (result as Record<string, unknown>)[col] = rawVal
-    } else if (item.name === 'post_reactions_by_type_total' && rawVal && typeof rawVal === 'object') {
+    if (item.name === 'post_reactions_by_type_total' && rawVal && typeof rawVal === 'object') {
       result.reactions_total = Object.values(rawVal as Record<string, number>)
         .reduce((sum, v) => sum + v, 0)
     } else if (item.name === 'post_clicks_by_type' && rawVal && typeof rawVal === 'object') {
@@ -334,39 +335,6 @@ function parsePostInsightsBody(
       other[item.name] = rawVal
     }
   }
-}
-
-export async function fetchFbPostInsights(
-  postId: string,
-  pageToken: string,
-): Promise<FbPostInsights | null> {
-  const result: FbPostInsights = {}
-  const other: Record<string, unknown> = {}
-  let anyData = false
-
-  // Each group is requested independently — one invalid metric does not block the other.
-  const [bodyA, bodyB] = await Promise.allSettled([
-    fbFetchWithToken(`${postId}/insights`, pageToken, { metric: POST_METRICS_A }),
-    fbFetchWithToken(`${postId}/insights`, pageToken, { metric: POST_METRICS_B }),
-  ])
-
-  if (bodyA.status === 'fulfilled') {
-    parsePostInsightsBody(bodyA.value, result, other)
-    anyData = true
-  } else {
-    if (bodyA.reason instanceof MetaRateLimitError) throw bodyA.reason
-    console.warn(`[fb-client] Post insights (group A) unavailable for ${postId}:`, (bodyA.reason as Error).message)
-  }
-
-  if (bodyB.status === 'fulfilled') {
-    parsePostInsightsBody(bodyB.value, result, other)
-    anyData = true
-  } else {
-    if (bodyB.reason instanceof MetaRateLimitError) throw bodyB.reason
-    console.warn(`[fb-client] Post insights (group B) unavailable for ${postId}:`, (bodyB.reason as Error).message)
-  }
-
-  if (!anyData) return null
 
   if (Object.keys(other).length > 0) result.other_metrics_json = other as Record<string, number>
   return result
