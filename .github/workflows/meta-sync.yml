@@ -11,6 +11,12 @@ jobs:
     steps:
       - name: Trigger Meta sync
         run: |
-          curl --fail --silent --show-error \
+          response=$(curl --fail --silent --show-error \
             -X POST https://kockpit.killerkebab.com/api/meta/sync \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Summary: $(echo "$response" | jq -r '.summary // "no summary"')"
+          if echo "$response" | jq -e 'has("errors")' > /dev/null 2>&1; then
+            echo "Errors:"
+            echo "$response" | jq -r '.errors[]'
+          fi
+          echo "$response" | jq -e '.ok == true' > /dev/null

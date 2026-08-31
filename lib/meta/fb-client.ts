@@ -106,6 +106,55 @@ async function fbFetchAllPages<T>(path: string, params: Record<string, string>):
   return results
 }
 
+async function fbFetchAllPagesWithToken<T>(
+  path: string,
+  token: string,
+  params: Record<string, string>,
+): Promise<T[]> {
+  const results: T[] = []
+  let after: string | undefined
+  const MAX_PAGES = 200
+  let pages = 0
+
+  while (pages < MAX_PAGES) {
+    const pageParams = after ? { ...params, after } : params
+    const body = await fbFetchWithToken(path, token, pageParams) as {
+      data?: T[]
+      paging?: { cursors?: { after?: string }; next?: string }
+    }
+    results.push(...(body.data ?? []))
+    pages++
+    after = body.paging?.cursors?.after
+    if (!after || !body.paging?.next) break
+  }
+
+  return results
+}
+
+// ── Page Access Token ───────────────────────────────────────────────────────────
+//
+// IMPORTANT: Several Facebook Page-scoped edges (/posts, /insights) reject the
+// System User token with (#190) "Invalid OAuth 2.0 Access Token". The System
+// User token IS accepted for the Page object itself (GET /{page-id}?fields=...),
+// which returns a short-lived Page Access Token that works for these edges.
+//
+// fetchPageToken() is the single place that performs this exchange. Callers
+// that need to make multiple page-scoped API calls within one sync run should
+// call fetchPageToken() once and pass the token to each downstream function.
+
+/**
+ * Returns the Page Access Token for a Facebook Page using the System User token.
+ * Returns null if the exchange fails (caller should abort gracefully).
+ */
+export async function fetchPageToken(pageId: string): Promise<string | null> {
+  try {
+    const body = await fbFetch(pageId, { fields: 'access_token' }) as { access_token?: string }
+    return body.access_token ?? null
+  } catch {
+    return null
+  }
+}
+
 // ── Page discovery ─────────────────────────────────────────────────────────────
 
 /**
@@ -215,20 +264,24 @@ function classifyPostType(attachments?: { data?: Array<{ media_type?: string }> 
   }
 }
 
-export async function fetchFbPosts(pageId: string, since?: string): Promise<FbPost[]> {
+export async function fetchFbPosts(
+  pageId: string,
+  since: string | undefined,
+  pageToken: string,
+): Promise<FbPost[]> {
   const params: Record<string, string> = {
     fields: 'id,message,permalink_url,created_time,attachments{media_type}',
     limit:  '100',
   }
   if (since) params.since = since
 
-  const raw = await fbFetchAllPages<{
+  const raw = await fbFetchAllPagesWithToken<{
     id: string
     message?: string
     permalink_url?: string
     created_time: string
     attachments?: { data?: Array<{ media_type?: string }> }
-  }>(`${pageId}/posts`, params)
+  }>(`${pageId}/posts`, pageToken, params)
 
   return raw.map((p) => ({
     id:           p.id,
@@ -258,10 +311,13 @@ const STRUCTURED_POST_METRICS: Record<string, keyof FbPostInsights> = {
   post_engaged_users:        'engaged_users',
 }
 
-export async function fetchFbPostInsights(postId: string): Promise<FbPostInsights | null> {
+export async function fetchFbPostInsights(
+  postId: string,
+  pageToken: string,
+): Promise<FbPostInsights | null> {
   let body: unknown
   try {
-    body = await fbFetch(`${postId}/insights`, { metric: POST_METRICS_TO_REQUEST })
+    body = await fbFetchWithToken(`${postId}/insights`, pageToken, { metric: POST_METRICS_TO_REQUEST })
   } catch (err) {
     if (err instanceof MetaRateLimitError) throw err
     console.warn(`[fb-client] Post insights unavailable for ${postId}:`, (err as Error).message)

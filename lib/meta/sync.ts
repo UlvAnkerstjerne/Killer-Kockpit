@@ -52,7 +52,7 @@ import {
   type MetaInsightRow,
 } from './client'
 import { fetchIgMedia, fetchIgMediaInsights, fetchIgAccountDailyInsights } from './ig-client'
-import { fetchPageDailyInsights, fetchFbPosts, fetchFbPostInsights, fetchLinkedIgAccountId } from './fb-client'
+import { fetchPageDailyInsights, fetchFbPosts, fetchFbPostInsights, fetchLinkedIgAccountId, fetchPageToken } from './fb-client'
 import { hasMetaCredentials } from './auth'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -522,12 +522,16 @@ async function syncFbOrganicDeep(db: Db, pageId: string, now: string): Promise<v
   })
 
   try {
+    // Obtain Page Access Token — required by /posts and /insights edges (system user token rejected)
+    const pageToken = await fetchPageToken(pageId)
+    if (!pageToken) throw new Error('Could not obtain Page Access Token — check system user token permissions')
+
     // Incremental: only fetch posts published since last cursor
     const since = state?.cursor
       ? toDateStr(new Date(state.cursor))
       : undefined
 
-    const posts = await fetchFbPosts(pageId, since)
+    const posts = await fetchFbPosts(pageId, since, pageToken)
     const insightsCutoff = toDateStr(daysAgo(ORGANIC_INSIGHTS_LOOKBACK_DAYS))
 
     for (const post of posts) {
@@ -547,7 +551,7 @@ async function syncFbOrganicDeep(db: Db, pageId: string, now: string): Promise<v
 
       // Fetch insights for recent posts
       if (post.published_at >= insightsCutoff) {
-        const insights = await fetchFbPostInsights(post.id)
+        const insights = await fetchFbPostInsights(post.id, pageToken)
         if (insights) {
           await db.from('meta_fb_post_insights').upsert(
             {
