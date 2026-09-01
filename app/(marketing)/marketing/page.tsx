@@ -8,6 +8,7 @@ import type {
   MorningBriefRow,
   MorningBriefSections,
   BriefMetricRow,
+  TrendPoint,
 } from '@/lib/marketing/brief/types'
 
 export const dynamic = 'force-dynamic'
@@ -162,16 +163,52 @@ function StatusBanner({
   )
 }
 
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+// Catmull-Rom smooth polyline rendered as cubic Bezier SVG path.
+// No axes, no labels, no external dependencies.
+
+function Sparkline({ points, stroke }: { points: TrendPoint[]; stroke: string }) {
+  if (points.length < 2) return null
+  const W = 80, H = 32, pad = 3
+  const values = points.map((p) => p.value)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min
+  const coords: [number, number][] = points.map((p, i) => [
+    (i / (points.length - 1)) * W,
+    range === 0 ? H / 2 : pad + (H - 2 * pad) * (1 - (p.value - min) / range),
+  ])
+  const tension = 0.4
+  let d = `M ${coords[0][0].toFixed(1)},${coords[0][1].toFixed(1)}`
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p0 = coords[Math.max(i - 1, 0)]
+    const p1 = coords[i]
+    const p2 = coords[i + 1]
+    const p3 = coords[Math.min(i + 2, coords.length - 1)]
+    const cp1x = p1[0] + (p2[0] - p0[0]) * tension
+    const cp1y = p1[1] + (p2[1] - p0[1]) * tension
+    const cp2x = p2[0] - (p3[0] - p1[0]) * tension
+    const cp2y = p2[1] - (p3[1] - p1[1]) * tension
+    d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`
+  }
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none" aria-hidden="true" className="shrink-0 opacity-70">
+      <path d={d} stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
 // ── KPI cards ─────────────────────────────────────────────────────────────────
-// Icon + label on same row at top; large number below; secondary text at bottom.
+// Icon + label on same row at top; large number below; change text + sparkline at bottom.
 
 function KpiCard({
-  metric, icon, iconBg, iconColor,
+  metric, icon, iconBg, iconColor, sparkColor,
 }: {
   metric: BriefMetricRow
   icon: React.ReactNode
   iconBg: string
   iconColor: string
+  sparkColor: string
 }) {
   return (
     <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex flex-col gap-3 min-h-[130px]">
@@ -185,28 +222,33 @@ function KpiCard({
         <div className={`text-[30px] font-bold tabular-nums leading-none tracking-tight ${metric.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
           {metric.value}
         </div>
-        {metric.change && (
-          <div className="text-xs text-kk-muted mt-1.5">{metric.change}</div>
-        )}
+        <div className="flex items-end justify-between mt-1.5">
+          <div className="text-xs text-kk-muted">
+            {metric.change ?? ''}
+          </div>
+          {metric.trend && metric.trend.length >= 2 && (
+            <Sparkline points={metric.trend} stroke={sparkColor} />
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
 function KpiStrip({ sections }: { sections: MorningBriefSections }) {
-  type Slot = { metric: BriefMetricRow; icon: React.ReactNode; iconBg: string; iconColor: string }
+  type Slot = { metric: BriefMetricRow; icon: React.ReactNode; iconBg: string; iconColor: string; sparkColor: string }
   const candidates: Array<Slot | null> = [
     sections.paid.metrics[0]
-      ? { metric: sections.paid.metrics[0], icon: <IconCreditCard />, iconBg: 'bg-green-100', iconColor: 'text-green-700' }
+      ? { metric: sections.paid.metrics[0], icon: <IconCreditCard />, iconBg: 'bg-green-100', iconColor: 'text-green-700', sparkColor: '#22c55e' }
       : null,
     sections.paid.metrics[1]
-      ? { metric: sections.paid.metrics[1], icon: <IconEye />, iconBg: 'bg-violet-100', iconColor: 'text-violet-700' }
+      ? { metric: sections.paid.metrics[1], icon: <IconEye />, iconBg: 'bg-violet-100', iconColor: 'text-violet-700', sparkColor: '#8b5cf6' }
       : null,
     sections.organic.ig.metrics[0]
-      ? { metric: sections.organic.ig.metrics[0], icon: <IconInstagram />, iconBg: 'bg-pink-100', iconColor: 'text-pink-600' }
+      ? { metric: sections.organic.ig.metrics[0], icon: <IconInstagram />, iconBg: 'bg-pink-100', iconColor: 'text-pink-600', sparkColor: '#ec4899' }
       : null,
     sections.organic.fb.metrics[0]
-      ? { metric: sections.organic.fb.metrics[0], icon: <IconFacebook />, iconBg: 'bg-blue-100', iconColor: 'text-blue-700' }
+      ? { metric: sections.organic.fb.metrics[0], icon: <IconFacebook />, iconBg: 'bg-blue-100', iconColor: 'text-blue-700', sparkColor: '#3b82f6' }
       : null,
   ]
   const slots = candidates.filter((s): s is Slot => s !== null)

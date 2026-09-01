@@ -46,6 +46,7 @@ import type {
   OverallStatus,
   PaidAnomalySignal,
   SourceFreshnessSummary,
+  TrendPoint,
 } from './types'
 
 // ── Thresholds (explicit and testable) ────────────────────────────────────────
@@ -401,11 +402,30 @@ async function collectPaidData(
   const total_active_spend_7d       = active.reduce((s, c) => s + (c.spend_7d ?? 0), 0) || null
   const total_active_impressions_7d = active.reduce((s, c) => s + (c.impressions_7d ?? 0), 0) || null
 
+  // Build daily sparkline series for active campaigns only
+  const activeIds = new Set(active.map((c) => c.id))
+  const activeInsightRows = (insights ?? []).filter((r) => activeIds.has(r.campaign_id as string))
+
+  const daily_spend_series = buildDailySeries(
+    activeInsightRows.map((r) => ({
+      date:  r.date_start as string,
+      value: r.spend != null ? parseFloat(r.spend as string) : null,
+    })),
+  )
+  const daily_impressions_series = buildDailySeries(
+    activeInsightRows.map((r) => ({
+      date:  r.date_start as string,
+      value: r.impressions != null ? Number(r.impressions) : null,
+    })),
+  )
+
   return {
     active_campaigns:            active,
     paused_campaigns:            paused,
     total_active_spend_7d,
     total_active_impressions_7d,
+    daily_spend_series,
+    daily_impressions_series,
   }
 }
 
@@ -527,7 +547,7 @@ async function collectIgData(
   db: Db,
   windowStart: string,
   yesterday: string,
-): Promise<{ account: IgAccountMetrics; topPosts: IgPostSummary[]; avgReach7d: number | null }> {
+): Promise<{ account: IgAccountMetrics; topPosts: IgPostSummary[]; avgReach7d: number | null; dailyReachSeries: TrendPoint[] }> {
   const igAccountId = process.env.META_INSTAGRAM_BUSINESS_ACCOUNT_ID
 
   // Account daily metrics — 7d window
@@ -610,6 +630,13 @@ async function collectIgData(
     }
   })
 
+  const dailyReachSeries = buildDailySeries(
+    (dailyRows ?? []).map((r) => ({
+      date:  r.date as string,
+      value: r.reach != null ? Number(r.reach) : null,
+    })),
+  )
+
   return {
     account: {
       reach_7d,
@@ -621,6 +648,7 @@ async function collectIgData(
     },
     topPosts,
     avgReach7d,
+    dailyReachSeries,
   }
 }
 
@@ -638,13 +666,14 @@ async function collectFbData(
   db: Db,
   windowStart: string,
   yesterday: string,
-): Promise<{ page: FbPageMetrics; recentPosts: FbPostSummary[]; available: boolean }> {
+): Promise<{ page: FbPageMetrics; recentPosts: FbPostSummary[]; available: boolean; dailyViewsSeries: TrendPoint[] }> {
   const pageId = process.env.META_FACEBOOK_PAGE_ID
   if (!pageId) {
     return {
       page: { views_7d: null, engaged_users_7d: null, fan_count_current: null, fan_count_7d_delta: null },
       recentPosts: [],
       available: false,
+      dailyViewsSeries: [],
     }
   }
 
@@ -690,10 +719,18 @@ async function collectFbData(
     }
   })
 
+  const dailyViewsSeries = buildDailySeries(
+    (pageRows ?? []).map((r) => ({
+      date:  r.date as string,
+      value: r.views != null ? Number(r.views) : null,
+    })),
+  )
+
   return {
     page: { views_7d, engaged_users_7d: engaged_7d, fan_count_current: fanNow, fan_count_7d_delta: fanDelta },
     recentPosts,
     available: true,
+    dailyViewsSeries,
   }
 }
 
@@ -779,6 +816,25 @@ function avgDecimalRows(rows: Array<Record<string, unknown>>, key: string): numb
   return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : null
 }
 
+// ── Sparkline series builder ───────────────────────────────────────────────────
+//
+// Groups rows by date, sums values per date (to merge multiple campaigns),
+// then sorts chronologically. Null/undefined values are skipped (not treated as zero).
+// Zero is a valid value and IS included. Exported for unit testing.
+
+export function buildDailySeries(
+  rows: ReadonlyArray<{ date: string; value: number | null | undefined }>,
+): TrendPoint[] {
+  const byDate = new Map<string, number>()
+  for (const row of rows) {
+    if (row.value == null) continue
+    byDate.set(row.date, (byDate.get(row.date) ?? 0) + row.value)
+  }
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({ date, value }))
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
@@ -834,12 +890,14 @@ export async function collectBriefData(briefDate: string): Promise<BriefInputDat
     signals,
     paid: paidData,
     organic: {
-      ig:          igData.account,
-      ig_top_posts: igData.topPosts,
-      ig_avg_reach_7d: igData.avgReach7d,
-      fb:          fbData.page,
-      fb_recent_posts: fbData.recentPosts,
-      fb_available: fbData.available,
+      ig:                   igData.account,
+      ig_top_posts:         igData.topPosts,
+      ig_avg_reach_7d:      igData.avgReach7d,
+      ig_daily_reach_series: igData.dailyReachSeries,
+      fb:                   fbData.page,
+      fb_recent_posts:      fbData.recentPosts,
+      fb_available:         fbData.available,
+      fb_daily_views_series: fbData.dailyViewsSeries,
     },
     gbp: gbpData,
     needsReview,

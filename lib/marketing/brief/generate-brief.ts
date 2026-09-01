@@ -110,10 +110,18 @@ function assemblePaidSection(data: BriefInputData, ai: MorningBriefAIOutput): St
 
   const metrics: BriefMetricRow[] = []
   if (data.paid.total_active_spend_7d != null) {
-    metrics.push({ label: '7d spend (active)', value: fmtCcy(data.paid.total_active_spend_7d, data.currency) })
+    metrics.push({
+      label: '7d spend (active)',
+      value: fmtCcy(data.paid.total_active_spend_7d, data.currency),
+      ...(data.paid.daily_spend_series.length >= 2 ? { trend: data.paid.daily_spend_series } : {}),
+    })
   }
   if (data.paid.total_active_impressions_7d != null) {
-    metrics.push({ label: '7d impressions', value: fmt(data.paid.total_active_impressions_7d) })
+    metrics.push({
+      label: '7d impressions',
+      value: fmt(data.paid.total_active_impressions_7d),
+      ...(data.paid.daily_impressions_series.length >= 2 ? { trend: data.paid.daily_impressions_series } : {}),
+    })
   }
   // Per-campaign summary rows (universal metrics only)
   for (const c of data.paid.active_campaigns.slice(0, 5)) {
@@ -149,7 +157,13 @@ function assembleOrganicSection(data: BriefInputData, ai: MorningBriefAIOutput):
     const change = ig.reach_prior_7d != null && ig.reach_prior_7d > 0
       ? pctStr(((ig.reach_7d - ig.reach_prior_7d) / ig.reach_prior_7d) * 100)
       : undefined
-    igMetrics.push({ label: '7d reach', value: fmt(ig.reach_7d), change, highlight: data.signals.organic_ig_drop_detected })
+    igMetrics.push({
+      label: '7d reach',
+      value: fmt(ig.reach_7d),
+      change,
+      highlight: data.signals.organic_ig_drop_detected,
+      ...(data.organic.ig_daily_reach_series.length >= 2 ? { trend: data.organic.ig_daily_reach_series } : {}),
+    })
   }
   if (ig.accounts_engaged_7d != null) igMetrics.push({ label: '7d accounts engaged', value: fmt(ig.accounts_engaged_7d) })
   if (ig.followers_current != null) {
@@ -170,7 +184,11 @@ function assembleOrganicSection(data: BriefInputData, ai: MorningBriefAIOutput):
   const fb = data.organic.fb
   const fbMetrics: BriefMetricRow[] = []
   if (data.organic.fb_available) {
-    if (fb.views_7d != null)         fbMetrics.push({ label: '7d page views', value: fmt(fb.views_7d) })
+    if (fb.views_7d != null)         fbMetrics.push({
+      label: '7d page views',
+      value: fmt(fb.views_7d),
+      ...(data.organic.fb_daily_views_series.length >= 2 ? { trend: data.organic.fb_daily_views_series } : {}),
+    })
     if (fb.engaged_users_7d != null) fbMetrics.push({ label: '7d page engagements', value: fmt(fb.engaged_users_7d) })
     if (fb.fan_count_current != null) {
       const change = fb.fan_count_7d_delta != null ? `${fb.fan_count_7d_delta >= 0 ? '+' : ''}${fb.fan_count_7d_delta}` : undefined

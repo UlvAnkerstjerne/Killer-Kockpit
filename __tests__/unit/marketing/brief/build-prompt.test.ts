@@ -50,9 +50,11 @@ function makeMinimalInput(overrides?: Partial<BriefInputData>): BriefInputData {
       },
       ig_top_posts: [],
       ig_avg_reach_7d: null,
+      ig_daily_reach_series: [],
       fb: { views_7d: 3200, engaged_users_7d: 420, fan_count_current: 1200, fan_count_7d_delta: 5 },
       fb_recent_posts: [],
       fb_available: true,
+      fb_daily_views_series: [],
     },
     gbp: {
       integration_status: { kind: 'pending_approval', last_sync_at: null, healthy: true },
@@ -174,6 +176,8 @@ describe('buildBriefUserMessage', () => {
         paused_campaigns: [],
         total_active_spend_7d: 1200,
         total_active_impressions_7d: 45000,
+        daily_spend_series: [],
+        daily_impressions_series: [],
       },
     })
     const msg = buildBriefUserMessage(input, 'green')

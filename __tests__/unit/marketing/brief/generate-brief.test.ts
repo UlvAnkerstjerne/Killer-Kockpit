@@ -81,9 +81,11 @@ function makeMockBriefData(): BriefInputData {
       ig: { reach_7d: 1000, reach_prior_7d: 900, accounts_engaged_7d: 100, profile_views_7d: 200, followers_current: 5000, followers_7d_delta: 10 },
       ig_top_posts: [],
       ig_avg_reach_7d: null,
+      ig_daily_reach_series: [],
       fb: { views_7d: 500, engaged_users_7d: 50, fan_count_current: 1000, fan_count_7d_delta: 2 },
       fb_recent_posts: [],
       fb_available: true,
+      fb_daily_views_series: [],
     },
     gbp: {
       integration_status: { kind: 'pending_approval', last_sync_at: null, healthy: true },

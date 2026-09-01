@@ -186,15 +186,19 @@ export interface BriefInputData {
     paused_campaigns: CampaignMetrics[]
     total_active_spend_7d: number | null
     total_active_impressions_7d: number | null
+    daily_spend_series: TrendPoint[]        // summed across active campaigns, one point per day
+    daily_impressions_series: TrendPoint[]  // summed across active campaigns, one point per day
   } | null
 
   organic: {
     ig: IgAccountMetrics
     ig_top_posts: IgPostSummary[]    // up to 5, ranked by reach or total_interactions
     ig_avg_reach_7d: number | null   // average across posts in window (for anomaly context)
+    ig_daily_reach_series: TrendPoint[]  // daily IG account reach, one point per day
     fb: FbPageMetrics
     fb_recent_posts: FbPostSummary[] // up to 5 most recent
     fb_available: boolean            // false if no FB page ID configured
+    fb_daily_views_series: TrendPoint[]  // daily FB page views; empty when !fb_available
   }
 
   gbp: GbpBriefData
@@ -226,6 +230,17 @@ export const MorningBriefAIOutputSchema = z.object({
 
 export type MorningBriefAIOutput = z.infer<typeof MorningBriefAIOutputSchema>
 
+// ─── Trend point ──────────────────────────────────────────────────────────────
+//
+// One data point in a sparkline series.
+// Every point is a real measured value — not interpolated or fabricated.
+// Zero is a valid value (zero spend, zero reach, etc.).
+
+export interface TrendPoint {
+  date: string    // YYYY-MM-DD, chronological
+  value: number   // real measured value; zero is valid and distinct from missing
+}
+
 // ─── Stored section shapes (sections_json) ────────────────────────────────────
 //
 // These are what get persisted after combining BriefInputData with AI output.
@@ -236,6 +251,7 @@ export interface BriefMetricRow {
   value: string               // pre-formatted: "DKK 4,320" / "12.4k" / "+18%"
   change?: string             // optional delta vs prior period
   highlight?: boolean         // true = display with visual emphasis (anomaly)
+  trend?: TrendPoint[]        // optional sparkline series; omitted when < 2 real points exist
 }
 
 export interface StoredPaidSection {
