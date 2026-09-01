@@ -11,7 +11,7 @@
  *   7. Happy path                → auth_user_id written, redirect to /
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ---- Hoisted mock state -------------------------------------------------------
 // vi.mock factories are hoisted before imports, so shared state must also be
@@ -85,6 +85,7 @@ function getRedirectLocation(response: unknown): string {
 describe('GET /auth/callback', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000'
     // Default: session error will be overridden per test
     mocks.mockExchangeCodeForSession.mockResolvedValue({
       data: { user: null },
@@ -92,6 +93,10 @@ describe('GET /auth/callback', () => {
     })
     mocks.mockLookupSingle.mockResolvedValue({ data: null, error: null })
     mocks.mockUpdateEq.mockResolvedValue({ data: null, error: null })
+  })
+
+  afterEach(() => {
+    delete process.env.NEXT_PUBLIC_APP_URL
   })
 
   it('redirects to /login?error=no_code when no code param is present', async () => {
@@ -266,5 +271,111 @@ describe('GET /auth/callback', () => {
     const { GET } = await import('@/app/auth/callback/route')
     const response = await GET(makeRequest('/auth/callback?code=abc&next=/projects'))
     expect(getRedirectLocation(response)).toContain('/projects')
+  })
+})
+
+// ── Railway reverse-proxy origin regression ────────────────────────────────
+//
+// When running behind Railway, request.url has an internal localhost:8080
+// origin. These tests confirm that all redirects use the canonical public
+// domain from NEXT_PUBLIC_APP_URL regardless of what request.url contains.
+
+describe('GET /auth/callback — canonical origin from NEXT_PUBLIC_APP_URL', () => {
+  const PROD_URL = 'https://kockpit.killerkebab.com'
+  const LOCAL_URL = 'http://localhost:3001'
+
+  // Use a request whose URL looks like what Railway forwards internally
+  function makeInternalRequest(path: string) {
+    return new Request(`https://localhost:8080${path}`)
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.NEXT_PUBLIC_APP_URL = PROD_URL
+    mocks.mockExchangeCodeForSession.mockResolvedValue({
+      data: { user: null },
+      error: null,
+    })
+    mocks.mockLookupSingle.mockResolvedValue({ data: null, error: null })
+    mocks.mockUpdateEq.mockResolvedValue({ data: null, error: null })
+  })
+
+  afterEach(() => {
+    delete process.env.NEXT_PUBLIC_APP_URL
+  })
+
+  it('redirects error paths to configured public origin, not localhost:8080', async () => {
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeInternalRequest('/auth/callback'))
+    const location = getRedirectLocation(response)
+    // Must use the public origin
+    expect(location).toBe(`${PROD_URL}/login?error=no_code`)
+    // Must NOT contain the internal Railway address
+    expect(location).not.toContain('localhost:8080')
+  })
+
+  it('redirects session_error to public origin login page', async () => {
+    mocks.mockExchangeCodeForSession.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'expired code' },
+    })
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeInternalRequest('/auth/callback?code=expired'))
+    const location = getRedirectLocation(response)
+    expect(location).toBe(`${PROD_URL}/login?error=session_error`)
+    expect(location).not.toContain('localhost:8080')
+  })
+
+  it('redirects successful auth to public origin', async () => {
+    mocks.mockExchangeCodeForSession.mockResolvedValue({
+      data: {
+        user: {
+          id: 'auth-uuid',
+          email: 'admin@killerkebab.com',
+          user_metadata: { sub: '100000000001', full_name: 'Admin' },
+        },
+      },
+      error: null,
+    })
+    mocks.mockLookupSingle.mockResolvedValue({
+      data: { id: 'app-user-uuid', active: true, display_name: 'Admin', google_subject_id: '100000000001' },
+      error: null,
+    })
+    mocks.mockUpdateEq.mockResolvedValue({ data: null, error: null })
+
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeInternalRequest('/auth/callback?code=valid'))
+    const location = getRedirectLocation(response)
+    expect(location).toBe(`${PROD_URL}/`)
+    expect(location).not.toContain('localhost:8080')
+  })
+
+  it('uses local dev origin when NEXT_PUBLIC_APP_URL is http://localhost:3001', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = LOCAL_URL
+
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeInternalRequest('/auth/callback'))
+    const location = getRedirectLocation(response)
+    expect(location).toBe(`${LOCAL_URL}/login?error=no_code`)
+    expect(location).not.toContain('localhost:8080')
+  })
+
+  it('strips trailing slash from NEXT_PUBLIC_APP_URL before constructing redirects', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = `${PROD_URL}/`
+
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeInternalRequest('/auth/callback'))
+    const location = getRedirectLocation(response)
+    // Must not produce double slash: .../login not ...//login
+    expect(location).toBe(`${PROD_URL}/login?error=no_code`)
+  })
+
+  it('returns 500 when NEXT_PUBLIC_APP_URL is missing', async () => {
+    delete process.env.NEXT_PUBLIC_APP_URL
+
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeInternalRequest('/auth/callback?code=abc'))
+    // Must not redirect at all — Response status 500
+    expect((response as Response).status).toBe(500)
   })
 })
