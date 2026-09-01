@@ -3,6 +3,14 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateWaitingOn } from '@/lib/actions/waiting-ons'
+import type { TaskPriority } from '@/lib/types'
+
+const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
+  { value: 1, label: '1 — Critical' },
+  { value: 2, label: '2 — Normal' },
+  { value: 3, label: '3 — Low' },
+  { value: 4, label: '4 — Background' },
+]
 
 type Props = {
   waitingOnId: string
@@ -16,6 +24,7 @@ type Props = {
   initialProjectId: string
   initialDueAt: string
   initialNotes: string
+  initialPriority: TaskPriority
   users: { id: string; display_name: string }[]
   projects: { id: string; title: string }[]
 }
@@ -32,6 +41,7 @@ export default function WaitingOnEditForm({
   initialProjectId,
   initialDueAt,
   initialNotes,
+  initialPriority,
   users,
   projects,
 }: Props) {
@@ -46,6 +56,7 @@ export default function WaitingOnEditForm({
   const [projectId, setProjectId] = useState(initialProjectId)
   const [dueAt, setDueAt] = useState(initialDueAt)
   const [notes, setNotes] = useState(initialNotes)
+  const [priority, setPriority] = useState<TaskPriority>(initialPriority)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -65,6 +76,7 @@ export default function WaitingOnEditForm({
         project_id: projectId || undefined,
         due_at: dueAt || undefined,
         notes: notes.trim() || undefined,
+        priority,
       })
 
       if (result.error) {
@@ -178,6 +190,20 @@ export default function WaitingOnEditForm({
           disabled={isPending}
           className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors disabled:opacity-60"
         />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-kk-ink mb-1.5">Priority</label>
+        <select
+          value={priority}
+          onChange={(e) => setPriority(Number(e.target.value) as TaskPriority)}
+          disabled={isPending}
+          className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors bg-white disabled:opacity-60"
+        >
+          {PRIORITY_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div>

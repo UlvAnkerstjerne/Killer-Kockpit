@@ -14,6 +14,7 @@ type WaitingOnInput = {
   project_id?: string
   due_at?: string
   notes?: string
+  priority?: number
 }
 
 export async function createWaitingOn(
@@ -33,6 +34,7 @@ export async function createWaitingOn(
     p_due_at:                input.due_at || null,
     p_notes:                 input.notes?.trim() || null,
     p_actor_user_id:         user.id,
+    p_priority:              input.priority ?? 2,
   })
 
   if (error) {
@@ -68,7 +70,7 @@ export async function updateWaitingOn(
   const patch: Record<string, unknown> = {}
   const before: Record<string, unknown> = {}
 
-  const fields = ['title', 'notes', 'waiting_for_user_id', 'waiting_for_name', 'project_id', 'due_at'] as const
+  const fields = ['title', 'notes', 'waiting_for_user_id', 'waiting_for_name', 'project_id', 'due_at', 'priority'] as const
   for (const field of fields) {
     if (input[field as keyof typeof input] !== undefined) {
       const newVal = field === 'title' || field === 'notes' || field === 'waiting_for_name'

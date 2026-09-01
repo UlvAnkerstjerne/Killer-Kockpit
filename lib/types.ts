@@ -82,7 +82,9 @@ export interface WaitingOn {
   waiting_for_name: string | null
   project_id: string | null
   due_at: string | null
+  fulfilled_at: string | null
   notes: string | null
+  priority: TaskPriority
   status: WaitingStatus
   archived_at: string | null
   created_at: string

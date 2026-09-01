@@ -28,7 +28,7 @@ export default async function WaitingOnDetailPage({
     supabase
       .from('waiting_ons')
       .select(`
-        id, title, status, due_at, waiting_for_name, notes, created_at, updated_at,
+        id, title, status, priority, due_at, waiting_for_name, notes, created_at, updated_at,
         owner:owner_user_id (id, display_name, email),
         waiting_for_user:waiting_for_user_id (id, display_name, email),
         project:project_id (id, title),
@@ -146,6 +146,7 @@ export default async function WaitingOnDetailPage({
                 initialProjectId={project?.id ?? ''}
                 initialDueAt={wo.due_at ? wo.due_at.slice(0, 16) : ''}
                 initialNotes={wo.notes ?? ''}
+                initialPriority={(wo.priority as 1 | 2 | 3 | 4) ?? 2}
                 users={usersResult.data ?? []}
                 projects={projectsResult.data ?? []}
               />

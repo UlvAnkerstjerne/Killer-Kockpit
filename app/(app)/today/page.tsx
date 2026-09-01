@@ -2,13 +2,35 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
-import { ProjectStatusBadge } from '@/components/ui/StatusBadge'
-import { WaitingOnStatusBadge } from '@/components/ui/WaitingOnStatusBadge'
 import { MeetingStatusBadge } from '@/components/ui/MeetingStatusBadge'
-import TaskList from '@/components/tasks/TaskList'
-import type { ViewMode, ProjectStatus, WaitingStatus, MeetingStatus } from '@/lib/types'
+import { PriorityBadge } from '@/components/ui/StatusBadge'
+import {
+  getCopenhagenWeekBounds,
+  copenhagenMidnightUTC,
+  getDueState,
+  sortWorkItems,
+  formatCopenhagenWeekRange,
+} from '@/lib/today/weekUtils'
+import type { WorkItem } from '@/lib/today/weekUtils'
+import type { ViewMode, MeetingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
+
+// ---------------------------------------------------------------------------
+// Due-state display config
+// ---------------------------------------------------------------------------
+
+const DUE_STATE_CONFIG = {
+  overdue:   { label: 'OVERDUE',   cls: 'text-kk-bad   bg-kk-bad-bg' },
+  today:     { label: 'TODAY',     cls: 'text-kk-warn  bg-kk-warn-bg' },
+  tomorrow:  { label: 'TOMORROW',  cls: 'text-amber-700 bg-amber-50' },
+  this_week: { label: '',          cls: '' },
+  no_date:   { label: '',          cls: '' },
+} as const
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default async function TodayPage({
   searchParams,
@@ -20,322 +42,331 @@ export default async function TodayPage({
 
   const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
   const canManage = canAccessManagementView(user.role)
-  const supabase = await createClient()
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString()
   const isManagementView = view === 'management' && canManage
 
-  // All independent reads fire in a single parallel batch.
-  // Management-only queries resolve to empty when not applicable.
+  const supabase = await createClient()
+  const now = new Date()
+  const { weekStart, weekEnd } = getCopenhagenWeekBounds(now)
+  const weekStartISO = weekStart.toISOString()
+  const weekEndISO   = weekEnd.toISOString()
+
+  // Copenhagen calendar date for today (for meeting day boundaries)
+  const todayDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Copenhagen' })
+  const [ty, tm, td] = todayDateStr.split('-').map(Number)
+  const todayStart    = copenhagenMidnightUTC(ty, tm, td)
+  const todayEnd      = copenhagenMidnightUTC(ty, tm, td + 1)
+  const todayStartISO = todayStart.toISOString()
+  const todayEndISO   = todayEnd.toISOString()
+
+  // All reads fire in parallel
   const [
-    myTasksDueTodayRes,
-    myOverdueTasksRes,
-    myProjectsRes,
-    myOverdueWaitingOnsRes,
-    myWaitingOnsDueTodayRes,
+    unfinishedTasksRes,
+    completedTasksRes,
+    unfinishedWOsRes,
+    fulfilledWOsRes,
     todayMeetingsRes,
+    weekMeetingsRes,
     draftMeetingsRes,
-    blockedProjectsRes,
-    atRiskProjectsRes,
-    orgOverdueTasksRes,
-    orgOverdueWaitingOnsRes,
   ] = await Promise.all([
-    // Personal — always fetched
-    supabase
-      .from('tasks')
-      .select(`id, title, status, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name, email)`)
-      .eq('owner_user_id', user.id)
-      .gte('due_at', todayStart)
-      .lt('due_at', todayEnd)
-      .not('status', 'in', '("done","cancelled")')
-      .is('archived_at', null)
-      .order('priority'),
+    // Unfinished tasks: overdue OR due this week (not done/cancelled, not archived)
+    (isManagementView
+      ? supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .lt('due_at', weekEndISO)
+          .not('due_at', 'is', null)
+          .not('status', 'in', '("done","cancelled")')
+          .is('archived_at', null)
+      : supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .eq('owner_user_id', user.id)
+          .lt('due_at', weekEndISO)
+          .not('due_at', 'is', null)
+          .not('status', 'in', '("done","cancelled")')
+          .is('archived_at', null)
+    ),
 
-    supabase
-      .from('tasks')
-      .select(`id, title, status, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name, email)`)
-      .eq('owner_user_id', user.id)
-      .lt('due_at', todayStart)
-      .not('status', 'in', '("done","cancelled")')
-      .is('archived_at', null)
-      .order('due_at')
-      .limit(10),
+    // Tasks completed this week
+    (isManagementView
+      ? supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .gte('completed_at', weekStartISO)
+          .lt('completed_at', weekEndISO)
+          .eq('status', 'done')
+          .is('archived_at', null)
+      : supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .eq('owner_user_id', user.id)
+          .gte('completed_at', weekStartISO)
+          .lt('completed_at', weekEndISO)
+          .eq('status', 'done')
+          .is('archived_at', null)
+    ),
 
-    supabase
-      .from('projects')
-      .select(`id, title, status, due_date, progress, owner_user_id, owner:owner_user_id (id, display_name, email)`)
-      .eq('owner_user_id', user.id)
-      .is('archived_at', null)
-      .not('status', 'in', '("completed","archived","cancelled")')
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .limit(8),
+    // Unfinished waiting ons: overdue OR due this week (open only, not archived)
+    (isManagementView
+      ? supabase.from('waiting_ons')
+          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name, waiting_for_user:waiting_for_user_id (id, display_name)')
+          .lt('due_at', weekEndISO)
+          .not('due_at', 'is', null)
+          .eq('status', 'open')
+          .is('archived_at', null)
+      : supabase.from('waiting_ons')
+          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name, waiting_for_user:waiting_for_user_id (id, display_name)')
+          .eq('owner_user_id', user.id)
+          .lt('due_at', weekEndISO)
+          .not('due_at', 'is', null)
+          .eq('status', 'open')
+          .is('archived_at', null)
+    ),
 
-    supabase
-      .from('waiting_ons')
-      .select('id, title, status, due_at, waiting_for_name, waiting_for_user:waiting_for_user_id (id, display_name, email)')
-      .eq('owner_user_id', user.id)
-      .eq('status', 'open')
-      .lt('due_at', todayStart)
-      .is('archived_at', null)
-      .order('due_at')
-      .limit(5),
+    // Waiting ons fulfilled this week
+    (isManagementView
+      ? supabase.from('waiting_ons')
+          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name')
+          .gte('fulfilled_at', weekStartISO)
+          .lt('fulfilled_at', weekEndISO)
+          .eq('status', 'fulfilled')
+          .is('archived_at', null)
+      : supabase.from('waiting_ons')
+          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name')
+          .eq('owner_user_id', user.id)
+          .gte('fulfilled_at', weekStartISO)
+          .lt('fulfilled_at', weekEndISO)
+          .eq('status', 'fulfilled')
+          .is('archived_at', null)
+    ),
 
-    supabase
-      .from('waiting_ons')
-      .select('id, title, status, due_at, waiting_for_name, waiting_for_user:waiting_for_user_id (id, display_name, email)')
-      .eq('owner_user_id', user.id)
-      .eq('status', 'open')
-      .gte('due_at', todayStart)
-      .lt('due_at', todayEnd)
-      .is('archived_at', null)
-      .order('due_at'),
-
-    // Meetings — always fetched
-    supabase
-      .from('meetings')
-      .select(`id, title, status, scheduled_start, scheduled_end, owner:owner_user_id (id, display_name)`)
+    // Today's meetings (scheduled + open)
+    supabase.from('meetings')
+      .select('id, title, status, scheduled_start, scheduled_end, owner:owner_user_id (id, display_name)')
       .in('status', ['scheduled', 'open'])
-      .gte('scheduled_start', todayStart)
-      .lt('scheduled_start', todayEnd)
+      .gte('scheduled_start', todayStartISO)
+      .lt('scheduled_start', todayEndISO)
       .order('scheduled_start'),
 
-    // Draft meetings — management only
+    // All meetings this week (today + later days)
+    supabase.from('meetings')
+      .select('id, title, status, scheduled_start, owner:owner_user_id (id, display_name)')
+      .in('status', ['scheduled', 'open'])
+      .gte('scheduled_start', weekStartISO)
+      .lt('scheduled_start', weekEndISO)
+      .order('scheduled_start'),
+
+    // Draft meetings awaiting review (management only)
     canManage
-      ? supabase
-          .from('meetings')
+      ? supabase.from('meetings')
           .select('id, title, scheduled_start')
           .eq('status', 'draft')
           .order('scheduled_start', { ascending: false })
           .limit(5)
       : Promise.resolve({ data: [] as { id: string; title: string; scheduled_start: string | null }[] }),
-
-    // Management overview — only when in management view
-    isManagementView
-      ? supabase
-          .from('projects')
-          .select(`id, title, status, due_date, progress, owner:owner_user_id (id, display_name, email)`)
-          .eq('status', 'blocked')
-          .is('archived_at', null)
-          .order('due_date', { ascending: true, nullsFirst: false })
-          .limit(5)
-      : Promise.resolve({ data: [] }),
-
-    isManagementView
-      ? supabase
-          .from('projects')
-          .select(`id, title, status, due_date, progress, owner:owner_user_id (id, display_name, email)`)
-          .eq('status', 'at_risk')
-          .is('archived_at', null)
-          .order('due_date', { ascending: true, nullsFirst: false })
-          .limit(5)
-      : Promise.resolve({ data: [] }),
-
-    isManagementView
-      ? supabase
-          .from('tasks')
-          .select(`id, title, status, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name, email)`)
-          .lt('due_at', todayStart)
-          .not('status', 'in', '("done","cancelled")')
-          .is('archived_at', null)
-          .order('due_at')
-          .limit(10)
-      : Promise.resolve({ data: [] }),
-
-    isManagementView
-      ? supabase
-          .from('waiting_ons')
-          .select(`id, title, status, due_at, waiting_for_name, owner:owner_user_id (id, display_name, email)`)
-          .eq('status', 'open')
-          .lt('due_at', todayStart)
-          .is('archived_at', null)
-          .order('due_at')
-          .limit(8)
-      : Promise.resolve({ data: [] }),
   ])
 
-  const myTasksDueToday   = myTasksDueTodayRes.data
-  const myOverdueTasks    = myOverdueTasksRes.data
-  const myProjects        = myProjectsRes.data
-  const myOverdueWaitingOns    = myOverdueWaitingOnsRes.data
-  const myWaitingOnsDueToday   = myWaitingOnsDueTodayRes.data
-  const todayMeetings     = todayMeetingsRes.data
-  const draftMeetings     = (draftMeetingsRes.data ?? []) as { id: string; title: string; scheduled_start: string | null }[]
+  // ---------------------------------------------------------------------------
+  // Build unified work list
+  // ---------------------------------------------------------------------------
 
-  type OrgProject = { id: string; title: string; status: ProjectStatus; due_date: string | null; progress: number | null; owner: { id: string; display_name: string; email: string } | Array<{ id: string; display_name: string; email: string }> | undefined }
-  type OrgTask = { id: string; title: string; status: string; priority: number; due_at: string | null; completed_at: string | null; owner_user_id: string | null; owner: { id: string; display_name: string; email: string } | Array<{ id: string; display_name: string; email: string }> | undefined }
-  type OrgWaitingOn = { id: string; title: string; status: string; due_at: string | null; waiting_for_name: string | null; owner: { id: string; display_name: string; email: string } | Array<{ id: string; display_name: string; email: string }> | undefined }
-  const blockedProjects      = (blockedProjectsRes.data      || []) as OrgProject[]
-  const atRiskProjects       = (atRiskProjectsRes.data       || []) as OrgProject[]
-  const orgOverdueTasks      = (orgOverdueTasksRes.data      || []) as OrgTask[]
-  const orgOverdueWaitingOns = (orgOverdueWaitingOnsRes.data || []) as OrgWaitingOn[]
+  type RawTask = { id: string; title: string; priority: number; due_at: string | null; completed_at: string | null; owner_user_id: string | null; owner: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined }
+  type RawWO   = { id: string; title: string; priority: number; due_at: string | null; fulfilled_at: string | null; owner_user_id: string | null; waiting_for_name: string | null; waiting_for_user?: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined }
 
-  const today = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  const unfinishedTasks    = (unfinishedTasksRes.data  || []) as RawTask[]
+  const completedTasks     = (completedTasksRes.data   || []) as RawTask[]
+  const unfinishedWOs      = (unfinishedWOsRes.data    || []) as RawWO[]
+  const fulfilledWOs       = (fulfilledWOsRes.data     || []) as RawWO[]
+  const draftMeetings      = (draftMeetingsRes.data    || []) as { id: string; title: string; scheduled_start: string | null }[]
+
+  function ownerName(raw: RawTask | RawWO): string | undefined {
+    const owner = (raw as RawTask).owner
+    if (!owner) return undefined
+    return (Array.isArray(owner) ? owner[0] : owner)?.display_name
+  }
+
+  const workItems: WorkItem[] = [
+    ...unfinishedTasks.map(t => ({
+      id: t.id, kind: 'task' as const,
+      title: t.title, priority: t.priority,
+      due_at: t.due_at, done_at: null,
+      href: `/tasks/${t.id}`,
+      ownerName: isManagementView ? ownerName(t) : undefined,
+    })),
+    ...unfinishedWOs.map(w => ({
+      id: w.id, kind: 'waiting_on' as const,
+      title: w.title, priority: w.priority,
+      due_at: w.due_at, done_at: null,
+      href: `/waiting-ons/${w.id}`,
+      ownerName: isManagementView ? ownerName(w) : undefined,
+    })),
+    ...completedTasks.map(t => ({
+      id: t.id, kind: 'task' as const,
+      title: t.title, priority: t.priority,
+      due_at: t.due_at, done_at: t.completed_at,
+      href: `/tasks/${t.id}`,
+      ownerName: isManagementView ? ownerName(t) : undefined,
+    })),
+    ...fulfilledWOs.map(w => ({
+      id: w.id, kind: 'waiting_on' as const,
+      title: w.title, priority: w.priority,
+      due_at: w.due_at, done_at: w.fulfilled_at,
+      href: `/waiting-ons/${w.id}`,
+      ownerName: isManagementView ? ownerName(w) : undefined,
+    })),
+  ]
+
+  const sorted = sortWorkItems(workItems, now)
+  const unfinished = sorted.filter(i => i.done_at === null)
+  const done       = sorted.filter(i => i.done_at !== null)
+
+  // Meetings: week list, deduplicated against today's list
+  const todayMeetings = (todayMeetingsRes.data || []) as { id: string; title: string; status: string; scheduled_start: string | null; scheduled_end?: string | null; owner: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined }[]
+  const todayIds = new Set(todayMeetings.map(m => m.id))
+  const weekMeetings = ((weekMeetingsRes.data || []) as { id: string; title: string; status: string; scheduled_start: string | null; owner: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined }[])
+    .filter(m => !todayIds.has(m.id))
+
+  const weekRangeLabel = formatCopenhagenWeekRange(weekStart, weekEnd)
+
+  function formatTime(dt: string | null) {
+    if (!dt) return null
+    return new Date(dt).toLocaleTimeString('en-GB', { timeZone: 'Europe/Copenhagen', hour: '2-digit', minute: '2-digit' })
+  }
+  function formatDate(dt: string | null) {
+    if (!dt) return null
+    return new Date(dt).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', weekday: 'short', day: 'numeric', month: 'short' })
+  }
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-black tracking-tight text-kk-ink">Today</h1>
-        <p className="text-sm text-kk-muted mt-0.5">{today}</p>
+    <div className="max-w-4xl">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-kk-ink">This week</h1>
+          <p className="text-sm text-kk-muted mt-0.5">{weekRangeLabel}</p>
+        </div>
+
+        {canManage && (
+          <div className="flex gap-1 text-sm">
+            <Link
+              href="/today?view=personal"
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-kk-ink text-white' : 'text-kk-muted hover:bg-kk-soft'}`}
+            >
+              Personal
+            </Link>
+            <Link
+              href="/today?view=management"
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-kk-ink text-white' : 'text-kk-muted hover:bg-kk-soft'}`}
+            >
+              Management
+            </Link>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-3 gap-5">
-
-        {/* Tasks due today */}
-        <div className="col-span-2 bg-kk-panel border border-kk-line rounded-2xl">
-          <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-kk-ink">
-              My tasks due today
-              {myTasksDueToday && myTasksDueToday.length > 0 && (
-                <span className="text-kk-muted font-normal ml-1">· {myTasksDueToday.length}</span>
-              )}
-            </h2>
-            <Link href="/tasks?status=open" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
-              All tasks →
-            </Link>
-          </div>
-          <TaskList tasks={myTasksDueToday || []} currentUser={user} showProject={true} />
-          {(!myTasksDueToday || myTasksDueToday.length === 0) && (
-            <div className="px-5 py-6 text-center text-sm text-kk-muted">
-              Nothing due today.
-            </div>
-          )}
-        </div>
-
-        {/* Overdue */}
+      <div className="space-y-6">
+        {/* Work list */}
         <div className="bg-kk-panel border border-kk-line rounded-2xl">
-          <div className="px-5 py-4 border-b border-kk-line">
+          <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
             <h2 className="text-sm font-semibold text-kk-ink">
-              Overdue
-              {myOverdueTasks && myOverdueTasks.length > 0 && (
-                <span className="text-kk-bad font-normal ml-1">· {myOverdueTasks.length}</span>
+              Work
+              {unfinished.length > 0 && (
+                <span className="text-kk-muted font-normal ml-1">· {unfinished.length} open</span>
               )}
             </h2>
-          </div>
-          {!myOverdueTasks || myOverdueTasks.length === 0 ? (
-            <div className="px-5 py-6 text-center text-sm text-kk-muted">No overdue tasks.</div>
-          ) : (
-            <div className="divide-y divide-kk-line">
-              {myOverdueTasks.map((task) => (
-                <Link
-                  key={task.id}
-                  href={`/tasks/${task.id}`}
-                  className="flex items-start gap-3 px-4 py-3 hover:bg-kk-soft transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-kk-ink font-medium truncate">{task.title}</div>
-                    <div className="text-xs text-kk-bad mt-0.5">
-                      {new Date(task.due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                    </div>
-                  </div>
-                </Link>
-              ))}
+            <div className="flex items-center gap-3">
+              <Link href="/tasks" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">Tasks →</Link>
+              <Link href="/waiting-ons" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">Waiting ons →</Link>
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* My projects */}
-        <div className="col-span-2 bg-kk-panel border border-kk-line rounded-2xl">
-          <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-kk-ink">My projects</h2>
-            <Link href="/projects" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
-              All projects →
-            </Link>
-          </div>
-          {!myProjects || myProjects.length === 0 ? (
-            <div className="px-5 py-6 text-center text-sm text-kk-muted">
-              No active projects you own.
+          {sorted.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-kk-muted">
+              Nothing due this week.
             </div>
           ) : (
             <div className="divide-y divide-kk-line">
-              {myProjects.map((project) => {
-                const isOverdue = project.due_date && new Date(project.due_date) < now
+              {/* Unfinished items */}
+              {unfinished.map(item => {
+                const state = getDueState(item.due_at, now, weekEnd)
+                const cfg = DUE_STATE_CONFIG[state]
                 return (
                   <Link
-                    key={project.id}
-                    href={`/projects/${project.id}`}
-                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
+                    key={item.id}
+                    href={item.href}
+                    className="flex items-center gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-kk-ink group-hover:underline truncate">
-                          {project.title}
+                          {item.title}
                         </span>
-                        <ProjectStatusBadge status={project.status} />
+                        {item.priority === 1 && <PriorityBadge priority={1} />}
+                        {item.kind === 'waiting_on' && (
+                          <span className="text-xs text-kk-muted border border-kk-line rounded px-1.5 py-0.5">WO</span>
+                        )}
                       </div>
-                      {project.due_date && (
-                        <div className={`text-xs mt-0.5 ${isOverdue ? 'text-kk-bad' : 'text-kk-muted'}`}>
-                          Due {new Date(project.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                        </div>
+                      {item.ownerName && (
+                        <div className="text-xs text-kk-muted mt-0.5">{item.ownerName}</div>
                       )}
                     </div>
-                    {project.progress !== null && (
-                      <div className="w-20 shrink-0">
-                        <div className="text-xs text-kk-muted text-right mb-1">{project.progress}%</div>
-                        <div className="progress-bar">
-                          <div className="progress-bar-fill" style={{ width: `${project.progress}%` }} />
-                        </div>
-                      </div>
+                    {cfg.label && (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${cfg.cls}`}>
+                        {cfg.label}
+                      </span>
+                    )}
+                    {!cfg.label && item.due_at && (
+                      <span className="text-xs text-kk-muted shrink-0">
+                        {formatDate(item.due_at)}
+                      </span>
                     )}
                   </Link>
                 )
               })}
+
+              {/* Done separator + done items */}
+              {done.length > 0 && (
+                <>
+                  <div className="px-5 py-2 bg-kk-soft">
+                    <span className="text-xs font-medium text-kk-muted">Completed this week · {done.length}</span>
+                  </div>
+                  {done.map(item => (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      className="flex items-center gap-3 px-5 py-3 hover:bg-kk-soft transition-colors group opacity-70"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-kk-good line-through truncate group-hover:no-underline">
+                            {item.title}
+                          </span>
+                          {item.kind === 'waiting_on' && (
+                            <span className="text-xs text-kk-muted border border-kk-line rounded px-1.5 py-0.5">WO</span>
+                          )}
+                        </div>
+                        {item.ownerName && (
+                          <div className="text-xs text-kk-muted mt-0.5">{item.ownerName}</div>
+                        )}
+                      </div>
+                      {item.done_at && (
+                        <span className="text-xs text-kk-good shrink-0">{formatDate(item.done_at)}</span>
+                      )}
+                    </Link>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
 
-        {/* My Waiting Ons */}
-        {((myOverdueWaitingOns && myOverdueWaitingOns.length > 0) || (myWaitingOnsDueToday && myWaitingOnsDueToday.length > 0)) && (
+        {/* Today's meetings */}
+        {todayMeetings.length > 0 && (
           <div className="bg-kk-panel border border-kk-line rounded-2xl">
             <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
               <h2 className="text-sm font-semibold text-kk-ink">
-                Waiting On
-                {myOverdueWaitingOns && myOverdueWaitingOns.length > 0 && (
-                  <span className="text-kk-bad font-normal ml-1">· {myOverdueWaitingOns.length} overdue</span>
-                )}
+                Today&apos;s meetings <span className="text-kk-muted font-normal">· {todayMeetings.length}</span>
               </h2>
-              <Link href="/waiting-ons" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
-                All →
-              </Link>
+              <Link href="/meetings" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">All →</Link>
             </div>
             <div className="divide-y divide-kk-line">
-              {[...(myOverdueWaitingOns ?? []), ...(myWaitingOnsDueToday ?? [])].map((wo) => {
-                const isOverdue = wo.due_at && wo.due_at < todayStart
-                const waitingForUser = Array.isArray(wo.waiting_for_user) ? wo.waiting_for_user[0] : wo.waiting_for_user
-                return (
-                  <Link key={wo.id} href={`/waiting-ons/${wo.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-kk-soft transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-kk-ink font-medium truncate">{wo.title}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {(waitingForUser?.display_name || wo.waiting_for_name) && (
-                          <span className="text-xs text-kk-muted">{waitingForUser?.display_name || wo.waiting_for_name}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="shrink-0">
-                      <WaitingOnStatusBadge status={(isOverdue ? 'overdue' : wo.status) as WaitingStatus} />
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Today's meetings */}
-        {(todayMeetings && todayMeetings.length > 0) && (
-          <div className="col-span-2 bg-kk-panel border border-kk-line rounded-2xl">
-            <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-kk-ink">
-                Today&apos;s meetings
-                <span className="text-kk-muted font-normal ml-1">· {todayMeetings.length}</span>
-              </h2>
-              <Link href="/meetings" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
-                All meetings →
-              </Link>
-            </div>
-            <div className="divide-y divide-kk-line">
-              {todayMeetings.map((m) => {
+              {todayMeetings.map(m => {
                 const owner = Array.isArray(m.owner) ? m.owner[0] : m.owner
                 return (
                   <Link
@@ -351,9 +382,7 @@ export default async function TodayPage({
                       {owner && <div className="text-xs text-kk-muted mt-0.5">{owner.display_name}</div>}
                     </div>
                     {m.scheduled_start && (
-                      <div className="text-xs text-kk-muted shrink-0">
-                        {new Date(m.scheduled_start).toLocaleTimeString('en-GB', { timeZone: 'Europe/Copenhagen', hour: '2-digit', minute: '2-digit' })}
-                      </div>
+                      <div className="text-xs text-kk-muted shrink-0">{formatTime(m.scheduled_start)}</div>
                     )}
                   </Link>
                 )
@@ -362,7 +391,42 @@ export default async function TodayPage({
           </div>
         )}
 
-        {/* Draft meetings needing review (management only) */}
+        {/* Rest of week meetings */}
+        {weekMeetings.length > 0 && (
+          <div className="bg-kk-panel border border-kk-line rounded-2xl">
+            <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-kk-ink">
+                Later this week <span className="text-kk-muted font-normal">· {weekMeetings.length}</span>
+              </h2>
+              <Link href="/meetings" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">All →</Link>
+            </div>
+            <div className="divide-y divide-kk-line">
+              {weekMeetings.map(m => {
+                const owner = Array.isArray(m.owner) ? m.owner[0] : m.owner
+                return (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}`}
+                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-kk-ink group-hover:underline truncate">{m.title}</span>
+                        <MeetingStatusBadge status={m.status as MeetingStatus} />
+                      </div>
+                      {owner && <div className="text-xs text-kk-muted mt-0.5">{owner.display_name}</div>}
+                    </div>
+                    {m.scheduled_start && (
+                      <div className="text-xs text-kk-muted shrink-0">{formatDate(m.scheduled_start)}</div>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Draft meetings awaiting review (management only) */}
         {canManage && draftMeetings.length > 0 && (
           <div className="bg-kk-panel border border-kk-line rounded-2xl">
             <div className="px-5 py-4 border-b border-kk-line">
@@ -371,7 +435,7 @@ export default async function TodayPage({
               </h2>
             </div>
             <div className="divide-y divide-kk-line">
-              {draftMeetings.map((m) => (
+              {draftMeetings.map(m => (
                 <Link
                   key={m.id}
                   href={`/meetings/${m.id}/publish`}
@@ -380,9 +444,7 @@ export default async function TodayPage({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-kk-ink group-hover:underline truncate">{m.title}</div>
                     {m.scheduled_start && (
-                      <div className="text-xs text-kk-muted mt-0.5">
-                        {new Date(m.scheduled_start).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short' })}
-                      </div>
+                      <div className="text-xs text-kk-muted mt-0.5">{formatDate(m.scheduled_start)}</div>
                     )}
                   </div>
                   <span className="text-xs text-purple-700 shrink-0">Review →</span>
@@ -390,104 +452,6 @@ export default async function TodayPage({
               ))}
             </div>
           </div>
-        )}
-
-        {/* Management: blocked projects */}
-        {view === 'management' && canManage && (
-          <>
-            {blockedProjects.length > 0 && (
-              <div className="bg-kk-panel border border-kk-line rounded-2xl">
-                <div className="px-5 py-4 border-b border-kk-line">
-                  <h2 className="text-sm font-semibold text-kk-ink">
-                    Blocked projects <span className="text-kk-bad">· {blockedProjects.length}</span>
-                  </h2>
-                </div>
-                <div className="divide-y divide-kk-line">
-                  {blockedProjects.map((p) => {
-                    const owner = Array.isArray(p.owner) ? p.owner[0] : p.owner
-                    return (
-                      <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-kk-ink group-hover:underline truncate">{p.title}</div>
-                          {owner && <div className="text-xs text-kk-muted mt-0.5">{owner.display_name}</div>}
-                        </div>
-                        <ProjectStatusBadge status={p.status} />
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {atRiskProjects.length > 0 && (
-              <div className="bg-kk-panel border border-kk-line rounded-2xl">
-                <div className="px-5 py-4 border-b border-kk-line">
-                  <h2 className="text-sm font-semibold text-kk-ink">
-                    At risk <span className="text-kk-warn">· {atRiskProjects.length}</span>
-                  </h2>
-                </div>
-                <div className="divide-y divide-kk-line">
-                  {atRiskProjects.map((p) => {
-                    const owner = Array.isArray(p.owner) ? p.owner[0] : p.owner
-                    return (
-                      <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-kk-ink group-hover:underline truncate">{p.title}</div>
-                          {owner && <div className="text-xs text-kk-muted mt-0.5">{owner.display_name}</div>}
-                        </div>
-                        <ProjectStatusBadge status={p.status} />
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {orgOverdueTasks.length > 0 && (
-              <div className="col-span-2 bg-kk-panel border border-kk-line rounded-2xl">
-                <div className="px-5 py-4 border-b border-kk-line">
-                  <h2 className="text-sm font-semibold text-kk-ink">
-                    Overdue across organisation <span className="text-kk-bad">· {orgOverdueTasks.length}</span>
-                  </h2>
-                </div>
-                <TaskList tasks={orgOverdueTasks} currentUser={user} showProject={true} />
-              </div>
-            )}
-
-            {orgOverdueWaitingOns.length > 0 && (
-              <div className="col-span-2 bg-kk-panel border border-kk-line rounded-2xl">
-                <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-kk-ink">
-                    Overdue waiting ons <span className="text-kk-bad">· {orgOverdueWaitingOns.length}</span>
-                  </h2>
-                  <Link href="/waiting-ons?status=overdue&view=management" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
-                    All →
-                  </Link>
-                </div>
-                <div className="divide-y divide-kk-line">
-                  {orgOverdueWaitingOns.map((wo) => {
-                    const owner = Array.isArray(wo.owner) ? wo.owner[0] : wo.owner
-                    return (
-                      <Link key={wo.id} href={`/waiting-ons/${wo.id}`} className="flex items-center gap-4 px-5 py-3 hover:bg-kk-soft transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-kk-ink truncate">{wo.title}</div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {owner && <span className="text-xs text-kk-muted">{owner.display_name}</span>}
-                            {wo.waiting_for_name && <span className="text-xs text-kk-muted">· waiting on {wo.waiting_for_name}</span>}
-                          </div>
-                        </div>
-                        {wo.due_at && (
-                          <div className="text-xs text-kk-bad shrink-0">
-                            {new Date(wo.due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          </div>
-                        )}
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </>
         )}
       </div>
     </div>

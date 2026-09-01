@@ -3,6 +3,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createWaitingOn } from '@/lib/actions/waiting-ons'
+import type { TaskPriority } from '@/lib/types'
+
+const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
+  { value: 1, label: '1 — Critical' },
+  { value: 2, label: '2 — Normal' },
+  { value: 3, label: '3 — Low' },
+  { value: 4, label: '4 — Background' },
+]
 
 type Props = {
   currentUserId: string
@@ -21,6 +29,7 @@ export default function WaitingOnForm({ currentUserId, canAssign, users, project
   const [projectId, setProjectId] = useState(defaultProjectId ?? '')
   const [dueAt, setDueAt] = useState('')
   const [notes, setNotes] = useState('')
+  const [priority, setPriority] = useState<TaskPriority>(2)
   const [ownerId, setOwnerId] = useState(currentUserId)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +49,7 @@ export default function WaitingOnForm({ currentUserId, canAssign, users, project
       project_id: projectId || undefined,
       due_at: dueAt || undefined,
       notes: notes || undefined,
+      priority,
     })
 
     if (result.error) {
@@ -150,6 +160,20 @@ export default function WaitingOnForm({ currentUserId, canAssign, users, project
           disabled={submitting}
           className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors"
         />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-kk-ink mb-1.5">Priority</label>
+        <select
+          value={priority}
+          onChange={(e) => setPriority(Number(e.target.value) as TaskPriority)}
+          disabled={submitting}
+          className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors bg-white"
+        >
+          {PRIORITY_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div>
