@@ -30,18 +30,34 @@ function formatTime(isoTs: string): string {
 // ── Status config ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG = {
-  green: { label: 'Green', dot: 'bg-green-500', pill: 'bg-green-100 text-green-700' },
-  amber: { label: 'Amber', dot: 'bg-amber-400', pill: 'bg-amber-100 text-amber-700' },
-  red:   { label: 'Red',   dot: 'bg-red-500',   pill: 'bg-red-100 text-red-700' },
+  green: {
+    label: 'Green',
+    dot: 'bg-green-500',
+    pill: 'bg-green-100 text-green-700',
+    banner: 'bg-green-50 border-green-100',
+  },
+  amber: {
+    label: 'Amber',
+    dot: 'bg-amber-400',
+    pill: 'bg-amber-100 text-amber-700',
+    banner: 'bg-amber-50 border-amber-100',
+  },
+  red: {
+    label: 'Red',
+    dot: 'bg-red-500',
+    pill: 'bg-red-100 text-red-700',
+    banner: 'bg-red-50 border-red-100',
+  },
 } as const
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
-function IconSpend() {
+function IconCreditCard() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M9 2v1.5M9 14.5V16M5.5 9H3M15 9h-2.5M13.24 4.76l-1.06 1.06M5.82 12.18l-1.06 1.06M13.24 13.24l-1.06-1.06M5.82 5.82 4.76 4.76" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="1.5" y="4" width="15" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M1.5 8h15" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M4.5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   )
 }
@@ -49,8 +65,8 @@ function IconSpend() {
 function IconEye() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M1.5 9C1.5 9 4 4 9 4s7.5 5 7.5 5-2.5 5-7.5 5S1.5 9 1.5 9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-      <circle cx="9" cy="9" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M1.5 9C1.5 9 4.5 4.5 9 4.5S16.5 9 16.5 9 13.5 13.5 9 13.5 1.5 9 1.5 9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
   )
 }
@@ -60,7 +76,7 @@ function IconInstagram() {
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <rect x="2.5" y="2.5" width="13" height="13" rx="4" stroke="currentColor" strokeWidth="1.5"/>
       <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.5"/>
-      <circle cx="13" cy="5" r="0.75" fill="currentColor"/>
+      <circle cx="13" cy="5" r="0.8" fill="currentColor"/>
     </svg>
   )
 }
@@ -68,7 +84,17 @@ function IconInstagram() {
 function IconFacebook() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M10.5 9h2l.5-2.5H10.5V5c0-.8.4-1.5 1.5-1.5H13V1.5A11 11 0 0 0 11 1.5C8.8 1.5 7.5 2.8 7.5 5.2V6.5H5.5V9h2v7.5h3V9Z" fill="currentColor"/>
+      <path d="M10.5 9h2l.5-2.5H10.5V5c0-.7.35-1.5 1.5-1.5H13V1.5C12.2 1.5 11 1.5 11 1.5 8.8 1.5 7.5 2.8 7.5 5.2V6.5H5.5V9h2v7.5h3V9Z" fill="currentColor"/>
+    </svg>
+  )
+}
+
+function IconStore() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M2 8V15.5H16V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M1.5 8H16.5M3 3H15L16.5 8H1.5L3 3Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <rect x="6.5" y="11" width="5" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
   )
 }
@@ -77,11 +103,9 @@ function IconCalendar() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <rect x="2.5" y="3.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M2.5 7.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M2.5 7.5h13" stroke="currentColor" strokeWidth="1.5"/>
       <path d="M6 2v3M12 2v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <circle cx="6.5" cy="11" r="1" fill="currentColor"/>
-      <circle cx="9" cy="11" r="1" fill="currentColor"/>
-      <circle cx="11.5" cy="11" r="1" fill="currentColor"/>
+      <path d="M5.5 11h1.5M9 11h1.5M12.5 11h0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   )
 }
@@ -98,15 +122,26 @@ function IconClipboard() {
 
 function IconInfo() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-kk-muted">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.25"/>
-      <path d="M7 6.5v4M7 4.5v.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
+      <path d="M7 6.5v4" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
+      <circle cx="7" cy="4.5" r="0.6" fill="currentColor"/>
+    </svg>
+  )
+}
+
+function IconWarning() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path d="M7 1.5 13.5 13H0.5L7 1.5Z" fill="currentColor"/>
+      <path d="M7 5.5v3" stroke="white" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
+      <circle cx="7" cy="10.8" r="0.65" fill="white"/>
     </svg>
   )
 }
 
 // ── StatusBanner ──────────────────────────────────────────────────────────────
-// Warm cream background, status pill left + summary text right in one row.
+// Warm tinted bg per status, compact pill left, summary text right.
 
 function StatusBanner({
   status, reason, summary,
@@ -117,161 +152,143 @@ function StatusBanner({
 }) {
   const cfg = STATUS_CFG[status]
   return (
-    <div className="bg-kk-soft border border-kk-line rounded-2xl px-6 py-4 flex items-start gap-4">
-      <span className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${cfg.pill}`}>
+    <div className={`border rounded-2xl px-5 py-4 flex items-center gap-4 ${cfg.banner}`}>
+      <span className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${cfg.pill}`}>
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
         {cfg.label}
       </span>
-      <p className="text-sm text-kk-ink leading-relaxed pt-0.5">{summary || reason}</p>
+      <p className="text-sm text-kk-ink leading-snug">{summary || reason}</p>
     </div>
   )
 }
 
 // ── KPI cards ─────────────────────────────────────────────────────────────────
-// Four separate bordered cards each with a colored icon square.
+// Icon + label on same row at top; large number below; secondary text at bottom.
 
-function KpiMetricCard({
-  metric, iconBg, iconColor, icon,
+function KpiCard({
+  metric, icon, iconBg, iconColor,
 }: {
   metric: BriefMetricRow
+  icon: React.ReactNode
   iconBg: string
   iconColor: string
-  icon: React.ReactNode
 }) {
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${iconBg} ${iconColor}`}>
-        {icon}
+    <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex flex-col gap-3 min-h-[130px]">
+      <div className="flex items-center gap-2.5">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg} ${iconColor}`}>
+          {icon}
+        </div>
+        <span className="text-xs text-kk-muted leading-tight">{metric.label}</span>
       </div>
-      <div className="text-xs text-kk-muted mb-1 truncate">{metric.label}</div>
-      <div className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${metric.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
-        {metric.value}
+      <div className="mt-auto">
+        <div className={`text-[30px] font-bold tabular-nums leading-none tracking-tight ${metric.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
+          {metric.value}
+        </div>
+        {metric.change && (
+          <div className="text-xs text-kk-muted mt-1.5">{metric.change}</div>
+        )}
       </div>
-      {metric.change && (
-        <div className="text-xs text-kk-muted mt-1.5">{metric.change}</div>
-      )}
     </div>
   )
 }
 
-function KpiCards({ sections }: { sections: MorningBriefSections }) {
-  type KpiDef = { metric: BriefMetricRow; iconBg: string; iconColor: string; icon: React.ReactNode }
-  const candidates: Array<KpiDef | null> = [
+function KpiStrip({ sections }: { sections: MorningBriefSections }) {
+  type Slot = { metric: BriefMetricRow; icon: React.ReactNode; iconBg: string; iconColor: string }
+  const candidates: Array<Slot | null> = [
     sections.paid.metrics[0]
-      ? { metric: sections.paid.metrics[0], iconBg: 'bg-green-100', iconColor: 'text-green-700', icon: <IconSpend /> }
+      ? { metric: sections.paid.metrics[0], icon: <IconCreditCard />, iconBg: 'bg-green-100', iconColor: 'text-green-700' }
       : null,
     sections.paid.metrics[1]
-      ? { metric: sections.paid.metrics[1], iconBg: 'bg-violet-100', iconColor: 'text-violet-700', icon: <IconEye /> }
+      ? { metric: sections.paid.metrics[1], icon: <IconEye />, iconBg: 'bg-violet-100', iconColor: 'text-violet-700' }
       : null,
     sections.organic.ig.metrics[0]
-      ? { metric: sections.organic.ig.metrics[0], iconBg: 'bg-pink-100', iconColor: 'text-pink-600', icon: <IconInstagram /> }
+      ? { metric: sections.organic.ig.metrics[0], icon: <IconInstagram />, iconBg: 'bg-pink-100', iconColor: 'text-pink-600' }
       : null,
     sections.organic.fb.metrics[0]
-      ? { metric: sections.organic.fb.metrics[0], iconBg: 'bg-blue-100', iconColor: 'text-blue-700', icon: <IconFacebook /> }
+      ? { metric: sections.organic.fb.metrics[0], icon: <IconFacebook />, iconBg: 'bg-blue-100', iconColor: 'text-blue-700' }
       : null,
   ]
-  const cards = candidates.filter((c): c is KpiDef => c !== null)
-  if (cards.length === 0) return null
+  const slots = candidates.filter((s): s is Slot => s !== null)
+  if (slots.length === 0) return null
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {cards.map((card, i) => (
-        <KpiMetricCard
-          key={i}
-          metric={card.metric}
-          iconBg={card.iconBg}
-          iconColor={card.iconColor}
-          icon={card.icon}
-        />
-      ))}
-    </div>
-  )
-}
-
-// ── Anomaly row ───────────────────────────────────────────────────────────────
-
-function AnomalyRow({ text }: { text: string }) {
-  return (
-    <div className="flex items-start gap-3 pl-3.5 pr-4 py-2.5 bg-amber-50 border-l-2 border-amber-400 rounded-r-lg">
-      <span className="text-amber-500 shrink-0 mt-0.5 text-[10px] font-bold leading-none">▲</span>
-      <span className="text-xs text-amber-800 leading-relaxed">{text}</span>
+      {slots.map((s, i) => <KpiCard key={i} {...s} />)}
     </div>
   )
 }
 
 // ── Campaign table ────────────────────────────────────────────────────────────
+// Bordered container with header row + border-t-separated data rows.
 
 type CampaignSummary = MorningBriefSections['paid']['active_campaign_summaries'][number]
 
 function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
   if (campaigns.length === 0) return null
   return (
-    <div>
-      <div className="grid grid-cols-[1fr_auto] gap-x-4 px-3 mb-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-kk-muted">Campaign</span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-kk-muted">Spend 7d</span>
+    <div className="rounded-xl border border-kk-line overflow-hidden">
+      {/* header row */}
+      <div className="grid grid-cols-[1fr_auto] gap-x-6 px-4 py-2.5 bg-kk-soft">
+        <span className="text-xs text-kk-muted">Campaign</span>
+        <span className="text-xs text-kk-muted">7d spend</span>
       </div>
-      <div className="space-y-0.5">
-        {campaigns.map((c, i) => (
-          <div
-            key={i}
-            className={`grid grid-cols-[1fr_auto] gap-x-4 items-center px-3 py-2 rounded-lg ${
-              c.anomaly_flag ? 'bg-amber-50' : 'hover:bg-kk-soft'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              {c.anomaly_flag ? (
-                <span className="shrink-0 text-amber-500 text-xs leading-none">⚠</span>
-              ) : (
-                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-kk-line" />
-              )}
-              <span className={`text-sm truncate ${c.anomaly_flag ? 'text-amber-800 font-medium' : 'text-kk-ink'}`}>
-                {c.name}
-              </span>
-            </div>
-            <span className={`text-sm tabular-nums font-medium shrink-0 ${c.anomaly_flag ? 'text-amber-700' : 'text-kk-muted'}`}>
-              {c.spend_7d_formatted ?? '—'}
-            </span>
+      {/* data rows */}
+      {campaigns.map((c, i) => (
+        <div
+          key={i}
+          className={`grid grid-cols-[1fr_auto] gap-x-6 items-center px-4 py-3 border-t border-kk-line ${
+            c.anomaly_flag ? 'bg-amber-50' : ''
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            {c.anomaly_flag ? (
+              <span className="shrink-0 text-amber-500"><IconWarning /></span>
+            ) : (
+              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-kk-line" />
+            )}
+            <span className="text-sm text-kk-ink truncate">{c.name}</span>
           </div>
-        ))}
-      </div>
+          <span className={`text-sm tabular-nums shrink-0 ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
+            {c.spend_7d_formatted ?? '—'}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
 
 // ── Paid card ─────────────────────────────────────────────────────────────────
-// Single white card containing heading, assessment, campaign table, and footer link.
 
 function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
   return (
     <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-      <div className="px-6 py-5">
-        <div className="flex items-center gap-1.5 mb-2">
-          <h2 className="text-lg font-semibold text-kk-ink">Paid</h2>
-          <IconInfo />
+      <div className="px-6 pt-5 pb-6">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <h2 className="text-xl font-semibold text-kk-ink">Paid</h2>
+          <span className="text-kk-muted"><IconInfo /></span>
         </div>
         <p className="text-sm text-kk-muted leading-relaxed mb-5">{paid.assessment}</p>
 
         {paid.anomalies.length > 0 && (
           <div className="space-y-2 mb-5">
-            {paid.anomalies.map((a, i) => <AnomalyRow key={i} text={a} />)}
+            {paid.anomalies.map((a, i) => (
+              <div key={i} className="flex items-start gap-2.5 pl-3.5 pr-4 py-2.5 bg-amber-50 border-l-2 border-amber-400 rounded-r-lg">
+                <span className="text-xs text-amber-800 leading-relaxed">{a}</span>
+              </div>
+            ))}
           </div>
         )}
 
         {paid.active_campaign_summaries.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold text-kk-muted uppercase tracking-widest mb-3">
-              Active campaigns
-            </h3>
+            <h3 className="text-sm font-medium text-kk-ink mb-3">Active campaigns</h3>
             <CampaignTable campaigns={paid.active_campaign_summaries} />
           </div>
         )}
       </div>
 
       <div className="px-6 py-4 border-t border-kk-line">
-        <a
-          href="/marketing/campaigns"
-          className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
-        >
+        <a href="/marketing/campaigns" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
           View all campaigns →
         </a>
       </div>
@@ -283,74 +300,82 @@ function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
 
 function GbpCard({ gbp }: { gbp: MorningBriefSections['gbp'] }) {
   if (gbp.integration_kind === 'pending_approval' || gbp.integration_kind === 'connected_no_sync') {
-    const message = gbp.integration_kind === 'pending_approval'
-      ? 'API approval pending — review queue and rating data will appear here once active.'
-      : 'Connected — awaiting first sync.'
+    const lines = gbp.integration_kind === 'pending_approval'
+      ? [
+          'Google Business Profile integration is pending API approval.',
+          'Review queue and rating summaries will appear here once the integration is active.',
+        ]
+      : ['Google Business Profile is connected — awaiting first sync.']
 
     return (
-      <div className="bg-kk-soft border border-kk-line rounded-2xl p-5">
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 w-8 h-8 rounded-lg bg-kk-line flex items-center justify-center">
-            <span className="text-kk-muted text-[9px] font-bold tracking-tight">GBP</span>
-          </div>
-          <div className="min-w-0 pt-0.5">
-            <div className="text-sm font-semibold text-kk-ink mb-1">Google Business Profile</div>
-            <div className="text-xs text-kk-muted leading-relaxed">{message}</div>
-          </div>
+      <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex items-start gap-4">
+        <div className="shrink-0 w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center">
+          <IconStore />
+        </div>
+        <div className="min-w-0 pt-0.5">
+          <div className="text-sm font-semibold text-kk-ink mb-1">Google Business Profile</div>
+          {lines.map((l, i) => (
+            <p key={i} className="text-xs text-kk-muted leading-relaxed">{l}</p>
+          ))}
         </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-      <div className="flex items-center gap-1.5 mb-3">
-        <h2 className="text-sm font-semibold text-kk-ink">Google Business Profile</h2>
+    <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex items-start gap-4">
+      <div className="shrink-0 w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center">
+        <IconStore />
       </div>
-      {gbp.assessment && (
-        <p className="text-xs text-kk-muted leading-relaxed mb-3">{gbp.assessment}</p>
-      )}
-      <div className="space-y-2.5">
-        {gbp.new_reviews_yesterday != null && (
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-xs text-kk-muted">New reviews (yesterday)</span>
-            <span className="text-sm font-semibold tabular-nums text-kk-ink">{gbp.new_reviews_yesterday}</span>
-          </div>
+      <div className="min-w-0 flex-1 pt-0.5">
+        <div className="text-sm font-semibold text-kk-ink mb-2">Google Business Profile</div>
+        {gbp.assessment && (
+          <p className="text-xs text-kk-muted leading-relaxed mb-3">{gbp.assessment}</p>
         )}
-        {gbp.avg_star_rating_7d != null && (
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-xs text-kk-muted">Avg rating (7d)</span>
-            <span className="text-sm font-semibold tabular-nums text-kk-ink">{gbp.avg_star_rating_7d.toFixed(1)} / 5</span>
-          </div>
-        )}
-        {gbp.pending_reply_count > 0 && (
-          <div className="pt-2 border-t border-kk-line">
-            <a href="/marketing/google-business-profile" className="text-xs text-kk-ink font-medium hover:underline">
+        <div className="space-y-2">
+          {gbp.new_reviews_yesterday != null && (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs text-kk-muted">New reviews (yesterday)</span>
+              <span className="text-sm font-semibold tabular-nums text-kk-ink">{gbp.new_reviews_yesterday}</span>
+            </div>
+          )}
+          {gbp.avg_star_rating_7d != null && (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs text-kk-muted">Avg rating (7d)</span>
+              <span className="text-sm font-semibold tabular-nums text-kk-ink">{gbp.avg_star_rating_7d.toFixed(1)} / 5</span>
+            </div>
+          )}
+          {gbp.pending_reply_count > 0 && (
+            <a href="/marketing/google-business-profile" className="block text-xs text-blue-600 font-medium hover:underline pt-1">
               {gbp.pending_reply_count} {gbp.pending_reply_count === 1 ? 'reply' : 'replies'} awaiting approval →
             </a>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-// ── Platform metric grid ───────────────────────────────────────────────────────
-// Large numbers in a horizontal grid — used inside IG and FB cards.
+// ── Platform metrics ──────────────────────────────────────────────────────────
+// Horizontal flex with vertical divide-x separators; large tabular numbers.
 
-function PlatformMetricGrid({ metrics }: { metrics: BriefMetricRow[] }) {
-  if (metrics.length === 0) return null
+function PlatformMetrics({ metrics }: { metrics: BriefMetricRow[] }) {
+  if (metrics.length === 0) {
+    return <p className="px-5 py-4 text-xs text-kk-muted">No data available.</p>
+  }
   return (
-    <div className={`grid gap-4 pt-4 ${metrics.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+    <div className="flex divide-x divide-kk-line">
       {metrics.map((m, i) => (
-        <div key={i}>
-          <div className="text-xs text-kk-muted mb-1 leading-tight">{m.label}</div>
-          <div className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${m.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
-            {m.value}
+        <div key={i} className="flex-1 min-w-0 px-5 py-4">
+          <div className="text-xs text-kk-muted mb-2">{m.label}</div>
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className={`text-[28px] font-bold tabular-nums leading-none tracking-tight ${m.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
+              {m.value}
+            </span>
+            {m.change && (
+              <span className="text-xs text-kk-muted">{m.change}</span>
+            )}
           </div>
-          {m.change && (
-            <div className="text-xs text-kk-muted mt-1">{m.change}</div>
-          )}
         </div>
       ))}
     </div>
@@ -358,24 +383,19 @@ function PlatformMetricGrid({ metrics }: { metrics: BriefMetricRow[] }) {
 }
 
 // ── Organic section ───────────────────────────────────────────────────────────
-// Floating heading above two separate platform cards (Instagram, Facebook).
 
 function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] }) {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-1.5">
-        <h2 className="text-lg font-semibold text-kk-ink">Organic</h2>
-        <IconInfo />
+        <h2 className="text-xl font-semibold text-kk-ink">Organic</h2>
+        <span className="text-kk-muted"><IconInfo /></span>
       </div>
-
-      {organic.assessment && (
-        <p className="text-sm text-kk-muted leading-relaxed">{organic.assessment}</p>
-      )}
 
       {/* Instagram card */}
       <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-kk-line">
-          <div className="w-8 h-8 rounded-lg bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-3 px-5 py-4">
+          <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
             <IconInstagram />
           </div>
           <div>
@@ -383,19 +403,16 @@ function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] 
             <div className="text-xs text-kk-muted">Past 7 days</div>
           </div>
         </div>
-        <div className="px-5 pb-5">
-          {organic.ig.metrics.length > 0
-            ? <PlatformMetricGrid metrics={organic.ig.metrics} />
-            : <p className="text-xs text-kk-muted pt-4">No data available.</p>
-          }
+        <div className="border-t border-kk-line">
+          <PlatformMetrics metrics={organic.ig.metrics} />
         </div>
       </div>
 
       {/* Facebook card */}
       {organic.fb.available && (
         <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-          <div className="flex items-center gap-3 px-5 py-4 border-b border-kk-line">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-3 px-5 py-4">
+            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
               <IconFacebook />
             </div>
             <div>
@@ -403,11 +420,8 @@ function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] 
               <div className="text-xs text-kk-muted">Past 7 days</div>
             </div>
           </div>
-          <div className="px-5 pb-5">
-            {organic.fb.metrics.length > 0
-              ? <PlatformMetricGrid metrics={organic.fb.metrics} />
-              : <p className="text-xs text-kk-muted pt-4">No data available.</p>
-            }
+          <div className="border-t border-kk-line">
+            <PlatformMetrics metrics={organic.fb.metrics} />
           </div>
         </div>
       )}
@@ -426,7 +440,7 @@ function StaleBanner({ briefDate, reason }: { briefDate: string; reason: string 
   )
 }
 
-// ── State panels ──────────────────────────────────────────────────────────────
+// ── State panel ───────────────────────────────────────────────────────────────
 
 function StatePanel({ title, detail, action }: {
   title: string
@@ -454,7 +468,7 @@ function MorningBriefContent({
   const sections = brief.sections_json
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {isStale && staleReason && (
         <StaleBanner briefDate={brief.brief_date} reason={staleReason} />
       )}
@@ -468,47 +482,46 @@ function MorningBriefContent({
         />
       )}
 
-      {/* 2 — KPI orientation strip (4 separate cards) */}
-      {sections && <KpiCards sections={sections} />}
+      {/* 2 — KPI strip */}
+      {sections && <KpiStrip sections={sections} />}
 
-      {/* 3 — Main grid: Paid + GBP (left) | Organic (right) */}
+      {/* 3 — Main grid */}
       {sections && (
         <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
-          {/* LEFT column */}
-          <div className="space-y-5">
+          {/* Left: Paid + GBP */}
+          <div className="space-y-4">
             <PaidCard paid={sections.paid} />
             <GbpCard gbp={sections.gbp} />
           </div>
-
-          {/* RIGHT column */}
+          {/* Right: Organic */}
           <OrganicSection organic={sections.organic} />
         </div>
       )}
 
-      {/* 4 — Operational tail */}
+      {/* 4 — Bottom operational cards */}
       {sections && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Today's Content */}
           <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 rounded-xl bg-green-100 text-green-700 flex items-center justify-center shrink-0">
                 <IconCalendar />
               </div>
               <h2 className="text-sm font-semibold text-kk-ink">Today&apos;s Content</h2>
             </div>
-            <p className="text-xs text-kk-muted">No content scheduled.</p>
+            <p className="text-sm text-kk-muted">No content scheduled.</p>
           </div>
 
           {/* Needs Review */}
           <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
                 <IconClipboard />
               </div>
               <h2 className="text-sm font-semibold text-kk-ink">Needs Review</h2>
             </div>
             {sections.needs_review.total === 0 ? (
-              <p className="text-xs text-kk-muted">Nothing awaiting approval.</p>
+              <p className="text-sm text-kk-muted">Nothing awaiting your approval right now.</p>
             ) : (
               <div>
                 <div className="space-y-2 mb-3">
@@ -519,7 +532,7 @@ function MorningBriefContent({
                     </div>
                   ))}
                 </div>
-                <a href="/marketing/needs-review" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
+                <a href="/marketing/needs-review" className="text-sm text-blue-600 hover:text-blue-700 transition-colors">
                   Review all {sections.needs_review.total} →
                 </a>
               </div>
@@ -579,15 +592,15 @@ export default async function MorningBriefPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex items-start justify-between mb-7">
         <div>
-          <h1 className="text-4xl font-black tracking-tight text-kk-ink">Morning Brief</h1>
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5">
-            <span className="text-sm text-kk-muted">{headerDate}</span>
+          <h1 className="text-4xl font-black tracking-tight text-kk-ink leading-tight">Morning Brief</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-sm font-semibold text-kk-ink">{headerDate}</span>
             {displayBrief?.generated_at && (
               <>
-                <span className="text-kk-line select-none">·</span>
-                <span className="text-xs text-kk-muted">
+                <span className="text-kk-muted select-none">•</span>
+                <span className="text-sm text-kk-muted">
                   {isStale
                     ? `From ${formatDate(displayBrief.brief_date)}, generated ${formatTime(displayBrief.generated_at)}`
                     : `Generated today at ${formatTime(displayBrief.generated_at)}`
