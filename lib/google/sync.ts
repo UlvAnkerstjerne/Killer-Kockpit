@@ -32,7 +32,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { getGoogleOAuth2Client, hasMeetScope } from '@/lib/google/auth'
-import { syncEventToCalendar, cancelCalendarEvent, buildCalendarEventId } from '@/lib/google/calendar'
+import { syncEventToCalendar, buildCalendarEventId } from '@/lib/google/calendar'
 import { getMeetSpaceName, ensureMeetAutoTranscription } from '@/lib/google/meet'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -261,71 +261,5 @@ export async function resyncMeetingCalendar(meetingId: string): Promise<SyncResu
   return syncMeetingToCalendarForUser(meetingId, credentialUserId)
 }
 
-// ─── Cancellation (uses stored credential) ────────────────────────────────
-
-/**
- * Cancels (deletes) the Google Calendar event for a meeting using the
- * credential stored in calendar_synced_by_user_id.
- * Silently returns if no event is linked.
- * Persists sync status in all cases. Does NOT throw.
- */
-export async function cancelMeetingCalendar(meetingId: string): Promise<void> {
-  const serviceClient = createServiceClient()
-  const { data: row } = await serviceClient
-    .from('meetings')
-    .select('calendar_event_id, calendar_synced_by_user_id')
-    .eq('id', meetingId)
-    .single()
-
-  if (!row?.calendar_event_id) return
-
-  const credentialUserId = row.calendar_synced_by_user_id
-  if (!credentialUserId) {
-    await serviceClient
-      .from('meetings')
-      .update({
-        calendar_sync_status: 'failed',
-        calendar_sync_error:
-          'Cannot cancel Calendar event: no Google connection on record for this meeting.',
-      })
-      .eq('id', meetingId)
-    return
-  }
-
-  const oauthClient = await getGoogleOAuth2Client(credentialUserId)
-  if (!oauthClient) {
-    await serviceClient
-      .from('meetings')
-      .update({
-        calendar_sync_status: 'failed',
-        calendar_sync_error:
-          'Cannot cancel Calendar event: the Google connection has been disconnected.',
-      })
-      .eq('id', meetingId)
-    return
-  }
-
-  const result = await cancelCalendarEvent(oauthClient, row.calendar_event_id)
-
-  if (result.ok) {
-    await serviceClient
-      .from('meetings')
-      .update({
-        calendar_sync_status: 'synced',
-        calendar_sync_error:  null,
-        calendar_synced_at:   new Date().toISOString(),
-      })
-      .eq('id', meetingId)
-  } else {
-    console.error(`[google/sync] Cancel failed for meeting ${meetingId}:`, result.error)
-    await serviceClient
-      .from('meetings')
-      .update({
-        calendar_sync_status: 'failed',
-        calendar_sync_error:  `Cancellation: ${result.error}`,
-      })
-      .eq('id', meetingId)
-  }
-}
 
 export { buildCalendarEventId }
