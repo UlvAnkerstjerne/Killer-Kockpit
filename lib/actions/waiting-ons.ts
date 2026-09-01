@@ -170,3 +170,35 @@ export async function cancelWaitingOn(waitingOnId: string): Promise<ActionResult
   revalidatePath('/today')
   return {}
 }
+
+export async function reopenWaitingOn(waitingOnId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('waiting_ons')
+    .select('id, owner_user_id, status')
+    .eq('id', waitingOnId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Waiting on not found.' }
+
+  if (!canEditWaitingOn(user.role, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to reopen this waiting on.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('reopen_waiting_on_and_audit', {
+    p_waiting_on_id: waitingOnId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
+
+  if (error) return { error: 'Failed to reopen waiting on.' }
+
+  revalidatePath('/waiting-ons')
+  revalidatePath(`/waiting-ons/${waitingOnId}`)
+  revalidatePath('/today')
+  return {}
+}

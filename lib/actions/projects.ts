@@ -139,3 +139,99 @@ export async function archiveProject(projectId: string): Promise<ActionResult> {
   revalidatePath('/today')
   return {}
 }
+
+export async function closeProject(projectId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('projects')
+    .select('id, owner_user_id, status')
+    .eq('id', projectId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Project not found.' }
+
+  if (!canArchiveProject(user.role, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to close this project.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('close_project_and_audit', {
+    p_project_id: projectId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
+
+  if (error) return { error: 'Failed to close project.' }
+
+  revalidatePath('/projects')
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/today')
+  return {}
+}
+
+export async function cancelProject(projectId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('projects')
+    .select('id, owner_user_id, status')
+    .eq('id', projectId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Project not found.' }
+
+  if (!canArchiveProject(user.role, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to cancel this project.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('cancel_project_and_audit', {
+    p_project_id: projectId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
+
+  if (error) return { error: 'Failed to cancel project.' }
+
+  revalidatePath('/projects')
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/today')
+  return {}
+}
+
+export async function reopenProject(projectId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('projects')
+    .select('id, owner_user_id, status')
+    .eq('id', projectId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Project not found.' }
+
+  if (!canArchiveProject(user.role, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to reopen this project.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('reopen_project_and_audit', {
+    p_project_id: projectId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
+
+  if (error) return { error: 'Failed to reopen project.' }
+
+  revalidatePath('/projects')
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/today')
+  return {}
+}

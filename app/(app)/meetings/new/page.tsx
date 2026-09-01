@@ -18,7 +18,7 @@ export default async function NewMeetingPage() {
       .from('projects')
       .select('id, title')
       .is('archived_at', null)
-      .not('status', 'in', '("completed","archived")')
+      .not('status', 'in', '("completed","archived","cancelled")')
       .order('title'),
   ])
 

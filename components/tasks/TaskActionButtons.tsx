@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { completeTask, cancelTask, updateTask } from '@/lib/actions/tasks'
+import { completeTask, cancelTask, reopenTask, updateTask } from '@/lib/actions/tasks'
 import type { TaskStatus } from '@/lib/types'
 
 const STATUS_TRANSITIONS: Record<string, { value: TaskStatus; label: string }[]> = {
@@ -33,6 +33,16 @@ export default function TaskActionButtons({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  const isTerminal = currentStatus === 'done' || currentStatus === 'cancelled'
+
+  async function handleReopen() {
+    setError(null)
+    startTransition(async () => {
+      const result = await reopenTask(taskId)
+      if (result.error) setError(result.error)
+    })
+  }
+
   async function handleComplete() {
     setError(null)
     startTransition(async () => {
@@ -56,6 +66,21 @@ export default function TaskActionButtons({
       const result = await updateTask(taskId, { status })
       if (result.error) setError(result.error)
     })
+  }
+
+  if (isTerminal) {
+    return (
+      <div>
+        <button
+          onClick={handleReopen}
+          disabled={isPending}
+          className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-lg disabled:opacity-40 hover:text-kk-ink hover:border-kk-ink transition-colors"
+        >
+          {isPending ? '…' : 'Reopen task'}
+        </button>
+        {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
+      </div>
+    )
   }
 
   const transitions = STATUS_TRANSITIONS[currentStatus] || []

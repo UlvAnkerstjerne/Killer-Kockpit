@@ -182,3 +182,36 @@ export async function cancelTask(taskId: string): Promise<ActionResult> {
   if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
   return {}
 }
+
+export async function reopenTask(taskId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, owner_user_id, created_by_user_id, status, project_id')
+    .eq('id', taskId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Task not found.' }
+
+  if (!canUpdateTaskStatus(user.role, current.created_by_user_id, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to reopen this task.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('reopen_task_and_audit', {
+    p_task_id: taskId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
+
+  if (error) return { error: 'Failed to reopen task.' }
+
+  revalidatePath('/tasks')
+  revalidatePath(`/tasks/${taskId}`)
+  revalidatePath('/today')
+  if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
+  return {}
+}

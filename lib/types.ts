@@ -1,5 +1,5 @@
 export type KKRole = 'SUPER_ADMIN' | 'UM' | 'MEMBER'
-export type ProjectStatus = 'planned' | 'active' | 'at_risk' | 'blocked' | 'completed' | 'archived'
+export type ProjectStatus = 'planned' | 'active' | 'at_risk' | 'blocked' | 'completed' | 'archived' | 'cancelled'
 export type TaskStatus = 'proposed' | 'open' | 'in_progress' | 'blocked' | 'done' | 'cancelled'
 export type TaskPriority = 1 | 2 | 3 | 4
 export type ViewMode = 'personal' | 'management'
@@ -31,6 +31,8 @@ export interface Project {
   progress: number | null
   parent_project_id: string | null
   archived_at: string | null
+  completed_at: string | null
+  cancelled_at: string | null
   created_by_user_id: string | null
   created_at: string
   updated_at: string

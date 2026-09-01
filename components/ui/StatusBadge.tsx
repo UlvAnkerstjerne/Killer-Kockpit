@@ -7,6 +7,7 @@ const PROJECT_STATUS_STYLES: Record<ProjectStatus, string> = {
   blocked:   'bg-kk-bad-bg text-kk-bad',
   completed: 'bg-kk-good-bg text-kk-good',
   archived:  'bg-kk-soft text-kk-muted',
+  cancelled: 'bg-kk-soft text-kk-muted',
 }
 
 const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
@@ -16,6 +17,7 @@ const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   blocked:   'Blocked',
   completed: 'Completed',
   archived:  'Archived',
+  cancelled: 'Cancelled',
 }
 
 const TASK_STATUS_STYLES: Record<TaskStatus, string> = {

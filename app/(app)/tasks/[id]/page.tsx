@@ -50,7 +50,7 @@ export default async function TaskDetailPage({
       .from('projects')
       .select('id, title')
       .is('archived_at', null)
-      .not('status', 'eq', 'completed')
+      .not('status', 'in', '("completed","archived","cancelled")')
       .order('title'),
     supabase
       .from('change_requests')
@@ -110,7 +110,7 @@ export default async function TaskDetailPage({
               </div>
             </div>
 
-            {canActOnStatus && task.status !== 'done' && task.status !== 'cancelled' && (
+            {canActOnStatus && (
               <div className="p-5 border-b border-kk-line">
                 <TaskActionButtons taskId={task.id} currentStatus={task.status} />
               </div>

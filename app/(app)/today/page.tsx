@@ -67,7 +67,7 @@ export default async function TodayPage({
       .select(`id, title, status, due_date, progress, owner_user_id, owner:owner_user_id (id, display_name, email)`)
       .eq('owner_user_id', user.id)
       .is('archived_at', null)
-      .not('status', 'in', '("completed","archived")')
+      .not('status', 'in', '("completed","archived","cancelled")')
       .order('due_date', { ascending: true, nullsFirst: false })
       .limit(8),
 

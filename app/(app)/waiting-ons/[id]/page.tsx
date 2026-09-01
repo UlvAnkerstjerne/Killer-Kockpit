@@ -41,7 +41,7 @@ export default async function WaitingOnDetailPage({
       .from('projects')
       .select('id, title')
       .is('archived_at', null)
-      .not('status', 'in', '("completed","archived")')
+      .not('status', 'in', '("completed","archived","cancelled")')
       .order('title'),
   ])
 
@@ -154,8 +154,8 @@ export default async function WaitingOnDetailPage({
         )}
 
         {/* Actions */}
-        {canEdit && wo.status === 'open' && (
-          <WaitingOnActions waitingOnId={wo.id} />
+        {canEdit && (
+          <WaitingOnActions waitingOnId={wo.id} status={wo.status as WaitingStatus} />
         )}
 
         {/* Audit history */}

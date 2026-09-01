@@ -13,7 +13,7 @@ import { MeetingStatusBadge } from '@/components/ui/MeetingStatusBadge'
 import AuditHistory from '@/components/ui/AuditHistory'
 import ProjectForm from '@/components/projects/ProjectForm'
 import TaskList from '@/components/tasks/TaskList'
-import ArchiveProjectButton from '@/components/projects/ArchiveProjectButton'
+import ProjectLifecycleButtons from '@/components/projects/ProjectLifecycleButtons'
 import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
 import type { WaitingStatus, DecisionStatus, MeetingStatus } from '@/lib/types'
 
@@ -115,7 +115,7 @@ export default async function ProjectDetailPage({
         </div>
         {canEdit && (
           <div className="flex gap-2 shrink-0">
-            <ArchiveProjectButton projectId={project.id} />
+            <ProjectLifecycleButtons projectId={project.id} currentStatus={project.status} />
           </div>
         )}
       </div>
