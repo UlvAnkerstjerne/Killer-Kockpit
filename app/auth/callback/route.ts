@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getAppOrigin } from '@/lib/app-url'
 
 // OAuth callback handler.
 // After Google redirects back, we:
@@ -20,15 +21,9 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/'
 
-  // Use the configured canonical origin rather than new URL(request.url).origin.
-  // Behind Railway's reverse proxy, request.url carries the internal
-  // localhost:8080 address — NEXT_PUBLIC_APP_URL is always the public URL.
-  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL
-  if (!rawAppUrl) {
-    console.error('[auth/callback] NEXT_PUBLIC_APP_URL is not set')
-    return new Response('Internal configuration error', { status: 500 })
-  }
-  const origin = rawAppUrl.replace(/\/$/, '')
+  // Use the configured canonical origin — not request.url — so redirects work
+  // correctly behind Railway's reverse proxy (see lib/app-url.ts).
+  const origin = getAppOrigin()
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=no_code`)

@@ -8,6 +8,7 @@ import {
   storeGoogleTokens,
   patchGoogleTokensPreservingRefresh,
 } from '@/lib/google/auth'
+import { getAppOrigin } from '@/lib/app-url'
 
 const STATE_COOKIE = 'google_oauth_state'
 
@@ -32,11 +33,14 @@ const STATE_COOKIE = 'google_oauth_state'
  * and never appear in redirected URLs.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code  = searchParams.get('code')
   const state = searchParams.get('state')
   const error = searchParams.get('error')
 
+  // Use the configured canonical origin — not request.url — so redirects work
+  // correctly behind Railway's reverse proxy (see lib/app-url.ts).
+  const origin = getAppOrigin()
   const redirectBase = `${origin}/settings`
 
   if (error) {

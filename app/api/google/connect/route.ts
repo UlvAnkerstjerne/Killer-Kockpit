@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { buildOAuth2Client } from '@/lib/google/auth'
+import { getAppOrigin } from '@/lib/app-url'
 
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 const STATE_COOKIE = 'google_oauth_state'
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    return NextResponse.redirect(`${getAppOrigin()}/login`)
   }
 
   // Generate CSRF state token

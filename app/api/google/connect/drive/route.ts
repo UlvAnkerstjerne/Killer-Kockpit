@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { buildOAuth2Client, DRIVE_SCOPE } from '@/lib/google/auth'
+import { getAppOrigin } from '@/lib/app-url'
 
 const STATE_COOKIE         = 'google_oauth_state'
 const STATE_COOKIE_MAX_AGE = 600 // 10 minutes
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    return NextResponse.redirect(`${getAppOrigin()}/login`)
   }
 
   const state = crypto.randomBytes(16).toString('hex')

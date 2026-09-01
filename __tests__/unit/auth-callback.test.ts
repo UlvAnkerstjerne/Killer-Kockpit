@@ -370,12 +370,12 @@ describe('GET /auth/callback — canonical origin from NEXT_PUBLIC_APP_URL', () 
     expect(location).toBe(`${PROD_URL}/login?error=no_code`)
   })
 
-  it('returns 500 when NEXT_PUBLIC_APP_URL is missing', async () => {
+  it('throws when NEXT_PUBLIC_APP_URL is missing (Next.js surfaces as HTTP 500)', async () => {
     delete process.env.NEXT_PUBLIC_APP_URL
 
     const { GET } = await import('@/app/auth/callback/route')
-    const response = await GET(makeInternalRequest('/auth/callback?code=abc'))
-    // Must not redirect at all — Response status 500
-    expect((response as Response).status).toBe(500)
+    await expect(GET(makeInternalRequest('/auth/callback?code=abc'))).rejects.toThrow(
+      'NEXT_PUBLIC_APP_URL is not set',
+    )
   })
 })
