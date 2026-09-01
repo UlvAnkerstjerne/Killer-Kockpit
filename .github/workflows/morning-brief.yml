@@ -1,0 +1,73 @@
+name: Daily Marketing Morning Brief
+
+# DST-safe scheduling for Europe/Copenhagen (CET/CEST).
+#
+# Target: approximately 09:00 Copenhagen time.
+# Problem: GitHub Actions cron is always UTC. Copenhagen observes:
+#   CET  (UTC+1) November–March: 09:00 CPH = 08:00 UTC
+#   CEST (UTC+2) March–October:  09:00 CPH = 07:00 UTC
+#
+# Solution: schedule at BOTH 07:00 UTC and 08:00 UTC.
+# Inside the workflow, we check the current Copenhagen local hour.
+# We only proceed when Copenhagen time is 09:xx — the other trigger exits cleanly.
+#
+# Result:
+#   Summer (CEST): 07:00 UTC trigger → CPH hour is 09 → generates. 08:00 trigger exits.
+#   Winter (CET):  07:00 UTC trigger → CPH hour is 08 → exits. 08:00 UTC → CPH hour is 09 → generates.
+#
+# The Meta sync runs at 06:00 UTC (unchanged). This schedule runs 60–120 minutes
+# after Meta sync starts — sufficient buffer for sync completion.
+#
+# workflow_dispatch: always proceeds regardless of Copenhagen hour (for manual runs
+# and admin testing).
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # 07:00 UTC — generates during CEST (UTC+2)
+    - cron: '0 8 * * *'   # 08:00 UTC — generates during CET  (UTC+1)
+  workflow_dispatch: {}    # manual trigger: always runs generation
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Copenhagen time
+        id: time_check
+        run: |
+          CPH_HOUR=$(TZ='Europe/Copenhagen' date +%H)
+          echo "Copenhagen hour: $CPH_HOUR"
+          echo "cph_hour=$CPH_HOUR" >> "$GITHUB_OUTPUT"
+
+          # For scheduled runs: only proceed at hour 09.
+          # For workflow_dispatch: always proceed (event_name check).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger — proceeding regardless of hour."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$CPH_HOUR" = "09" ]; then
+            echo "Copenhagen hour is 09 — proceeding with generation."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Copenhagen hour is $CPH_HOUR (not 09) — exiting cleanly."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate Morning Brief
+        if: steps.time_check.outputs.should_run == 'true'
+        run: |
+          response=$(curl --fail --silent --show-error \
+            -X POST https://kockpit.killerkebab.com/api/marketing/morning-brief/generate \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+
+          echo "Response: $response"
+          echo "Summary: $(echo "$response" | jq -r '.summary // "no summary"')"
+          echo "Outcome: $(echo "$response" | jq -r '.outcome // "unknown"')"
+
+          # Exit successfully for idempotent outcomes (already_ready, skipped_generating)
+          # Exit with error only for genuine generation failure
+          outcome=$(echo "$response" | jq -r '.outcome // "unknown"')
+          if [ "$outcome" = "failed" ]; then
+            echo "ERROR: Morning Brief generation failed."
+            echo "$response" | jq -r '.error // "no error detail"'
+            exit 1
+          fi

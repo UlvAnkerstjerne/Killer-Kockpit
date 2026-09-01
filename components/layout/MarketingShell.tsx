@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { AppUser } from '@/lib/types'
+import type { MarketingPermission } from '@/lib/marketing/types'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 /**
@@ -24,11 +25,18 @@ const MARKETING_NAV = [
   { href: '/marketing/creative-studio',         label: 'Creative Studio',        exact: false },
 ] as const
 
+// marketingPermissions: the current user's fine-grained Marketing capability
+// keys fetched by the layout. Passed here so M2+ can filter nav items or
+// conditionally render UI without additional DB calls.
+// In M1, nav is not filtered by permissions (Decision 2 — semantics TBD per
+// module). The prop is accepted now so the data contract is stable for M2.
 export default function MarketingShell({
   user,
+  marketingPermissions: _marketingPermissions,
   children,
 }: {
   user: AppUser
+  marketingPermissions: MarketingPermission[]
   children: React.ReactNode
 }) {
   const pathname = usePathname()

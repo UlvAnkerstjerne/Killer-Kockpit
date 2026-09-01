@@ -1,4 +1,5 @@
 import type { KKRole } from './types'
+import type { MarketingPermission } from './marketing/types'
 
 // Centralised permission logic — no scattered role checks in components.
 // All authorisation decisions flow through this module.
@@ -282,6 +283,28 @@ export function canGenerateDraft(
 export function canAccessMarketing(role: KKRole, marketingAccess: boolean): boolean {
   if (role === 'SUPER_ADMIN') return true
   return marketingAccess
+}
+
+// ─── Marketing — fine-grained actions ──────────────────────────────────────
+//
+// hasMarketingPermission gates specific Marketing actions beyond workspace
+// entry. It is INDEPENDENT of canAccessMarketing:
+//   - A permission row without marketing_access does not grant workspace entry.
+//   - marketing_access without a permission row does not grant action authority.
+//
+// Callers are responsible for verifying canAccessMarketing first at the
+// workspace/layout level. hasMarketingPermission is for action-level checks
+// inside Marketing server actions and pages.
+//
+// SUPER_ADMIN bypasses all permission rows — no DB row is required.
+
+export function hasMarketingPermission(
+  role: KKRole,
+  permissions: MarketingPermission[],
+  permission: MarketingPermission
+): boolean {
+  if (role === 'SUPER_ADMIN') return true
+  return permissions.includes(permission)
 }
 
 // ─── SUPER_ADMIN override detection ────────────────────────────────────────

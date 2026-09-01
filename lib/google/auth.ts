@@ -38,6 +38,7 @@ export const GMAIL_SCOPE          = 'https://www.googleapis.com/auth/gmail.reado
 export const DRIVE_SCOPE          = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 export const MEET_READONLY_SCOPE  = 'https://www.googleapis.com/auth/meetings.space.readonly'
 export const MEET_SETTINGS_SCOPE  = 'https://www.googleapis.com/auth/meetings.space.settings'
+export const GBP_SCOPE            = 'https://www.googleapis.com/auth/business.manage'
 
 export function hasCalendarScope(scopes: string[]): boolean {
   return scopes.some((s) => s.includes('calendar.events'))
@@ -62,6 +63,10 @@ export function hasMeetScope(scopes: string[]): boolean {
     scopes.some((s) => s.includes('meetings.space.readonly')) &&
     scopes.some((s) => s.includes('meetings.space.settings'))
   )
+}
+
+export function hasGbpScope(scopes: string[]): boolean {
+  return scopes.some((s) => s.includes('business.manage'))
 }
 
 // ─── Encryption helpers ───────────────────────────────────────────────────
@@ -269,6 +274,7 @@ export type GoogleConnectionStatus =
       driveEnabled: boolean
       /** true when both meetings.space.readonly and meetings.space.settings are granted */
       meetEnabled: boolean
+      gbpEnabled: boolean
     }
 
 /**
@@ -296,5 +302,6 @@ export async function getGoogleConnectionStatus(userId: string): Promise<GoogleC
     gmailEnabled:       hasGmailScope(scopes),
     driveEnabled:       hasDriveScope(scopes),
     meetEnabled:        hasMeetScope(scopes),
+    gbpEnabled:         hasGbpScope(scopes),
   }
 }
