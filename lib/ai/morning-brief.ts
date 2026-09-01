@@ -52,6 +52,9 @@ export type MorningBriefAIResult = MorningBriefAISuccess | MorningBriefAIFailure
  * Uses zodOutputFormat for structured output — no fragile free-form text parsing.
  * Validation failures return { ok: false } so the orchestrator can preserve the
  * last good brief.
+ *
+ * Retries once on validation failure (Anthropic structured outputs do not enforce
+ * maxLength at the API level — Zod validation catches oversized fields post-parse).
  */
 export async function callMorningBriefAI(
   userMessage: string,
@@ -77,51 +80,60 @@ export async function callMorningBriefAI(
   const client = new Anthropic({ apiKey })
   const startMs = Date.now()
 
-  try {
-    const response = await client.messages.parse({
-      model,
-      max_tokens: 2048,
-      system: MORNING_BRIEF_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-      output_config: {
-        format: zodOutputFormat(MorningBriefAIOutputSchema),
-      },
-    })
+  const MAX_ATTEMPTS = 2
+  let lastError = ''
 
-    const parsed = response.parsed_output
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await client.messages.parse({
+        model,
+        max_tokens: 2048,
+        system: MORNING_BRIEF_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+        output_config: {
+          format: zodOutputFormat(MorningBriefAIOutputSchema),
+        },
+      })
 
-    if (!parsed) {
-      const reason = response.stop_reason ?? 'unknown'
+      const parsed = response.parsed_output
+
+      if (!parsed) {
+        const reason = response.stop_reason ?? 'unknown'
+        return {
+          ok: false,
+          error: 'AI model did not return a valid response.',
+          errorDetail: `stop_reason: ${reason}`,
+        }
+      }
+
+      // Trim all string fields — Zod already validated structure
+      const output: MorningBriefAIOutput = {
+        overall_reason:      parsed.overall_reason.trim(),
+        ai_summary:          parsed.ai_summary.trim(),
+        paid_assessment:     parsed.paid_assessment.trim(),
+        organic_assessment:  parsed.organic_assessment.trim(),
+        gbp_assessment:      parsed.gbp_assessment?.trim() ?? null,
+      }
+
       return {
-        ok: false,
-        error: 'AI model did not return a valid response.',
-        errorDetail: `stop_reason: ${reason}`,
+        ok: true,
+        output,
+        model,
+        promptVersion: BRIEF_PROMPT_VERSION,
+        durationMs: Date.now() - startMs,
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : 'Unknown error'
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[ai/morning-brief] Attempt ${attempt} failed (${lastError}), retrying…`)
       }
     }
+  }
 
-    // Trim all string fields — Zod already validated structure
-    const output: MorningBriefAIOutput = {
-      overall_reason:      parsed.overall_reason.trim(),
-      ai_summary:          parsed.ai_summary.trim(),
-      paid_assessment:     parsed.paid_assessment.trim(),
-      organic_assessment:  parsed.organic_assessment.trim(),
-      gbp_assessment:      parsed.gbp_assessment?.trim() ?? null,
-    }
-
-    return {
-      ok: true,
-      output,
-      model,
-      promptVersion: BRIEF_PROMPT_VERSION,
-      durationMs: Date.now() - startMs,
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[ai/morning-brief] API call failed:', message)
-    return {
-      ok: false,
-      error: 'Morning Brief generation failed. The previous brief will be shown.',
-      errorDetail: message,
-    }
+  console.error('[ai/morning-brief] All attempts failed:', lastError)
+  return {
+    ok: false,
+    error: 'Morning Brief generation failed. The previous brief will be shown.',
+    errorDetail: lastError,
   }
 }

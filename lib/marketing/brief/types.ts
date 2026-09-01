@@ -218,8 +218,8 @@ export const MorningBriefAIOutputSchema = z.object({
   ai_summary: z.string().min(20).max(800),
 
   // Per-section assessments — short, direct
-  paid_assessment: z.string().min(10).max(500),
-  organic_assessment: z.string().min(10).max(500),
+  paid_assessment: z.string().min(10).max(800),
+  organic_assessment: z.string().min(10).max(800),
 
   // null when GBP is pending_approval or no data
   gbp_assessment: z.string().max(300).nullable(),
