@@ -34,8 +34,35 @@ export default function RegenerateButton() {
       <button
         onClick={handleClick}
         disabled={state === 'loading'}
-        className="text-xs text-kk-muted hover:text-kk-ink transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-kk-line bg-kk-panel text-xs font-medium text-kk-ink hover:bg-kk-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 13 13"
+          fill="none"
+          className={state === 'loading' ? 'animate-spin' : ''}
+          aria-hidden="true"
+        >
+          <path
+            d="M11.5 6.5A5 5 0 1 1 6.5 1.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+          <path
+            d="M6.5 1.5 9 4 6.5 1.5Z"
+            fill="currentColor"
+          />
+          <polyline
+            points="6.5,1.5 9,4 4,4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
         {state === 'loading' ? 'Regenerating…' : 'Regenerate'}
       </button>
       {state === 'error' && errorMsg && (
