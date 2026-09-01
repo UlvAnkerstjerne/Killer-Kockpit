@@ -16,9 +16,19 @@ import { createServiceClient } from '@/lib/supabase/server'
 //    same email slot, which we treat as a potential hijack attempt.
 // 6. If no app_users row exists for the email, sign out (access denied).
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/'
+
+  // Use the configured canonical origin rather than new URL(request.url).origin.
+  // Behind Railway's reverse proxy, request.url carries the internal
+  // localhost:8080 address — NEXT_PUBLIC_APP_URL is always the public URL.
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!rawAppUrl) {
+    console.error('[auth/callback] NEXT_PUBLIC_APP_URL is not set')
+    return new Response('Internal configuration error', { status: 500 })
+  }
+  const origin = rawAppUrl.replace(/\/$/, '')
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=no_code`)
