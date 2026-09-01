@@ -60,6 +60,7 @@ export default async function TasksPage({
     { label: 'In progress', value: 'in_progress' },
     { label: 'Blocked', value: 'blocked' },
     { label: 'Done', value: 'done' },
+    { label: 'Cancelled', value: 'cancelled' },
   ]
 
   return (

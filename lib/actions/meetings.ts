@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canCreateMeeting, canEditMeeting } from '@/lib/permissions'
-import { resyncMeetingCalendar, cancelMeetingCalendar } from '@/lib/google/sync'
+import { resyncMeetingCalendar } from '@/lib/google/sync'
 import { wallToUtc } from '@/lib/time'
 import type { MeetingStatus, ActionResult } from '@/lib/types'
 
@@ -220,11 +220,6 @@ export async function cancelMeeting(meetingId: string): Promise<ActionResult> {
 
   if (error) return { error: 'Failed to cancel meeting.' }
 
-  // Cancel the Calendar event if one exists. Failures are logged, not surfaced.
-  if (meeting.calendar_event_id) {
-    await cancelMeetingCalendar(meetingId)
-  }
-
   revalidatePath('/meetings')
   revalidatePath(`/meetings/${meetingId}`)
   revalidatePath('/today')
@@ -388,5 +383,39 @@ export async function removeMeetingAttendee(
   }
 
   revalidatePath(`/meetings/${meetingId}`)
+  return {}
+}
+
+export async function reopenMeeting(meetingId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('id, status, owner_user_id')
+    .eq('id', meetingId)
+    .single()
+
+  if (!meeting) return { error: 'Meeting not found.' }
+  if (!canEditMeeting(user.role, meeting.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to reopen this meeting.' }
+  }
+  if (meeting.status !== 'cancelled') {
+    return { error: 'Only cancelled meetings can be reopened.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('reopen_meeting_and_audit', {
+    p_meeting_id: meetingId,
+    p_actor_user_id: user.id,
+    p_before_status: meeting.status,
+  })
+
+  if (error) return { error: 'Failed to reopen meeting.' }
+
+  revalidatePath('/meetings')
+  revalidatePath(`/meetings/${meetingId}`)
+  revalidatePath('/today')
   return {}
 }

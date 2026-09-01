@@ -12,14 +12,17 @@ const STATUS_TRANSITIONS: Record<string, { value: TaskStatus; label: string }[]>
   open: [
     { value: 'in_progress', label: 'Start' },
     { value: 'blocked', label: 'Mark blocked' },
+    { value: 'cancelled', label: 'Cancel' },
   ],
   in_progress: [
     { value: 'blocked', label: 'Mark blocked' },
     { value: 'open', label: 'Pause' },
+    { value: 'cancelled', label: 'Cancel' },
   ],
   blocked: [
     { value: 'in_progress', label: 'Resume' },
     { value: 'open', label: 'Reopen' },
+    { value: 'cancelled', label: 'Cancel' },
   ],
 }
 

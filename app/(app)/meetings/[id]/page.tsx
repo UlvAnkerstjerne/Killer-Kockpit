@@ -340,7 +340,7 @@ export default async function MeetingDetailPage({
           )}
 
           {/* Status actions */}
-          {canEdit && isActive && (
+          {canEdit && (isActive || status === 'cancelled') && (
             <MeetingActions meetingId={id} status={status} canEdit={canEdit} />
           )}
 

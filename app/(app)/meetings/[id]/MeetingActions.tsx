@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { openMeeting, closeMeeting, cancelMeeting } from '@/lib/actions/meetings'
+import { openMeeting, closeMeeting, cancelMeeting, reopenMeeting } from '@/lib/actions/meetings'
 import type { MeetingStatus } from '@/lib/types'
 
 type Props = {
@@ -31,6 +31,22 @@ export default function MeetingActions({ meetingId, status, canEdit }: Props) {
   }
 
   if (!canEdit) return null
+
+  if (status === 'cancelled') {
+    return (
+      <div className="bg-kk-panel border border-kk-line rounded-2xl p-4">
+        <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide mb-3">Actions</div>
+        <button
+          onClick={() => handle(() => reopenMeeting(meetingId))}
+          disabled={loading}
+          className="w-full py-2 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors disabled:opacity-40"
+        >
+          {loading ? '…' : 'Reopen meeting'}
+        </button>
+        {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="bg-kk-panel border border-kk-line rounded-2xl p-4">
