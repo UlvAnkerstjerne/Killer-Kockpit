@@ -381,7 +381,7 @@ export default async function TodayPage({
   //   auto-place to col 1, ordered by the `order-N` class.
 
   return (
-    <div className="max-w-5xl">
+    <div>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-5">
@@ -408,7 +408,7 @@ export default async function TodayPage({
       </div>
 
       {/* ── Dashboard grid ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 items-start">
 
         {/* ═══ Card 1 — Urgent Now (left col, row 1) ════════════════════════ */}
         <div className="self-start order-1 lg:order-none lg:col-start-1 lg:row-start-1">
