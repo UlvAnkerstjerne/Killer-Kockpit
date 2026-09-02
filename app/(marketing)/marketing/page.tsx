@@ -427,15 +427,16 @@ function PlatformMetrics({ metrics }: { metrics: BriefMetricRow[] }) {
 
 function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] }) {
   return (
-    <section className="space-y-4">
-      <div className="flex items-center gap-1.5">
+    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden flex flex-col">
+      {/* Heading — same treatment as Paid */}
+      <div className="flex items-center gap-1.5 px-6 pt-5 pb-4">
         <h2 className="text-xl font-semibold text-kk-ink">Organic</h2>
         <span className="text-kk-muted"><IconInfo /></span>
       </div>
 
-      {/* Instagram card */}
-      <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4">
+      {/* Instagram — section within the outer card */}
+      <div className="border-t border-kk-line">
+        <div className="flex items-center gap-3 px-6 py-3.5">
           <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
             <IconInstagram />
           </div>
@@ -449,10 +450,10 @@ function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] 
         </div>
       </div>
 
-      {/* Facebook card */}
+      {/* Facebook */}
       {organic.fb.available && (
-        <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-          <div className="flex items-center gap-3 px-5 py-4">
+        <div className="border-t border-kk-line">
+          <div className="flex items-center gap-3 px-6 py-3.5">
             <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
               <IconFacebook />
             </div>
@@ -466,7 +467,13 @@ function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] 
           </div>
         </div>
       )}
-    </section>
+      {/* Footer link — mirrors Paid card's footer */}
+      <div className="mt-auto px-6 py-3 border-t border-kk-line">
+        <a href="/marketing/organic" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
+          View organic analytics →
+        </a>
+      </div>
+    </div>
   )
 }
 
