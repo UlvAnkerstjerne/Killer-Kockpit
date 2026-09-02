@@ -407,8 +407,8 @@ function PlatformMetrics({ metrics }: { metrics: BriefMetricRow[] }) {
   return (
     <div className="flex divide-x divide-kk-line">
       {metrics.map((m, i) => (
-        <div key={i} className="flex-1 min-w-0 px-5 py-4">
-          <div className="text-xs text-kk-muted mb-2">{m.label}</div>
+        <div key={i} className="flex-1 min-w-0 px-4 py-3">
+          <div className="text-xs text-kk-muted mb-1.5">{m.label}</div>
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className={`text-[28px] font-bold tabular-nums leading-none tracking-tight ${m.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
               {m.value}
@@ -434,39 +434,43 @@ function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] 
         <span className="text-kk-muted"><IconInfo /></span>
       </div>
 
-      {/* Instagram — section within the outer card */}
-      <div className="border-t border-kk-line">
-        <div className="flex items-center gap-3 px-6 py-3.5">
-          <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
-            <IconInstagram />
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-kk-ink">Instagram</div>
-            <div className="text-xs text-kk-muted">Past 7 days</div>
-          </div>
-        </div>
-        <div className="border-t border-kk-line">
-          <PlatformMetrics metrics={organic.ig.metrics} />
-        </div>
-      </div>
-
-      {/* Facebook */}
-      {organic.fb.available && (
-        <div className="border-t border-kk-line">
-          <div className="flex items-center gap-3 px-6 py-3.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-              <IconFacebook />
+      {/* Inner platform cards */}
+      <div className="px-4 pb-4 space-y-3">
+        {/* Instagram inner card */}
+        <div className="border border-kk-line rounded-xl overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
+              <IconInstagram />
             </div>
             <div>
-              <div className="text-sm font-semibold text-kk-ink">Facebook</div>
+              <div className="text-sm font-semibold text-kk-ink">Instagram</div>
               <div className="text-xs text-kk-muted">Past 7 days</div>
             </div>
           </div>
           <div className="border-t border-kk-line">
-            <PlatformMetrics metrics={organic.fb.metrics} />
+            <PlatformMetrics metrics={organic.ig.metrics} />
           </div>
         </div>
-      )}
+
+        {/* Facebook inner card */}
+        {organic.fb.available && (
+          <div className="border border-kk-line rounded-xl overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <IconFacebook />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-kk-ink">Facebook</div>
+                <div className="text-xs text-kk-muted">Past 7 days</div>
+              </div>
+            </div>
+            <div className="border-t border-kk-line">
+              <PlatformMetrics metrics={organic.fb.metrics} />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Footer link — mirrors Paid card's footer */}
       <div className="mt-auto px-6 py-3 border-t border-kk-line">
         <a href="/marketing/organic" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
