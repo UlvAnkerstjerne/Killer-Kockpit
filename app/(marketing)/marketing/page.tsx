@@ -35,19 +35,19 @@ const STATUS_CFG = {
     label: 'Green',
     dot: 'bg-green-500',
     pill: 'bg-green-100 text-green-700',
-    banner: 'bg-green-50 border-green-100',
+    banner: 'bg-green-50 border-green-200',
   },
   amber: {
     label: 'Amber',
     dot: 'bg-amber-400',
     pill: 'bg-amber-100 text-amber-700',
-    banner: 'bg-amber-50 border-amber-100',
+    banner: 'bg-amber-50 border-amber-200',
   },
   red: {
     label: 'Red',
     dot: 'bg-red-500',
     pill: 'bg-red-100 text-red-700',
-    banner: 'bg-red-50 border-red-100',
+    banner: 'bg-red-50 border-red-200',
   },
 } as const
 
@@ -153,12 +153,12 @@ function StatusBanner({
 }) {
   const cfg = STATUS_CFG[status]
   return (
-    <div className={`border rounded-2xl px-5 py-4 flex items-center gap-4 ${cfg.banner}`}>
-      <span className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${cfg.pill}`}>
+    <div className={`border rounded-xl px-6 py-3 flex items-start gap-5 ${cfg.banner}`}>
+      <span className={`mt-px shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${cfg.pill}`}>
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
         {cfg.label}
       </span>
-      <p className="text-sm text-kk-ink leading-snug">{summary || reason}</p>
+      <p className="text-[13px] text-kk-ink/80 leading-snug">{summary || reason}</p>
     </div>
   )
 }
@@ -169,7 +169,7 @@ function StatusBanner({
 
 function Sparkline({ points, stroke }: { points: TrendPoint[]; stroke: string }) {
   if (points.length < 2) return null
-  const W = 80, H = 32, pad = 3
+  const W = 96, H = 36, pad = 3
   const values = points.map((p) => p.value)
   const min = Math.min(...values)
   const max = Math.max(...values)
@@ -192,8 +192,8 @@ function Sparkline({ points, stroke }: { points: TrendPoint[]; stroke: string })
     d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`
   }
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none" aria-hidden="true" className="shrink-0 opacity-70">
-      <path d={d} stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none" aria-hidden="true" className="shrink-0 opacity-80">
+      <path d={d} stroke={stroke} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
@@ -211,25 +211,23 @@ function KpiCard({
   sparkColor: string
 }) {
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex flex-col gap-3 min-h-[130px]">
-      <div className="flex items-center gap-2.5">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg} ${iconColor}`}>
+    <div className="bg-kk-panel border border-kk-line rounded-2xl px-5 pt-4 pb-4 flex flex-col shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${iconBg} ${iconColor}`}>
           {icon}
         </div>
         <span className="text-xs text-kk-muted leading-tight">{metric.label}</span>
       </div>
-      <div className="mt-auto">
-        <div className={`text-[30px] font-bold tabular-nums leading-none tracking-tight ${metric.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
-          {metric.value}
+      <div className={`text-[32px] font-bold tabular-nums leading-none tracking-tight mt-2 ${metric.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
+        {metric.value}
+      </div>
+      <div className="flex items-end justify-between mt-auto pt-2">
+        <div className="text-xs text-kk-muted leading-none">
+          {metric.change ?? ''}
         </div>
-        <div className="flex items-end justify-between mt-1.5">
-          <div className="text-xs text-kk-muted">
-            {metric.change ?? ''}
-          </div>
-          {metric.trend && metric.trend.length >= 2 && (
-            <Sparkline points={metric.trend} stroke={sparkColor} />
-          )}
-        </div>
+        {metric.trend && metric.trend.length >= 2 && (
+          <Sparkline points={metric.trend} stroke={sparkColor} />
+        )}
       </div>
     </div>
   )
