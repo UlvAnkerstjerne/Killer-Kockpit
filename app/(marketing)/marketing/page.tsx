@@ -337,62 +337,69 @@ function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
   )
 }
 
+// ── GBP locations ─────────────────────────────────────────────────────────────
+// Canonical 8 Killer Kebab locations. When per-location review data is available
+// from the GBP API, replace the "—" placeholders with real counts.
+const GBP_LOCATIONS = [
+  'Borgergade',
+  'Vesterbro',
+  'Christianshavn',
+  'Fisketorvet',
+  'Frederiksberg',
+  'Nørrebro',
+  'Parken',
+  'CPH Airport',
+] as const
+
 // ── GBP card ──────────────────────────────────────────────────────────────────
 
 function GbpCard({ gbp }: { gbp: MorningBriefSections['gbp'] }) {
-  if (gbp.integration_kind === 'pending_approval' || gbp.integration_kind === 'connected_no_sync') {
-    const lines = gbp.integration_kind === 'pending_approval'
-      ? [
-          'Google Business Profile integration is pending API approval.',
-          'Review queue and rating summaries will appear here once the integration is active.',
-        ]
-      : ['Google Business Profile is connected — awaiting first sync.']
-
-    return (
-      <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex items-start gap-4">
-        <div className="shrink-0 w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center">
-          <IconStore />
-        </div>
-        <div className="min-w-0 pt-0.5">
-          <div className="text-sm font-semibold text-kk-ink mb-1">Google Business Profile</div>
-          {lines.map((l, i) => (
-            <p key={i} className="text-xs text-kk-muted leading-relaxed">{l}</p>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  const isPending = gbp.integration_kind === 'pending_approval' || gbp.integration_kind === 'connected_no_sync'
 
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 flex items-start gap-4">
-      <div className="shrink-0 w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center">
-        <IconStore />
-      </div>
-      <div className="min-w-0 flex-1 pt-0.5">
-        <div className="text-sm font-semibold text-kk-ink mb-2">Google Business Profile</div>
-        {gbp.assessment && (
-          <p className="text-xs text-kk-muted leading-relaxed mb-3">{gbp.assessment}</p>
-        )}
-        <div className="space-y-2">
-          {gbp.new_reviews_yesterday != null && (
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs text-kk-muted">New reviews (yesterday)</span>
-              <span className="text-sm font-semibold tabular-nums text-kk-ink">{gbp.new_reviews_yesterday}</span>
-            </div>
-          )}
-          {gbp.avg_star_rating_7d != null && (
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs text-kk-muted">Avg rating (7d)</span>
-              <span className="text-sm font-semibold tabular-nums text-kk-ink">{gbp.avg_star_rating_7d.toFixed(1)} / 5</span>
-            </div>
-          )}
-          {gbp.pending_reply_count > 0 && (
-            <a href="/marketing/google-business-profile" className="block text-xs text-blue-600 font-medium hover:underline pt-1">
-              {gbp.pending_reply_count} {gbp.pending_reply_count === 1 ? 'reply' : 'replies'} awaiting approval →
-            </a>
+    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-start gap-3 px-5 pt-5 pb-4">
+        <div className="shrink-0 w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center mt-0.5">
+          <IconStore />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold text-kk-ink">Google Business Profile</span>
+            <span className="text-kk-muted"><IconInfo /></span>
+          </div>
+          {isPending && (
+            <p className="text-xs text-kk-muted mt-0.5">
+              {gbp.integration_kind === 'pending_approval' ? 'API approval pending' : 'Connected — awaiting first sync'}
+            </p>
           )}
         </div>
       </div>
+
+      {/* Per-location new-reviews table */}
+      <div className="border-t border-kk-line">
+        <div className="grid grid-cols-[1fr_auto_auto] px-5 py-2 bg-kk-soft border-b border-kk-line">
+          <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">Store</span>
+          <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase w-20 text-right">Yesterday</span>
+          <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase w-14 text-right">7 days</span>
+        </div>
+        {GBP_LOCATIONS.map((store, i) => (
+          <div key={store} className={`grid grid-cols-[1fr_auto_auto] items-center px-5 py-2${i > 0 ? ' border-t border-kk-line' : ''}`}>
+            <span className="text-sm text-kk-ink">{store}</span>
+            <span className="text-sm tabular-nums text-kk-muted w-20 text-right">—</span>
+            <span className="text-sm tabular-nums text-kk-muted w-14 text-right">—</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer — link to full GBP page when connected with pending replies */}
+      {gbp.integration_kind === 'connected' && gbp.pending_reply_count > 0 && (
+        <div className="px-5 py-3 border-t border-kk-line">
+          <a href="/marketing/google-business-profile" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
+            {gbp.pending_reply_count} {gbp.pending_reply_count === 1 ? 'reply' : 'replies'} awaiting approval →
+          </a>
+        </div>
+      )}
     </div>
   )
 }
