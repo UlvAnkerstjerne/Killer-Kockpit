@@ -268,25 +268,25 @@ function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
   return (
     <div className="rounded-xl border border-kk-line overflow-hidden">
       {/* header row */}
-      <div className="grid grid-cols-[1fr_auto] gap-x-6 px-4 py-2.5 bg-kk-soft">
-        <span className="text-xs text-kk-muted">Campaign</span>
-        <span className="text-xs text-kk-muted">7d spend</span>
+      <div className="grid grid-cols-[1fr_auto] gap-x-6 px-4 py-2 bg-kk-soft border-b border-kk-line">
+        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">Campaign</span>
+        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">7d spend</span>
       </div>
       {/* data rows */}
       {campaigns.map((c, i) => (
         <div
           key={i}
-          className={`grid grid-cols-[1fr_auto] gap-x-6 items-center px-4 py-3 border-t border-kk-line ${
+          className={`grid grid-cols-[1fr_auto] gap-x-6 items-center px-4 py-2.5 border-t border-kk-line ${
             c.anomaly_flag ? 'bg-amber-50' : ''
           }`}
         >
-          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
             {c.anomaly_flag ? (
               <span className="shrink-0 text-amber-500"><IconWarning /></span>
             ) : (
-              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-kk-line" />
+              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-kk-line/60" />
             )}
-            <span className="text-sm text-kk-ink truncate">{c.name}</span>
+            <span className={`text-sm truncate ${c.anomaly_flag ? 'text-kk-ink font-medium' : 'text-kk-ink'}`}>{c.name}</span>
           </div>
           <span className={`text-sm tabular-nums shrink-0 ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
             {c.spend_7d_formatted ?? '—'}
@@ -302,18 +302,19 @@ function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
 function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
   return (
     <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-      <div className="px-6 pt-5 pb-6">
-        <div className="flex items-center gap-1.5 mb-1.5">
+      <div className="px-6 pt-5 pb-5">
+        <div className="flex items-center gap-1.5 mb-2">
           <h2 className="text-xl font-semibold text-kk-ink">Paid</h2>
           <span className="text-kk-muted"><IconInfo /></span>
         </div>
-        <p className="text-sm text-kk-muted leading-relaxed mb-5">{paid.assessment}</p>
+        <p className="text-[13px] text-kk-muted leading-snug mb-3">{paid.assessment}</p>
 
         {paid.anomalies.length > 0 && (
-          <div className="space-y-2 mb-5">
+          <div className="space-y-1 mb-4">
             {paid.anomalies.map((a, i) => (
-              <div key={i} className="flex items-start gap-2.5 pl-3.5 pr-4 py-2.5 bg-amber-50 border-l-2 border-amber-400 rounded-r-lg">
-                <span className="text-xs text-amber-800 leading-relaxed">{a}</span>
+              <div key={i} className="flex items-start gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+                <span className="shrink-0 mt-[3px] w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span className="text-[11px] text-amber-800 leading-snug">{a}</span>
               </div>
             ))}
           </div>
@@ -321,14 +322,14 @@ function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
 
         {paid.active_campaign_summaries.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-kk-ink mb-3">Active campaigns</h3>
+            <h3 className="text-sm font-medium text-kk-ink mb-2">Active campaigns</h3>
             <CampaignTable campaigns={paid.active_campaign_summaries} />
           </div>
         )}
       </div>
 
-      <div className="px-6 py-4 border-t border-kk-line">
-        <a href="/marketing/campaigns" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
+      <div className="px-6 py-3 border-t border-kk-line">
+        <a href="/marketing/paid" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
           View all campaigns →
         </a>
       </div>
