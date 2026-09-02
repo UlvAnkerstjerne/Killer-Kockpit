@@ -552,50 +552,47 @@ function MorningBriefContent({
             <PaidCard paid={sections.paid} />
             <GbpCard gbp={sections.gbp} />
           </div>
-          {/* Right: Organic */}
-          <OrganicSection organic={sections.organic} />
-        </div>
-      )}
+          {/* Right: Organic + Today's Content + Needs Review */}
+          <div className="space-y-4">
+            <OrganicSection organic={sections.organic} />
 
-      {/* 4 — Bottom operational cards */}
-      {sections && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Today's Content */}
-          <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-green-100 text-green-700 flex items-center justify-center shrink-0">
-                <IconCalendar />
-              </div>
-              <h2 className="text-sm font-semibold text-kk-ink">Today&apos;s Content</h2>
-            </div>
-            <p className="text-sm text-kk-muted">No content scheduled.</p>
-          </div>
-
-          {/* Needs Review */}
-          <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-                <IconClipboard />
-              </div>
-              <h2 className="text-sm font-semibold text-kk-ink">Needs Review</h2>
-            </div>
-            {sections.needs_review.total === 0 ? (
-              <p className="text-sm text-kk-muted">Nothing awaiting your approval right now.</p>
-            ) : (
-              <div>
-                <div className="space-y-2 mb-3">
-                  {sections.needs_review.items.map((item, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-3">
-                      <span className="text-xs text-kk-muted">{item.label}</span>
-                      <span className="text-sm font-semibold tabular-nums text-kk-ink">{item.count}</span>
-                    </div>
-                  ))}
+            {/* Today's Content */}
+            <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-xl bg-green-100 text-green-700 flex items-center justify-center shrink-0">
+                  <IconCalendar />
                 </div>
-                <a href="/marketing/needs-review" className="text-sm text-blue-600 hover:text-blue-700 transition-colors">
-                  Review all {sections.needs_review.total} →
-                </a>
+                <h2 className="text-sm font-semibold text-kk-ink">Today&apos;s Content</h2>
               </div>
-            )}
+              <p className="text-sm text-kk-muted">No content scheduled.</p>
+            </div>
+
+            {/* Needs Review */}
+            <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                  <IconClipboard />
+                </div>
+                <h2 className="text-sm font-semibold text-kk-ink">Needs Review</h2>
+              </div>
+              {sections.needs_review.total === 0 ? (
+                <p className="text-sm text-kk-muted">Nothing awaiting your approval right now.</p>
+              ) : (
+                <div>
+                  <div className="space-y-2 mb-3">
+                    {sections.needs_review.items.map((item, i) => (
+                      <div key={i} className="flex items-baseline justify-between gap-3">
+                        <span className="text-xs text-kk-muted">{item.label}</span>
+                        <span className="text-sm font-semibold tabular-nums text-kk-ink">{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <a href="/marketing/needs-review" className="text-sm text-blue-600 hover:text-blue-700 transition-colors">
+                    Review all {sections.needs_review.total} →
+                  </a>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
