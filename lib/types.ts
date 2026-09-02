@@ -1,4 +1,5 @@
 export type KKRole = 'SUPER_ADMIN' | 'UM' | 'MEMBER'
+export type TodoStatus = 'open' | 'completed' | 'cancelled'
 export type ProjectStatus = 'planned' | 'active' | 'at_risk' | 'blocked' | 'completed' | 'archived' | 'cancelled'
 export type TaskStatus = 'proposed' | 'open' | 'in_progress' | 'blocked' | 'done' | 'cancelled'
 export type TaskPriority = 1 | 2 | 3 | 4
@@ -236,4 +237,15 @@ export interface MeetingMinutes {
 export interface ActionResult<T = void> {
   data?: T
   error?: string
+}
+
+export interface Todo {
+  id: string
+  user_id: string
+  title: string
+  priority: 1 | 2 | 3 | 4
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+  cancelled_at: string | null
 }

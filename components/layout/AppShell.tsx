@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/projects',     label: 'Projects',    active: true  },
   { href: '/tasks',        label: 'Tasks',       active: true  },
   { href: '/waiting-ons',  label: 'Waiting On',  active: true  },
+  { href: '/todos',        label: 'To-Dos',      active: true  },
   { href: '/decisions',    label: 'Decisions',   active: true  },
   { href: '/meetings',     label: 'Meetings',    active: true  },
   { href: '/team',         label: 'Team',        active: true  },

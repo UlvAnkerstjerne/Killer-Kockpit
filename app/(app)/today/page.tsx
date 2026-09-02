@@ -11,8 +11,10 @@ import {
   sortWorkItems,
   formatCopenhagenWeekRange,
 } from '@/lib/today/weekUtils'
+import { sortOpenTodos, filterCompletedThisWeek } from '@/lib/today/todoUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
-import type { ViewMode, MeetingStatus } from '@/lib/types'
+import type { ViewMode, MeetingStatus, Todo } from '@/lib/types'
+import TodoBlock from '../todos/TodoBlock'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,6 +69,8 @@ export default async function TodayPage({
     todayMeetingsRes,
     weekMeetingsRes,
     draftMeetingsRes,
+    openTodosRes,
+    completedWeekTodosRes,
   ] = await Promise.all([
     // Unfinished tasks: overdue OR due this week (not done/cancelled, not archived)
     (isManagementView
@@ -160,6 +164,25 @@ export default async function TodayPage({
           .order('scheduled_start', { ascending: false })
           .limit(5)
       : Promise.resolve({ data: [] as { id: string; title: string; scheduled_start: string | null }[] }),
+
+    // Open todos for the current user (personal only — never aggregated)
+    supabase.from('todos')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at')
+      .eq('user_id', user.id)
+      .is('completed_at', null)
+      .is('cancelled_at', null)
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(50),
+
+    // Todos completed this week (for the "X completed this week" counter)
+    supabase.from('todos')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at')
+      .eq('user_id', user.id)
+      .gte('completed_at', weekStartISO)
+      .lt('completed_at', weekEndISO)
+      .order('completed_at', { ascending: false })
+      .limit(50),
   ])
 
   // ---------------------------------------------------------------------------
@@ -221,6 +244,10 @@ export default async function TodayPage({
   const todayIds = new Set(todayMeetings.map(m => m.id))
   const weekMeetings = ((weekMeetingsRes.data || []) as { id: string; title: string; status: string; scheduled_start: string | null; owner: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined }[])
     .filter(m => !todayIds.has(m.id))
+
+  // Todos — always personal, regardless of management/personal view toggle
+  const openTodos = sortOpenTodos((openTodosRes.data ?? []) as Todo[])
+  const completedThisWeek = filterCompletedThisWeek((completedWeekTodosRes.data ?? []) as Todo[], now)
 
   const weekRangeLabel = formatCopenhagenWeekRange(weekStart, weekEnd)
 
@@ -425,6 +452,9 @@ export default async function TodayPage({
             </div>
           </div>
         )}
+
+        {/* To-Dos — always personal, shown in all views */}
+        <TodoBlock openTodos={openTodos} completedThisWeek={completedThisWeek} />
 
         {/* Draft meetings awaiting review (management only) */}
         {canManage && draftMeetings.length > 0 && (
