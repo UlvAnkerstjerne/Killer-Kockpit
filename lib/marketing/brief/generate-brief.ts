@@ -48,6 +48,7 @@ import { BRIEF_PROMPT_VERSION } from './build-prompt'
 import { callMorningBriefAI } from '@/lib/ai/morning-brief'
 import type {
   BriefInputData,
+  CampaignMetrics,
   MorningBriefSections,
   MorningBriefAIOutput,
   StoredPaidSection,
@@ -86,6 +87,62 @@ function fmtCcy(n: number | null, ccy: string, decimals = 0): string {
 function pctStr(pct: number | null | undefined): string {
   if (pct == null) return 'n/a'
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+}
+
+// ── Objective → goal/result mapping ───────────────────────────────────────────
+//
+// Maps Meta campaign objective enum values to human-readable labels and
+// selects the correct primary result metric for each objective.
+// Values are derived from verified DB data — not assumed from campaign names.
+
+const OBJECTIVE_GOAL_LABELS: Record<string, string> = {
+  OUTCOME_AWARENESS:     'Awareness',
+  OUTCOME_TRAFFIC:       'Traffic',
+  OUTCOME_ENGAGEMENT:    'Engagement',
+  OUTCOME_LEADS:         'Leads',
+  OUTCOME_SALES:         'Sales',
+  OUTCOME_APP_PROMOTION: 'App Installs',
+}
+
+function objectiveGoalLabel(objective: string | null): string {
+  if (!objective) return '—'
+  return OBJECTIVE_GOAL_LABELS[objective] ?? objective
+}
+
+/** Returns the formatted yesterday and 7d result values for a campaign's primary objective metric. */
+function campaignResultValues(
+  c: CampaignMetrics,
+): { label: string; yesterday: string | null; sevenDay: string | null } {
+  switch (c.objective) {
+    case 'OUTCOME_AWARENESS':
+      return {
+        label:     'Reach',
+        yesterday: c.reach_yesterday != null ? fmt(c.reach_yesterday) : null,
+        sevenDay:  c.reach_7d != null        ? fmt(c.reach_7d)        : null,
+      }
+    case 'OUTCOME_TRAFFIC':
+      return {
+        label:     'Link Clicks',
+        yesterday: c.inline_link_clicks_yesterday != null ? fmt(c.inline_link_clicks_yesterday) : null,
+        sevenDay:  c.inline_link_clicks_7d != null        ? fmt(c.inline_link_clicks_7d)        : null,
+      }
+    default: {
+      // For other objectives use the top primary action if available, else impressions
+      const top = c.primary_actions[0]
+      if (top) {
+        return {
+          label:     top.type.replace(/_/g, ' '),
+          yesterday: null,  // per-action yesterday data not fetched for non-primary objectives
+          sevenDay:  top.value_7d != null ? fmt(top.value_7d) : null,
+        }
+      }
+      return {
+        label:     'Impressions',
+        yesterday: null,
+        sevenDay:  c.impressions_7d != null ? fmt(c.impressions_7d) : null,
+      }
+    }
+  }
 }
 
 // ── Section assembly ──────────────────────────────────────────────────────────
@@ -139,12 +196,19 @@ function assemblePaidSection(data: BriefInputData, ai: MorningBriefAIOutput): St
     assessment: ai.paid_assessment,
     anomalies,
     metrics,
-    active_campaign_summaries: data.paid.active_campaigns.slice(0, 8).map((c) => ({
-      name:               c.name,
-      status:             c.status,
-      spend_7d_formatted: c.spend_7d != null ? fmtCcy(c.spend_7d, data.currency) : null,
-      anomaly_flag:       c.anomaly != null,
-    })),
+    active_campaign_summaries: data.paid.active_campaigns.slice(0, 8).map((c) => {
+      const result = campaignResultValues(c)
+      return {
+        name:               c.name,
+        status:             c.status,
+        spend_7d_formatted: c.spend_7d != null ? fmtCcy(c.spend_7d, data.currency) : null,
+        anomaly_flag:       c.anomaly != null,
+        goal_label:         objectiveGoalLabel(c.objective),
+        result_label:       result.label,
+        result_yesterday:   result.yesterday,
+        result_7d:          result.sevenDay,
+      }
+    }),
     pending_review_count: data.needsReview.paid_recommendation,
   }
 }

@@ -112,6 +112,11 @@ export interface CampaignMetrics {
   // Keyed by action type string (e.g. 'link_click', 'post_engagement', 'purchase')
   // Never manufacture a single generic CPA across incompatible objectives
   primary_actions: Array<{ type: string; value_7d: number | null; cost_7d: number | null }>
+  // Objective-aligned result metrics for the campaign table
+  // inline_link_clicks is the primary result for OUTCOME_TRAFFIC campaigns
+  inline_link_clicks_7d:        number | null
+  reach_yesterday:              number | null
+  inline_link_clicks_yesterday: number | null
   // Anomaly flag (set deterministically with volume guard)
   anomaly: PaidAnomalySignal | null
 }
@@ -263,6 +268,11 @@ export interface StoredPaidSection {
     status: string
     spend_7d_formatted: string | null
     anomaly_flag: boolean
+    // Objective-derived fields added in v2 — optional for backward compat with stored briefs
+    goal_label?:        string    // e.g. 'Awareness', 'Traffic'
+    result_label?:      string    // e.g. 'Reach', 'Link Clicks'
+    result_yesterday?:  string | null
+    result_7d?:         string | null
   }>
   pending_review_count: number
 }

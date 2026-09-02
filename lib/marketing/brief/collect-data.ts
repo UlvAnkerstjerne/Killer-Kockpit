@@ -363,7 +363,10 @@ async function collectPaidData(
 
     // Yesterday's row
     const yesterdayRow = rows.find((r) => r.date_start === yesterday)
-    const spend_yesterday = yesterdayRow?.spend != null ? parseFloat(yesterdayRow.spend as string) : null
+    const spend_yesterday                = yesterdayRow?.spend != null ? parseFloat(yesterdayRow.spend as string) : null
+    const reach_yesterday                = yesterdayRow?.reach != null ? Number(yesterdayRow.reach) : null
+    const inline_link_clicks_yesterday   = yesterdayRow?.inline_link_clicks != null ? Number(yesterdayRow.inline_link_clicks) : null
+    const inline_link_clicks_7d          = sumIntRows(rows, 'inline_link_clicks')
 
     // Primary actions: aggregate from actions_json
     // Preserve actual action type names — never manufacture a single generic CPA
@@ -392,6 +395,9 @@ async function collectPaidData(
       cpc_7d,
       frequency_7d: freq_7d,
       primary_actions: primaryActions,
+      inline_link_clicks_7d,
+      reach_yesterday,
+      inline_link_clicks_yesterday,
       anomaly,
     }
 

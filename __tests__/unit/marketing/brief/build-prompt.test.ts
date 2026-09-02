@@ -171,6 +171,7 @@ describe('buildBriefUserMessage', () => {
           id: 'c1', name: 'Summer Ramp', status: 'ACTIVE', objective: 'LINK_CLICKS',
           spend_7d: 1200, spend_yesterday: 180, impressions_7d: 45000, reach_7d: 38000,
           clicks_7d: 620, ctr_7d: 1.38, cpm_7d: 26.7, cpc_7d: 1.94, frequency_7d: 1.18,
+          inline_link_clicks_7d: 580, reach_yesterday: 5200, inline_link_clicks_yesterday: 82,
           primary_actions: [], anomaly: null,
         }],
         paused_campaigns: [],

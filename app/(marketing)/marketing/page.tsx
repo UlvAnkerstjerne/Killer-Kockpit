@@ -268,19 +268,21 @@ function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
   return (
     <div className="rounded-xl border border-kk-line overflow-hidden">
       {/* header row */}
-      <div className="grid grid-cols-[1fr_auto] gap-x-6 px-4 py-2 bg-kk-soft border-b border-kk-line">
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 bg-kk-soft border-b border-kk-line">
         <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">Campaign</span>
-        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">7d spend</span>
+        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase text-right">Goal</span>
+        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase text-right">Yesterday</span>
+        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase text-right">7 days</span>
       </div>
       {/* data rows */}
       {campaigns.map((c, i) => (
         <div
           key={i}
-          className={`grid grid-cols-[1fr_auto] gap-x-6 items-center px-4 py-2.5 border-t border-kk-line ${
+          className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-4 py-2.5 border-t border-kk-line ${
             c.anomaly_flag ? 'bg-amber-50' : ''
           }`}
         >
-          <div className="flex items-center gap-2 min-w-0 pr-2">
+          <div className="flex items-center gap-2 min-w-0">
             {c.anomaly_flag ? (
               <span className="shrink-0 text-amber-500"><IconWarning /></span>
             ) : (
@@ -288,8 +290,14 @@ function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
             )}
             <span className={`text-sm truncate ${c.anomaly_flag ? 'text-kk-ink font-medium' : 'text-kk-ink'}`}>{c.name}</span>
           </div>
-          <span className={`text-sm tabular-nums shrink-0 ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
-            {c.spend_7d_formatted ?? '—'}
+          <span className="text-sm tabular-nums shrink-0 text-kk-muted text-right">
+            {c.goal_label ?? '—'}
+          </span>
+          <span className={`text-sm tabular-nums shrink-0 text-right ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
+            {c.result_yesterday ?? '—'}
+          </span>
+          <span className={`text-sm tabular-nums shrink-0 text-right ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
+            {c.result_7d ?? '—'}
           </span>
         </div>
       ))}
