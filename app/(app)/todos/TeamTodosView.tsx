@@ -72,10 +72,9 @@ export default function TeamTodosView({ todos, users }: Props) {
   const olderCompleted  = allCompleted.filter(t => new Date(t.completed_at!) < cutoff)
   const visibleCompleted = showOlderCompleted ? allCompleted : recentCompleted
 
-  // Users who actually have todos in the loaded data — filter options
-  const usersWithTodos: User[] = users.filter(u =>
-    todos.some(t => t.user_id === u.id)
-  )
+  // All management users are always shown in the filter bar,
+  // even if someone currently has zero todos — zero work is useful signal.
+  const usersWithTodos: User[] = users
 
   // Label for empty open section
   const selectedName = selectedUserId
@@ -276,7 +275,7 @@ function Section({
         </h2>
       </div>
       {count === 0 && emptyText ? (
-        <div className="px-5 py-8 text-center text-sm text-kk-muted">{emptyText}</div>
+        <div className="px-5 py-3 text-sm text-kk-muted">{emptyText}</div>
       ) : (
         <div className="divide-y divide-kk-line">{children}</div>
       )}

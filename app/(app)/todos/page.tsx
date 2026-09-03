@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser, getActiveUsers } from '@/lib/auth'
-import { canAccessManagementView } from '@/lib/permissions'
+import { getCurrentUser } from '@/lib/auth'
+import { canAccessManagementView, MANAGEMENT_ROLES } from '@/lib/permissions'
 import type { Todo, TeamTodo } from '@/lib/types'
 import TodoPageClient from './TodoPageClient'
 import TeamTodosView from './TeamTodosView'
@@ -52,7 +52,7 @@ export default async function TodosPage({
     // RLS "todos: management can read all" (migration 027) allows SUPER_ADMIN
     // and UM to SELECT all rows. No user_id filter — we want the whole team.
     // Cancelled todos are excluded (noise; not "in progress" or "done").
-    const [teamTodosRes, activeUsers] = await Promise.all([
+    const [teamTodosRes, managementUsersRes] = await Promise.all([
       supabase
         .from('todos')
         .select(
@@ -62,7 +62,14 @@ export default async function TodosPage({
         .order('priority', { ascending: true })
         .order('created_at', { ascending: false })
         .limit(500),
-      getActiveUsers(),
+      // Fetch all active management-role users for the filter bar.
+      // This ensures the full team appears even when someone has zero todos.
+      supabase
+        .from('app_users')
+        .select('id, display_name')
+        .eq('active', true)
+        .in('role', MANAGEMENT_ROLES)
+        .order('display_name'),
     ])
 
     const teamTodos: TeamTodo[] = ((teamTodosRes.data ?? []) as RawTeamTodo[]).map(t => {
@@ -84,10 +91,12 @@ export default async function TodosPage({
       }
     })
 
+    const managementUsers = (managementUsersRes.data ?? []) as { id: string; display_name: string }[]
+
     return (
       <div>
         <PageHeader tab="team" canSeeTeam />
-        <TeamTodosView todos={teamTodos} users={activeUsers} />
+        <TeamTodosView todos={teamTodos} users={managementUsers} />
       </div>
     )
   }
