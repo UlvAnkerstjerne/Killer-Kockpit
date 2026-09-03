@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
 import { WaitingOnStatusBadge } from '@/components/ui/WaitingOnStatusBadge'
+import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import type { ViewMode, WaitingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -33,7 +34,7 @@ export default async function WaitingOnsPage({
   let query = supabase
     .from('waiting_ons')
     .select(`
-      id, title, status, due_at, waiting_for_name, notes,
+      id, title, status, priority, due_at, waiting_for_name, notes,
       owner:owner_user_id (id, display_name, email),
       waiting_for_user:waiting_for_user_id (id, display_name, email),
       project:project_id (id, title)
@@ -105,6 +106,7 @@ export default async function WaitingOnsPage({
                 href={`/waiting-ons/${wo.id}`}
                 className="flex items-center gap-4 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
               >
+                <PriorityDot priority={wo.priority ?? 2} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-kk-ink group-hover:underline truncate">
@@ -126,6 +128,9 @@ export default async function WaitingOnsPage({
                     )}
                   </div>
                 </div>
+                <span className="text-[10px] text-kk-muted shrink-0">
+                  {PRIORITY_CONFIG[wo.priority ?? 2]?.label}
+                </span>
                 {wo.due_at && (
                   <div className={`text-xs shrink-0 ${isOverdue ? 'text-kk-bad font-medium' : 'text-kk-muted'}`}>
                     {new Date(wo.due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}

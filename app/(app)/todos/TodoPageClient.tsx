@@ -14,34 +14,7 @@ import { useState, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createTodo, completeTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
 import type { Todo } from '@/lib/types'
-
-// ---------------------------------------------------------------------------
-// Priority config
-// ---------------------------------------------------------------------------
-
-const PRIORITY_LABELS: Record<number, string> = {
-  1: 'Critical',
-  2: 'Normal',
-  3: 'Low',
-  4: 'Background',
-}
-
-function PriorityDot({ priority }: { priority: number }) {
-  if (priority === 1) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded shrink-0">
-        !!
-      </span>
-    )
-  }
-  if (priority === 3) {
-    return <span className="w-1.5 h-1.5 rounded-full shrink-0 opacity-30 bg-kk-line" />
-  }
-  if (priority === 4) {
-    return <span className="w-1.5 h-1.5 rounded-full shrink-0 opacity-20 bg-kk-line" />
-  }
-  return null
-}
+import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -145,10 +118,10 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
             />
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <PriorityDot priority={todo.priority} />
-              <span className="text-sm text-kk-ink truncate">{todo.title}</span>
+              <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
             </div>
-            <span className="text-xs text-kk-muted shrink-0 opacity-0 group-hover:opacity-60">
-              {PRIORITY_LABELS[todo.priority]}
+            <span className="text-[10px] text-kk-muted shrink-0">
+              {PRIORITY_CONFIG[todo.priority]?.label}
             </span>
             <button
               onClick={() => handleAction(() => cancelTodo(todo.id))}

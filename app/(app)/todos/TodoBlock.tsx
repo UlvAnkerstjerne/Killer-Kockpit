@@ -16,45 +16,7 @@ import { useRouter } from 'next/navigation'
 import { createTodo, completeTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
 import type { Todo } from '@/lib/types'
 import Link from 'next/link'
-
-// ---------------------------------------------------------------------------
-// Priority config
-// ---------------------------------------------------------------------------
-
-const PRIORITY_LABELS: Record<number, string> = {
-  1: 'Critical',
-  2: 'Normal',
-  3: 'Low',
-  4: 'Background',
-}
-
-const PRIORITY_DOT: Record<number, string> = {
-  1: 'bg-red-500',
-  2: 'bg-kk-line',
-  3: 'bg-kk-line',
-  4: 'bg-kk-line',
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function PriorityDot({ priority }: { priority: number }) {
-  if (priority === 1) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded shrink-0">
-        !!
-      </span>
-    )
-  }
-  if (priority === 3) {
-    return <span className={`w-1.5 h-1.5 rounded-full shrink-0 opacity-30 ${PRIORITY_DOT[priority]}`} />
-  }
-  if (priority === 4) {
-    return <span className={`w-1.5 h-1.5 rounded-full shrink-0 opacity-20 ${PRIORITY_DOT[priority]}`} />
-  }
-  return null // Normal — no indicator
-}
+import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -107,10 +69,17 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
   }
 
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl">
+    <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-kk-ink">
+      <div className="px-4 py-2 border-b border-kk-line flex items-center justify-between">
+        <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
+          <span className="text-kk-ink/50 shrink-0">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+              <rect x="2.5" y="9.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M9.5 4.5h4M9.5 11.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+          </span>
           To-Dos
           {openTodos.length > 0 && (
             <span className="text-kk-muted font-normal ml-1">· {openTodos.length} open</span>
@@ -131,7 +100,7 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
       </div>
 
       {/* Quick-add form */}
-      <form onSubmit={handleCreate} className="px-5 py-3 border-b border-kk-line flex items-center gap-2">
+      <form onSubmit={handleCreate} className="px-4 py-2 border-b border-kk-line flex items-center gap-2">
         <input
           ref={inputRef}
           type="text"
@@ -177,7 +146,7 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
           {(maxItems ? openTodos.slice(0, maxItems) : openTodos).map(todo => (
             <div
               key={todo.id}
-              className="flex items-center gap-3 px-5 py-3 group"
+              className="flex items-center gap-3 px-4 py-1.5 group"
             >
               {/* Complete button */}
               <button
@@ -191,8 +160,13 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
               {/* Title + priority */}
               <div className="flex-1 flex items-center gap-2 min-w-0">
                 <PriorityDot priority={todo.priority} />
-                <span className="text-sm text-kk-ink truncate">{todo.title}</span>
+                <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
               </div>
+
+              {/* Priority label */}
+              <span className="text-[10px] text-kk-muted shrink-0">
+                {PRIORITY_CONFIG[todo.priority]?.label}
+              </span>
 
               {/* Cancel button — visible on hover */}
               <button
@@ -243,8 +217,8 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
       )}
 
       {showFooter && (
-        <div className="px-4 py-2.5 border-t border-kk-line">
-          <Link href="/todos" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
+        <div className="px-4 py-1.5 border-t border-kk-line flex justify-end">
+          <Link href="/todos" className="text-xs text-kk-brand font-medium hover:opacity-70 transition-opacity">
             View all to-dos →
           </Link>
         </div>

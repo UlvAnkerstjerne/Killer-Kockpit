@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useTransition } from 'react'
 import { completeTask } from '@/lib/actions/tasks'
-import { TaskStatusBadge, PriorityBadge } from '@/components/ui/StatusBadge'
+import { TaskStatusBadge } from '@/components/ui/StatusBadge'
+import { PriorityDot } from '@/components/ui/PriorityDot'
 import type { AppUser, TaskStatus } from '@/lib/types'
 
 type TaskRow = {
@@ -91,8 +92,12 @@ export default function TaskList({
             href={`/tasks/${task.id}`}
             className="flex items-start gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
           >
+            <div className="mt-1.5 shrink-0">
+              <PriorityDot priority={task.priority} />
+            </div>
+
             <div
-              className="mt-0.5"
+              className="mt-0.5 shrink-0"
               onClick={(e) => e.stopPropagation()}
             >
               <TaskCompleteButton taskId={task.id} status={task.status} />
@@ -107,7 +112,6 @@ export default function TaskList({
                   {task.title}
                 </span>
                 <TaskStatusBadge status={task.status as TaskStatus} />
-                {task.priority === 1 && <PriorityBadge priority={1} />}
               </div>
 
               <div className="flex items-center gap-3 mt-1 flex-wrap">

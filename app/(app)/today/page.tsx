@@ -13,6 +13,8 @@ import { sortOpenTodos, filterCompletedThisWeek } from '@/lib/today/todoUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
+import CaptureBar from '@/components/layout/CaptureBar'
+import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,52 +79,103 @@ function formatShortDate(dt: string | null): string | null {
 
 // ─── UI micro-components ─────────────────────────────────────────────────────
 
-function PriorityPip({ priority }: { priority: number }) {
-  if (priority === 1) return (
-    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1 py-px rounded shrink-0">!!</span>
-  )
-  if (priority === 3) return <span className="w-1.5 h-1.5 rounded-full bg-kk-line shrink-0" />
-  if (priority === 4) return <span className="w-1.5 h-1.5 rounded-full bg-kk-line/40 shrink-0" />
-  return null
-}
-
 function TypeChip({ label, green }: { label: string; green?: boolean }) {
   return (
-    <span className={`text-[10px] border rounded px-1 py-px shrink-0 ${green ? 'text-kk-good border-kk-good/40' : 'text-kk-muted border-kk-line'}`}>
+    <span className={`text-[10px] border rounded px-1 py-px shrink-0 ${green ? 'text-kk-good border-kk-good/40 bg-kk-good-bg/50' : 'text-kk-muted border-kk-line bg-kk-soft'}`}>
       {label}
     </span>
   )
 }
 
 function EmptyRow({ text }: { text: string }) {
-  return <div className="px-4 py-4 text-sm text-kk-muted text-center">{text}</div>
+  return <div className="px-4 py-2.5 text-sm text-kk-muted text-center">{text}</div>
+}
+
+// ─── Card header icons ────────────────────────────────────────────────────────
+
+function IconUrgent() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 2L9.5 7H14L10.5 10l1.5 5L8 12l-4 3 1.5-5L2 7h4.5L8 2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconWorkWeek() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5 1v3M11 1v3M1.5 6.5h13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function IconCompleted() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5 8l2.5 2.5L11 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconTodo() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+      <rect x="2.5" y="9.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M9.5 4.5h4M9.5 11.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function IconWaiting() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M8 4.5V8l2.5 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconMeeting() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1" y="3" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M11 6.5l4-2v7l-4-2V6.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconGlance() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 12h2V8H2v4zM7 12h2V5H7v7zM12 12h2V2h-2v10z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+    </svg>
+  )
 }
 
 // ─── Dashboard card shell ────────────────────────────────────────────────────
 
 function DashCard({
-  title, badge, footerHref, footerLabel, children,
+  title, badge, footerHref, footerLabel, children, icon,
 }: {
   title: string
   badge?: number | string
   footerHref?: string
   footerLabel?: string
   children: React.ReactNode
+  icon?: React.ReactNode
 }) {
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-      <div className="px-4 py-3.5 border-b border-kk-line flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-kk-ink">
+    <div className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
+      <div className="px-4 py-2 border-b border-kk-line flex items-center justify-between">
+        <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
+          {icon && <span className="text-kk-ink/50 shrink-0">{icon}</span>}
           {title}
           {badge !== undefined && (
-            <span className="text-kk-muted font-normal ml-1.5">· {badge}</span>
+            <span className="text-kk-muted font-normal ml-1">· {badge}</span>
           )}
         </h2>
       </div>
       <div>{children}</div>
       {footerHref && footerLabel && (
-        <div className="px-4 py-2.5 border-t border-kk-line">
-          <Link href={footerHref} className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
+        <div className="px-4 py-1.5 border-t border-kk-line flex justify-end">
+          <Link href={footerHref} className="text-xs text-kk-brand font-medium hover:opacity-70 transition-opacity">
             {footerLabel} →
           </Link>
         </div>
@@ -384,7 +437,7 @@ export default async function TodayPage({
     <div>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-5">
+      <div className="flex items-start justify-between mb-1.5">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-kk-ink">This week</h1>
           <p className="text-sm text-kk-muted mt-0.5">{weekRangeLabel}</p>
@@ -407,16 +460,22 @@ export default async function TodayPage({
         )}
       </div>
 
+      {/* ── Inline capture buttons ──────────────────────────────────────────── */}
+      <div className="mb-3">
+        <CaptureBar user={user} inline />
+      </div>
+
       {/* ── Dashboard grid ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2.5 items-start">
 
         {/* ═══ Card 1 — Urgent Now (left col, row 1) ════════════════════════ */}
         <div className="self-start order-1 lg:order-none lg:col-start-1 lg:row-start-1">
           <DashCard
             title="Urgent now"
             badge={urgentItems.length > 0 ? urgentItems.length : undefined}
-            footerHref={urgentItems.length > 6 ? '/tasks' : undefined}
-            footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : undefined}
+            footerHref="/tasks"
+            footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : 'View all tasks'}
+            icon={<IconUrgent />}
           >
             {urgentItems.length === 0 ? (
               <EmptyRow text="No overdue or imminent items." />
@@ -429,12 +488,13 @@ export default async function TodayPage({
                     <Link
                       key={item.id}
                       href={item.href}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group"
+                      className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                     >
+                      <PriorityDot priority={item.priority} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          {item.kind === 'waiting_on' && <TypeChip label="WO" />}
-                          <span className="text-sm text-kk-ink group-hover:underline truncate">
+                          <TypeChip label={item.kind === 'waiting_on' ? 'WO' : 'Task'} />
+                          <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate">
                             {item.title}
                           </span>
                         </div>
@@ -443,7 +503,7 @@ export default async function TodayPage({
                         )}
                       </div>
                       {cfg.label && (
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${cfg.cls}`}>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${cfg.cls}`}>
                           {cfg.label}
                         </span>
                       )}
@@ -472,6 +532,7 @@ export default async function TodayPage({
             badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
             footerHref="/tasks"
             footerLabel="View all tasks"
+            icon={<IconWorkWeek />}
           >
             {weekTaskItems.length === 0 ? (
               <EmptyRow text="No remaining tasks this week." />
@@ -481,22 +542,23 @@ export default async function TodayPage({
                   <Link
                     key={item.id}
                     href={item.href}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group"
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                   >
+                    <PriorityDot priority={item.priority} />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-kk-ink group-hover:underline truncate block">
-                        {item.title}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <TypeChip label={item.kind === 'waiting_on' ? 'WO' : 'Task'} />
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate">
+                          {item.title}
+                        </span>
+                      </div>
                       {item.ownerName && (
                         <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <PriorityPip priority={item.priority} />
-                      {item.due_at && (
-                        <span className="text-xs text-kk-muted">{formatShortDate(item.due_at)}</span>
-                      )}
-                    </div>
+                    {item.due_at && (
+                      <span className="text-xs text-kk-muted shrink-0">{formatShortDate(item.due_at)}</span>
+                    )}
                   </Link>
                 ))}
                 {weekTaskItems.length > 7 && (
@@ -516,6 +578,7 @@ export default async function TodayPage({
             badge={nonUrgentWOs.length > 0 ? nonUrgentWOs.length : undefined}
             footerHref="/waiting-ons"
             footerLabel="View all waiting ons"
+            icon={<IconWaiting />}
           >
             {nonUrgentWOs.length === 0 ? (
               <EmptyRow text="No open waiting ons." />
@@ -525,22 +588,20 @@ export default async function TodayPage({
                   <Link
                     key={wo.id}
                     href={`/waiting-ons/${wo.id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group"
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                   >
+                    <PriorityDot priority={wo.priority} />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-kk-ink group-hover:underline truncate block">
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
                         {wo.title}
                       </span>
                       <div className="text-xs text-kk-muted mt-0.5 truncate">
                         Waiting on: {waitingForDisplay(wo)}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <PriorityPip priority={wo.priority} />
-                      {wo.due_at && (
-                        <span className="text-xs text-kk-muted">{formatShortDate(wo.due_at)}</span>
-                      )}
-                    </div>
+                    <span className="text-[10px] text-kk-muted shrink-0">
+                      {PRIORITY_CONFIG[wo.priority]?.label}
+                    </span>
                   </Link>
                 ))}
                 {nonUrgentWOs.length > 5 && (
@@ -560,6 +621,7 @@ export default async function TodayPage({
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
             footerHref="/meetings"
             footerLabel="View all meetings"
+            icon={<IconMeeting />}
           >
             {todayMeetings.length === 0 && laterMeetings.length === 0 && draftMeetings.length === 0 ? (
               <EmptyRow text="No meetings this week." />
@@ -570,10 +632,10 @@ export default async function TodayPage({
                   <Link
                     key={m.id}
                     href={`/meetings/${m.id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group"
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
                       <div className="text-xs font-medium text-kk-warn mt-0.5">Today</div>
                     </div>
                     {m.scheduled_start && (
@@ -586,10 +648,10 @@ export default async function TodayPage({
                   <Link
                     key={m.id}
                     href={`/meetings/${m.id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group"
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
                       {m.scheduled_start && (
                         <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
                       )}
@@ -601,10 +663,10 @@ export default async function TodayPage({
                   <Link
                     key={m.id}
                     href={`/meetings/${m.id}/publish`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group"
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                   >
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
                       {m.scheduled_start && (
                         <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
                       )}
@@ -620,8 +682,8 @@ export default async function TodayPage({
         {/* ═══ Card 6 — Completed This Week (left col, row 3) ══════════════ */}
         <div className="self-start order-6 lg:order-none lg:col-start-1 lg:row-start-3">
           {(() => {
-            const visibleDone  = done.slice(0, 5)
-            const visibleTodos = completedThisWeek.slice(0, Math.max(0, 5 - visibleDone.length))
+            const visibleDone  = done.slice(0, 3)
+            const visibleTodos = completedThisWeek.slice(0, Math.max(0, 3 - visibleDone.length))
             const overflow     = completedCount - visibleDone.length - visibleTodos.length
 
             return (
@@ -630,6 +692,7 @@ export default async function TodayPage({
                 badge={completedCount > 0 ? completedCount : undefined}
                 footerHref="/tasks"
                 footerLabel="View all completed"
+                icon={<IconCompleted />}
               >
                 {completedCount === 0 ? (
                   <EmptyRow text="Nothing completed yet — week is just getting started." />
@@ -639,8 +702,9 @@ export default async function TodayPage({
                       <Link
                         key={item.id}
                         href={item.href}
-                        className="flex items-center gap-3 px-4 py-2.5 hover:bg-kk-soft transition-colors group opacity-80"
+                        className="flex items-center gap-3 px-4 py-2 hover:bg-kk-soft transition-colors group opacity-80"
                       >
+                        <PriorityDot priority={item.priority} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
                             {item.kind === 'waiting_on' && <TypeChip label="WO" green />}
@@ -656,7 +720,8 @@ export default async function TodayPage({
                       </Link>
                     ))}
                     {visibleTodos.map(todo => (
-                      <div key={todo.id} className="flex items-center gap-3 px-4 py-2.5 opacity-80">
+                      <div key={todo.id} className="flex items-center gap-3 px-4 py-1.5 opacity-80">
+                        <PriorityDot priority={todo.priority} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <TypeChip label="To-Do" green />
@@ -680,7 +745,7 @@ export default async function TodayPage({
 
         {/* ═══ Card 7 — At a Glance (right col, row 4) ════════════════════ */}
         <div className="self-start order-7 lg:order-none lg:col-start-2 lg:row-start-4">
-          <DashCard title="This week at a glance">
+          <DashCard title="This week at a glance" icon={<IconGlance />}>
             <div className="grid grid-cols-2 gap-px bg-kk-line m-px overflow-hidden">
               {([
                 { label: 'Open items',   value: unfinished.length, accent: false },
@@ -688,7 +753,7 @@ export default async function TodayPage({
                 { label: 'Completed',    value: completedCount,    accent: false },
                 { label: 'Meetings',     value: meetingsThisWeek,  accent: false },
               ] as const).map(({ label, value, accent }) => (
-                <div key={label} className="bg-kk-panel px-4 py-4">
+                <div key={label} className="bg-kk-panel px-4 py-2.5">
                   <div className={`text-2xl font-bold tabular-nums leading-none ${accent ? 'text-kk-bad' : value === 0 ? 'text-kk-muted' : 'text-kk-ink'}`}>
                     {value}
                   </div>
