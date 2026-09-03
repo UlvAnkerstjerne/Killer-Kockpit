@@ -63,13 +63,15 @@ function PriorityDot({ priority }: { priority: number }) {
 interface Props {
   openTodos: Todo[]
   completedThisWeek: Todo[]
+  maxItems?: number     // if set, cap visible open todos (badge still shows full count)
+  showFooter?: boolean  // if true, render a footer link instead of the header "All →" link
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function TodoBlock({ openTodos, completedThisWeek }: Props) {
+export default function TodoBlock({ openTodos, completedThisWeek, maxItems, showFooter }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -120,9 +122,11 @@ export default function TodoBlock({ openTodos, completedThisWeek }: Props) {
               {completedThisWeek.length} completed this week
             </span>
           )}
-          <Link href="/todos" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
-            All →
-          </Link>
+          {!showFooter && (
+            <Link href="/todos" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
+              All →
+            </Link>
+          )}
         </div>
       </div>
 
@@ -170,7 +174,7 @@ export default function TodoBlock({ openTodos, completedThisWeek }: Props) {
         </div>
       ) : (
         <div className="divide-y divide-kk-line">
-          {openTodos.map(todo => (
+          {(maxItems ? openTodos.slice(0, maxItems) : openTodos).map(todo => (
             <div
               key={todo.id}
               className="flex items-center gap-3 px-5 py-3 group"
@@ -236,6 +240,14 @@ export default function TodoBlock({ openTodos, completedThisWeek }: Props) {
 
       {actionError && (
         <div className="px-5 py-2 border-t border-kk-line text-xs text-kk-bad">{actionError}</div>
+      )}
+
+      {showFooter && (
+        <div className="px-4 py-2.5 border-t border-kk-line">
+          <Link href="/todos" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
+            View all to-dos →
+          </Link>
+        </div>
       )}
     </div>
   )

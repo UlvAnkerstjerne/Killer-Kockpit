@@ -63,7 +63,7 @@ export default function AppShell({
       {/* Sidebar */}
       <aside className="w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex flex-col sticky top-0 h-screen">
         <div className="px-5 pt-6 pb-7">
-          <div className="font-black tracking-tight text-2xl text-kk-ink leading-none">
+          <div className="font-brand text-2xl text-kk-brand leading-none">
             Killer Kockpit
           </div>
           <div className="text-xs font-bold tracking-widest uppercase text-kk-muted mt-1">

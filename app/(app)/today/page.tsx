@@ -457,7 +457,12 @@ export default async function TodayPage({
 
         {/* ═══ Card 2 — To-Dos (right col, row 1) ══════════════════════════ */}
         <div className="self-start order-2 lg:order-none lg:col-start-2 lg:row-start-1">
-          <TodoBlock openTodos={openTodos} completedThisWeek={completedThisWeek} />
+          <TodoBlock
+            openTodos={openTodos}
+            completedThisWeek={[]}
+            maxItems={5}
+            showFooter
+          />
         </div>
 
         {/* ═══ Card 3 — Work This Week (left col, row 2) ═══════════════════ */}
