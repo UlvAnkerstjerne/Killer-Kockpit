@@ -249,3 +249,16 @@ export interface Todo {
   completed_at: string | null
   cancelled_at: string | null
 }
+
+/** Todo enriched with owner display name — used for the Team visibility view. */
+export interface TeamTodo {
+  id: string
+  user_id: string
+  title: string
+  priority: 1 | 2 | 3 | 4
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+  cancelled_at: string | null
+  owner: { id: string; display_name: string }
+}
