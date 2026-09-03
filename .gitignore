@@ -46,5 +46,12 @@ yarn-error.log*
 next-env.d.ts
 supabase/.temp/
 
-# frontend-audit generated snaps
+# frontend-audit generated snaps and config
 design/_debug/
+.frontend-audit.json
+
+# local dev tool configs
+.playwright-mcp/
+
+# raw design reference images (tracked separately outside the repo)
+UI - design/
