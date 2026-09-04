@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
 import { getGoogleOAuth2Client, getGoogleConnectionStatus, hasGmailScope } from '@/lib/google/auth'
+import { canUseGmailInbox } from '@/lib/permissions'
 import { listInboxMessages, getMessageFull, buildGmailDeepLink } from '@/lib/google/gmail'
 import type { GmailMessageMeta } from '@/lib/google/gmail'
 import { createServiceClient } from '@/lib/supabase/server'
@@ -370,10 +371,29 @@ export async function linkEmailToEntity(
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
 
+  // Server-side role guard — page redirect is not sufficient for server actions.
+  if (!canUseGmailInbox(user.role)) return { error: 'Not authorised.' }
+
   const status = await getGoogleConnectionStatus(user.id)
   if (!status.connected || !hasGmailScope(status.scopes)) {
     return { error: 'Gmail is not connected. Please connect in Settings.' }
   }
+
+  // Validate the target entity exists — prevents dangling links from manipulated IDs.
+  // All four types are accessible to management roles (canUseGmailInbox guard above).
+  const entityTableMap: Record<typeof entityType, string> = {
+    project:  'projects',
+    meeting:  'meetings',
+    employee: 'employees',
+    location: 'locations',
+  }
+  const serviceClient = createServiceClient()
+  const { data: entityRow } = await serviceClient
+    .from(entityTableMap[entityType])
+    .select('id')
+    .eq('id', entityId)
+    .maybeSingle()
+  if (!entityRow) return { error: `${entityType} not found.` }
 
   const googleEmail = status.googleAccountEmail ?? null
   const sourceId = await ensureGmailSource(
@@ -381,7 +401,6 @@ export async function linkEmailToEntity(
   )
   if (!sourceId) return { error: 'Failed to resolve email source.' }
 
-  const serviceClient = createServiceClient()
   const { data, error } = await serviceClient
     .from('entity_sources')
     .upsert(
