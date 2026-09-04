@@ -171,7 +171,11 @@ export default function InboxClient({
       setBody('')
     }
 
-    setActions(actionsRes.data ?? [])
+    const newActions = actionsRes.data ?? []
+    setActions(newActions)
+    if (newActions.length > 0) {
+      setActionedIds((prev) => new Set([...prev, msg.messageId]))
+    }
   }
 
   // ── Reload actions after a change ─────────────────────────────────────────
