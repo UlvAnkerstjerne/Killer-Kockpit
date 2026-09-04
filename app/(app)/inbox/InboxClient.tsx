@@ -330,10 +330,10 @@ export default function InboxClient({
   // ── Main layout ───────────────────────────────────────────────────────────
 
   return (
-    <div className="grid grid-cols-5 gap-4" style={{ minHeight: '60vh' }}>
+    <div className="flex gap-4" style={{ minHeight: '60vh' }}>
 
       {/* ── Message list ─────────────────────────────────────────── */}
-      <div className="col-span-2 bg-kk-panel border border-kk-line rounded-2xl overflow-hidden flex flex-col">
+      <div className="w-[400px] shrink-0 bg-kk-panel border border-kk-line rounded-2xl overflow-hidden flex flex-col">
         <div className="px-4 py-3 border-b border-kk-line shrink-0">
           <span className="text-xs font-semibold text-kk-muted uppercase tracking-wide">
             {messages.length} messages
@@ -376,7 +376,7 @@ export default function InboxClient({
       </div>
 
       {/* ── Message panel ────────────────────────────────────────── */}
-      <div className="col-span-3 bg-kk-panel border border-kk-line rounded-2xl flex flex-col">
+      <div className="flex-1 min-w-0 bg-kk-panel border border-kk-line rounded-2xl flex flex-col">
         {!selected ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-sm text-kk-muted">Select a message to read it</p>
