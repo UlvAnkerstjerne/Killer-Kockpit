@@ -77,10 +77,12 @@ export default async function TaskDetailPage({
     user.role, task.created_by_user_id, task.owner_user_id, user.id, task.status
   )
 
-  // Handoff context
-  const isSelfAssigned   = task.owner_user_id === task.created_by_user_id
-  const userIsResponsible = task.owner_user_id === user.id || user.role === 'SUPER_ADMIN'
-  const userIsRequester   = task.created_by_user_id === user.id || user.role === 'SUPER_ADMIN'
+  // Handoff context — relationship flags are derived from task data only.
+  // isSuperAdmin is passed separately for secondary admin override UI.
+  const isSelfAssigned    = task.owner_user_id === task.created_by_user_id
+  const userIsResponsible = task.owner_user_id === user.id
+  const userIsRequester   = task.created_by_user_id === user.id
+  const isSuperAdmin      = user.role === 'SUPER_ADMIN'
 
   const owner       = Array.isArray(task.owner)       ? task.owner[0]       : task.owner
   const creator     = Array.isArray(task.creator)     ? task.creator[0]     : task.creator
@@ -153,6 +155,7 @@ export default async function TaskDetailPage({
                   isSelfAssigned={isSelfAssigned}
                   userIsResponsible={userIsResponsible}
                   userIsRequester={userIsRequester}
+                  isSuperAdmin={isSuperAdmin}
                 />
               </div>
             )}
