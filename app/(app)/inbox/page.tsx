@@ -1,10 +1,11 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getGoogleOAuth2Client } from '@/lib/google/auth'
 import { listInboxMessages } from '@/lib/google/gmail'
 import { canAssignToOthers, canUseGmailInbox } from '@/lib/permissions'
+import { batchGetEmailActionStatus } from '@/lib/actions/gmail'
 import InboxClient from './InboxClient'
 
 export const dynamic = 'force-dynamic'
@@ -15,10 +16,10 @@ export default async function InboxPage() {
   if (!canUseGmailInbox(user.role)) redirect('/today')
 
   const supabase = await createClient()
+  const serviceClient = createServiceClient()
 
-  // Single token lookup — replaces the previous getGoogleConnectionStatus + getGoogleOAuth2Client pair.
-  // Scope is available on oauthClient.credentials.scope (space-separated string).
-  const [oauthResult, usersResult, projectsResult] = await Promise.all([
+  // Single token lookup — scope is available on oauthClient.credentials.scope (space-separated string).
+  const [oauthResult, usersResult, projectsResult, meetingsResult, employeesResult, locationsResult] = await Promise.all([
     getGoogleOAuth2Client(user.id),
     supabase
       .from('app_users')
@@ -31,6 +32,22 @@ export default async function InboxPage() {
       .is('archived_at', null)
       .not('status', 'in', '("completed","archived","cancelled")')
       .order('title'),
+    serviceClient
+      .from('meetings')
+      .select('id, title')
+      .not('status', 'eq', 'cancelled')
+      .order('scheduled_start', { ascending: false })
+      .limit(100),
+    serviceClient
+      .from('employees')
+      .select('id, name')
+      .eq('employment_status', 'active')
+      .order('name'),
+    serviceClient
+      .from('locations')
+      .select('id, name')
+      .eq('active', true)
+      .order('name'),
   ])
 
   const hasGmailScope = oauthResult?.credentials.scope?.includes('gmail.readonly') ?? false
@@ -68,6 +85,11 @@ export default async function InboxPage() {
     // Swallow — InboxClient will show empty state
   }
 
+  // Batch-query actioned status for the first page — single JOIN, no N+1
+  const actionedResult = messages.length > 0
+    ? await batchGetEmailActionStatus(messages.map((m) => m.messageId))
+    : { data: [] as string[] }
+
   return (
     <div className="max-w-5xl">
       <h1 className="text-2xl font-black tracking-tight text-kk-ink mb-4">Inbox</h1>
@@ -77,7 +99,11 @@ export default async function InboxPage() {
         currentUserId={user.id}
         users={usersResult.data ?? []}
         projects={projectsResult.data ?? []}
+        meetings={meetingsResult.data ?? []}
+        employees={employeesResult.data ?? []}
+        locations={locationsResult.data ?? []}
         canAssign={canAssignToOthers(user.role)}
+        initialActionedIds={actionedResult.data ?? []}
       />
     </div>
   )

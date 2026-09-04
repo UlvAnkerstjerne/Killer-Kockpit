@@ -32,6 +32,16 @@ type WaitingOnFromEmailInput = {
   notes?:                 string
 }
 
+// ─── Public types ─────────────────────────────────────────────────────────
+
+export type EmailAction = {
+  entitySourceId: string
+  entityType:     string
+  entityId:       string
+  relation:       string
+  label:          string | null
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────
 
 /**
@@ -237,4 +247,196 @@ export async function createWaitingOnFromEmail(
 
   revalidatePath(`/waiting-ons/${woId}`)
   return { data: { id: woId } }
+}
+
+// ─── Batch actioned status ────────────────────────────────────────────────
+
+/**
+ * For the given list of Gmail messageIds, returns those that have at least
+ * one entity linked via entity_sources — i.e., have been "actioned".
+ * Single JOIN query — no N+1 per inbox row.
+ */
+export async function batchGetEmailActionStatus(
+  messageIds: string[],
+): Promise<ActionResult<string[]>> {
+  if (!messageIds.length) return { data: [] }
+
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const serviceClient = createServiceClient()
+  const { data, error } = await serviceClient
+    .from('sources')
+    .select('external_id, entity_sources(id)')
+    .eq('source_type', 'gmail_message')
+    .eq('source_account_user_id', user.id)
+    .in('external_id', messageIds)
+
+  if (error) return { error: error.message }
+
+  const actioned = (data ?? [])
+    .filter((row) => Array.isArray(row.entity_sources) && row.entity_sources.length > 0)
+    .map((row) => row.external_id as string)
+
+  return { data: actioned }
+}
+
+// ─── Get actions for an open message ─────────────────────────────────────
+
+/** Returns all entity_sources rows for the given Gmail message, with labels. */
+export async function getMessageActions(
+  messageId: string,
+): Promise<ActionResult<EmailAction[]>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const serviceClient = createServiceClient()
+
+  const { data: source } = await serviceClient
+    .from('sources')
+    .select('id')
+    .eq('source_type', 'gmail_message')
+    .eq('source_account_user_id', user.id)
+    .eq('external_id', messageId)
+    .maybeSingle()
+
+  if (!source) return { data: [] }
+
+  const { data: entitySources, error } = await serviceClient
+    .from('entity_sources')
+    .select('id, entity_type, entity_id, relation')
+    .eq('source_id', source.id)
+    .order('created_at')
+
+  if (error) return { error: error.message }
+  if (!entitySources?.length) return { data: [] }
+
+  // Group entity IDs by type so we can batch-fetch labels
+  const byType = new Map<string, string[]>()
+  for (const es of entitySources) {
+    const list = byType.get(es.entity_type) ?? []
+    list.push(es.entity_id)
+    byType.set(es.entity_type, list)
+  }
+
+  const typeToTable: Record<string, { table: string; labelCol: string }> = {
+    project:    { table: 'projects',     labelCol: 'title' },
+    meeting:    { table: 'meetings',     labelCol: 'title' },
+    employee:   { table: 'employees',   labelCol: 'name'  },
+    location:   { table: 'locations',   labelCol: 'name'  },
+    task:       { table: 'tasks',       labelCol: 'title' },
+    waiting_on: { table: 'waiting_ons', labelCol: 'title' },
+  }
+
+  const labelMap = new Map<string, string>()
+  await Promise.all(
+    Array.from(byType.entries()).map(async ([entityType, ids]) => {
+      const mapping = typeToTable[entityType]
+      if (!mapping) return
+      const { data: rows } = await serviceClient
+        .from(mapping.table)
+        .select(`id, ${mapping.labelCol}`)
+        .in('id', ids)
+      for (const row of (rows as unknown as Record<string, string>[]) ?? []) {
+        labelMap.set(row['id'], row[mapping.labelCol] ?? null)
+      }
+    }),
+  )
+
+  return {
+    data: entitySources.map((es) => ({
+      entitySourceId: es.id,
+      entityType:     es.entity_type,
+      entityId:       es.entity_id,
+      relation:       es.relation,
+      label:          labelMap.get(es.entity_id) ?? null,
+    })),
+  }
+}
+
+// ─── Link email to entity ─────────────────────────────────────────────────
+
+/**
+ * Manually links a Gmail message to an existing KK entity (project, meeting,
+ * employee, or location) via entity_sources with relation = 'related_to'.
+ * Idempotent — duplicate calls for the same (message, entity) pair are ignored.
+ */
+export async function linkEmailToEntity(
+  messageId: string,
+  meta: { subject: string; from: string; date: string; threadId: string },
+  entityType: 'project' | 'meeting' | 'employee' | 'location',
+  entityId: string,
+): Promise<ActionResult<{ entitySourceId: string }>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const status = await getGoogleConnectionStatus(user.id)
+  if (!status.connected || !hasGmailScope(status.scopes)) {
+    return { error: 'Gmail is not connected. Please connect in Settings.' }
+  }
+
+  const googleEmail = status.googleAccountEmail ?? null
+  const sourceId = await ensureGmailSource(
+    user.id, messageId, meta.subject, meta.from, meta.date, meta.threadId, googleEmail,
+  )
+  if (!sourceId) return { error: 'Failed to resolve email source.' }
+
+  const serviceClient = createServiceClient()
+  const { data, error } = await serviceClient
+    .from('entity_sources')
+    .upsert(
+      { entity_type: entityType, entity_id: entityId, source_id: sourceId, relation: 'related_to' },
+      { onConflict: 'entity_type,entity_id,source_id,relation', ignoreDuplicates: true },
+    )
+    .select('id')
+    .single()
+
+  if (error || !data) return { error: error?.message ?? 'Failed to create link.' }
+  return { data: { entitySourceId: data.id } }
+}
+
+// ─── Unlink email from entity ─────────────────────────────────────────────
+
+/**
+ * Removes a manually-created 'related_to' entity_sources row.
+ * Only 'related_to' relations may be unlinked — 'originated_from' rows
+ * (task / waiting-on creation) are permanent.
+ * Verifies the source belongs to the current user before deleting.
+ */
+export async function unlinkEmailFromEntity(
+  entitySourceId: string,
+): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const serviceClient = createServiceClient()
+
+  const { data: es } = await serviceClient
+    .from('entity_sources')
+    .select('id, relation, source_id')
+    .eq('id', entitySourceId)
+    .maybeSingle()
+
+  if (!es) return { error: 'Link not found.' }
+  if (es.relation !== 'related_to') {
+    return { error: 'Cannot remove task or waiting-on creation links.' }
+  }
+
+  const { data: source } = await serviceClient
+    .from('sources')
+    .select('source_account_user_id')
+    .eq('id', es.source_id)
+    .maybeSingle()
+
+  if (!source || source.source_account_user_id !== user.id) {
+    return { error: 'Not authorised.' }
+  }
+
+  const { error } = await serviceClient
+    .from('entity_sources')
+    .delete()
+    .eq('id', entitySourceId)
+
+  if (error) return { error: error.message }
+  return { data: undefined }
 }

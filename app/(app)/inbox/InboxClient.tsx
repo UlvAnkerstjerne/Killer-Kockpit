@@ -1,9 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import type { GmailMessageMeta } from '@/lib/google/gmail'
-import { createTaskFromEmail, createWaitingOnFromEmail, fetchMoreInboxMessages } from '@/lib/actions/gmail'
+import {
+  createTaskFromEmail,
+  createWaitingOnFromEmail,
+  fetchMoreInboxMessages,
+  getMessageActions,
+  linkEmailToEntity,
+  unlinkEmailFromEntity,
+} from '@/lib/actions/gmail'
+import type { EmailAction } from '@/lib/actions/gmail'
 
 // Mirrors TaskForm / WaitingOnForm option sets exactly
 const PRIORITY_OPTIONS = [
@@ -20,8 +28,11 @@ const TASK_STATUS_OPTIONS = [
   { value: 'blocked',     label: 'Blocked' },
 ] as const
 
-type User    = { id: string; display_name: string; email: string }
-type Project = { id: string; title: string }
+type User     = { id: string; display_name: string; email: string }
+type Project  = { id: string; title: string }
+type Meeting  = { id: string; title: string }
+type Employee = { id: string; name: string }
+type Location = { id: string; name: string }
 type DeadlineHint = { dueDate: string | null; evidence: string | null } | null
 
 type Props = {
@@ -30,7 +41,11 @@ type Props = {
   currentUserId:        string
   users:                User[]
   projects:             Project[]
+  meetings:             Meeting[]
+  employees:            Employee[]
+  locations:            Location[]
   canAssign:            boolean
+  initialActionedIds:   string[]
 }
 
 /** Converts an ISO string to the YYYY-MM-DDTHH:MM format for datetime-local inputs. */
@@ -45,50 +60,74 @@ function senderName(from: string): string {
   return match ? match[1].trim() : from
 }
 
+const ENTITY_TYPE_LABEL: Record<string, string> = {
+  project:    'Project',
+  meeting:    'Meeting',
+  employee:   'Person',
+  location:   'Location',
+  task:       'Task',
+  waiting_on: 'Waiting on',
+}
+
 export default function InboxClient({
   initialMessages,
   initialNextPageToken,
   currentUserId,
   users,
   projects,
+  meetings,
+  employees,
+  locations,
   canAssign,
+  initialActionedIds,
 }: Props) {
-  const router = useRouter()
-
   // ── Message list + pagination ─────────────────────────────────────────────
   const [messages, setMessages]           = useState<GmailMessageMeta[]>(initialMessages)
   const [nextPageToken, setNextPageToken] = useState<string | null>(initialNextPageToken)
   const [loadingMore, setLoadingMore]     = useState(false)
 
+  // ── Actioned state (derived from entity_sources, updated locally) ─────────
+  const [actionedIds, setActionedIds] = useState<Set<string>>(new Set(initialActionedIds))
+
   // ── Message selection ────────────────────────────────────────────────────
-  const [selected, setSelected]           = useState<GmailMessageMeta | null>(null)
-  const [body, setBody]                   = useState<string | null>(null)
-  const [bodyLoading, setBodyLoading]     = useState(false)
-  const [deadlineHint, setDeadlineHint]   = useState<DeadlineHint>(null)
-  const [createMode, setCreateMode]       = useState<'task' | 'waiting-on' | null>(null)
+  const [selected, setSelected]         = useState<GmailMessageMeta | null>(null)
+  const [body, setBody]                 = useState<string | null>(null)
+  const [bodyLoading, setBodyLoading]   = useState(false)
+  const [deadlineHint, setDeadlineHint] = useState<DeadlineHint>(null)
+  const [createMode, setCreateMode]     = useState<'task' | 'waiting-on' | null>(null)
+
+  // ── Actions for the open message ─────────────────────────────────────────
+  const [actions, setActions]         = useState<EmailAction[]>([])
+  const [actionsLoading, setActionsLoading] = useState(false)
+
+  // ── Creation success notices ──────────────────────────────────────────────
+  const [notices, setNotices] = useState<{ label: string; href: string }[]>([])
 
   // ── Task form state ──────────────────────────────────────────────────────
-  const [taskTitle,   setTaskTitle]   = useState('')
-  const [taskDesc,    setTaskDesc]    = useState('')
-  const [taskOwner,   setTaskOwner]   = useState(currentUserId)
-  const [taskProject, setTaskProject] = useState('')
-  const [taskPriority,setTaskPriority]= useState<1|2|3|4>(2)
-  const [taskStatus,  setTaskStatus]  = useState<string>('open')
-  const [taskDueAt,   setTaskDueAt]   = useState('')
+  const [taskTitle,    setTaskTitle]    = useState('')
+  const [taskDesc,     setTaskDesc]     = useState('')
+  const [taskOwner,    setTaskOwner]    = useState(currentUserId)
+  const [taskProject,  setTaskProject]  = useState('')
+  const [taskPriority, setTaskPriority] = useState<1|2|3|4>(2)
+  const [taskStatus,   setTaskStatus]   = useState<string>('open')
+  const [taskDueAt,    setTaskDueAt]    = useState('')
 
   // ── Waiting-on form state ────────────────────────────────────────────────
-  const [woTitle,          setWoTitle]          = useState('')
-  const [woUseExternal,    setWoUseExternal]    = useState(true)
-  const [woForUserId,      setWoForUserId]      = useState('')
-  const [woForName,        setWoForName]        = useState('')
-  const [woOwner,          setWoOwner]          = useState(currentUserId)
-  const [woProject,        setWoProject]        = useState('')
-  const [woDueAt,          setWoDueAt]          = useState('')
-  const [woNotes,          setWoNotes]          = useState('')
+  const [woTitle,       setWoTitle]       = useState('')
+  const [woUseExternal, setWoUseExternal] = useState(true)
+  const [woForUserId,   setWoForUserId]   = useState('')
+  const [woForName,     setWoForName]     = useState('')
+  const [woOwner,       setWoOwner]       = useState(currentUserId)
+  const [woProject,     setWoProject]     = useState('')
+  const [woDueAt,       setWoDueAt]       = useState('')
+  const [woNotes,       setWoNotes]       = useState('')
 
   // ── Shared submission state ──────────────────────────────────────────────
-  const [saving,     setSaving]     = useState(false)
-  const [formError,  setFormError]  = useState<string | null>(null)
+  const [saving,    setSaving]    = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  // ── Link picker state ─────────────────────────────────────────────────────
+  const [linking, setLinking] = useState(false)
 
   // ── Load more ─────────────────────────────────────────────────────────────
 
@@ -112,18 +151,43 @@ export default function InboxClient({
     setDeadlineHint(null)
     setCreateMode(null)
     setFormError(null)
+    setNotices([])
+    setActions([])
     setBodyLoading(true)
-    try {
-      const res = await fetch(`/api/gmail/message/${msg.messageId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setBody(data.body ?? '')
-        setDeadlineHint(data.deadline ?? null)
-      } else {
-        setBody('')
-      }
-    } finally {
-      setBodyLoading(false)
+    setActionsLoading(true)
+
+    const [bodyRes, actionsRes] = await Promise.all([
+      fetch(`/api/gmail/message/${msg.messageId}`).then((r) => r.ok ? r.json() : null),
+      getMessageActions(msg.messageId),
+    ])
+
+    setBodyLoading(false)
+    setActionsLoading(false)
+
+    if (bodyRes) {
+      setBody(bodyRes.body ?? '')
+      setDeadlineHint(bodyRes.deadline ?? null)
+    } else {
+      setBody('')
+    }
+
+    setActions(actionsRes.data ?? [])
+  }
+
+  // ── Reload actions after a change ─────────────────────────────────────────
+
+  async function refreshActions(messageId: string) {
+    const result = await getMessageActions(messageId)
+    const newActions = result.data ?? []
+    setActions(newActions)
+    if (newActions.length > 0) {
+      setActionedIds((prev) => new Set([...prev, messageId]))
+    } else {
+      setActionedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(messageId)
+        return next
+      })
     }
   }
 
@@ -137,7 +201,6 @@ export default function InboxClient({
     setTaskProject('')
     setTaskPriority(2)
     setTaskStatus('open')
-    // Pre-fill deadline from extraction if available
     setTaskDueAt(deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : '')
     setFormError(null)
   }
@@ -147,11 +210,9 @@ export default function InboxClient({
     setWoTitle(selected?.subject ?? '')
     setWoUseExternal(true)
     setWoForUserId('')
-    // Pre-fill sender as "waiting for" when using external mode
     setWoForName(selected ? senderName(selected.from) : '')
     setWoOwner(currentUserId)
     setWoProject('')
-    // Pre-fill deadline from extraction if available
     setWoDueAt(deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : '')
     setWoNotes('')
     setFormError(null)
@@ -165,19 +226,22 @@ export default function InboxClient({
     setSaving(true)
     setFormError(null)
     const result = await createTaskFromEmail(selected.messageId, {
-      title:          taskTitle.trim(),
-      description:    taskDesc.trim() || undefined,
-      owner_user_id:  taskOwner || undefined,
-      project_id:     taskProject || undefined,
-      priority:       taskPriority,
-      status:         taskStatus as 'proposed' | 'open' | 'in_progress' | 'blocked',
-      due_at:         taskDueAt || undefined,
+      title:         taskTitle.trim(),
+      description:   taskDesc.trim() || undefined,
+      owner_user_id: taskOwner || undefined,
+      project_id:    taskProject || undefined,
+      priority:      taskPriority,
+      status:        taskStatus as 'proposed' | 'open' | 'in_progress' | 'blocked',
+      due_at:        taskDueAt || undefined,
     })
     setSaving(false)
     if (result.error) {
       setFormError(result.error)
     } else {
-      router.push(`/tasks/${result.data!.id}`)
+      setCreateMode(null)
+      setNotices((prev) => [...prev, { label: `Task: ${taskTitle.trim()}`, href: `/tasks/${result.data!.id}` }])
+      setActionedIds((prev) => new Set([...prev, selected.messageId]))
+      await refreshActions(selected.messageId)
     }
   }
 
@@ -199,8 +263,37 @@ export default function InboxClient({
     if (result.error) {
       setFormError(result.error)
     } else {
-      router.push(`/waiting-ons/${result.data!.id}`)
+      setCreateMode(null)
+      setNotices((prev) => [...prev, { label: `Waiting on: ${woTitle.trim()}`, href: `/waiting-ons/${result.data!.id}` }])
+      setActionedIds((prev) => new Set([...prev, selected.messageId]))
+      await refreshActions(selected.messageId)
     }
+  }
+
+  // ── Link handlers ─────────────────────────────────────────────────────────
+
+  async function handleLink(
+    entityType: 'project' | 'meeting' | 'employee' | 'location',
+    entityId: string,
+  ) {
+    if (!selected || !entityId || linking) return
+    setLinking(true)
+    const result = await linkEmailToEntity(
+      selected.messageId,
+      { subject: selected.subject, from: selected.from, date: selected.date, threadId: selected.threadId },
+      entityType,
+      entityId,
+    )
+    setLinking(false)
+    if (!result.error) {
+      await refreshActions(selected.messageId)
+    }
+  }
+
+  async function handleUnlink(entitySourceId: string) {
+    if (!selected) return
+    await unlinkEmailFromEntity(entitySourceId)
+    await refreshActions(selected.messageId)
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -227,6 +320,9 @@ export default function InboxClient({
     )
   }
 
+  // ── Derived: which entity IDs are already linked for the open message ──────
+  const linkedEntityIds = new Set(actions.map((a) => a.entityId))
+
   // ── Main layout ───────────────────────────────────────────────────────────
 
   return (
@@ -250,7 +346,12 @@ export default function InboxClient({
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="text-xs font-semibold text-kk-ink truncate">{senderName(msg.from)}</div>
-                <div className="text-xs text-kk-muted shrink-0">{formatDate(msg.date)}</div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {actionedIds.has(msg.messageId) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-kk-good" title="Actioned" />
+                  )}
+                  <span className="text-xs text-kk-muted">{formatDate(msg.date)}</span>
+                </div>
               </div>
               <div className="text-xs font-medium text-kk-ink truncate mt-0.5">{msg.subject}</div>
               <div className="text-xs text-kk-muted truncate mt-0.5">{msg.snippet}</div>
@@ -286,7 +387,7 @@ export default function InboxClient({
             </div>
 
             {/* Email body */}
-            <div className="px-5 py-4 overflow-y-auto flex-1 max-h-60">
+            <div className="px-5 py-4 overflow-y-auto flex-1 max-h-48">
               {bodyLoading ? (
                 <p className="text-xs text-kk-muted">Loading…</p>
               ) : body !== null ? (
@@ -300,65 +401,243 @@ export default function InboxClient({
               )}
             </div>
 
-            {/* ── Action buttons ─────────────────────────────────── */}
-            {createMode === null && (
-              <div className="px-5 py-3 border-t border-kk-line flex gap-2 shrink-0">
-                <button
-                  onClick={openTaskForm}
-                  className="px-3 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl hover:opacity-90 transition-opacity"
-                >
-                  Save as task
-                </button>
-                <button
-                  onClick={openWoForm}
-                  className="px-3 py-1.5 border border-kk-line text-xs text-kk-ink rounded-xl hover:bg-kk-soft transition-colors"
-                >
-                  Save as waiting on
-                </button>
-              </div>
-            )}
+            {/* ── Actions area ─────────────────────────────────────── */}
+            <div className="border-t border-kk-line overflow-y-auto max-h-[55vh] shrink-0">
 
-            {/* ── Task creation form ─────────────────────────────── */}
-            {createMode === 'task' && (
-              <form onSubmit={handleCreateTask} className="px-5 py-4 border-t border-kk-line space-y-3 shrink-0 overflow-y-auto max-h-[55vh]">
-                <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">New task from email</div>
-
-                {/* Title */}
-                <div>
-                  <label className="block text-xs font-medium text-kk-ink mb-1">Title *</label>
-                  <input
-                    type="text"
-                    value={taskTitle}
-                    onChange={(e) => setTaskTitle(e.target.value)}
-                    required
-                    maxLength={500}
-                    disabled={saving}
-                    className={field}
-                  />
+              {/* ── Notices (created entities) ─────────────────────── */}
+              {notices.length > 0 && (
+                <div className="px-5 pt-3 space-y-1">
+                  {notices.map((n, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-kk-good shrink-0" />
+                      <Link
+                        href={n.href}
+                        className="text-xs text-kk-good underline hover:opacity-80 transition-opacity"
+                      >
+                        {n.label}
+                      </Link>
+                    </div>
+                  ))}
                 </div>
+              )}
 
-                {/* Description */}
-                <div>
-                  <label className="block text-xs font-medium text-kk-ink mb-1">
-                    Description <span className="text-kk-muted font-normal">(optional)</span>
-                  </label>
-                  <textarea
-                    value={taskDesc}
-                    onChange={(e) => setTaskDesc(e.target.value)}
-                    rows={2}
-                    disabled={saving}
-                    className={`${field} resize-none`}
-                  />
-                </div>
+              {/* ── Task creation form ─────────────────────────────── */}
+              {createMode === 'task' && (
+                <form onSubmit={handleCreateTask} className="px-5 py-4 space-y-3">
+                  <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">New task from email</div>
 
-                {/* Responsible + Priority */}
-                <div className="grid grid-cols-2 gap-3">
-                  {canAssign ? (
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">Title *</label>
+                    <input
+                      type="text"
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      required
+                      maxLength={500}
+                      disabled={saving}
+                      className={field}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">
+                      Description <span className="text-kk-muted font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      value={taskDesc}
+                      onChange={(e) => setTaskDesc(e.target.value)}
+                      rows={2}
+                      disabled={saving}
+                      className={`${field} resize-none`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {canAssign ? (
+                      <div>
+                        <label className="block text-xs font-medium text-kk-ink mb-1">Responsible</label>
+                        <select
+                          value={taskOwner}
+                          onChange={(e) => setTaskOwner(e.target.value)}
+                          disabled={saving}
+                          className={`${field} bg-white`}
+                        >
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.display_name}{u.id === currentUserId ? ' (me)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div />
+                    )}
+
                     <div>
-                      <label className="block text-xs font-medium text-kk-ink mb-1">Responsible</label>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">Priority</label>
                       <select
-                        value={taskOwner}
-                        onChange={(e) => setTaskOwner(e.target.value)}
+                        value={taskPriority}
+                        onChange={(e) => setTaskPriority(Number(e.target.value) as 1|2|3|4)}
+                        disabled={saving}
+                        className={`${field} bg-white`}
+                      >
+                        {PRIORITY_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">Status</label>
+                      <select
+                        value={taskStatus}
+                        onChange={(e) => setTaskStatus(e.target.value)}
+                        disabled={saving}
+                        className={`${field} bg-white`}
+                      >
+                        {TASK_STATUS_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">
+                        Due date <span className="text-kk-muted font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={taskDueAt}
+                        onChange={(e) => setTaskDueAt(e.target.value)}
+                        disabled={saving}
+                        className={field}
+                      />
+                      {deadlineHint?.evidence && (
+                        <p className="text-xs text-kk-muted mt-1">
+                          Suggested from email: &ldquo;{deadlineHint.evidence}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {projects.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">
+                        Project <span className="text-kk-muted font-normal">(optional)</span>
+                      </label>
+                      <select
+                        value={taskProject}
+                        onChange={(e) => setTaskProject(e.target.value)}
+                        disabled={saving}
+                        className={`${field} bg-white`}
+                      >
+                        <option value="">No project</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {formError && <p className="text-xs text-kk-bad">{formError}</p>}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={!taskTitle.trim() || saving}
+                      className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
+                    >
+                      {saving ? 'Creating…' : 'Create task'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateMode(null)}
+                      disabled={saving}
+                      className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* ── Waiting-on creation form ───────────────────────── */}
+              {createMode === 'waiting-on' && (
+                <form onSubmit={handleCreateWo} className="px-5 py-4 space-y-3">
+                  <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">New waiting on from email</div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">Title *</label>
+                    <input
+                      type="text"
+                      value={woTitle}
+                      onChange={(e) => setWoTitle(e.target.value)}
+                      required
+                      maxLength={500}
+                      disabled={saving}
+                      className={field}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1.5">Waiting on</label>
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setWoUseExternal(false)}
+                        className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                          !woUseExternal
+                            ? 'bg-kk-ink text-white border-kk-ink'
+                            : 'border-kk-line text-kk-muted hover:bg-kk-soft'
+                        }`}
+                      >
+                        Team member
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWoUseExternal(true)}
+                        className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                          woUseExternal
+                            ? 'bg-kk-ink text-white border-kk-ink'
+                            : 'border-kk-line text-kk-muted hover:bg-kk-soft'
+                        }`}
+                      >
+                        External / free-text
+                      </button>
+                    </div>
+                    {woUseExternal ? (
+                      <input
+                        type="text"
+                        value={woForName}
+                        onChange={(e) => setWoForName(e.target.value)}
+                        placeholder="Name or description"
+                        maxLength={300}
+                        disabled={saving}
+                        className={field}
+                      />
+                    ) : (
+                      <select
+                        value={woForUserId}
+                        onChange={(e) => setWoForUserId(e.target.value)}
+                        disabled={saving}
+                        className={`${field} bg-white`}
+                      >
+                        <option value="">Select team member…</option>
+                        {users.map((u) => (
+                          <option key={u.id} value={u.id}>{u.display_name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {canAssign && (
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">Owner</label>
+                      <select
+                        value={woOwner}
+                        onChange={(e) => setWoOwner(e.target.value)}
                         disabled={saving}
                         className={`${field} bg-white`}
                       >
@@ -369,49 +648,35 @@ export default function InboxClient({
                         ))}
                       </select>
                     </div>
-                  ) : (
-                    <div />
+                  )}
+
+                  {projects.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">
+                        Project <span className="text-kk-muted font-normal">(optional)</span>
+                      </label>
+                      <select
+                        value={woProject}
+                        onChange={(e) => setWoProject(e.target.value)}
+                        disabled={saving}
+                        className={`${field} bg-white`}
+                      >
+                        <option value="">No project</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
 
                   <div>
-                    <label className="block text-xs font-medium text-kk-ink mb-1">Priority</label>
-                    <select
-                      value={taskPriority}
-                      onChange={(e) => setTaskPriority(Number(e.target.value) as 1|2|3|4)}
-                      disabled={saving}
-                      className={`${field} bg-white`}
-                    >
-                      {PRIORITY_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Status + Due date */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-kk-ink mb-1">Status</label>
-                    <select
-                      value={taskStatus}
-                      onChange={(e) => setTaskStatus(e.target.value)}
-                      disabled={saving}
-                      className={`${field} bg-white`}
-                    >
-                      {TASK_STATUS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
                     <label className="block text-xs font-medium text-kk-ink mb-1">
-                      Due date <span className="text-kk-muted font-normal">(optional)</span>
+                      Due <span className="text-kk-muted font-normal">(optional)</span>
                     </label>
                     <input
                       type="datetime-local"
-                      value={taskDueAt}
-                      onChange={(e) => setTaskDueAt(e.target.value)}
+                      value={woDueAt}
+                      onChange={(e) => setWoDueAt(e.target.value)}
                       disabled={saving}
                       className={field}
                     />
@@ -421,214 +686,169 @@ export default function InboxClient({
                       </p>
                     )}
                   </div>
-                </div>
 
-                {/* Project */}
-                {projects.length > 0 && (
                   <div>
                     <label className="block text-xs font-medium text-kk-ink mb-1">
-                      Project <span className="text-kk-muted font-normal">(optional)</span>
+                      Notes <span className="text-kk-muted font-normal">(optional)</span>
                     </label>
-                    <select
-                      value={taskProject}
-                      onChange={(e) => setTaskProject(e.target.value)}
+                    <textarea
+                      value={woNotes}
+                      onChange={(e) => setWoNotes(e.target.value)}
+                      rows={2}
                       disabled={saving}
-                      className={`${field} bg-white`}
-                    >
-                      <option value="">No project</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>{p.title}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {formError && <p className="text-xs text-kk-bad">{formError}</p>}
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={!taskTitle.trim() || saving}
-                    className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
-                  >
-                    {saving ? 'Creating…' : 'Create task'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCreateMode(null)}
-                    disabled={saving}
-                    className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* ── Waiting-on creation form ───────────────────────── */}
-            {createMode === 'waiting-on' && (
-              <form onSubmit={handleCreateWo} className="px-5 py-4 border-t border-kk-line space-y-3 shrink-0 overflow-y-auto max-h-[55vh]">
-                <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">New waiting on from email</div>
-
-                {/* Title */}
-                <div>
-                  <label className="block text-xs font-medium text-kk-ink mb-1">Title *</label>
-                  <input
-                    type="text"
-                    value={woTitle}
-                    onChange={(e) => setWoTitle(e.target.value)}
-                    required
-                    maxLength={500}
-                    disabled={saving}
-                    className={field}
-                  />
-                </div>
-
-                {/* Waiting on — team member or external toggle */}
-                <div>
-                  <label className="block text-xs font-medium text-kk-ink mb-1.5">Waiting on</label>
-                  <div className="flex gap-2 mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setWoUseExternal(false)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                        !woUseExternal
-                          ? 'bg-kk-ink text-white border-kk-ink'
-                          : 'border-kk-line text-kk-muted hover:bg-kk-soft'
-                      }`}
-                    >
-                      Team member
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWoUseExternal(true)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                        woUseExternal
-                          ? 'bg-kk-ink text-white border-kk-ink'
-                          : 'border-kk-line text-kk-muted hover:bg-kk-soft'
-                      }`}
-                    >
-                      External / free-text
-                    </button>
-                  </div>
-                  {woUseExternal ? (
-                    <input
-                      type="text"
-                      value={woForName}
-                      onChange={(e) => setWoForName(e.target.value)}
-                      placeholder="Name or description"
-                      maxLength={300}
-                      disabled={saving}
-                      className={field}
+                      className={`${field} resize-none`}
                     />
-                  ) : (
-                    <select
-                      value={woForUserId}
-                      onChange={(e) => setWoForUserId(e.target.value)}
-                      disabled={saving}
-                      className={`${field} bg-white`}
-                    >
-                      <option value="">Select team member…</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.display_name}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                {/* Owner (if canAssign) */}
-                {canAssign && (
-                  <div>
-                    <label className="block text-xs font-medium text-kk-ink mb-1">Owner</label>
-                    <select
-                      value={woOwner}
-                      onChange={(e) => setWoOwner(e.target.value)}
-                      disabled={saving}
-                      className={`${field} bg-white`}
-                    >
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.display_name}{u.id === currentUserId ? ' (me)' : ''}
-                        </option>
-                      ))}
-                    </select>
                   </div>
-                )}
 
-                {/* Project */}
-                {projects.length > 0 && (
-                  <div>
-                    <label className="block text-xs font-medium text-kk-ink mb-1">
-                      Project <span className="text-kk-muted font-normal">(optional)</span>
-                    </label>
-                    <select
-                      value={woProject}
-                      onChange={(e) => setWoProject(e.target.value)}
-                      disabled={saving}
-                      className={`${field} bg-white`}
+                  {formError && <p className="text-xs text-kk-bad">{formError}</p>}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={!woTitle.trim() || saving}
+                      className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
                     >
-                      <option value="">No project</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>{p.title}</option>
-                      ))}
-                    </select>
+                      {saving ? 'Creating…' : 'Create waiting on'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateMode(null)}
+                      disabled={saving}
+                      className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                )}
+                </form>
+              )}
 
-                {/* Due date */}
-                <div>
-                  <label className="block text-xs font-medium text-kk-ink mb-1">
-                    Due <span className="text-kk-muted font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={woDueAt}
-                    onChange={(e) => setWoDueAt(e.target.value)}
-                    disabled={saving}
-                    className={field}
-                  />
-                  {deadlineHint?.evidence && (
-                    <p className="text-xs text-kk-muted mt-1">
-                      Suggested from email: &ldquo;{deadlineHint.evidence}&rdquo;
-                    </p>
+              {/* ── Action buttons + link pickers (when no form open) ── */}
+              {createMode === null && (
+                <div className="px-5 py-4 space-y-4">
+
+                  {/* Create buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={openTaskForm}
+                      className="px-3 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl hover:opacity-90 transition-opacity"
+                    >
+                      Save as task
+                    </button>
+                    <button
+                      onClick={openWoForm}
+                      className="px-3 py-1.5 border border-kk-line text-xs text-kk-ink rounded-xl hover:bg-kk-soft transition-colors"
+                    >
+                      Save as waiting on
+                    </button>
+                  </div>
+
+                  {/* Link pickers */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">Link to</div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Project picker */}
+                      {projects.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleLink('project', e.target.value) }}
+                          disabled={linking}
+                          className={`${field} bg-white`}
+                        >
+                          <option value="">Project…</option>
+                          {projects
+                            .filter((p) => !linkedEntityIds.has(p.id))
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>{p.title}</option>
+                            ))}
+                        </select>
+                      )}
+
+                      {/* Meeting picker */}
+                      {meetings.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleLink('meeting', e.target.value) }}
+                          disabled={linking}
+                          className={`${field} bg-white`}
+                        >
+                          <option value="">Meeting…</option>
+                          {meetings
+                            .filter((m) => !linkedEntityIds.has(m.id))
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>{m.title}</option>
+                            ))}
+                        </select>
+                      )}
+
+                      {/* Person picker */}
+                      {employees.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleLink('employee', e.target.value) }}
+                          disabled={linking}
+                          className={`${field} bg-white`}
+                        >
+                          <option value="">Person…</option>
+                          {employees
+                            .filter((e) => !linkedEntityIds.has(e.id))
+                            .map((e) => (
+                              <option key={e.id} value={e.id}>{e.name}</option>
+                            ))}
+                        </select>
+                      )}
+
+                      {/* Location picker */}
+                      {locations.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleLink('location', e.target.value) }}
+                          disabled={linking}
+                          className={`${field} bg-white`}
+                        >
+                          <option value="">Location…</option>
+                          {locations
+                            .filter((l) => !linkedEntityIds.has(l.id))
+                            .map((l) => (
+                              <option key={l.id} value={l.id}>{l.name}</option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions summary */}
+                  {actionsLoading ? (
+                    <p className="text-xs text-kk-muted">Loading actions…</p>
+                  ) : actions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">Actions taken</div>
+                      {actions.map((action) => (
+                        <div key={action.entitySourceId} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs text-kk-muted shrink-0">
+                              {ENTITY_TYPE_LABEL[action.entityType] ?? action.entityType}:
+                            </span>
+                            <span className="text-xs text-kk-ink truncate">
+                              {action.label ?? action.entityId}
+                            </span>
+                          </div>
+                          {action.relation === 'related_to' && (
+                            <button
+                              onClick={() => handleUnlink(action.entitySourceId)}
+                              className="text-xs text-kk-muted hover:text-kk-bad transition-colors shrink-0"
+                            >
+                              Unlink
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
 
-                {/* Notes */}
-                <div>
-                  <label className="block text-xs font-medium text-kk-ink mb-1">
-                    Notes <span className="text-kk-muted font-normal">(optional)</span>
-                  </label>
-                  <textarea
-                    value={woNotes}
-                    onChange={(e) => setWoNotes(e.target.value)}
-                    rows={2}
-                    disabled={saving}
-                    className={`${field} resize-none`}
-                  />
                 </div>
-
-                {formError && <p className="text-xs text-kk-bad">{formError}</p>}
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={!woTitle.trim() || saving}
-                    className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
-                  >
-                    {saving ? 'Creating…' : 'Create waiting on'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCreateMode(null)}
-                    disabled={saving}
-                    className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>
