@@ -37,6 +37,10 @@ export function canManageLocations(role: KKRole): boolean {
   return MANAGEMENT_ROLES.includes(role)
 }
 
+export function canUseGmailInbox(role: KKRole): boolean {
+  return MANAGEMENT_ROLES.includes(role)
+}
+
 // ─── Projects ──────────────────────────────────────────────────────────────
 //
 // Only the project owner or SUPER_ADMIN may edit or archive a project.

@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getGoogleOAuth2Client } from '@/lib/google/auth'
 import { listInboxMessages } from '@/lib/google/gmail'
-import { canAssignToOthers } from '@/lib/permissions'
+import { canAssignToOthers, canUseGmailInbox } from '@/lib/permissions'
 import InboxClient from './InboxClient'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,7 @@ export const dynamic = 'force-dynamic'
 export default async function InboxPage() {
   const user = await getCurrentUser()
   if (!user) return null
+  if (!canUseGmailInbox(user.role)) redirect('/today')
 
   const supabase = await createClient()
 

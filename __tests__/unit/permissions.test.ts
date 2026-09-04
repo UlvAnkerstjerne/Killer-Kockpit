@@ -17,6 +17,7 @@ import {
   canAccessMarketing,
   canManagePeople,
   canManageLocations,
+  canUseGmailInbox,
 } from '@/lib/permissions'
 
 const USER_A = 'user-a-uuid'
@@ -287,6 +288,20 @@ describe('canManageLocations', () => {
   })
   it('MEMBER cannot manage locations', () => {
     expect(canManageLocations('MEMBER')).toBe(false)
+  })
+})
+
+// ---- canUseGmailInbox -------------------------------------------------------
+
+describe('canUseGmailInbox', () => {
+  it('SUPER_ADMIN can use Gmail inbox', () => {
+    expect(canUseGmailInbox('SUPER_ADMIN')).toBe(true)
+  })
+  it('UM can use Gmail inbox', () => {
+    expect(canUseGmailInbox('UM')).toBe(true)
+  })
+  it('MEMBER cannot use Gmail inbox', () => {
+    expect(canUseGmailInbox('MEMBER')).toBe(false)
   })
 })
 
