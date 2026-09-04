@@ -15,6 +15,8 @@ import {
   canApproveDecision,
   isAdminOverride,
   canAccessMarketing,
+  canManagePeople,
+  canManageLocations,
 } from '@/lib/permissions'
 
 const USER_A = 'user-a-uuid'
@@ -257,6 +259,34 @@ describe('canAccessMarketing', () => {
   })
   it('MEMBER without marketing_access cannot access marketing', () => {
     expect(canAccessMarketing('MEMBER', false)).toBe(false)
+  })
+})
+
+// ---- canManagePeople --------------------------------------------------------
+
+describe('canManagePeople', () => {
+  it('SUPER_ADMIN can manage people', () => {
+    expect(canManagePeople('SUPER_ADMIN')).toBe(true)
+  })
+  it('UM can manage people', () => {
+    expect(canManagePeople('UM')).toBe(true)
+  })
+  it('MEMBER cannot manage people', () => {
+    expect(canManagePeople('MEMBER')).toBe(false)
+  })
+})
+
+// ---- canManageLocations -----------------------------------------------------
+
+describe('canManageLocations', () => {
+  it('SUPER_ADMIN can manage locations', () => {
+    expect(canManageLocations('SUPER_ADMIN')).toBe(true)
+  })
+  it('UM can manage locations', () => {
+    expect(canManageLocations('UM')).toBe(true)
+  })
+  it('MEMBER cannot manage locations', () => {
+    expect(canManageLocations('MEMBER')).toBe(false)
   })
 })
 

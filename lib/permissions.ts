@@ -29,6 +29,14 @@ export function canManageUsers(role: KKRole): boolean {
   return ADMIN_ROLES.includes(role)
 }
 
+export function canManagePeople(role: KKRole): boolean {
+  return MANAGEMENT_ROLES.includes(role)
+}
+
+export function canManageLocations(role: KKRole): boolean {
+  return MANAGEMENT_ROLES.includes(role)
+}
+
 // ─── Projects ──────────────────────────────────────────────────────────────
 //
 // Only the project owner or SUPER_ADMIN may edit or archive a project.

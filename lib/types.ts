@@ -247,6 +247,29 @@ export interface ActionResult<T = void> {
   error?: string
 }
 
+export interface Employee {
+  id: string
+  name: string
+  store_or_team: string | null
+  role_title: string | null
+  employment_status: string
+  manager_employee_id: string | null
+  linked_user_id: string | null
+  created_at: string
+  updated_at: string
+  linked_user?: Pick<AppUser, 'id' | 'display_name' | 'email'>
+  manager?: Pick<Employee, 'id' | 'name'>
+}
+
+export interface Location {
+  id: string
+  name: string
+  short_name: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Todo {
   id: string
   user_id: string

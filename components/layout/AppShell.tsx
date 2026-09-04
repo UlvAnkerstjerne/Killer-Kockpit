@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { canAccessManagementView, canAccessMarketing } from '@/lib/permissions'
+import { canAccessManagementView, canAccessMarketing, canManagePeople, canManageLocations } from '@/lib/permissions'
 import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
@@ -90,6 +90,14 @@ function IconPeople() {
     </svg>
   )
 }
+function IconLocations() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M8 1.5C5.52 1.5 3.5 3.52 3.5 6c0 3.5 4.5 8.5 4.5 8.5S12.5 9.5 12.5 6c0-2.48-2.02-4.5-4.5-4.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <circle cx="8" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>
+  )
+}
 function IconKnowledge() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
@@ -119,6 +127,7 @@ const ICON_MAP: Record<string, React.FC> = {
   '/team':        IconTeam,
   '/inbox':       IconInbox,
   '/people':      IconPeople,
+  '/locations':   IconLocations,
   '/knowledge':   IconKnowledge,
   '/settings':    IconSettings,
 }
@@ -134,14 +143,6 @@ const PRIMARY_NAV = [
   { href: '/todos',       label: 'To-Dos' },
 ]
 
-const SECONDARY_NAV = [
-  { href: '/meetings',  label: 'Meetings',  active: true  },
-  { href: '/team',      label: 'Team',      active: true  },
-  { href: '/inbox',     label: 'Inbox',     active: false },
-  { href: '/people',    label: 'People',    active: false },
-  { href: '/knowledge', label: 'Knowledge', active: false },
-  { href: '/settings',  label: 'Settings',  active: true  },
-]
 
 export default function AppShell({
   user,
@@ -155,6 +156,16 @@ export default function AppShell({
   const searchParams = useSearchParams()
   const managementAllowed = canAccessManagementView(user.role)
   const marketingAllowed = canAccessMarketing(user.role, user.marketing_access)
+
+  const secondaryNav = [
+    { href: '/meetings',  label: 'Meetings',  active: true  },
+    { href: '/team',      label: 'Team',      active: true  },
+    { href: '/inbox',     label: 'Inbox',     active: false },
+    ...(canManagePeople(user.role)    ? [{ href: '/people',    label: 'People',    active: true }] : []),
+    ...(canManageLocations(user.role) ? [{ href: '/locations', label: 'Locations', active: true }] : []),
+    { href: '/knowledge', label: 'Knowledge', active: false },
+    { href: '/settings',  label: 'Settings',  active: true  },
+  ]
 
   const currentView = (searchParams.get('view') as ViewMode) ??
     (managementAllowed ? 'management' : 'personal')
@@ -235,7 +246,7 @@ export default function AppShell({
 
           {/* Secondary group */}
           <div className="space-y-0.5">
-            {SECONDARY_NAV.map(item => (
+            {secondaryNav.map(item => (
               <NavLink
                 key={item.href}
                 href={item.href}
