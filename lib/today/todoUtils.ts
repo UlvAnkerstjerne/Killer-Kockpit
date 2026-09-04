@@ -55,3 +55,25 @@ export function getTodoStatus(todo: Pick<Todo, 'completed_at' | 'cancelled_at'>)
   if (todo.cancelled_at) return 'cancelled'
   return 'open'
 }
+
+// ---------------------------------------------------------------------------
+// Recurrence filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Filters open todos for display on the Today page.
+ *
+ * - Non-recurring todos (recurrence_rule IS NULL) are always included.
+ * - Recurring todos are only included when scheduled_for ≤ copenhagenDateStr
+ *   (i.e. the occurrence is due today or overdue — future occurrences are hidden).
+ *
+ * `copenhagenDateStr` must be a 'YYYY-MM-DD' date string in Copenhagen time.
+ * String comparison works correctly for ISO date strings.
+ */
+export function filterTodosForToday(todos: Todo[], copenhagenDateStr: string): Todo[] {
+  return todos.filter(t => {
+    if (!t.recurrence_rule) return true            // non-recurring: always show
+    if (!t.scheduled_for)   return true            // no anchor (safety): show
+    return t.scheduled_for <= copenhagenDateStr    // only due / overdue
+  })
+}

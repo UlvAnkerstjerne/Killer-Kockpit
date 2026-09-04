@@ -21,6 +21,11 @@ type RawTeamTodo = {
   updated_at: string
   completed_at: string | null
   cancelled_at: string | null
+  notes: string | null
+  scheduled_for: string | null
+  recurrence_rule: string | null
+  recurrence_day: number | null
+  parent_todo_id: string | null
   owner:
     | { id: string; display_name: string }
     | Array<{ id: string; display_name: string }>
@@ -56,7 +61,7 @@ export default async function TodosPage({
       supabase
         .from('todos')
         .select(
-          'id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, owner:user_id (id, display_name)'
+          'id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, owner:user_id (id, display_name)'
         )
         .is('cancelled_at', null)
         .order('priority', { ascending: true })
@@ -76,14 +81,19 @@ export default async function TodosPage({
       const raw = t.owner
       const ownerObj = Array.isArray(raw) ? raw[0] : raw
       return {
-        id:           t.id,
-        user_id:      t.user_id,
-        title:        t.title,
-        priority:     t.priority as 1 | 2 | 3 | 4,
-        created_at:   t.created_at,
-        updated_at:   t.updated_at,
-        completed_at: t.completed_at,
-        cancelled_at: t.cancelled_at,
+        id:             t.id,
+        user_id:        t.user_id,
+        title:          t.title,
+        priority:       t.priority as 1 | 2 | 3 | 4,
+        created_at:     t.created_at,
+        updated_at:     t.updated_at,
+        completed_at:   t.completed_at,
+        cancelled_at:   t.cancelled_at,
+        notes:          t.notes,
+        scheduled_for:  t.scheduled_for,
+        recurrence_rule: t.recurrence_rule,
+        recurrence_day:  t.recurrence_day,
+        parent_todo_id:  t.parent_todo_id,
         owner: {
           id:           ownerObj?.id ?? t.user_id,
           display_name: ownerObj?.display_name ?? '',
@@ -107,7 +117,7 @@ export default async function TodosPage({
   // The .eq('user_id', user.id) is belt-and-suspenders over RLS.
   const { data } = await supabase
     .from('todos')
-    .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at')
+    .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
     .eq('user_id', user.id)
     .order('priority', { ascending: true })
     .order('created_at', { ascending: false })

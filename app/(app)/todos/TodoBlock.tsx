@@ -13,10 +13,11 @@
 
 import { useState, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createTodo, completeTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
+import { createTodo, completeTodo, completeRecurringTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
 import type { Todo } from '@/lib/types'
 import Link from 'next/link'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
+import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -150,17 +151,26 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
             >
               {/* Complete button */}
               <button
-                onClick={() => handleAction(() => completeTodo(todo.id))}
+                onClick={() => handleAction(() =>
+                  todo.recurrence_rule
+                    ? completeRecurringTodo(todo.id)
+                    : completeTodo(todo.id)
+                )}
                 disabled={isPending}
                 className="w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
                 title="Mark complete"
                 aria-label="Mark complete"
               />
 
-              {/* Title + priority */}
+              {/* Title + recurrence indicator */}
               <div className="flex-1 flex items-center gap-2 min-w-0">
                 <PriorityDot priority={todo.priority} />
                 <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
+                {todo.recurrence_rule && (
+                  <span className="text-[10px] text-kk-brand/60 shrink-0">
+                    ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                  </span>
+                )}
               </div>
 
               {/* Priority label */}

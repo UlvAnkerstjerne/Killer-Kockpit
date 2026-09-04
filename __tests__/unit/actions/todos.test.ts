@@ -6,12 +6,16 @@
  *   - createTodo validates title and priority before hitting the DB.
  *   - All mutations pass .eq('user_id', user.id) — belt-and-suspenders over RLS.
  *   - No caller-supplied user_id is accepted; ownership is always server-derived.
+ *   - completeRecurringTodo calls the SECURITY DEFINER RPC via service client.
  *
- * Test matrix (20 cases):
- *   [1-9]   createTodo — validation, success, DB error, revalidation
+ * Test matrix (32 cases):
+ *   [1-9]   createTodo — validation, success, DB error, revalidation, recurrence
  *   [10-13] completeTodo — auth, success, user_id scoping, DB error
  *   [14-17] cancelTodo — auth, success, user_id scoping, DB error
  *   [18-20] reopenTodo — auth, success, revalidation
+ *   [21-24] completeRecurringTodo — auth, success, service client, RPC error
+ *   [25-28] updateTodoNotes — auth, success, whitespace normalisation, DB error
+ *   [29-32] updateTodoRecurrence — auth, success, clears day for non-monthly, DB error
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -40,6 +44,10 @@ const mocks = vi.hoisted(() => {
   })
   const mockClient = { from: mockFrom }
 
+  // Service client mock — used by completeRecurringTodo
+  const mockRpc = vi.fn()
+  const mockServiceClient = { rpc: mockRpc }
+
   return {
     mockGetCurrentUser,
     mockRevalidatePath,
@@ -50,6 +58,8 @@ const mocks = vi.hoisted(() => {
     mockUpdate,
     mockFrom,
     mockClient,
+    mockRpc,
+    mockServiceClient,
   }
 })
 
@@ -57,6 +67,7 @@ vi.mock('@/lib/auth', () => ({ getCurrentUser: mocks.mockGetCurrentUser }))
 vi.mock('next/cache', () => ({ revalidatePath: mocks.mockRevalidatePath }))
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue(mocks.mockClient),
+  createServiceClient: vi.fn().mockReturnValue(mocks.mockServiceClient),
 }))
 
 // ---------------------------------------------------------------------------
@@ -76,7 +87,11 @@ const TODO_ID = 'todo-uuid-1'
 // Import actions (after mocks are set up)
 // ---------------------------------------------------------------------------
 
-import { createTodo, completeTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
+import {
+  createTodo, completeTodo, completeRecurringTodo,
+  cancelTodo, reopenTodo,
+  updateTodoNotes, updateTodoRecurrence,
+} from '@/lib/actions/todos'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,6 +136,8 @@ beforeEach(() => {
   mocks.mockUpdate.mockReturnValue({ eq: mocks.mockEq })
   // mockEq base: returns { eq: mockEq } for chaining; overridden per-test
   mocks.mockEq.mockReturnValue({ eq: mocks.mockEq })
+  // Service client RPC: base no-op
+  mocks.mockRpc.mockResolvedValue({ data: 'new-todo-uuid', error: null })
 })
 
 // ---------------------------------------------------------------------------
@@ -288,5 +305,116 @@ describe('reopenTodo', () => {
     await reopenTodo(TODO_ID)
     expect(mocks.mockRevalidatePath).toHaveBeenCalledWith('/today')
     expect(mocks.mockRevalidatePath).toHaveBeenCalledWith('/todos')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// completeRecurringTodo
+// ---------------------------------------------------------------------------
+
+describe('completeRecurringTodo', () => {
+  it('[21] returns error when user is not authenticated', async () => {
+    setupAuth(null)
+    const result = await completeRecurringTodo(TODO_ID)
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('[22] calls the complete_recurring_todo RPC with todo id and actor id', async () => {
+    setupAuth()
+    await completeRecurringTodo(TODO_ID)
+    expect(mocks.mockRpc).toHaveBeenCalledWith('complete_recurring_todo', {
+      p_todo_id:  TODO_ID,
+      p_actor_id: USER.id,
+    })
+  })
+
+  it('[23] returns the next occurrence id on success', async () => {
+    setupAuth()
+    mocks.mockRpc.mockResolvedValue({ data: 'next-todo-uuid', error: null })
+    const result = await completeRecurringTodo(TODO_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data?.nextId).toBe('next-todo-uuid')
+  })
+
+  it('[24] returns error when RPC fails', async () => {
+    setupAuth()
+    mocks.mockRpc.mockResolvedValue({ data: null, error: { message: 'RPC error' } })
+    const result = await completeRecurringTodo(TODO_ID)
+    expect(result.error).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updateTodoNotes
+// ---------------------------------------------------------------------------
+
+describe('updateTodoNotes', () => {
+  it('[25] returns error when user is not authenticated', async () => {
+    setupAuth(null)
+    const result = await updateTodoNotes(TODO_ID, 'some note')
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('[26] succeeds and passes user_id filter', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    const result = await updateTodoNotes(TODO_ID, 'My note')
+    expect(result.error).toBeUndefined()
+    const eqCols = mocks.mockEq.mock.calls.map((args: unknown[]) => args[0])
+    expect(eqCols).toContain('user_id')
+  })
+
+  it('[27] normalises whitespace-only notes to null', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    await updateTodoNotes(TODO_ID, '   ')
+    const updateArg = mocks.mockUpdate.mock.calls[0][0]
+    expect(updateArg.notes).toBeNull()
+  })
+
+  it('[28] returns error when DB update fails', async () => {
+    setupAuth()
+    setupUpdateError()
+    const result = await updateTodoNotes(TODO_ID, 'note')
+    expect(result.error).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updateTodoRecurrence
+// ---------------------------------------------------------------------------
+
+describe('updateTodoRecurrence', () => {
+  it('[29] returns error when user is not authenticated', async () => {
+    setupAuth(null)
+    const result = await updateTodoRecurrence(TODO_ID, 'daily', null)
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('[30] succeeds and passes user_id filter', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    const result = await updateTodoRecurrence(TODO_ID, 'weekly', null)
+    expect(result.error).toBeUndefined()
+    const eqCols = mocks.mockEq.mock.calls.map((args: unknown[]) => args[0])
+    expect(eqCols).toContain('user_id')
+  })
+
+  it('[31] clears recurrence_day when rule is not monthly', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    await updateTodoRecurrence(TODO_ID, 'daily', 15)
+    const updateArg = mocks.mockUpdate.mock.calls[0][0]
+    expect(updateArg.recurrence_day).toBeNull()
+  })
+
+  it('[32] returns error when DB update fails', async () => {
+    setupAuth()
+    setupUpdateError()
+    const result = await updateTodoRecurrence(TODO_ID, 'monthly', 15)
+    expect(result.error).toBeTruthy()
   })
 })

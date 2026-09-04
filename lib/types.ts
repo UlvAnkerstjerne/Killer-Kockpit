@@ -248,6 +248,11 @@ export interface Todo {
   updated_at: string
   completed_at: string | null
   cancelled_at: string | null
+  notes: string | null
+  scheduled_for: string | null
+  recurrence_rule: string | null
+  recurrence_day: number | null
+  parent_todo_id: string | null
 }
 
 /** Todo enriched with owner display name — used for the Team visibility view. */
@@ -260,5 +265,10 @@ export interface TeamTodo {
   updated_at: string
   completed_at: string | null
   cancelled_at: string | null
+  notes: string | null
+  scheduled_for: string | null
+  recurrence_rule: string | null
+  recurrence_day: number | null
+  parent_todo_id: string | null
   owner: { id: string; display_name: string }
 }

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { sortOpenTodos, filterCompletedThisWeek, getTodoStatus } from '@/lib/today/todoUtils'
+import { sortOpenTodos, filterCompletedThisWeek, getTodoStatus, filterTodosForToday } from '@/lib/today/todoUtils'
 import type { Todo } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
@@ -27,6 +27,11 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
     updated_at: '2024-01-10T10:00:00.000Z',
     completed_at: null,
     cancelled_at: null,
+    notes: null,
+    scheduled_for: null,
+    recurrence_rule: null,
+    recurrence_day: null,
+    parent_todo_id: null,
     ...overrides,
   }
 }
@@ -159,5 +164,59 @@ describe('getTodoStatus', () => {
   it('[17] works with Todo objects from the full interface', () => {
     const todo = makeTodo({ completed_at: '2024-01-10T10:00:00.000Z' })
     expect(getTodoStatus(todo)).toBe('completed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// filterTodosForToday
+// ---------------------------------------------------------------------------
+
+describe('filterTodosForToday', () => {
+  const TODAY = '2026-09-04'
+
+  it('[18] non-recurring todo (recurrence_rule=null) is always included', () => {
+    const todo = makeTodo({ recurrence_rule: null, scheduled_for: null })
+    expect(filterTodosForToday([todo], TODAY)).toHaveLength(1)
+  })
+
+  it('[19] recurring todo with scheduled_for = today is included', () => {
+    const todo = makeTodo({ recurrence_rule: 'daily', scheduled_for: '2026-09-04' })
+    expect(filterTodosForToday([todo], TODAY)).toHaveLength(1)
+  })
+
+  it('[20] recurring todo with scheduled_for in the past is included', () => {
+    const todo = makeTodo({ recurrence_rule: 'weekly', scheduled_for: '2026-09-01' })
+    expect(filterTodosForToday([todo], TODAY)).toHaveLength(1)
+  })
+
+  it('[21] recurring todo with scheduled_for tomorrow is excluded', () => {
+    const todo = makeTodo({ recurrence_rule: 'daily', scheduled_for: '2026-09-05' })
+    expect(filterTodosForToday([todo], TODAY)).toHaveLength(0)
+  })
+
+  it('[22] recurring todo with scheduled_for far in the future is excluded', () => {
+    const todo = makeTodo({ recurrence_rule: 'monthly', scheduled_for: '2026-10-04', recurrence_day: 4 })
+    expect(filterTodosForToday([todo], TODAY)).toHaveLength(0)
+  })
+
+  it('[23] recurring todo with null scheduled_for (safety fallback) is included', () => {
+    const todo = makeTodo({ recurrence_rule: 'daily', scheduled_for: null })
+    expect(filterTodosForToday([todo], TODAY)).toHaveLength(1)
+  })
+
+  it('[24] filters a mixed list correctly', () => {
+    const nonRecurring   = makeTodo({ recurrence_rule: null })
+    const dueToday       = makeTodo({ recurrence_rule: 'daily', scheduled_for: '2026-09-04' })
+    const overdue        = makeTodo({ recurrence_rule: 'weekly', scheduled_for: '2026-08-28' })
+    const futureTomorrow = makeTodo({ recurrence_rule: 'daily', scheduled_for: '2026-09-05' })
+    const futureDistant  = makeTodo({ recurrence_rule: 'monthly', scheduled_for: '2026-10-04', recurrence_day: 4 })
+
+    const result = filterTodosForToday(
+      [nonRecurring, dueToday, overdue, futureTomorrow, futureDistant],
+      TODAY,
+    )
+
+    expect(result).toHaveLength(3)
+    expect(result.map(t => t.id)).toEqual([nonRecurring.id, dueToday.id, overdue.id])
   })
 })

@@ -9,7 +9,7 @@ import {
   sortWorkItems,
   formatCopenhagenWeekRange,
 } from '@/lib/today/weekUtils'
-import { sortOpenTodos, filterCompletedThisWeek } from '@/lib/today/todoUtils'
+import { sortOpenTodos, filterCompletedThisWeek, filterTodosForToday } from '@/lib/today/todoUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
@@ -319,19 +319,21 @@ export default async function TodayPage({
           .limit(5)
       : Promise.resolve({ data: [] as { id: string; title: string; scheduled_start: string | null }[] }),
 
-    // Open todos (personal only — never aggregated by management view)
+    // Open todos (personal only — never aggregated by management view).
+    // Recurrence filter: show non-recurring always; recurring only if scheduled_for ≤ today.
     supabase.from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
       .eq('user_id', user.id)
       .is('completed_at', null)
       .is('cancelled_at', null)
+      .or(`recurrence_rule.is.null,scheduled_for.lte.${todayDateStr}`)
       .order('priority', { ascending: true })
       .order('created_at', { ascending: false })
       .limit(50),
 
     // Todos completed this week
     supabase.from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
       .eq('user_id', user.id)
       .gte('completed_at', weekStartISO)
       .lt('completed_at', weekEndISO)
@@ -410,7 +412,7 @@ export default async function TodayPage({
 
   // ─── Todos ────────────────────────────────────────────────────────────────
 
-  const openTodos        = sortOpenTodos((openTodosRes.data ?? []) as Todo[])
+  const openTodos        = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
   const completedThisWeek = filterCompletedThisWeek((completedWeekTodosRes.data ?? []) as Todo[], now)
 
   // ─── At-a-glance summary counts ──────────────────────────────────────────

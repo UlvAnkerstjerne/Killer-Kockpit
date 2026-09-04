@@ -17,6 +17,7 @@
 import { useState } from 'react'
 import { PriorityDot } from '@/components/ui/PriorityDot'
 import type { TeamTodo } from '@/lib/types'
+import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -112,17 +113,31 @@ export default function TeamTodosView({ todos, users }: Props) {
         }
       >
         {openTodos.map(todo => (
-          <div key={todo.id} className="flex items-center gap-3 px-5 py-2.5">
-            <PriorityDot priority={todo.priority} />
-            <span className="flex-1 text-sm font-semibold text-kk-ink truncate">
-              {todo.title}
-            </span>
-            {/* Owner — hidden when filtered to single person (redundant) */}
-            {!selectedUserId && (
-              <span className="text-xs text-kk-muted shrink-0">
-                {firstName(todo.owner.display_name)}
-              </span>
-            )}
+          <div key={todo.id} className="px-5 py-2.5">
+            <div className="flex items-center gap-3">
+              <PriorityDot priority={todo.priority} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-semibold text-kk-ink truncate">
+                    {todo.title}
+                  </span>
+                  {todo.recurrence_rule && (
+                    <span className="text-[10px] text-kk-brand/60 shrink-0">
+                      ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                    </span>
+                  )}
+                </div>
+                {todo.notes && (
+                  <p className="mt-0.5 text-xs text-kk-muted truncate">{todo.notes}</p>
+                )}
+              </div>
+              {/* Owner — hidden when filtered to single person (redundant) */}
+              {!selectedUserId && (
+                <span className="text-xs text-kk-muted shrink-0">
+                  {firstName(todo.owner.display_name)}
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </Section>
