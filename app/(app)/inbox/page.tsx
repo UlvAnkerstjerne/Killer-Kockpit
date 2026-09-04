@@ -91,7 +91,7 @@ export default async function InboxPage() {
     : { data: [] as string[] }
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <h1 className="text-2xl font-black tracking-tight text-kk-ink mb-4">Inbox</h1>
       <InboxClient
         initialMessages={messages}
