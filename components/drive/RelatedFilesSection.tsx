@@ -19,7 +19,7 @@ function getDriveFileTypeLabel(mimeType: string): string {
 }
 
 type Props = {
-  entityType:   'project' | 'meeting'
+  entityType:   'project' | 'meeting' | 'task'
   entityId:     string
   initialFiles: DriveFileSource[]
   canManage:    boolean

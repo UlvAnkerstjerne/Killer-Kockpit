@@ -6,6 +6,9 @@ import { getCurrentUser } from '@/lib/auth'
 import {
   canEditTaskTerms,
   canUpdateTaskStatus,
+  canSubmitTaskForReview,
+  canApproveTask,
+  canSendTaskBack,
   isAdminOverride,
 } from '@/lib/permissions'
 import type { TaskStatus, TaskPriority, ActionResult } from '@/lib/types'
@@ -178,6 +181,117 @@ export async function cancelTask(taskId: string): Promise<ActionResult> {
   if (error) return { error: 'Failed to cancel task.' }
 
   revalidatePath('/tasks')
+  revalidatePath('/today')
+  if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
+  return {}
+}
+
+export async function submitTaskForReview(taskId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, owner_user_id, created_by_user_id, status, project_id')
+    .eq('id', taskId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Task not found.' }
+
+  if (!canSubmitTaskForReview(user.role, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to submit this task for review.' }
+  }
+
+  if (!['open', 'in_progress', 'blocked'].includes(current.status)) {
+    return { error: 'This task cannot be submitted for review in its current state.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('submit_task_for_review_and_audit', {
+    p_task_id:       taskId,
+    p_actor_user_id: user.id,
+    p_before_status: current.status,
+  })
+
+  if (error) return { error: 'Failed to submit task for review.' }
+
+  revalidatePath('/tasks')
+  revalidatePath(`/tasks/${taskId}`)
+  revalidatePath('/today')
+  if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
+  return {}
+}
+
+export async function approveTask(taskId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, created_by_user_id, status, project_id')
+    .eq('id', taskId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Task not found.' }
+
+  if (!canApproveTask(user.role, current.created_by_user_id, user.id)) {
+    return { error: 'You do not have permission to approve this task.' }
+  }
+
+  if (current.status !== 'pending_review') {
+    return { error: 'This task is not awaiting review.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('approve_task_and_audit', {
+    p_task_id:       taskId,
+    p_actor_user_id: user.id,
+    p_now:           new Date().toISOString(),
+  })
+
+  if (error) return { error: 'Failed to approve task.' }
+
+  revalidatePath('/tasks')
+  revalidatePath(`/tasks/${taskId}`)
+  revalidatePath('/today')
+  if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
+  return {}
+}
+
+export async function sendTaskBack(taskId: string, reviewNote: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, created_by_user_id, status, project_id')
+    .eq('id', taskId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Task not found.' }
+
+  if (!canSendTaskBack(user.role, current.created_by_user_id, user.id)) {
+    return { error: 'You do not have permission to send this task back.' }
+  }
+
+  if (current.status !== 'pending_review') {
+    return { error: 'This task is not awaiting review.' }
+  }
+
+  const serviceClient = createServiceClient()
+  const { error } = await serviceClient.rpc('send_task_back_and_audit', {
+    p_task_id:       taskId,
+    p_actor_user_id: user.id,
+    p_review_note:   reviewNote.trim(),
+  })
+
+  if (error) return { error: 'Failed to send task back.' }
+
+  revalidatePath('/tasks')
+  revalidatePath(`/tasks/${taskId}`)
   revalidatePath('/today')
   if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
   return {}

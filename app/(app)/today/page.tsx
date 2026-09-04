@@ -148,6 +148,22 @@ function IconGlance() {
     </svg>
   )
 }
+function IconReview() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5.5 8.5l2 2 3-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconReturned() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 8h8a3 3 0 000-6H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M5.5 5.5L3 8l2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
 
 // ─── Dashboard card shell ────────────────────────────────────────────────────
 
@@ -222,6 +238,8 @@ export default async function TodayPage({
     draftMeetingsRes,
     openTodosRes,
     completedWeekTodosRes,
+    pendingReviewTasksRes,
+    returnedTasksRes,
   ] = await Promise.all([
 
     // Unfinished tasks: overdue OR due this week (not done/cancelled, not archived)
@@ -339,6 +357,25 @@ export default async function TodayPage({
       .lt('completed_at', weekEndISO)
       .order('completed_at', { ascending: false })
       .limit(50),
+
+    // Tasks pending my review (I am the requester)
+    supabase.from('tasks')
+      .select('id, title, priority, submitted_at, owner:owner_user_id (id, display_name)')
+      .eq('created_by_user_id', user.id)
+      .eq('status', 'pending_review')
+      .is('archived_at', null)
+      .order('submitted_at', { ascending: true })
+      .limit(20),
+
+    // Tasks returned to me (I am the responsible person)
+    supabase.from('tasks')
+      .select('id, title, priority, returned_at, latest_review_note, creator:created_by_user_id (id, display_name)')
+      .eq('owner_user_id', user.id)
+      .not('returned_at', 'is', null)
+      .not('status', 'in', '("done","cancelled","pending_review")')
+      .is('archived_at', null)
+      .order('returned_at', { ascending: false })
+      .limit(20),
   ])
 
   // ─── Build unified work items list ────────────────────────────────────────
@@ -414,6 +451,20 @@ export default async function TodayPage({
 
   const openTodos        = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
   const completedThisWeek = filterCompletedThisWeek((completedWeekTodosRes.data ?? []) as Todo[], now)
+
+  // ─── Handoff review data (personal only) ─────────────────────────────────
+
+  type RawPendingReview = {
+    id: string; title: string; priority: number; submitted_at: string | null
+    owner: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined
+  }
+  type RawReturned = {
+    id: string; title: string; priority: number; returned_at: string | null; latest_review_note: string | null
+    creator: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined
+  }
+
+  const pendingReviewTasks = (!isManagementView ? (pendingReviewTasksRes.data || []) : []) as RawPendingReview[]
+  const returnedTasks      = (!isManagementView ? (returnedTasksRes.data      || []) : []) as RawReturned[]
 
   // ─── At-a-glance summary counts ──────────────────────────────────────────
 
@@ -744,6 +795,86 @@ export default async function TodayPage({
             )
           })()}
         </div>
+
+        {/* ═══ Card 6b — Ready for Review (right col, between row 3 and 4, personal only) ═══ */}
+        {!isManagementView && pendingReviewTasks.length > 0 && (
+          <div className="self-start order-[6] lg:order-none lg:col-start-2 lg:row-start-[3]" style={{ gridRow: 'auto' }}>
+            <DashCard
+              title="Ready for review"
+              badge={pendingReviewTasks.length}
+              footerHref="/tasks"
+              footerLabel="View all tasks"
+              icon={<IconReview />}
+            >
+              <div className="divide-y divide-kk-line">
+                {pendingReviewTasks.map((t) => {
+                  const o = Array.isArray(t.owner) ? t.owner[0] : t.owner
+                  return (
+                    <Link
+                      key={t.id}
+                      href={`/tasks/${t.id}`}
+                      className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                        {o?.display_name && (
+                          <div className="text-xs text-kk-muted mt-0.5">From: {o.display_name}</div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-purple-700 bg-purple-50">
+                        Review
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </DashCard>
+          </div>
+        )}
+
+        {/* ═══ Card 6c — Returned to You (right col, personal only) ══════════ */}
+        {!isManagementView && returnedTasks.length > 0 && (
+          <div className="self-start order-[6] lg:order-none lg:col-start-2" style={{ gridRow: 'auto' }}>
+            <DashCard
+              title="Returned to you"
+              badge={returnedTasks.length}
+              footerHref="/tasks"
+              footerLabel="View all tasks"
+              icon={<IconReturned />}
+            >
+              <div className="divide-y divide-kk-line">
+                {returnedTasks.map((t) => {
+                  const c = Array.isArray(t.creator) ? t.creator[0] : t.creator
+                  return (
+                    <Link
+                      key={t.id}
+                      href={`/tasks/${t.id}`}
+                      className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                        {t.latest_review_note ? (
+                          <div className="text-xs text-kk-muted mt-0.5 truncate">{t.latest_review_note}</div>
+                        ) : c?.display_name ? (
+                          <div className="text-xs text-kk-muted mt-0.5">From: {c.display_name}</div>
+                        ) : null}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-amber-700 bg-amber-50">
+                        Returned
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </DashCard>
+          </div>
+        )}
 
         {/* ═══ Card 7 — At a Glance (right col, row 4) ════════════════════ */}
         <div className="self-start order-7 lg:order-none lg:col-start-2 lg:row-start-4">

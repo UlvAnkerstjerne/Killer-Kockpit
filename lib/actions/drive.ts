@@ -30,7 +30,7 @@ import {
   hasDriveScope,
 } from '@/lib/google/auth'
 import { parseDriveUrl, fetchDriveFileMeta } from '@/lib/google/drive'
-import { canEditProject, canManageDriveReferences } from '@/lib/permissions'
+import { canEditProject, canManageDriveReferences, canManageTaskDriveReferences } from '@/lib/permissions'
 import { createServiceClient } from '@/lib/supabase/server'
 import { recordAuditEvent } from '@/lib/audit'
 import type { ActionResult } from '@/lib/types'
@@ -77,6 +77,24 @@ async function getProjectOwner(projectId: string): Promise<string | null> {
   return data?.owner_user_id ?? null
 }
 
+async function getTaskContext(taskId: string): Promise<{
+  creatorUserId: string | null
+  ownerUserId:   string | null
+  status:        string | null
+}> {
+  const db = createServiceClient()
+  const { data } = await db
+    .from('tasks')
+    .select('created_by_user_id, owner_user_id, status')
+    .eq('id', taskId)
+    .single()
+  return {
+    creatorUserId: data?.created_by_user_id ?? null,
+    ownerUserId:   data?.owner_user_id ?? null,
+    status:        data?.status ?? null,
+  }
+}
+
 // ─── getEntityDriveFiles ──────────────────────────────────────────────────────
 
 /**
@@ -85,7 +103,7 @@ async function getProjectOwner(projectId: string): Promise<string | null> {
  * components via the server action RPC mechanism.
  */
 export async function getEntityDriveFiles(
-  entityType: 'project' | 'meeting',
+  entityType: 'project' | 'meeting' | 'task',
   entityId: string,
 ): Promise<DriveFileSource[]> {
   const db = createServiceClient()
@@ -154,7 +172,7 @@ export async function getEntityDriveFiles(
  *  7. Audit
  */
 export async function attachDriveFile(
-  entityType: 'project' | 'meeting',
+  entityType: 'project' | 'meeting' | 'task',
   entityId: string,
   rawUrl: string,
 ): Promise<ActionResult<DriveFileSource>> {
@@ -166,6 +184,11 @@ export async function attachDriveFile(
     const ownerUserId = await getProjectOwner(entityId)
     if (!canEditProject(user.role, ownerUserId, user.id)) {
       return { error: 'You do not have permission to attach files to this project.' }
+    }
+  } else if (entityType === 'task') {
+    const { creatorUserId, ownerUserId, status: taskStatus } = await getTaskContext(entityId)
+    if (!canManageTaskDriveReferences(user.role, creatorUserId, ownerUserId, user.id, taskStatus)) {
+      return { error: 'You do not have permission to attach files to this task.' }
     }
   } else {
     const { ownerUserId, status: meetingStatus } = await getMeetingContext(entityId)
@@ -307,7 +330,12 @@ export async function attachDriveFile(
     },
   })
 
-  revalidatePath(entityType === 'project' ? `/projects/${entityId}` : `/meetings/${entityId}`)
+  const revalidatePaths: Record<string, string> = {
+    project: `/projects/${entityId}`,
+    meeting: `/meetings/${entityId}`,
+    task:    `/tasks/${entityId}`,
+  }
+  revalidatePath(revalidatePaths[entityType])
 
   // Return live API metadata (the user just confirmed this file)
   return {
@@ -337,7 +365,7 @@ export async function attachDriveFile(
  * record even if the file has since been deleted from Drive.
  */
 export async function detachDriveFile(
-  entityType: 'project' | 'meeting',
+  entityType: 'project' | 'meeting' | 'task',
   entityId: string,
   entitySourceId: string,
 ): Promise<ActionResult> {
@@ -349,6 +377,11 @@ export async function detachDriveFile(
     const ownerUserId = await getProjectOwner(entityId)
     if (!canEditProject(user.role, ownerUserId, user.id)) {
       return { error: 'You do not have permission to remove files from this project.' }
+    }
+  } else if (entityType === 'task') {
+    const { creatorUserId, ownerUserId, status: taskStatus } = await getTaskContext(entityId)
+    if (!canManageTaskDriveReferences(user.role, creatorUserId, ownerUserId, user.id, taskStatus)) {
+      return { error: 'You do not have permission to remove files from this task.' }
     }
   } else {
     const { ownerUserId, status: meetingStatus } = await getMeetingContext(entityId)
@@ -396,7 +429,12 @@ export async function detachDriveFile(
     },
   })
 
-  revalidatePath(entityType === 'project' ? `/projects/${entityId}` : `/meetings/${entityId}`)
+  const revalidatePaths: Record<string, string> = {
+    project: `/projects/${entityId}`,
+    meeting: `/meetings/${entityId}`,
+    task:    `/tasks/${entityId}`,
+  }
+  revalidatePath(revalidatePaths[entityType])
 
   return {}
 }

@@ -316,7 +316,7 @@ export default async function ProjectDetailPage({
         <div className="space-y-4">
           <div className="bg-kk-panel border border-kk-line rounded-2xl p-4 space-y-3">
             <div>
-              <div className="text-xs text-kk-muted mb-0.5">Owner</div>
+              <div className="text-xs text-kk-muted mb-0.5">Project lead</div>
               <div className="text-sm font-medium text-kk-ink">
                 {owner?.display_name || '—'}
               </div>

@@ -21,21 +21,23 @@ const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
 }
 
 const TASK_STATUS_STYLES: Record<TaskStatus, string> = {
-  proposed:    'bg-kk-soft text-kk-muted',
-  open:        'bg-blue-50 text-blue-700',
-  in_progress: 'bg-kk-warn-bg text-kk-warn',
-  blocked:     'bg-kk-bad-bg text-kk-bad',
-  done:        'bg-kk-good-bg text-kk-good',
-  cancelled:   'bg-kk-soft text-kk-muted',
+  proposed:       'bg-kk-soft text-kk-muted',
+  open:           'bg-blue-50 text-blue-700',
+  in_progress:    'bg-kk-warn-bg text-kk-warn',
+  blocked:        'bg-kk-bad-bg text-kk-bad',
+  pending_review: 'bg-purple-50 text-purple-700',
+  done:           'bg-kk-good-bg text-kk-good',
+  cancelled:      'bg-kk-soft text-kk-muted',
 }
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  proposed:    'Proposed',
-  open:        'Open',
-  in_progress: 'In progress',
-  blocked:     'Blocked',
-  done:        'Done',
-  cancelled:   'Cancelled',
+  proposed:       'Proposed',
+  open:           'Open',
+  in_progress:    'In progress',
+  blocked:        'Blocked',
+  pending_review: 'Pending review',
+  done:           'Done',
+  cancelled:      'Cancelled',
 }
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {

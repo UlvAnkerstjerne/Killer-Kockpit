@@ -307,6 +307,61 @@ export function hasMarketingPermission(
   return permissions.includes(permission)
 }
 
+// ─── Task handoff / review ─────────────────────────────────────────────────
+//
+// The responsible person (owner) submits work for the requester (creator) to
+// review.  Self-assigned tasks (owner == creator) skip the review step — the
+// caller must check isSelfAssigned before showing the submit button.
+
+/** Whether the responsible person may submit this task for review. */
+export function canSubmitTaskForReview(
+  role: KKRole,
+  ownerUserId: string | null,
+  currentUserId: string,
+): boolean {
+  if (role === 'SUPER_ADMIN') return true
+  return ownerUserId === currentUserId
+}
+
+/** Whether the requester may approve the submitted work (→ done). */
+export function canApproveTask(
+  role: KKRole,
+  creatorUserId: string | null,
+  currentUserId: string,
+): boolean {
+  if (role === 'SUPER_ADMIN') return true
+  return creatorUserId === currentUserId
+}
+
+/** Whether the requester may send the task back to the responsible person. */
+export function canSendTaskBack(
+  role: KKRole,
+  creatorUserId: string | null,
+  currentUserId: string,
+): boolean {
+  if (role === 'SUPER_ADMIN') return true
+  return creatorUserId === currentUserId
+}
+
+/**
+ * Whether the current user may attach / detach Drive files on a task.
+ *
+ * Both the requester and the responsible person may manage files while the
+ * task is active.  Files are frozen during pending_review (the requester is
+ * reviewing the current state) and after the task is done or cancelled.
+ */
+export function canManageTaskDriveReferences(
+  role: KKRole,
+  creatorUserId: string | null,
+  ownerUserId: string | null,
+  currentUserId: string,
+  taskStatus: string | null,
+): boolean {
+  if (taskStatus === 'done' || taskStatus === 'cancelled' || taskStatus === 'pending_review') return false
+  if (role === 'SUPER_ADMIN') return true
+  return creatorUserId === currentUserId || ownerUserId === currentUserId
+}
+
 // ─── SUPER_ADMIN override detection ────────────────────────────────────────
 //
 // Returns true when a SUPER_ADMIN is acting on a record they do not own.

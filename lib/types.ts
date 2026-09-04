@@ -1,7 +1,7 @@
 export type KKRole = 'SUPER_ADMIN' | 'UM' | 'MEMBER'
 export type TodoStatus = 'open' | 'completed' | 'cancelled'
 export type ProjectStatus = 'planned' | 'active' | 'at_risk' | 'blocked' | 'completed' | 'archived' | 'cancelled'
-export type TaskStatus = 'proposed' | 'open' | 'in_progress' | 'blocked' | 'done' | 'cancelled'
+export type TaskStatus = 'proposed' | 'open' | 'in_progress' | 'blocked' | 'pending_review' | 'done' | 'cancelled'
 export type TaskPriority = 1 | 2 | 3 | 4
 export type ViewMode = 'personal' | 'management'
 export type WaitingStatus = 'open' | 'fulfilled' | 'overdue' | 'cancelled'
@@ -55,6 +55,14 @@ export interface Task {
   archived_at: string | null
   created_at: string
   updated_at: string
+  // Handoff / review fields (added in migration 032)
+  submitted_by_user_id: string | null
+  submitted_at: string | null
+  approved_by_user_id: string | null
+  approved_at: string | null
+  returned_by_user_id: string | null
+  returned_at: string | null
+  latest_review_note: string | null
   owner?: Pick<AppUser, 'id' | 'display_name' | 'email'>
   project?: Pick<Project, 'id' | 'title'>
   creator?: Pick<AppUser, 'id' | 'display_name'>

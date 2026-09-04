@@ -9,11 +9,15 @@ import {
   canReviewChangeRequest,
   canUpdateTaskStatus,
   canAssignToOthers,
+  canManageTaskDriveReferences,
 } from '@/lib/permissions'
+import { getGoogleConnectionStatus, hasDriveScope } from '@/lib/google/auth'
+import { getEntityDriveFiles } from '@/lib/actions/drive'
 import { TaskStatusBadge, PriorityBadge } from '@/components/ui/StatusBadge'
 import AuditHistory from '@/components/ui/AuditHistory'
 import TaskForm from '@/components/tasks/TaskForm'
 import TaskActionButtons from '@/components/tasks/TaskActionButtons'
+import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
 import ChangeRequestForm from './ChangeRequestForm'
 import PendingChangeRequests from './PendingChangeRequests'
 import GmailProvenance from '@/components/ui/GmailProvenance'
@@ -30,6 +34,7 @@ export default async function TaskDetailPage({
   if (!user) return null
 
   const supabase = await createClient()
+  const googleStatus = await getGoogleConnectionStatus(user.id)
 
   const { data: task, error } = await supabase
     .from('tasks')
@@ -37,6 +42,7 @@ export default async function TaskDetailPage({
       *,
       owner:owner_user_id (id, display_name, email),
       creator:created_by_user_id (id, display_name),
+      returned_by:returned_by_user_id (id, display_name),
       project:project_id (id, title),
       meeting:meeting_id (id, title)
     `)
@@ -45,7 +51,7 @@ export default async function TaskDetailPage({
 
   if (error || !task) notFound()
 
-  const [{ data: projects }, { data: pendingRequests }] = await Promise.all([
+  const [{ data: projects }, { data: pendingRequests }, driveFiles] = await Promise.all([
     supabase
       .from('projects')
       .select('id, title')
@@ -59,21 +65,36 @@ export default async function TaskDetailPage({
       .eq('entity_id', id)
       .eq('status', 'pending')
       .order('created_at'),
+    getEntityDriveFiles('task', id),
   ])
 
-  const canEditTerms = canEditTaskTerms(user.role, task.created_by_user_id, user.id)
+  const canEditTerms   = canEditTaskTerms(user.role, task.created_by_user_id, user.id)
   const canRequestChange = canRequestTaskChange(user.role, task.created_by_user_id, task.owner_user_id, user.id)
   const canReviewRequests = canReviewChangeRequest(user.role, task.created_by_user_id, user.id)
   const canActOnStatus = canUpdateTaskStatus(user.role, task.created_by_user_id, task.owner_user_id, user.id)
-  const owner = Array.isArray(task.owner) ? task.owner[0] : task.owner
-  const creator = Array.isArray(task.creator) ? task.creator[0] : task.creator
-  const project = Array.isArray(task.project) ? task.project[0] : task.project
-  const meeting = Array.isArray(task.meeting) ? task.meeting[0] : task.meeting
+  const driveEnabled   = googleStatus.connected && hasDriveScope(googleStatus.scopes)
+  const canDriveManage = canManageTaskDriveReferences(
+    user.role, task.created_by_user_id, task.owner_user_id, user.id, task.status
+  )
 
-  const now = new Date()
-  const dueAt = task.due_at ? new Date(task.due_at) : null
+  // Handoff context
+  const isSelfAssigned   = task.owner_user_id === task.created_by_user_id
+  const userIsResponsible = task.owner_user_id === user.id || user.role === 'SUPER_ADMIN'
+  const userIsRequester   = task.created_by_user_id === user.id || user.role === 'SUPER_ADMIN'
+
+  const owner       = Array.isArray(task.owner)       ? task.owner[0]       : task.owner
+  const creator     = Array.isArray(task.creator)     ? task.creator[0]     : task.creator
+  const returnedBy  = Array.isArray(task.returned_by) ? task.returned_by[0] : task.returned_by
+  const project     = Array.isArray(task.project)     ? task.project[0]     : task.project
+  const meeting     = Array.isArray(task.meeting)     ? task.meeting[0]     : task.meeting
+
+  const now    = new Date()
+  const dueAt  = task.due_at ? new Date(task.due_at) : null
   const isOverdue = dueAt && dueAt < now && task.status !== 'done' && task.status !== 'cancelled'
   const isDueToday = dueAt && dueAt.toDateString() === now.toDateString()
+
+  // Show "Returned" banner when the task was sent back and is not yet resubmitted
+  const isReturned = !!task.returned_at && task.status !== 'pending_review' && task.status !== 'done' && task.status !== 'cancelled'
 
   return (
     <div className="max-w-4xl">
@@ -110,9 +131,29 @@ export default async function TaskDetailPage({
               </div>
             </div>
 
+            {/* Returned banner */}
+            {isReturned && (
+              <div className="px-5 py-3 bg-amber-50 border-b border-amber-200">
+                <p className="text-xs font-semibold text-amber-800 mb-0.5">
+                  Returned by {returnedBy?.display_name || 'requester'}
+                </p>
+                {task.latest_review_note ? (
+                  <p className="text-sm text-amber-900">{task.latest_review_note}</p>
+                ) : (
+                  <p className="text-xs text-amber-700">No note left.</p>
+                )}
+              </div>
+            )}
+
             {canActOnStatus && (
               <div className="p-5 border-b border-kk-line">
-                <TaskActionButtons taskId={task.id} currentStatus={task.status} />
+                <TaskActionButtons
+                  taskId={task.id}
+                  currentStatus={task.status}
+                  isSelfAssigned={isSelfAssigned}
+                  userIsResponsible={userIsResponsible}
+                  userIsRequester={userIsRequester}
+                />
               </div>
             )}
 
@@ -161,10 +202,24 @@ export default async function TaskDetailPage({
         {/* Sidebar */}
         <div className="space-y-4">
           <div className="bg-kk-panel border border-kk-line rounded-2xl p-4 space-y-3">
-            <div>
-              <div className="text-xs text-kk-muted mb-0.5">Owner</div>
-              <div className="text-sm font-semibold text-kk-ink">{owner?.display_name || '—'}</div>
-            </div>
+            {/* Two-role display */}
+            {!isSelfAssigned ? (
+              <>
+                <div>
+                  <div className="text-xs text-kk-muted mb-0.5">Requested by</div>
+                  <div className="text-sm font-semibold text-kk-ink">{creator?.display_name || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-kk-muted mb-0.5">Responsible</div>
+                  <div className="text-sm font-semibold text-kk-ink">{owner?.display_name || '—'}</div>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div className="text-xs text-kk-muted mb-0.5">Owner</div>
+                <div className="text-sm font-semibold text-kk-ink">{owner?.display_name || '—'}</div>
+              </div>
+            )}
 
             <div>
               <div className="text-xs text-kk-muted mb-0.5">Status</div>
@@ -226,14 +281,33 @@ export default async function TaskDetailPage({
               <GmailProvenance entityType="task" entityId={task.id} />
             </Suspense>
 
-            <div className="border-t border-kk-line pt-3">
-              <div className="text-xs text-kk-muted mb-0.5">Created by</div>
-              <div className="text-sm text-kk-ink">{creator?.display_name || '—'}</div>
-              <div className="text-xs text-kk-muted mt-0.5">
-                {new Date(task.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {isSelfAssigned && (
+              <div className="border-t border-kk-line pt-3">
+                <div className="text-xs text-kk-muted mb-0.5">Created by</div>
+                <div className="text-sm text-kk-ink">{creator?.display_name || '—'}</div>
+                <div className="text-xs text-kk-muted mt-0.5">
+                  {new Date(task.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </div>
               </div>
-            </div>
+            )}
+
+            {!isSelfAssigned && (
+              <div className="border-t border-kk-line pt-3">
+                <div className="text-xs text-kk-muted mt-0.5">
+                  {new Date(task.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Related Drive files */}
+          <RelatedFilesSection
+            entityType="task"
+            entityId={task.id}
+            initialFiles={driveFiles}
+            canManage={canDriveManage}
+            driveEnabled={driveEnabled}
+          />
         </div>
       </div>
     </div>
