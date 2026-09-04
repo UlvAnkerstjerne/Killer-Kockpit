@@ -157,13 +157,18 @@ export default function GoogleConnectionCard({
               {' '}(auto-refreshes)
             </div>
 
-            <button
-              onClick={handleDisconnect}
-              disabled={disconnecting}
-              className="text-xs text-kk-bad hover:underline disabled:opacity-40 transition-colors"
-            >
-              {disconnecting ? 'Disconnecting…' : 'Disconnect Google'}
-            </button>
+            <div>
+              <button
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="text-xs text-kk-bad hover:underline disabled:opacity-40 transition-colors"
+              >
+                {disconnecting ? 'Disconnecting…' : 'Disconnect Google account'}
+              </button>
+              <p className="text-xs text-kk-muted mt-0.5">
+                Disconnects Calendar, Gmail, Drive, and all other Google integrations from Kockpit.
+              </p>
+            </div>
           </>
         ) : (
           <>
