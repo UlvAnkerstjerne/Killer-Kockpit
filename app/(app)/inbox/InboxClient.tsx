@@ -351,11 +351,11 @@ export default function InboxClient({
                   />
                 </div>
 
-                {/* Owner + Priority */}
+                {/* Responsible + Priority */}
                 <div className="grid grid-cols-2 gap-3">
                   {canAssign ? (
                     <div>
-                      <label className="block text-xs font-medium text-kk-ink mb-1">Owner</label>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">Responsible</label>
                       <select
                         value={taskOwner}
                         onChange={(e) => setTaskOwner(e.target.value)}

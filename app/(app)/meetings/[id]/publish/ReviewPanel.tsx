@@ -267,7 +267,7 @@ export default function ReviewPanel({
                     {outcome.kind === 'task' && (
                       <>
                         <div className="grid grid-cols-2 gap-3">
-                          <Field label="Assignee">
+                          <Field label="Responsible">
                             <select
                               value={editForm.owner_user_id}
                               onChange={(e) =>

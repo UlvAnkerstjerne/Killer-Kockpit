@@ -216,7 +216,7 @@ export default function AiDraftSection({
                         <li key={i} className="text-sm bg-kk-soft border border-kk-line rounded-xl px-4 py-3 space-y-1">
                           <div className="font-medium text-kk-ink">{task.title}</div>
                           {task.owner_display_name && (
-                            <div className="text-xs text-kk-muted">Owner: {task.owner_display_name}</div>
+                            <div className="text-xs text-kk-muted">Responsible: {task.owner_display_name}</div>
                           )}
                           {task.deadline_evidence && (
                             <div className="text-xs text-kk-muted italic">

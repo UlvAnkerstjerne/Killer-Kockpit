@@ -205,24 +205,15 @@ export default async function TaskDetailPage({
         {/* Sidebar */}
         <div className="space-y-4">
           <div className="bg-kk-panel border border-kk-line rounded-2xl p-4 space-y-3">
-            {/* Two-role display */}
-            {!isSelfAssigned ? (
-              <>
-                <div>
-                  <div className="text-xs text-kk-muted mb-0.5">Requested by</div>
-                  <div className="text-sm font-semibold text-kk-ink">{creator?.display_name || '—'}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-kk-muted mb-0.5">Responsible</div>
-                  <div className="text-sm font-semibold text-kk-ink">{owner?.display_name || '—'}</div>
-                </div>
-              </>
-            ) : (
-              <div>
-                <div className="text-xs text-kk-muted mb-0.5">Owner</div>
-                <div className="text-sm font-semibold text-kk-ink">{owner?.display_name || '—'}</div>
-              </div>
-            )}
+            {/* Two-role display — always explicit regardless of self-assignment */}
+            <div>
+              <div className="text-xs text-kk-muted mb-0.5">Requested by</div>
+              <div className="text-sm font-semibold text-kk-ink">{creator?.display_name || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-kk-muted mb-0.5">Responsible</div>
+              <div className="text-sm font-semibold text-kk-ink">{owner?.display_name || '—'}</div>
+            </div>
 
             <div>
               <div className="text-xs text-kk-muted mb-0.5">Status</div>
@@ -284,23 +275,12 @@ export default async function TaskDetailPage({
               <GmailProvenance entityType="task" entityId={task.id} />
             </Suspense>
 
-            {isSelfAssigned && (
-              <div className="border-t border-kk-line pt-3">
-                <div className="text-xs text-kk-muted mb-0.5">Created by</div>
-                <div className="text-sm text-kk-ink">{creator?.display_name || '—'}</div>
-                <div className="text-xs text-kk-muted mt-0.5">
-                  {new Date(task.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </div>
+            <div className="border-t border-kk-line pt-3">
+              <div className="text-xs text-kk-muted mb-0.5">Created</div>
+              <div className="text-xs text-kk-muted">
+                {new Date(task.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
               </div>
-            )}
-
-            {!isSelfAssigned && (
-              <div className="border-t border-kk-line pt-3">
-                <div className="text-xs text-kk-muted mt-0.5">
-                  {new Date(task.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </div>
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Related Drive files */}

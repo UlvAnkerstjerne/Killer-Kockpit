@@ -118,7 +118,7 @@ export default function TaskForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-kk-ink mb-1">Owner *</label>
+          <label className="block text-sm font-medium text-kk-ink mb-1">Responsible *</label>
           <select
             value={ownerId}
             onChange={(e) => setOwnerId(e.target.value)}

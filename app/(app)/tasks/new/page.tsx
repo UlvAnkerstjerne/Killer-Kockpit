@@ -29,7 +29,7 @@ export default async function NewTaskPage({
     <div className="max-w-2xl">
       <div className="mb-6">
         <h1 className="text-2xl font-black tracking-tight text-kk-ink">New task</h1>
-        <p className="text-sm text-kk-muted mt-0.5">Create a task with one accountable owner.</p>
+        <p className="text-sm text-kk-muted mt-0.5">Create a task and assign a responsible person.</p>
       </div>
 
       <div className="bg-kk-panel border border-kk-line rounded-2xl p-6">
