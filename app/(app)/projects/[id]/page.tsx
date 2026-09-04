@@ -6,6 +6,7 @@ import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canEditProject } from '@/lib/permissions'
 import { getGoogleConnectionStatus, hasDriveScope } from '@/lib/google/auth'
 import { getEntityDriveFiles } from '@/lib/actions/drive'
+import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { ProjectStatusBadge } from '@/components/ui/StatusBadge'
 import { WaitingOnStatusBadge } from '@/components/ui/WaitingOnStatusBadge'
 import { DecisionStatusBadge } from '@/components/ui/DecisionStatusBadge'
@@ -15,6 +16,7 @@ import ProjectForm from '@/components/projects/ProjectForm'
 import TaskList from '@/components/tasks/TaskList'
 import ProjectLifecycleButtons from '@/components/projects/ProjectLifecycleButtons'
 import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
+import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import type { WaitingStatus, DecisionStatus, MeetingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -43,7 +45,7 @@ export default async function ProjectDetailPage({
 
   if (error || !project) notFound()
 
-  const [{ data: tasks }, { data: waitingOns }, { data: decisions }, { data: meetings }, driveFiles] = await Promise.all([
+  const [{ data: tasks }, { data: waitingOns }, { data: decisions }, { data: meetings }, driveFiles, gmailSourcesResult] = await Promise.all([
     supabase
       .from('tasks')
       .select(`
@@ -86,12 +88,14 @@ export default async function ProjectDetailPage({
       .order('scheduled_start', { ascending: false }),
 
     getEntityDriveFiles('project', id),
+    getEntityGmailSources('project', id),
   ])
 
   const canEdit            = canEditProject(user.role, project.owner_user_id, user.id)
   const driveEnabled       = googleStatus.connected && hasDriveScope(googleStatus.scopes)
   const owner = Array.isArray(project.owner) ? project.owner[0] : project.owner
   const creator = Array.isArray(project.creator) ? project.creator[0] : project.creator
+  const gmailSources = gmailSourcesResult.data ?? []
 
   const isOverdue = project.due_date && new Date(project.due_date) < new Date() && project.status !== 'completed'
 
@@ -380,6 +384,8 @@ export default async function ProjectDetailPage({
             canManage={canEdit}
             driveEnabled={driveEnabled}
           />
+
+          <LinkedEmailsSection sources={gmailSources} />
         </div>
       </div>
     </div>

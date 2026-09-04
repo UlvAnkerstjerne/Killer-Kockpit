@@ -16,10 +16,12 @@ import AttendeeSection from './AttendeeSection'
 import CorrectionsSection from './CorrectionsSection'
 import CalendarSection from './CalendarSection'
 import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
+import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import TranscriptSection from './TranscriptSection'
 import AiDraftSection from './AiDraftSection'
 import { getGoogleConnectionStatus, hasDriveScope } from '@/lib/google/auth'
 import { getEntityDriveFiles } from '@/lib/actions/drive'
+import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { getTranscriptSource } from '@/lib/actions/transcripts'
 import { getLatestDraft } from '@/lib/actions/ai-drafts'
 import { canManageTranscript, canGenerateDraft } from '@/lib/permissions'
@@ -37,7 +39,7 @@ export default async function MeetingDetailPage({
 
   const supabase = await createClient()
 
-  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, googleStatus, projectsResult, driveFiles, transcriptSource, latestDraft, minutesResult] = await Promise.all([
+  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, googleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, minutesResult] = await Promise.all([
     supabase
       .from('meetings')
       .select(`
@@ -91,6 +93,7 @@ export default async function MeetingDetailPage({
       .order('title'),
 
     getEntityDriveFiles('meeting', id),
+    getEntityGmailSources('meeting', id),
     getTranscriptSource(id),
     getLatestDraft(id),
 
@@ -130,6 +133,7 @@ export default async function MeetingDetailPage({
   const canGenerateDraftFile  = canGenerateDraft(user.role, owner?.id ?? null, user.id, meeting.status)
   // Canonical published minutes (null for legacy meetings pre-dating M5D)
   const canonicalMinutes = minutesResult.data as MeetingMinutes | null
+  const gmailSources = gmailSourcesResult.data ?? []
 
   const corrections = (correctionsResult.data ?? []) as unknown as {
     id: string; body: string; reason: string | null; author_id: string | null;
@@ -352,6 +356,9 @@ export default async function MeetingDetailPage({
             canManage={canManageDriveRefs}
             driveEnabled={driveEnabled}
           />
+
+          {/* Related emails */}
+          <LinkedEmailsSection sources={gmailSources} />
 
           {/* Transcript */}
           <TranscriptSection

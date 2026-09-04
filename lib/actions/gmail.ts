@@ -3,10 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
 import { getGoogleOAuth2Client, getGoogleConnectionStatus, hasGmailScope } from '@/lib/google/auth'
-import { canUseGmailInbox } from '@/lib/permissions'
+import { canUseGmailInbox, canManagePeople, canManageLocations } from '@/lib/permissions'
 import { listInboxMessages, getMessageFull, buildGmailDeepLink } from '@/lib/google/gmail'
 import type { GmailMessageMeta } from '@/lib/google/gmail'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { createTask } from '@/lib/actions/tasks'
 import { createWaitingOn } from '@/lib/actions/waiting-ons'
 import type { ActionResult } from '@/lib/types'
@@ -458,4 +458,134 @@ export async function unlinkEmailFromEntity(
 
   if (error) return { error: error.message }
   return { data: undefined }
+}
+
+// ─── Safe entity Gmail provenance read ───────────────────────────────────
+
+/**
+ * Safe metadata exposed to authorized viewers of a linked entity.
+ * gmailUrl is set only when the current user IS the source owner;
+ * non-owners see subject/sender/date/captured-by only — never a deep link.
+ */
+export type GmailSourceEntry = {
+  entitySourceId: string
+  sourceId:       string
+  relation:       string        // 'originated_from' | 'related_to'
+  subject:        string
+  sender:         string | null
+  occurredAt:     string | null
+  capturedById:   string
+  capturedByName: string
+  gmailUrl:       string | null  // null when viewer is not the source owner
+}
+
+const ENTITY_TABLE_MAP: Record<string, string> = {
+  project:  'projects',
+  meeting:  'meetings',
+  employee: 'employees',
+  location: 'locations',
+}
+
+/**
+ * Returns Gmail provenance entries for a given entity, visible to the
+ * current user.
+ *
+ * Authorization model:
+ *   1. Role guard: people/locations require management role.
+ *   2. Entity guard: verify the target entity is accessible to the current
+ *      user via their RLS-enforced client before touching any source data.
+ *   3. Source fetch: service client is used for sources/entity_sources (which
+ *      have SUPER_ADMIN-only RLS), but only after the above guards pass.
+ *   4. gmailUrl: returned only when current user === source_account_user_id.
+ *      All other callers receive null for gmailUrl.
+ *
+ * Safe fields returned: entitySourceId, sourceId, relation, subject,
+ * sender, occurredAt, capturedById, capturedByName, gmailUrl (owner only).
+ * Never returned: url for non-owners, body, tokens, raw auth data.
+ */
+export async function getEntityGmailSources(
+  entityType: 'project' | 'meeting' | 'employee' | 'location',
+  entityId: string,
+): Promise<ActionResult<GmailSourceEntry[]>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Role guard for management-only entity types
+  if (entityType === 'employee' && !canManagePeople(user.role)) {
+    return { error: 'Not authorised' }
+  }
+  if (entityType === 'location' && !canManageLocations(user.role)) {
+    return { error: 'Not authorised' }
+  }
+
+  // Verify entity access via the user's RLS-enforced client.
+  // If the entity is not visible to this user the query returns null,
+  // and we return empty — no provenance metadata is leaked.
+  const userClient = await createClient()
+  const table = ENTITY_TABLE_MAP[entityType]
+  const { data: entityRow } = await userClient
+    .from(table)
+    .select('id')
+    .eq('id', entityId)
+    .maybeSingle()
+  if (!entityRow) return { data: [] }
+
+  // Fetch entity_sources → sources via service client.
+  // Bypasses SUPER_ADMIN-only RLS on sources/entity_sources; safe because
+  // entity access was verified above via the user's own JWT.
+  const serviceClient = createServiceClient()
+  const { data: links, error: linksError } = await serviceClient
+    .from('entity_sources')
+    .select('id, relation, source:source_id(id, source_type, title, url, metadata, occurred_at, source_account_user_id)')
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+
+  if (linksError) return { error: linksError.message }
+
+  type RawSource = {
+    id: string
+    source_type: string
+    title: string
+    url: string | null
+    metadata: { from?: string } | null
+    occurred_at: string | null
+    source_account_user_id: string | null
+  }
+
+  const gmailLinks = (links ?? [])
+    .map((l) => ({
+      esId:    l.id,
+      relation: l.relation as string,
+      source:  l.source as unknown as RawSource | null,
+    }))
+    .filter((l) => l.source?.source_type === 'gmail_message' && l.source.source_account_user_id)
+
+  if (!gmailLinks.length) return { data: [] }
+
+  // Batch-fetch captured-by display names — one query, no N+1
+  const userIds = [...new Set(gmailLinks.map((l) => l.source!.source_account_user_id!))]
+  const { data: appUsers } = await serviceClient
+    .from('app_users')
+    .select('id, display_name')
+    .in('id', userIds)
+  const userNameMap = new Map((appUsers ?? []).map((u: { id: string; display_name: string }) => [u.id, u.display_name]))
+
+  const entries: GmailSourceEntry[] = gmailLinks.map(({ esId, relation, source }) => {
+    const capturedById = source!.source_account_user_id!
+    const isOwner      = capturedById === user.id
+    return {
+      entitySourceId: esId,
+      sourceId:       source!.id,
+      relation,
+      subject:        source!.title,
+      sender:         (source!.metadata as { from?: string } | null)?.from ?? null,
+      occurredAt:     source!.occurred_at,
+      capturedById,
+      capturedByName: userNameMap.get(capturedById) ?? 'Unknown',
+      // Deep link only for the source owner — never exposed to other users.
+      gmailUrl:       isOwner ? (source!.url ?? null) : null,
+    }
+  })
+
+  return { data: entries }
 }

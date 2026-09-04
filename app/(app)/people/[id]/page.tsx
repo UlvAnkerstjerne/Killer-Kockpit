@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canManagePeople } from '@/lib/permissions'
 import { updateEmployee } from '@/lib/actions/employees'
+import { getEntityGmailSources } from '@/lib/actions/gmail'
+import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,18 +36,23 @@ export default async function PersonDetailPage({
     getActiveUsers(),
   ])
 
-  const { data: emp, error } = await supabase
-    .from('employees')
-    .select(`
-      *,
-      linked_user:linked_user_id (id, display_name, email),
-      manager:manager_employee_id (id, name)
-    `)
-    .eq('id', id)
-    .single()
+  const [empResult, gmailSourcesResult] = await Promise.all([
+    supabase
+      .from('employees')
+      .select(`
+        *,
+        linked_user:linked_user_id (id, display_name, email),
+        manager:manager_employee_id (id, name)
+      `)
+      .eq('id', id)
+      .single(),
+    getEntityGmailSources('employee', id),
+  ])
 
+  const { data: emp, error } = empResult
   if (error || !emp) notFound()
 
+  const gmailSources = gmailSourcesResult.data ?? []
   const linkedUser = Array.isArray(emp.linked_user) ? emp.linked_user[0] : emp.linked_user
   const manager    = Array.isArray(emp.manager)      ? emp.manager[0]     : emp.manager
 
@@ -196,6 +203,10 @@ export default async function PersonDetailPage({
             })}
           </div>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <LinkedEmailsSection sources={gmailSources} />
       </div>
     </div>
   )

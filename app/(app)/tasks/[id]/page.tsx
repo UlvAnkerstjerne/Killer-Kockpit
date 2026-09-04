@@ -272,7 +272,7 @@ export default async function TaskDetailPage({
             )}
 
             <Suspense fallback={null}>
-              <GmailProvenance entityType="task" entityId={task.id} />
+              <GmailProvenance entityType="task" entityId={task.id} currentUserId={user.id} />
             </Suspense>
 
             <div className="border-t border-kk-line pt-3">

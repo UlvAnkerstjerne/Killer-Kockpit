@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canManageLocations } from '@/lib/permissions'
 import { updateLocation } from '@/lib/actions/locations'
+import { getEntityGmailSources } from '@/lib/actions/gmail'
+import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,8 +21,8 @@ export default async function LocationDetailPage({
 
   const supabase = await createClient()
 
-  // Fetch location + any linked GBP location
-  const [locResult, gbpResult] = await Promise.all([
+  // Fetch location + any linked GBP location + gmail sources
+  const [locResult, gbpResult, gmailSourcesResult] = await Promise.all([
     supabase
       .from('locations')
       .select('*')
@@ -30,12 +32,14 @@ export default async function LocationDetailPage({
       .from('gbp_locations')
       .select('id, store_name, store_short_name, address_summary, active, google_account_id, google_location_id')
       .eq('location_id', id),
+    getEntityGmailSources('location', id),
   ])
 
   if (locResult.error || !locResult.data) notFound()
 
-  const loc       = locResult.data
-  const gbpLinked = gbpResult.data ?? []
+  const loc         = locResult.data
+  const gbpLinked   = gbpResult.data ?? []
+  const gmailSources = gmailSourcesResult.data ?? []
 
   async function handleUpdate(formData: FormData) {
     'use server'
@@ -170,6 +174,10 @@ export default async function LocationDetailPage({
             day: 'numeric', month: 'long', year: 'numeric',
           })}
         </div>
+      </div>
+
+      <div className="mt-4">
+        <LinkedEmailsSection sources={gmailSources} />
       </div>
     </div>
   )

@@ -123,7 +123,7 @@ export default async function WaitingOnDetailPage({
           )}
 
           <Suspense fallback={null}>
-            <GmailProvenance entityType="waiting_on" entityId={wo.id} />
+            <GmailProvenance entityType="waiting_on" entityId={wo.id} currentUserId={user.id} />
           </Suspense>
         </div>
 
