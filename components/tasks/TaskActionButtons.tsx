@@ -249,7 +249,7 @@ export default function TaskActionButtons({
   //
   // Relationship matrix — no SUPER_ADMIN leakage into normal workflow:
   //   self-assigned (owner == creator == me)  → Mark done + transitions
-  //   delegated responsible                   → Submit for review + transitions
+  //   delegated responsible                   → Done — send for review + transitions
   //   delegated requester                     → waiting message (no mutations)
   //   unrelated SUPER_ADMIN                   → ADMIN ACTIONS section only
 
@@ -327,7 +327,7 @@ export default function TaskActionButtons({
             disabled={isPending}
             className="px-3 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:opacity-90 transition-opacity"
           >
-            {isPending ? '…' : 'Submit for review'}
+            {isPending ? 'Sending…' : 'Done — send for review'}
           </button>
           {renderTransitions()}
         </div>
