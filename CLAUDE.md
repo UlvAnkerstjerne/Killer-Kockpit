@@ -4,82 +4,82 @@
 
 ## Project identity
 
-- **Product:** Killer Kockpit — internal company HQ for Killer Kebab (restaurant chain)
-- **Production:** kockpit.killerkebab.com (deployed via Railway)
+- **Product:** Killer Kockpit — internal company HQ for Killer Kebab
+- **Production:** kockpit.killerkebab.com (Railway)
 - **Dev server:** `npm run dev` → `http://localhost:3001`
-- **Stack:** Next.js 15 App Router · TypeScript · Tailwind CSS · Supabase
-  (PostgreSQL + Row-Level Security + SECURITY DEFINER RPCs)
-- **Supabase project:** `c3a75128-2443-4bcd-a84a-9646e41154e3`
+- **Stack:** Next.js 16 App Router · TypeScript · Tailwind CSS · Supabase (PostgreSQL + RLS)
 
 ## Roles
 
-| Role | Access |
+| Role | Scope |
 |---|---|
 | `SUPER_ADMIN` | Full access, user management |
-| `ADMIN` | Organisation-wide access, management view |
-| `MEMBER` | Own data only, personal view |
+| `UM` | Organisation-wide access, management view |
+| `MEMBER` | Own data only |
 
-Role is stored in `app_users.role` and enforced server-side. Never trust caller-supplied role or user_id.
+`SUPER_ADMIN` expands authorization only — it never changes relationship identity.
 
 ## Architecture conventions
 
-- All DB mutations go through **SECURITY DEFINER RPCs** called via the service client (`createServiceClient`), not direct table writes from server actions
-- Server actions always call `getCurrentUser()` first — never accept a caller-supplied user ID
-- RLS is belt-and-suspenders; the server-side permission check is the primary gate
-- The `audit_log` table is written exclusively through SECURITY DEFINER RPCs — never directly
-- `createClient()` is async (returns `Promise<SupabaseClient>`); always `await` it
-- `createServiceClient()` is synchronous
+**Mutations:**
+- Workflow-critical or audited institutional transitions may use SECURITY DEFINER RPCs via `createServiceClient`.
+- Ordinary CRUD uses server actions with direct table operations where consistent with existing architecture.
+- Do not invent a new RPC just because a mutation exists.
 
-## Meeting lifecycle
+**Authorization:**
+- Prefer user-JWT + RLS for canonical visibility and access rules.
+- If `createServiceClient` / service_role is used, explicitly authorize the current user and any user-controlled entity IDs **before** bypassing RLS.
+- Never assume row existence equals authorization.
+- Server actions must always call `getCurrentUser()` first.
 
-```
-scheduled → open → draft → published
-                 ↘ cancelled
-draft → open  (reopen)
-```
+**Supabase clients:**
+- `createClient()` is async — always `await` it.
+- `createServiceClient()` is synchronous.
 
-- `scheduled`: not yet begun (`actual_start IS NULL`). Agenda is editable only here.
-- `open`: `open_meeting_and_audit` has run, `actual_start = now()`
-- `draft`: `close_meeting_and_audit` has run, `actual_end` set
-- `published`: formal canonical minutes published
+## Task delegation semantics
 
-**Agenda lock rule:** `meeting.status !== 'scheduled'` → reject all agenda mutations (both server-side in `createAgendaItem`/`updateAgendaItem` and UI via `isEditable={status === 'scheduled'}`)
+- `created_by_user_id` = Requested by · `owner_user_id` = Responsible
+- Self-assigned task → Responsible may mark done directly.
+- Delegated task, Responsible marks done → goes for Requester review.
+- Delegated task, Requester reviews → Approve or Send back.
+- Do not alter these semantics casually.
 
-## Test conventions
+## Gmail / privacy
 
-- Unit tests: `__tests__/unit/` · Integration tests: `__tests__/integration/`
-- Run all tests: `npm test` (Vitest)
-- Before committing: `npm test && npx tsc --noEmit && npm run build`
-- ~1200 tests as of M7. Always run full suite before committing.
+- Gmail mailbox access is strictly per authenticated app user.
+- `SUPER_ADMIN` has no mailbox impersonation capability.
+- Gmail scope: `gmail.readonly`. Email bodies are fetched on demand and **never persisted**.
+- Shared provenance may expose safe metadata only.
+- Another user's Gmail URL, body, or token must never be exposed.
+- Shared provenance ≠ shared mailbox.
 
-## Routes and what is built
+## Meetings
 
-| Route | Status |
-|---|---|
-| `/today` | Built — daily dashboard |
-| `/todos` | Built — personal to-dos with recurrence |
-| `/inbox` | Built — Gmail thread viewer with entity linking |
-| `/tasks` | Built — cross-user task handoff |
-| `/waiting-ons` | Built |
-| `/decisions` | Built |
-| `/meetings`, `/meetings/[id]` | Built — full lifecycle + agenda + minutes + AI drafts |
-| `/people`, `/people/[id]` | Built |
-| `/projects`, `/projects/[id]` | Built |
-| `/locations`, `/locations/[id]` | Built |
-| `/team` | Built — user management (SUPER_ADMIN) |
-| `/settings` | Built |
-| `/knowledge` | Route exists, shows `PlaceholderPage` — **not yet built** |
-| `/(marketing)` | Public marketing pages |
+- Lifecycle: `scheduled → open → draft → published`; `draft → open` on reopen; cancellation supported.
+- Agenda editable **only** while `scheduled`. Mutations must be rejected server-side once meeting begins.
+- Published institutional minutes and outcomes are immutable.
+- `meetings.location` is optional free-text scheduling metadata — do not confuse it with canonical `locations` records.
 
-## What does NOT exist — do not assume it does
+## AI and institutional data
 
-- A `Proposal` entity or approval workflow (described in `docs/archive/` spec but never implemented)
-- A `knowledge` module (route is a placeholder)
+- AI proposes or extracts; humans review and approve before anything becomes institutional record.
+- Do not silently institutionalize model-generated facts.
 
-## Stale files — do not use for architecture decisions
+## Visual QA
 
-These files live in `docs/archive/` and describe a pre-build state or wrong product name:
+- DOM presence is not visual verification for layout-sensitive work.
+- Inspect actual screenshots and measure real geometry when width or layout matters.
+- React streaming/Suspense checks must observe an actual rendered frame; `page.evaluate` alone is insufficient.
 
-- `docs/archive/killer_kockpit_v1_architecture.md` — pre-build spec, wrong product name ("Killer Koach"), describes unbuilt Proposal system
-- `docs/archive/killer_kockpit_v1_schema.sql` — pre-build schema, role enum does not match live DB
-- `docs/archive/killer_kockpit_dashboard_v4.html` — static HTML prototype
+## Workflow
+
+- Inspect existing architecture before changing it.
+- One feature or tightly related slice per implementation run.
+- Avoid unrelated cleanup in feature commits.
+- Run `npm test && npx tsc --noEmit && npm run build` before every commit.
+- **Do not deploy without explicit user approval.**
+- Apply Supabase migrations through the MCP connector and retain migration files in Git. Never reapply an already-applied migration.
+
+## Historical reference
+
+`docs/archive/` is historical reference only and must not be treated as current architecture.
