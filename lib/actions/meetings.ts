@@ -15,6 +15,7 @@ type MeetingInput = {
   scheduled_start?: string
   scheduled_end?: string
   context?: string
+  location?: string
 }
 
 export async function createMeeting(input: MeetingInput): Promise<ActionResult<{ id: string }>> {
@@ -32,6 +33,7 @@ export async function createMeeting(input: MeetingInput): Promise<ActionResult<{
     p_scheduled_start: input.scheduled_start ? wallToUtc(input.scheduled_start) : null,
     p_scheduled_end:   input.scheduled_end   ? wallToUtc(input.scheduled_end)   : null,
     p_context: input.context?.trim() || null,
+    p_location: input.location?.trim() || null,
     p_created_by_user_id: user.id,
     p_actor_user_id: user.id,
   })
@@ -73,7 +75,7 @@ export async function updateMeeting(
   const patch: Record<string, unknown> = {}
   const before: Record<string, unknown> = {}
 
-  const fields = ['title', 'context', 'working_notes', 'owner_user_id', 'project_id', 'scheduled_start', 'scheduled_end'] as const
+  const fields = ['title', 'context', 'working_notes', 'owner_user_id', 'project_id', 'scheduled_start', 'scheduled_end', 'location'] as const
   for (const field of fields) {
     const val = input[field as keyof typeof input]
     if (val !== undefined) {
@@ -90,8 +92,8 @@ export async function updateMeeting(
         continue
       }
 
-      const newVal = field === 'title' || field === 'context'
-        ? (val as string)?.trim() ?? null
+      const newVal = field === 'title' || field === 'context' || field === 'location'
+        ? (val as string)?.trim() || null
         : val || null
       if (newVal !== current[field]) {
         patch[field]  = newVal
@@ -115,9 +117,9 @@ export async function updateMeeting(
     return { error: 'Failed to save changes. Please try again.' }
   }
 
-  // If scheduling changed and a Calendar event exists, resync it.
+  // If scheduling or location changed and a Calendar event exists, resync it.
   // Failures are captured in calendar_sync_status — they don't block this response.
-  const schedulingChanged = patch.scheduled_start !== undefined || patch.scheduled_end !== undefined
+  const schedulingChanged = patch.scheduled_start !== undefined || patch.scheduled_end !== undefined || patch.location !== undefined
   if (schedulingChanged && current.calendar_event_id) {
     await resyncMeetingCalendar(meetingId)
   }

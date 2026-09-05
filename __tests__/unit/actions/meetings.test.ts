@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => {
   const mockRpc = vi.fn()
   const mockServiceClient = { rpc: mockRpc }
 
+  const mockResyncMeetingCalendar = vi.fn().mockResolvedValue({ ok: true, eventId: '' })
+
   return {
     mockGetCurrentUser,
     mockRevalidatePath,
@@ -41,6 +43,7 @@ const mocks = vi.hoisted(() => {
     mockClient,
     mockRpc,
     mockServiceClient,
+    mockResyncMeetingCalendar,
   }
 })
 
@@ -50,6 +53,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue(mocks.mockClient),
   createServiceClient: vi.fn().mockReturnValue(mocks.mockServiceClient),
 }))
+vi.mock('@/lib/google/sync', () => ({ resyncMeetingCalendar: mocks.mockResyncMeetingCalendar }))
 
 // ---- Fixtures ----------------------------------------------------------------
 
@@ -470,6 +474,172 @@ describe('publishMeeting', () => {
     mocks.mockRpc.mockResolvedValue({ data: null, error: { message: 'rpc failed' } })
     const { publishMeeting } = await import('@/lib/actions/meetings')
     const result = await publishMeeting('meeting-uuid')
+    expect(result.error).toBeTruthy()
+  })
+})
+
+// ---- createMeeting — location field -----------------------------------------
+
+describe('createMeeting — location', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('passes location to create_meeting_and_audit rpc', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockRpc.mockResolvedValue({ data: 'new-meeting-uuid', error: null })
+    const { createMeeting } = await import('@/lib/actions/meetings')
+    await createMeeting({ title: 'All-hands', location: 'Killer Kebab office' })
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'create_meeting_and_audit',
+      expect.objectContaining({ p_location: 'Killer Kebab office' })
+    )
+  })
+
+  it('passes null for omitted location', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockRpc.mockResolvedValue({ data: 'new-meeting-uuid', error: null })
+    const { createMeeting } = await import('@/lib/actions/meetings')
+    await createMeeting({ title: 'No location' })
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'create_meeting_and_audit',
+      expect.objectContaining({ p_location: null })
+    )
+  })
+
+  it('passes null for blank location string', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockRpc.mockResolvedValue({ data: 'new-meeting-uuid', error: null })
+    const { createMeeting } = await import('@/lib/actions/meetings')
+    await createMeeting({ title: 'Blanked', location: '   ' })
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'create_meeting_and_audit',
+      expect.objectContaining({ p_location: null })
+    )
+  })
+})
+
+// ---- updateMeeting ----------------------------------------------------------
+
+describe('updateMeeting', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  const MEETING_WITH_CALENDAR = {
+    ...MEETING_SCHEDULED,
+    calendar_event_id: 'cal-event-id',
+    location: null,
+  }
+
+  it('returns error when user is not authenticated', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(null)
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    const result = await updateMeeting('meeting-uuid', { title: 'New title' })
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('returns error when meeting is not found', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: null, error: { message: 'not found' } })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    const result = await updateMeeting('meeting-uuid', { title: 'New title' })
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('returns error when non-owner MEMBER tries to edit', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(MEMBER_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: MEETING_SCHEDULED, error: null })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    const result = await updateMeeting('meeting-uuid', { title: 'Hack' })
+    expect(result.error).toContain('permission')
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('updates location via update_meeting_and_audit rpc', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: { ...MEETING_SCHEDULED, location: null }, error: null })
+    mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    const result = await updateMeeting('meeting-uuid', { location: 'Borgergade' })
+    expect(result.error).toBeUndefined()
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'update_meeting_and_audit',
+      expect.objectContaining({
+        p_meeting_id: 'meeting-uuid',
+        p_actor_user_id: SUPER_ADMIN_USER.id,
+        p_patch: expect.objectContaining({ location: 'Borgergade' }),
+      })
+    )
+  })
+
+  it('accepts null location (clearing the field)', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: { ...MEETING_SCHEDULED, location: 'Old place' }, error: null })
+    mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    // Passing empty string clears the field (coerced to null)
+    const result = await updateMeeting('meeting-uuid', { location: '' })
+    expect(result.error).toBeUndefined()
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'update_meeting_and_audit',
+      expect.objectContaining({
+        p_patch: expect.objectContaining({ location: null }),
+      })
+    )
+  })
+
+  it('skips rpc when no fields changed', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    // location in DB is already 'Same place'
+    mocks.mockSelectSingle.mockResolvedValue({ data: { ...MEETING_SCHEDULED, location: 'Same place' }, error: null })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    const result = await updateMeeting('meeting-uuid', { location: 'Same place' })
+    expect(result.error).toBeUndefined()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('triggers calendar resync when location changes and calendar event exists', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: MEETING_WITH_CALENDAR, error: null })
+    mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+    mocks.mockResyncMeetingCalendar.mockResolvedValue({ ok: true, eventId: 'cal-event-id' })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    await updateMeeting('meeting-uuid', { location: 'Google Meet' })
+    expect(mocks.mockResyncMeetingCalendar).toHaveBeenCalledWith('meeting-uuid')
+  })
+
+  it('does NOT trigger calendar resync when location changes but no calendar event', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: { ...MEETING_SCHEDULED, location: null }, error: null })
+    mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    await updateMeeting('meeting-uuid', { location: 'Restaurant X' })
+    expect(mocks.mockResyncMeetingCalendar).not.toHaveBeenCalled()
+  })
+
+  it('agenda locking is independent: location editable even when agenda is locked', async () => {
+    // After a meeting is published (agenda read-only), location can still be edited
+    // via the normal edit permission path (canEditMeeting). The working_notes
+    // restriction does NOT apply to location.
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    const publishedMeeting = { ...MEETING_SCHEDULED, status: 'published', location: null }
+    mocks.mockSelectSingle.mockResolvedValue({ data: publishedMeeting, error: null })
+    mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    // Location update on a published meeting — should succeed (no working_notes restriction)
+    const result = await updateMeeting('meeting-uuid', { location: 'Viktoriagade' })
+    expect(result.error).toBeUndefined()
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'update_meeting_and_audit',
+      expect.objectContaining({ p_patch: expect.objectContaining({ location: 'Viktoriagade' }) })
+    )
+  })
+
+  it('returns error when rpc fails', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({ data: { ...MEETING_SCHEDULED, location: null }, error: null })
+    mocks.mockRpc.mockResolvedValue({ data: null, error: { message: 'rpc failed' } })
+    const { updateMeeting } = await import('@/lib/actions/meetings')
+    const result = await updateMeeting('meeting-uuid', { location: 'Somewhere' })
     expect(result.error).toBeTruthy()
   })
 })

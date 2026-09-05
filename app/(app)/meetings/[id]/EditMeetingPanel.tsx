@@ -11,6 +11,7 @@ type Props = {
   initialStart: string | null
   initialEnd: string | null
   initialProjectId: string | null
+  initialLocation: string | null
   projects: { id: string; title: string }[]
 }
 
@@ -20,6 +21,7 @@ export default function EditMeetingPanel({
   initialStart,
   initialEnd,
   initialProjectId,
+  initialLocation,
   projects,
 }: Props) {
   const router = useRouter()
@@ -28,6 +30,7 @@ export default function EditMeetingPanel({
   const [start, setStart] = useState(utcToWall(initialStart))
   const [end, setEnd] = useState(utcToWall(initialEnd))
   const [projectId, setProjectId] = useState(initialProjectId ?? '')
+  const [location, setLocation] = useState(initialLocation ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,6 +39,7 @@ export default function EditMeetingPanel({
     setStart(utcToWall(initialStart))
     setEnd(utcToWall(initialEnd))
     setProjectId(initialProjectId ?? '')
+    setLocation(initialLocation ?? '')
     setError(null)
     setOpen(false)
   }
@@ -51,6 +55,7 @@ export default function EditMeetingPanel({
       scheduled_start: start || undefined,
       scheduled_end: end || undefined,
       project_id: projectId || undefined,
+      location: location || undefined,
     })
 
     setSaving(false)
@@ -107,6 +112,19 @@ export default function EditMeetingPanel({
               onChange={(e) => setEnd(e.target.value)}
               disabled={saving}
               className="w-full px-3 py-2 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-kk-ink mb-1">Location <span className="text-kk-muted font-normal">(optional)</span></label>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Killer Kebab office, Google Meet…"
+              maxLength={500}
+              disabled={saving}
+              className="w-full px-3 py-2 border border-kk-line rounded-xl text-sm text-kk-ink placeholder-kk-muted focus:outline-none focus:border-kk-ink transition-colors"
             />
           </div>
 

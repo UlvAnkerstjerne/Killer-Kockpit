@@ -19,6 +19,7 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
   const [scheduledStart, setScheduledStart] = useState('')
   const [scheduledEnd, setScheduledEnd] = useState('')
   const [context, setContext] = useState('')
+  const [location, setLocation] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,6 +37,7 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
       scheduled_start: scheduledStart || undefined,
       scheduled_end: scheduledEnd || undefined,
       context: context || undefined,
+      location: location || undefined,
     })
 
     if (result.error) {
@@ -117,6 +119,19 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
             className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-kk-ink mb-1.5">Location <span className="text-kk-muted font-normal">(optional)</span></label>
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="Killer Kebab office, Google Meet, Borgergade…"
+          maxLength={500}
+          disabled={submitting}
+          className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink placeholder-kk-muted focus:outline-none focus:border-kk-ink transition-colors"
+        />
       </div>
 
       <div>

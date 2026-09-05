@@ -75,6 +75,7 @@ type MeetingInput = {
   title: string
   scheduled_start: string
   scheduled_end: string
+  location?: string | null
 }
 type ProjectInput = { title: string } | null
 
@@ -109,6 +110,7 @@ export function buildCalendarEvent(
     description: descriptionLines.join('\n'),
     start: { dateTime: meeting.scheduled_start, timeZone: 'Europe/Copenhagen' },
     end:   { dateTime: meeting.scheduled_end,   timeZone: 'Europe/Copenhagen' },
+    ...(meeting.location ? { location: meeting.location } : {}),
     ...(guestList.length > 0 ? { attendees: guestList } : {}),
     visibility:            'default',
     guestsCanModify:       false,

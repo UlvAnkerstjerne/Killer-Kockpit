@@ -43,7 +43,7 @@ export default async function MeetingDetailPage({
     supabase
       .from('meetings')
       .select(`
-        id, title, status, context, working_notes, scheduled_start, scheduled_end,
+        id, title, status, context, working_notes, location, scheduled_start, scheduled_end,
         actual_start, actual_end, minutes_status, created_at,
         calendar_event_id, calendar_event_url, calendar_sync_status,
         calendar_sync_error, calendar_synced_at, meet_space_name,
@@ -297,6 +297,13 @@ export default async function MeetingDetailPage({
               </div>
             )}
 
+            {meeting.location && (
+              <div>
+                <div className="text-xs text-kk-muted mb-0.5">Location</div>
+                <div className="text-sm text-kk-ink">{meeting.location}</div>
+              </div>
+            )}
+
             {meeting.actual_start && (
               <div>
                 <div className="text-xs text-kk-muted mb-0.5">Actual start</div>
@@ -323,6 +330,7 @@ export default async function MeetingDetailPage({
               initialStart={meeting.scheduled_start ?? null}
               initialEnd={meeting.scheduled_end ?? null}
               initialProjectId={project?.id ?? null}
+              initialLocation={(meeting.location as string | null) ?? null}
               projects={projectsResult.data ?? []}
             />
           )}

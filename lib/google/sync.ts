@@ -69,7 +69,7 @@ export async function syncMeetingToCalendarForUser(
   const [meetingResult, attendeesResult] = await Promise.all([
     serviceClient
       .from('meetings')
-      .select('id, title, scheduled_start, scheduled_end, meet_space_name, project:project_id (title)')
+      .select('id, title, scheduled_start, scheduled_end, location, meet_space_name, project:project_id (title)')
       .eq('id', meetingId)
       .single(),
     serviceClient
@@ -120,6 +120,7 @@ export async function syncMeetingToCalendarForUser(
       title:           meeting.title,
       scheduled_start: meeting.scheduled_start,
       scheduled_end:   meeting.scheduled_end,
+      location:        (meeting.location as string | null) ?? null,
     },
     attendees,
     project,
