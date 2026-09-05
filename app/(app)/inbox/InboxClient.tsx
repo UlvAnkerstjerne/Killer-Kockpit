@@ -22,6 +22,7 @@ import {
   suggestionDetails,
 } from '@/lib/ai/email-suggestion-display'
 import { utcToWall } from '@/lib/time'
+import { resolveTaskOwner, priorityFromHint } from '@/lib/ai/task-suggestion-prefill'
 
 // Mirrors TaskForm / WaitingOnForm option sets exactly
 const PRIORITY_OPTIONS = [
@@ -331,9 +332,9 @@ export default function InboxClient({
     setCreateMode('task')
     setTaskTitle(suggestion ? suggestion.title : (selected?.subject ?? ''))
     setTaskDesc('')
-    setTaskOwner(currentUserId)
+    setTaskOwner(suggestion ? resolveTaskOwner(suggestion.responsible, users, currentUserId) : currentUserId)
     setTaskProject('')
-    setTaskPriority(2)
+    setTaskPriority(suggestion?.priority_hint != null ? priorityFromHint(suggestion.priority_hint) : 2)
     setTaskStatus('open')
     setTaskDueAt(
       suggestion?.due_at
