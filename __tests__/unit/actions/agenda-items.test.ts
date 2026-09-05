@@ -79,6 +79,13 @@ const MEETING = {
   owner_user_id: SUPER_ADMIN_USER.id,
 }
 
+// Agenda editable only in scheduled status
+const SCHEDULED_MEETING = {
+  id: 'meeting-uuid',
+  status: 'scheduled',
+  owner_user_id: SUPER_ADMIN_USER.id,
+}
+
 // ---- createAgendaItem -------------------------------------------------------
 
 describe('createAgendaItem', () => {
@@ -108,9 +115,30 @@ describe('createAgendaItem', () => {
     expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
-  it('calls create_agenda_item_and_audit with correct args', async () => {
+  it('returns error when meeting is open (agenda locked after start)', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
     mocks.mockMeetingSelectSingle.mockResolvedValue({ data: MEETING, error: null })
+    const { createAgendaItem } = await import('@/lib/actions/agenda-items')
+    const result = await createAgendaItem('meeting-uuid', { title: 'Item' })
+    expect(result.error).toMatch(/cannot be modified/i)
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('returns error when meeting is published (agenda locked)', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({
+      data: { ...MEETING, status: 'published' },
+      error: null,
+    })
+    const { createAgendaItem } = await import('@/lib/actions/agenda-items')
+    const result = await createAgendaItem('meeting-uuid', { title: 'Item' })
+    expect(result.error).toMatch(/cannot be modified/i)
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('calls create_agenda_item_and_audit with correct args for scheduled meeting', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: SCHEDULED_MEETING, error: null })
     mocks.mockRpc.mockResolvedValue({ data: 'item-uuid', error: null })
     const { createAgendaItem } = await import('@/lib/actions/agenda-items')
     const result = await createAgendaItem('meeting-uuid', { title: 'Budget review', sortOrder: 2 })
@@ -148,9 +176,27 @@ describe('updateAgendaItem', () => {
     expect(result.error).toBeTruthy()
   })
 
-  it('returns empty success when there are no actual changes', async () => {
+  it('returns error when meeting is open (agenda locked after start)', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
     mocks.mockMeetingSelectSingle.mockResolvedValue({ data: MEETING, error: null })
+    const { updateAgendaItem } = await import('@/lib/actions/agenda-items')
+    const result = await updateAgendaItem('item-uuid', 'meeting-uuid', { status: 'done' })
+    expect(result.error).toMatch(/cannot be modified/i)
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('returns error when unauthorized user tries to update item', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(MEMBER_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: SCHEDULED_MEETING, error: null })
+    const { updateAgendaItem } = await import('@/lib/actions/agenda-items')
+    const result = await updateAgendaItem('item-uuid', 'meeting-uuid', { title: 'Hack' })
+    expect(result.error).toContain('permission')
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('returns empty success when there are no actual changes', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: SCHEDULED_MEETING, error: null })
     mocks.mockItemSelectSingle.mockResolvedValue({
       data: { title: 'Original', description: null, status: 'open' },
       error: null,
@@ -161,24 +207,38 @@ describe('updateAgendaItem', () => {
     expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
-  it('calls update_agenda_item_and_audit rpc with patch and before', async () => {
+  it('calls update_agenda_item_and_audit rpc with patch and before for scheduled meeting', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
-    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: MEETING, error: null })
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: SCHEDULED_MEETING, error: null })
     mocks.mockItemSelectSingle.mockResolvedValue({
       data: { title: 'Original', description: null, status: 'open' },
       error: null,
     })
     mocks.mockRpc.mockResolvedValue({ data: null, error: null })
     const { updateAgendaItem } = await import('@/lib/actions/agenda-items')
-    await updateAgendaItem('item-uuid', 'meeting-uuid', { status: 'done' })
+    await updateAgendaItem('item-uuid', 'meeting-uuid', { title: 'New title' })
     expect(mocks.mockRpc).toHaveBeenCalledWith(
       'update_agenda_item_and_audit',
       expect.objectContaining({
         p_agenda_item_id: 'item-uuid',
         p_actor_user_id: SUPER_ADMIN_USER.id,
-        p_patch: { status: 'done' },
-        p_before: { status: 'open' },
+        p_patch: { title: 'New title' },
+        p_before: { title: 'Original' },
       })
     )
+  })
+
+  it('location independence: updateMeeting location does not affect agenda lock', async () => {
+    // The agenda lock is purely based on meeting.status, not location.
+    // A meeting with a location set is still locked once status === 'open'.
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({
+      data: { ...MEETING, status: 'open', location: 'Killer Kebab office' },
+      error: null,
+    })
+    const { updateAgendaItem } = await import('@/lib/actions/agenda-items')
+    const result = await updateAgendaItem('item-uuid', 'meeting-uuid', { title: 'X' })
+    expect(result.error).toMatch(/cannot be modified/i)
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 })

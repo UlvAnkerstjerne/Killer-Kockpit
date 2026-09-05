@@ -18,6 +18,12 @@ export default function AgendaSection({ meetingId, items, canEdit, isEditable }:
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Per-item inline editing
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (!newTitle.trim() || adding) return
@@ -38,10 +44,37 @@ export default function AgendaSection({ meetingId, items, canEdit, isEditable }:
     setAdding(false)
   }
 
-  async function toggleStatus(item: AgendaItem) {
-    const nextStatus = item.status === 'open' ? 'done' : 'open'
-    await updateAgendaItem(item.id, meetingId, { status: nextStatus })
-    router.refresh()
+  function startEdit(item: AgendaItem) {
+    setEditingItemId(item.id)
+    setEditTitle(item.title)
+    setEditDesc(item.description ?? '')
+    setError(null)
+  }
+
+  function cancelEdit() {
+    setEditingItemId(null)
+    setEditTitle('')
+    setEditDesc('')
+    setError(null)
+  }
+
+  async function handleEditSave(item: AgendaItem) {
+    if (editSaving) return
+    setEditSaving(true)
+    setError(null)
+
+    const result = await updateAgendaItem(item.id, meetingId, {
+      title: editTitle,
+      description: editDesc,
+    })
+
+    setEditSaving(false)
+    if (result.error) {
+      setError(result.error)
+    } else {
+      setEditingItemId(null)
+      router.refresh()
+    }
   }
 
   return (
@@ -54,27 +87,65 @@ export default function AgendaSection({ meetingId, items, canEdit, isEditable }:
 
       <div className="divide-y divide-kk-line">
         {items.map((item) => (
-          <div key={item.id} className="flex items-start gap-3 px-5 py-3">
-            {isEditable && canEdit && (
-              <button
-                onClick={() => toggleStatus(item)}
-                className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 transition-colors ${
-                  item.status === 'done'
-                    ? 'bg-kk-good-bg border-kk-good'
-                    : 'border-kk-line hover:border-kk-ink'
-                }`}
-                title={item.status === 'done' ? 'Mark open' : 'Mark done'}
-              >
-                {item.status === 'done' && (
-                  <svg className="w-3 h-3 text-kk-good mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
+          <div key={item.id} className="group px-5 py-3">
+            {editingItemId === item.id ? (
+              /* ── Edit mode ─────────────────────────────────────────────── */
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  maxLength={500}
+                  disabled={editSaving}
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                  className="w-full px-3 py-1.5 border border-kk-line rounded-lg text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors"
+                />
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  placeholder="Description (optional)"
+                  rows={2}
+                  disabled={editSaving}
+                  className="w-full px-3 py-1.5 border border-kk-line rounded-lg text-xs text-kk-ink placeholder-kk-muted focus:outline-none focus:border-kk-ink transition-colors resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEditSave(item)}
+                    disabled={!editTitle.trim() || editSaving}
+                    className="px-3 py-1 bg-kk-ink text-white text-xs rounded-lg disabled:opacity-40 hover:opacity-90 transition-opacity"
+                  >
+                    {editSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    onClick={cancelEdit}
+                    disabled={editSaving}
+                    className="px-3 py-1 border border-kk-line text-xs text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ── Read mode ─────────────────────────────────────────────── */
+              <div className="flex items-start gap-3">
+                <span className={`text-sm flex-1 ${item.status === 'done' ? 'text-kk-muted line-through' : 'text-kk-ink'}`}>
+                  {item.title}
+                  {item.description && (
+                    <span className="block text-xs text-kk-muted mt-0.5">{item.description}</span>
+                  )}
+                </span>
+                {isEditable && canEdit && (
+                  <button
+                    onClick={() => startEdit(item)}
+                    className="opacity-0 group-hover:opacity-100 text-xs text-kk-muted hover:text-kk-ink transition-all shrink-0 mt-0.5"
+                    title="Edit item"
+                  >
+                    ✎
+                  </button>
                 )}
-              </button>
+              </div>
             )}
-            <span className={`text-sm flex-1 ${item.status === 'done' ? 'text-kk-muted line-through' : 'text-kk-ink'}`}>
-              {item.title}
-            </span>
           </div>
         ))}
 

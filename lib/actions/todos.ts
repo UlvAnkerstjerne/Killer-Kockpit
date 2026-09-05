@@ -253,6 +253,61 @@ export async function updateTodoNotes(id: string, notes: string | null): Promise
 }
 
 // ---------------------------------------------------------------------------
+// updateTodo
+// ---------------------------------------------------------------------------
+
+/**
+ * Updates editable scalar fields on an open to-do: title, priority, scheduled_for.
+ * Only the owner may update their own to-do (enforced by RLS + .eq filter).
+ *
+ * For recurring todos the recurrence system owns scheduled_for — callers should
+ * use updateTodoRecurrence to change the rule and let it recompute scheduled_for.
+ * Non-recurring todos may have scheduled_for set freely via this action.
+ */
+export async function updateTodo(
+  id: string,
+  input: { title?: string; priority?: number; scheduled_for?: string | null },
+): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+
+  if (input.title !== undefined) {
+    const trimmed = input.title.trim()
+    if (!trimmed) return { error: 'Title is required.' }
+    patch.title = trimmed
+  }
+
+  if (input.priority !== undefined) {
+    if (!Number.isInteger(input.priority) || input.priority < 1 || input.priority > 4) {
+      return { error: 'Priority must be 1, 2, 3, or 4.' }
+    }
+    patch.priority = input.priority
+  }
+
+  if ('scheduled_for' in input) {
+    patch.scheduled_for = input.scheduled_for ?? null
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('todos')
+    .update(patch)
+    .eq('id', id)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('[updateTodo]', error)
+    return { error: 'Failed to update to-do.' }
+  }
+
+  revalidatePath('/today')
+  revalidatePath('/todos')
+  return {}
+}
+
+// ---------------------------------------------------------------------------
 // updateTodoRecurrence
 // ---------------------------------------------------------------------------
 

@@ -183,7 +183,7 @@ export default async function MeetingDetailPage({
             meetingId={id}
             items={agendaItems}
             canEdit={canEdit}
-            isEditable={isActive}
+            isEditable={status === 'scheduled'}
           />
 
           {/* Minutes — canonical (published) or editable (active) */}

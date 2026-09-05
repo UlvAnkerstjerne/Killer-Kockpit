@@ -90,7 +90,7 @@ const TODO_ID = 'todo-uuid-1'
 import {
   createTodo, completeTodo, completeRecurringTodo,
   cancelTodo, reopenTodo,
-  updateTodoNotes, updateTodoRecurrence,
+  updateTodo, updateTodoNotes, updateTodoRecurrence,
 } from '@/lib/actions/todos'
 
 // ---------------------------------------------------------------------------
@@ -378,6 +378,65 @@ describe('updateTodoNotes', () => {
     setupAuth()
     setupUpdateError()
     const result = await updateTodoNotes(TODO_ID, 'note')
+    expect(result.error).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updateTodo
+// ---------------------------------------------------------------------------
+
+describe('updateTodo', () => {
+  it('[33] returns error when user is not authenticated', async () => {
+    setupAuth(null)
+    const result = await updateTodo(TODO_ID, { title: 'New title' })
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('[34] returns error for blank title', async () => {
+    setupAuth()
+    const result = await updateTodo(TODO_ID, { title: '   ' })
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('[35] returns error for priority out of range', async () => {
+    setupAuth()
+    const result = await updateTodo(TODO_ID, { priority: 5 })
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('[36] succeeds when updating title and passes user_id filter', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    const result = await updateTodo(TODO_ID, { title: 'Updated title' })
+    expect(result.error).toBeUndefined()
+    const eqCols = mocks.mockEq.mock.calls.map((args: unknown[]) => args[0])
+    expect(eqCols).toContain('user_id')
+  })
+
+  it('[37] trims title before saving', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    await updateTodo(TODO_ID, { title: '  trimmed  ' })
+    const updateArg = mocks.mockUpdate.mock.calls[0][0]
+    expect(updateArg.title).toBe('trimmed')
+  })
+
+  it('[38] can clear scheduled_for by passing null', async () => {
+    setupAuth()
+    setupUpdateSuccess()
+    await updateTodo(TODO_ID, { scheduled_for: null })
+    const updateArg = mocks.mockUpdate.mock.calls[0][0]
+    expect(updateArg.scheduled_for).toBeNull()
+  })
+
+  it('[39] returns error when DB update fails', async () => {
+    setupAuth()
+    setupUpdateError()
+    const result = await updateTodo(TODO_ID, { title: 'New title' })
     expect(result.error).toBeTruthy()
   })
 })

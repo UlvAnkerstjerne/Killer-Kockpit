@@ -18,12 +18,14 @@ import {
   completeRecurringTodo,
   cancelTodo,
   reopenTodo,
+  updateTodo,
   updateTodoNotes,
   updateTodoRecurrence,
 } from '@/lib/actions/todos'
 import type { Todo } from '@/lib/types'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
+import { wallToUtc } from '@/lib/time'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,6 +84,14 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
   const [editingRepeatId, setEditingRepeatId] = useState<string | null>(null)
   const [editRepeatRule,  setEditRepeatRule]  = useState<string>('')
   const [editRepeatDay,   setEditRepeatDay]   = useState<number>(1)
+
+  // Inline title editing
+  const [editingTitleId,   setEditingTitleId]   = useState<string | null>(null)
+  const [editingTitleText, setEditingTitleText] = useState('')
+
+  // Inline scheduled date editing (non-recurring todos only)
+  const [editingScheduledId,   setEditingScheduledId]   = useState<string | null>(null)
+  const [editingScheduledDate, setEditingScheduledDate] = useState('')
 
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -152,6 +162,47 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
       editRepeatRule || null,
       editRepeatRule === 'monthly' ? editRepeatDay : null,
     )
+    if (result.error) {
+      setActionError(result.error)
+      return
+    }
+    startTransition(() => router.refresh())
+  }
+
+  function startTitleEdit(todo: Todo) {
+    setEditingTitleId(todo.id)
+    setEditingTitleText(todo.title)
+  }
+
+  async function handleTitleSave(todoId: string) {
+    const trimmed = editingTitleText.trim()
+    setEditingTitleId(null)
+    if (!trimmed) return
+    const result = await updateTodo(todoId, { title: trimmed })
+    if (result.error) {
+      setActionError(result.error)
+      return
+    }
+    startTransition(() => router.refresh())
+  }
+
+  function startScheduledEdit(todo: Todo) {
+    setEditingScheduledId(todo.id)
+    // Convert stored UTC timestamp to Copenhagen date string YYYY-MM-DD
+    const date = todo.scheduled_for
+      ? new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Europe/Copenhagen',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date(todo.scheduled_for))
+      : ''
+    setEditingScheduledDate(date)
+  }
+
+  async function handleScheduledSave(todoId: string) {
+    const dateStr = editingScheduledDate
+    setEditingScheduledId(null)
+    const scheduled_for = dateStr ? wallToUtc(dateStr + 'T00:00') : null
+    const result = await updateTodo(todoId, { scheduled_for })
     if (result.error) {
       setActionError(result.error)
       return
@@ -284,8 +335,68 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                 {/* Title row */}
                 <div className="flex items-center gap-2 min-w-0">
                   <PriorityDot priority={todo.priority} />
-                  <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
+                  {editingTitleId === todo.id ? (
+                    <input
+                      type="text"
+                      value={editingTitleText}
+                      onChange={(e) => setEditingTitleText(e.target.value)}
+                      onBlur={() => handleTitleSave(todo.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.currentTarget.blur() }
+                        if (e.key === 'Escape') { setEditingTitleId(null) }
+                      }}
+                      maxLength={200}
+                      className="flex-1 text-sm font-semibold text-kk-ink bg-kk-soft rounded px-2 py-0.5 outline-none"
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="text-sm font-semibold text-kk-ink truncate cursor-text hover:text-kk-ink/70 transition-colors"
+                      onClick={() => startTitleEdit(todo)}
+                      title="Click to edit title"
+                    >
+                      {todo.title}
+                    </span>
+                  )}
                 </div>
+
+                {/* Scheduled date (non-recurring only) */}
+                {!todo.recurrence_rule && (
+                  editingScheduledId === todo.id ? (
+                    <input
+                      type="date"
+                      value={editingScheduledDate}
+                      onChange={(e) => setEditingScheduledDate(e.target.value)}
+                      onBlur={() => handleScheduledSave(todo.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { setEditingScheduledId(null) }
+                      }}
+                      className="mt-0.5 text-xs text-kk-ink bg-kk-soft rounded px-2 py-0.5 outline-none"
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
+                      autoFocus
+                    />
+                  ) : todo.scheduled_for ? (
+                    <button
+                      onClick={() => startScheduledEdit(todo)}
+                      className="mt-0.5 text-[10px] text-kk-muted hover:text-kk-ink transition-colors text-left"
+                      title="Edit scheduled date"
+                    >
+                      📅 {new Date(todo.scheduled_for).toLocaleDateString('en-GB', {
+                        timeZone: 'Europe/Copenhagen',
+                        day: 'numeric', month: 'short',
+                      })}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => startScheduledEdit(todo)}
+                      className="mt-0.5 text-[10px] text-kk-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+                      title="Set scheduled date"
+                    >
+                      + date
+                    </button>
+                  )
+                )}
 
                 {/* Recurrence row — editable */}
                 {editingRepeatId === todo.id ? (

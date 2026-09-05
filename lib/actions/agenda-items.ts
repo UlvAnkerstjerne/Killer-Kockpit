@@ -24,6 +24,9 @@ export async function createAgendaItem(
   if (!canEditMeeting(user.role, meeting.owner_user_id, user.id)) {
     return { error: 'You do not have permission to edit this meeting.' }
   }
+  if (meeting.status !== 'scheduled') {
+    return { error: 'Agenda cannot be modified after the meeting has begun.' }
+  }
 
   const serviceClient = createServiceClient()
   const { data: itemId, error } = await serviceClient.rpc('create_agenda_item_and_audit', {
@@ -63,6 +66,9 @@ export async function updateAgendaItem(
   if (!meeting) return { error: 'Meeting not found.' }
   if (!canEditMeeting(user.role, meeting.owner_user_id, user.id)) {
     return { error: 'You do not have permission to edit this meeting.' }
+  }
+  if (meeting.status !== 'scheduled') {
+    return { error: 'Agenda cannot be modified after the meeting has begun.' }
   }
 
   const { data: current } = await supabase
