@@ -328,4 +328,49 @@ describe('createMeetingFromEmail', () => {
       expect(serialized).not.toContain(FAKE_MESSAGE.body)
     }
   })
+
+  // ── Evidence privacy — evidence must never reach the database ─────────────
+  //
+  // The review form prefills context from suggestion.reason only.
+  // Evidence is a verbatim body excerpt shown transiently in the UI.
+  // These tests document and enforce the contract at the server boundary.
+
+  it('context may contain the reason', async () => {
+    const REASON = 'Meeting requested to discuss staffing'
+
+    await createMeetingFromEmail('msg-abc123', {
+      title: 'Staffing meeting',
+      context: REASON,
+    })
+
+    const [input] = mocks.mockCreateMeeting.mock.calls[0]
+    expect(input.context).toBe(REASON)
+  })
+
+  it('evidence is not present in the context sent to createMeeting when form uses reason-only prefill', async () => {
+    const REASON   = 'Meeting requested to discuss staffing'
+    const EVIDENCE = 'Can we meet Tuesday at 10 to discuss the new rota?'
+
+    // Simulate what the corrected openMeetingForm sends: reason only, no evidence.
+    await createMeetingFromEmail('msg-abc123', {
+      title:   'Staffing meeting',
+      context: REASON,          // ← correct: reason, not evidence
+    })
+
+    const [input] = mocks.mockCreateMeeting.mock.calls[0]
+    expect(input.context).not.toContain(EVIDENCE)
+  })
+
+  it('no field passed to createMeeting contains the evidence string', async () => {
+    const EVIDENCE = 'Can we meet Tuesday at 10 to discuss the new rota?'
+    const REASON   = 'Meeting requested to discuss staffing'
+
+    await createMeetingFromEmail('msg-abc123', {
+      title:   'Staffing meeting',
+      context: REASON,
+    })
+
+    const [input] = mocks.mockCreateMeeting.mock.calls[0]
+    expect(JSON.stringify(input)).not.toContain(EVIDENCE)
+  })
 })

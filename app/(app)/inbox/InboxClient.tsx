@@ -322,10 +322,9 @@ export default function InboxClient({
     setMeetingStart(suggestion.scheduled_start ? utcToWall(suggestion.scheduled_start) : '')
     setMeetingEnd(suggestion.scheduled_end ? utcToWall(suggestion.scheduled_end) : '')
     setMeetingLocation(suggestion.location ?? '')
-    // Derive context from reason + evidence so the user has useful prep notes
-    const contextParts = [suggestion.reason]
-    if (suggestion.evidence) contextParts.push(`"${suggestion.evidence}"`)
-    setMeetingContext(contextParts.join('\n\n'))
+    // Context prefill uses only the AI reason — never the evidence excerpt.
+    // Evidence is a verbatim body quote and must never be persisted.
+    setMeetingContext(suggestion.reason)
     setFormError(null)
   }
 
