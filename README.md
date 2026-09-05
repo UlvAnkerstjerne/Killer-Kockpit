@@ -1,12 +1,14 @@
-# Killer Kockpit — Milestone 1
+# Killer Kockpit — M7
 
 Internal management operating system for Killer Kebab.
+
+**Production:** kockpit.killerkebab.com
 
 ## Prerequisites
 
 - Node.js 18+
 - A [Supabase](https://supabase.com) project
-- Google Cloud project with OAuth 2.0 credentials
+- Google Cloud project with OAuth 2.0 credentials (Gmail + Google Drive scopes for inbox integration)
 
 ## Local setup
 
@@ -29,14 +31,11 @@ Edit `.env.local`:
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → service_role key |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` for local dev |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3001` for local dev |
 
 ### 3. Run database migrations
 
-In Supabase → SQL Editor, run these files in order:
-
-1. `supabase/migrations/001_initial_schema.sql`
-2. `supabase/migrations/002_rls_policies.sql`
+In Supabase → SQL Editor, run the files in `supabase/migrations/` in order (37 files, `000_` through `036_`).
 
 ### 4. Configure Google OAuth in Supabase
 
@@ -67,7 +66,7 @@ Your Google subject ID is the `sub` field in `raw_user_meta_data` (Supabase → 
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3001](http://localhost:3001).
 
 ---
 
@@ -75,65 +74,46 @@ Open [http://localhost:3000](http://localhost:3000).
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com) and select or create a project.
 2. Go to **APIs & Services → OAuth consent screen** — configure as internal if using Google Workspace.
-3. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**.
-4. Application type: **Web application**.
-5. Authorised redirect URIs — add:
+3. Enable: Gmail API, Google Drive API.
+4. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**.
+5. Application type: **Web application**.
+6. Authorised redirect URIs — add:
    - `https://YOUR_SUPABASE_REF.supabase.co/auth/v1/callback`
-   - `http://localhost:3000/auth/callback` (for local dev)
-6. Copy the **Client ID** and **Client Secret**.
-7. In Supabase → Authentication → Providers → Google, paste the Client ID and Client Secret, then enable.
+   - `http://localhost:3001/auth/callback` (for local dev)
+7. Copy the **Client ID** and **Client Secret**.
+8. In Supabase → Authentication → Providers → Google, paste the Client ID and Client Secret, then enable.
 
 ---
-
-## Project structure
-
-```
-app/
-  (app)/           — authenticated app routes (protected by layout)
-    today/         — Today dashboard (real data)
-    projects/      — Projects list + detail + create/edit
-    tasks/         — Tasks list + detail + create/edit
-    inbox/         — Placeholder (Milestone 2)
-    team/          — Placeholder (Milestone 2)
-    people/        — Placeholder (Milestone 3)
-    meetings/      — Placeholder (Milestone 3)
-    knowledge/     — Placeholder (Milestone 4)
-  login/           — Google sign-in page
-  auth/callback/   — OAuth callback + access gate
-components/
-  layout/          — AppShell, CaptureBar, QuickCreateModal, PlaceholderPage
-  projects/        — ProjectForm, ArchiveProjectButton
-  tasks/           — TaskList, TaskForm, TaskActionButtons
-  ui/              — StatusBadge, EmptyState, AuditHistory
-lib/
-  actions/         — Server actions: projects.ts, tasks.ts
-  supabase/        — client.ts, server.ts, middleware.ts
-  auth.ts          — getCurrentUser, getActiveUsers
-  audit.ts         — recordAuditEvent (service-role write)
-  permissions.ts   — Centralised authorisation (single source of truth)
-  types.ts         — TypeScript types
-supabase/
-  migrations/      — SQL schema + RLS policies
-```
 
 ## Roles
 
 | Role | Access |
 |---|---|
 | `SUPER_ADMIN` | Full access, user management |
-| `UM` | Organisation-wide projects + tasks, management view |
-| `MEMBER` | Own projects and tasks only, personal view only |
+| `ADMIN` | Organisation-wide access, management view |
+| `MEMBER` | Own data only, personal view |
 
-Role is stored in `app_users.role` and enforced server-side and in database RLS policies. The browser cannot escalate its own role.
+Role is stored in `app_users.role` and enforced server-side in every server action and in database RLS policies. The browser cannot escalate its own role.
 
 ## Access gate
 
 A Google account alone does not grant access. The user must:
 1. Sign in with Google OAuth
-2. Have an active record in `app_users` (inserted manually or by an admin)
+2. Have an active record in `app_users` (inserted by an admin)
 
 Inactive users are denied access and signed out at the OAuth callback.
 
-## Deferred modules (not in Milestone 1)
+## Features (as of M7)
 
-Inbox, Team, People, Meetings, Knowledge — visible in navigation as placeholders. The schema exists for these modules but their application features and permission models are not yet implemented.
+- **Today** — daily dashboard: urgent tasks, waiting-ons, to-dos due today, morning brief
+- **To-dos** — personal to-dos with recurrence, priority, notes, scheduling
+- **Tasks** — cross-user task handoff with accountability tracking
+- **Waiting-ons** — track external dependencies
+- **Decisions** — log and reference key decisions
+- **Meetings** — full lifecycle (scheduled → open → draft → published), agenda, AI-assisted draft minutes, canonical published minutes, transcript ingestion, Gmail/Drive provenance
+- **Inbox** — Gmail thread viewer with entity linking (Projects, Meetings, People, Locations)
+- **People** — contact directory with Gmail/Drive provenance
+- **Locations** — location directory with Gmail/Drive provenance
+- **Projects** — project management
+- **Team** — user management (SUPER_ADMIN only)
+- **Knowledge** — placeholder (not yet built)

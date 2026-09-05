@@ -55,3 +55,6 @@ design/_debug/
 
 # raw design reference images (tracked separately outside the repo)
 UI - design/
+
+# local debug screenshots dropped in repo root
+/*.png
