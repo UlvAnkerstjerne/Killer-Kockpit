@@ -15,7 +15,7 @@ import {
 } from '@/lib/actions/gmail'
 import type { EmailAction } from '@/lib/actions/gmail'
 import { analyzeEmailForSuggestions } from '@/lib/actions/email-intelligence'
-import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion, TaskSuggestion, TodoSuggestion } from '@/lib/ai/email-analysis-schema'
+import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion, TaskSuggestion, TodoSuggestion, WaitingOnSuggestion } from '@/lib/ai/email-analysis-schema'
 import {
   kindLabel,
   kindBadgeClass,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/ai/email-suggestion-display'
 import { utcToWall } from '@/lib/time'
 import { resolveTaskOwner, priorityFromHint } from '@/lib/ai/task-suggestion-prefill'
+import { resolveWaitingFor } from '@/lib/ai/wo-suggestion-prefill'
 
 // Mirrors TaskForm / WaitingOnForm option sets exactly
 const PRIORITY_OPTIONS = [
@@ -91,11 +92,13 @@ function SuggestionCard({
   onReviewTodo,
   onReviewMeeting,
   onReviewTask,
+  onReviewWaitingOn,
 }: {
   suggestion: EmailSuggestion
   onReviewTodo?: (s: TodoSuggestion) => void
   onReviewMeeting?: (s: MeetingSuggestion) => void
   onReviewTask?: (s: TaskSuggestion) => void
+  onReviewWaitingOn?: (s: WaitingOnSuggestion) => void
 }) {
   const details = suggestionDetails(suggestion)
 
@@ -172,6 +175,18 @@ function SuggestionCard({
           className="text-xs px-3 py-1 border border-kk-line rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
         >
           Review Task
+        </button>
+      )}
+
+      {/* Review action — waiting_on suggestions only */}
+      {suggestion.kind === 'waiting_on' && onReviewWaitingOn && (
+        <button
+          type="button"
+          onClick={() => onReviewWaitingOn(suggestion as WaitingOnSuggestion)}
+          data-testid="review-wo-button"
+          className="text-xs px-3 py-1 border border-kk-line rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+        >
+          Review Waiting On
         </button>
       )}
     </div>
@@ -344,15 +359,34 @@ export default function InboxClient({
     setFormError(null)
   }
 
-  function openWoForm() {
+  function openWoForm(suggestion?: WaitingOnSuggestion) {
     setCreateMode('waiting-on')
-    setWoTitle(selected?.subject ?? '')
-    setWoUseExternal(true)
-    setWoForUserId('')
-    setWoForName(selected ? senderName(selected.from) : '')
+    setWoTitle(suggestion ? suggestion.title : (selected?.subject ?? ''))
+    if (suggestion) {
+      const resolved = resolveWaitingFor(suggestion.waiting_for_name, users)
+      if (resolved.type === 'internal') {
+        setWoUseExternal(false)
+        setWoForUserId(resolved.userId)
+        setWoForName('')
+      } else if (resolved.type === 'external') {
+        setWoUseExternal(true)
+        setWoForUserId('')
+        setWoForName(resolved.name)
+      } else {
+        // blank — external mode, human fills
+        setWoUseExternal(true)
+        setWoForUserId('')
+        setWoForName('')
+      }
+      setWoDueAt(suggestion.due_at ? utcToWall(suggestion.due_at) : '')
+    } else {
+      setWoUseExternal(true)
+      setWoForUserId('')
+      setWoForName(selected ? senderName(selected.from) : '')
+      setWoDueAt(deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : '')
+    }
     setWoOwner(currentUserId)
     setWoProject('')
-    setWoDueAt(deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : '')
     setWoNotes('')
     setFormError(null)
   }
@@ -1134,7 +1168,7 @@ export default function InboxClient({
                       Save as task
                     </button>
                     <button
-                      onClick={openWoForm}
+                      onClick={() => openWoForm()}
                       className="px-3 py-1.5 border border-kk-line text-xs text-kk-ink rounded-xl hover:bg-kk-soft transition-colors"
                     >
                       Save as waiting on
@@ -1188,7 +1222,7 @@ export default function InboxClient({
                         ) : (
                           <div className="space-y-2">
                             {analysisSuggestions.suggestions.map((s, i) => (
-                              <SuggestionCard key={i} suggestion={s} onReviewTodo={openTodoForm} onReviewMeeting={openMeetingForm} onReviewTask={openTaskForm} />
+                              <SuggestionCard key={i} suggestion={s} onReviewTodo={openTodoForm} onReviewMeeting={openMeetingForm} onReviewTask={openTaskForm} onReviewWaitingOn={openWoForm} />
                             ))}
                             {analysisSuggestions.analysis_note && (
                               <p className="text-xs text-kk-muted">{analysisSuggestions.analysis_note}</p>
