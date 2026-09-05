@@ -6,6 +6,7 @@ import type { GmailMessageMeta } from '@/lib/google/gmail'
 import {
   createTaskFromEmail,
   createWaitingOnFromEmail,
+  createMeetingFromEmail,
   fetchMoreInboxMessages,
   getMessageActions,
   linkEmailToEntity,
@@ -13,12 +14,13 @@ import {
 } from '@/lib/actions/gmail'
 import type { EmailAction } from '@/lib/actions/gmail'
 import { analyzeEmailForSuggestions } from '@/lib/actions/email-intelligence'
-import type { EmailAnalysisOutput, EmailSuggestion } from '@/lib/ai/email-analysis-schema'
+import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion } from '@/lib/ai/email-analysis-schema'
 import {
   kindLabel,
   kindBadgeClass,
   suggestionDetails,
 } from '@/lib/ai/email-suggestion-display'
+import { utcToWall } from '@/lib/time'
 
 // Mirrors TaskForm / WaitingOnForm option sets exactly
 const PRIORITY_OPTIONS = [
@@ -81,7 +83,13 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
 // Pure display — no create/accept/apply actions. Ephemeral: lives only in
 // React state for the currently opened email. Nothing is persisted.
 
-function SuggestionCard({ suggestion }: { suggestion: EmailSuggestion }) {
+function SuggestionCard({
+  suggestion,
+  onReviewMeeting,
+}: {
+  suggestion: EmailSuggestion
+  onReviewMeeting?: (s: MeetingSuggestion) => void
+}) {
   const details = suggestionDetails(suggestion)
 
   return (
@@ -123,6 +131,18 @@ function SuggestionCard({ suggestion }: { suggestion: EmailSuggestion }) {
 
       {/* Reason — most secondary */}
       <p className="text-[11px] text-kk-muted">{suggestion.reason}</p>
+
+      {/* Review action — only for meeting suggestions */}
+      {suggestion.kind === 'meeting' && onReviewMeeting && (
+        <button
+          type="button"
+          onClick={() => onReviewMeeting(suggestion as MeetingSuggestion)}
+          data-testid="review-meeting-button"
+          className="text-xs px-3 py-1 border border-kk-line rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+        >
+          Review meeting
+        </button>
+      )}
     </div>
   )
 }
@@ -152,7 +172,7 @@ export default function InboxClient({
   const [body, setBody]                 = useState<string | null>(null)
   const [bodyLoading, setBodyLoading]   = useState(false)
   const [deadlineHint, setDeadlineHint] = useState<DeadlineHint>(null)
-  const [createMode, setCreateMode]     = useState<'task' | 'waiting-on' | null>(null)
+  const [createMode, setCreateMode]     = useState<'task' | 'waiting-on' | 'meeting' | null>(null)
 
   // ── Actions for the open message ─────────────────────────────────────────
   const [actions, setActions]         = useState<EmailAction[]>([])
@@ -169,6 +189,13 @@ export default function InboxClient({
   const [taskPriority, setTaskPriority] = useState<1|2|3|4>(2)
   const [taskStatus,   setTaskStatus]   = useState<string>('open')
   const [taskDueAt,    setTaskDueAt]    = useState('')
+
+  // ── Meeting form state ───────────────────────────────────────────────────
+  const [meetingTitle,    setMeetingTitle]    = useState('')
+  const [meetingStart,    setMeetingStart]    = useState('')
+  const [meetingEnd,      setMeetingEnd]      = useState('')
+  const [meetingLocation, setMeetingLocation] = useState('')
+  const [meetingContext,  setMeetingContext]  = useState('')
 
   // ── Waiting-on form state ────────────────────────────────────────────────
   const [woTitle,       setWoTitle]       = useState('')
@@ -289,6 +316,19 @@ export default function InboxClient({
     setFormError(null)
   }
 
+  function openMeetingForm(suggestion: MeetingSuggestion) {
+    setCreateMode('meeting')
+    setMeetingTitle(suggestion.title)
+    setMeetingStart(suggestion.scheduled_start ? utcToWall(suggestion.scheduled_start) : '')
+    setMeetingEnd(suggestion.scheduled_end ? utcToWall(suggestion.scheduled_end) : '')
+    setMeetingLocation(suggestion.location ?? '')
+    // Derive context from reason + evidence so the user has useful prep notes
+    const contextParts = [suggestion.reason]
+    if (suggestion.evidence) contextParts.push(`"${suggestion.evidence}"`)
+    setMeetingContext(contextParts.join('\n\n'))
+    setFormError(null)
+  }
+
   // ── Submission handlers ───────────────────────────────────────────────────
 
   async function handleCreateTask(e: React.FormEvent) {
@@ -336,6 +376,29 @@ export default function InboxClient({
     } else {
       setCreateMode(null)
       setNotices((prev) => [...prev, { label: `Waiting on: ${woTitle.trim()}`, href: `/waiting-ons/${result.data!.id}` }])
+      setActionedIds((prev) => new Set([...prev, selected.messageId]))
+      await refreshActions(selected.messageId)
+    }
+  }
+
+  async function handleCreateMeeting(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selected || !meetingTitle.trim() || saving) return
+    setSaving(true)
+    setFormError(null)
+    const result = await createMeetingFromEmail(selected.messageId, {
+      title:           meetingTitle.trim(),
+      scheduled_start: meetingStart || undefined,
+      scheduled_end:   meetingEnd || undefined,
+      location:        meetingLocation.trim() || undefined,
+      context:         meetingContext.trim() || undefined,
+    })
+    setSaving(false)
+    if (result.error) {
+      setFormError(result.error)
+    } else {
+      setCreateMode(null)
+      setNotices((prev) => [...prev, { label: `Meeting: ${meetingTitle.trim()}`, href: `/meetings/${result.data!.id}` }])
       setActionedIds((prev) => new Set([...prev, selected.messageId]))
       await refreshActions(selected.messageId)
     }
@@ -810,6 +873,100 @@ export default function InboxClient({
                 </form>
               )}
 
+              {/* ── Meeting creation form ──────────────────────────── */}
+              {createMode === 'meeting' && (
+                <form onSubmit={handleCreateMeeting} className="px-5 py-4 space-y-3">
+                  <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">New meeting from email</div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">Title *</label>
+                    <input
+                      type="text"
+                      value={meetingTitle}
+                      onChange={(e) => setMeetingTitle(e.target.value)}
+                      required
+                      maxLength={500}
+                      disabled={saving}
+                      className={field}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">
+                        Start <span className="text-kk-muted font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={meetingStart}
+                        onChange={(e) => setMeetingStart(e.target.value)}
+                        disabled={saving}
+                        className={field}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">
+                        End <span className="text-kk-muted font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={meetingEnd}
+                        onChange={(e) => setMeetingEnd(e.target.value)}
+                        disabled={saving}
+                        className={field}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">
+                      Location <span className="text-kk-muted font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={meetingLocation}
+                      onChange={(e) => setMeetingLocation(e.target.value)}
+                      maxLength={500}
+                      disabled={saving}
+                      className={field}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">
+                      Context / prep notes <span className="text-kk-muted font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      value={meetingContext}
+                      onChange={(e) => setMeetingContext(e.target.value)}
+                      rows={3}
+                      disabled={saving}
+                      className={`${field} resize-none`}
+                    />
+                  </div>
+
+                  {formError && <p className="text-xs text-kk-bad">{formError}</p>}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={!meetingTitle.trim() || saving}
+                      className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
+                    >
+                      {saving ? 'Creating…' : 'Create meeting'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateMode(null)}
+                      disabled={saving}
+                      className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
               {/* ── Action buttons + link pickers (when no form open) ── */}
               {createMode === null && (
                 <div className="px-5 py-4 space-y-4">
@@ -877,7 +1034,7 @@ export default function InboxClient({
                         ) : (
                           <div className="space-y-2">
                             {analysisSuggestions.suggestions.map((s, i) => (
-                              <SuggestionCard key={i} suggestion={s} />
+                              <SuggestionCard key={i} suggestion={s} onReviewMeeting={openMeetingForm} />
                             ))}
                             {analysisSuggestions.analysis_note && (
                               <p className="text-xs text-kk-muted">{analysisSuggestions.analysis_note}</p>

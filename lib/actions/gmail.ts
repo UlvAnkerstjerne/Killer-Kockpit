@@ -9,6 +9,7 @@ import type { GmailMessageMeta } from '@/lib/google/gmail'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { createTask } from '@/lib/actions/tasks'
 import { createWaitingOn } from '@/lib/actions/waiting-ons'
+import { createMeeting } from '@/lib/actions/meetings'
 import type { ActionResult } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -31,6 +32,14 @@ type WaitingOnFromEmailInput = {
   project_id?:            string
   due_at?:                string
   notes?:                 string
+}
+
+type MeetingFromEmailInput = {
+  title:            string
+  scheduled_start?: string
+  scheduled_end?:   string
+  location?:        string
+  context?:         string
 }
 
 // ─── Public types ─────────────────────────────────────────────────────────
@@ -248,6 +257,60 @@ export async function createWaitingOnFromEmail(
 
   revalidatePath(`/waiting-ons/${woId}`)
   return { data: { id: woId } }
+}
+
+// ─── Create Meeting from email ────────────────────────────────────────────
+
+/**
+ * Creates a KK Meeting from a Gmail message (AI suggestion review flow).
+ * The user must explicitly submit the reviewed/edited form — nothing is
+ * created automatically.
+ *
+ * Server-side: re-fetches message metadata from Gmail to build the source row
+ * (never trusts client-provided metadata for provenance).
+ */
+export async function createMeetingFromEmail(
+  messageId: string,
+  input: MeetingFromEmailInput,
+): Promise<ActionResult<{ id: string }>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const status = await getGoogleConnectionStatus(user.id)
+  if (!status.connected || !hasGmailScope(status.scopes)) {
+    return { error: 'Gmail is not connected. Please connect in Settings.' }
+  }
+
+  const oauthClient = await getGoogleOAuth2Client(user.id)
+  if (!oauthClient) return { error: 'Google connection unavailable.' }
+
+  let message
+  try {
+    message = await getMessageFull(oauthClient, messageId)
+  } catch {
+    return { error: 'Could not fetch email from Gmail. Please try again.' }
+  }
+  if (!message) return { error: 'Email not found in Gmail.' }
+
+  const meetingResult = await createMeeting(input)
+  if (meetingResult.error || !meetingResult.data) {
+    return { error: meetingResult.error ?? 'Failed to create meeting.' }
+  }
+
+  const meetingId   = meetingResult.data.id
+  const googleEmail = status.connected ? status.googleAccountEmail : null
+
+  // Record provenance (non-fatal — meeting already created)
+  const sourceId = await ensureGmailSource(
+    user.id, messageId, message.subject, message.from,
+    message.date, message.threadId, googleEmail,
+  )
+  if (sourceId) {
+    await linkEntityToSource('meeting', meetingId, sourceId)
+  }
+
+  revalidatePath(`/meetings/${meetingId}`)
+  return { data: { id: meetingId } }
 }
 
 // ─── Batch actioned status ────────────────────────────────────────────────
