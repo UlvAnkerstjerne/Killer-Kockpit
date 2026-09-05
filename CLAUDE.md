@@ -80,6 +80,10 @@
 - **Do not deploy without explicit user approval.**
 - Apply Supabase migrations through the MCP connector and retain migration files in Git. Never reapply an already-applied migration.
 
+## Framework convention files
+
+Do not classify framework-convention files as dead based on import references alone. Files such as `proxy.ts`, `page.tsx`, `layout.tsx`, `route.ts`, and similar framework-discovered entrypoints may have zero application imports while still being active. Verify framework registration and build behaviour before deleting them.
+
 ## Historical reference
 
 `docs/archive/` is historical reference only and must not be treated as current architecture.
