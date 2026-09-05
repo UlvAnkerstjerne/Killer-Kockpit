@@ -12,6 +12,13 @@ import {
   unlinkEmailFromEntity,
 } from '@/lib/actions/gmail'
 import type { EmailAction } from '@/lib/actions/gmail'
+import { analyzeEmailForSuggestions } from '@/lib/actions/email-intelligence'
+import type { EmailAnalysisOutput, EmailSuggestion } from '@/lib/ai/email-analysis-schema'
+import {
+  kindLabel,
+  kindBadgeClass,
+  suggestionDetails,
+} from '@/lib/ai/email-suggestion-display'
 
 // Mirrors TaskForm / WaitingOnForm option sets exactly
 const PRIORITY_OPTIONS = [
@@ -67,6 +74,57 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   location:   'Location',
   task:       'Task',
   waiting_on: 'Waiting on',
+}
+
+// ─── Suggestion card ───────────────────────────────────────────────────────────
+//
+// Pure display — no create/accept/apply actions. Ephemeral: lives only in
+// React state for the currently opened email. Nothing is persisted.
+
+function SuggestionCard({ suggestion }: { suggestion: EmailSuggestion }) {
+  const details = suggestionDetails(suggestion)
+
+  return (
+    <div
+      className="border border-kk-line rounded-xl p-3 space-y-2"
+      data-testid={`suggestion-card-${suggestion.kind}`}
+    >
+      {/* Type badge + title */}
+      <div className="flex items-start gap-2">
+        <span
+          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 leading-none mt-px ${kindBadgeClass(suggestion.kind)}`}
+          data-testid="suggestion-kind-badge"
+        >
+          {kindLabel(suggestion.kind)}
+        </span>
+        <span className="text-xs font-medium text-kk-ink leading-snug">
+          {suggestion.title}
+        </span>
+      </div>
+
+      {/* Detail rows — only present fields */}
+      {details.length > 0 && (
+        <div className="space-y-0.5">
+          {details.map(({ label, value }, i) => (
+            <div key={i} className="flex gap-1.5 text-xs">
+              <span className="text-kk-muted shrink-0">{label}:</span>
+              <span className="text-kk-ink">{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Evidence excerpt */}
+      {suggestion.evidence && (
+        <p className="text-[11px] text-kk-muted italic border-l-2 border-kk-line pl-2 leading-snug">
+          &ldquo;{suggestion.evidence}&rdquo;
+        </p>
+      )}
+
+      {/* Reason — most secondary */}
+      <p className="text-[11px] text-kk-muted">{suggestion.reason}</p>
+    </div>
+  )
 }
 
 export default function InboxClient({
@@ -126,6 +184,12 @@ export default function InboxClient({
   const [saving,    setSaving]    = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // ── Email intelligence ────────────────────────────────────────────────────
+  type AnalysisState = 'idle' | 'analysing' | 'done' | 'error'
+  const [analysisState,       setAnalysisState]       = useState<AnalysisState>('idle')
+  const [analysisSuggestions, setAnalysisSuggestions] = useState<EmailAnalysisOutput | null>(null)
+  const [analysisError,       setAnalysisError]       = useState<string | null>(null)
+
   // ── Link picker state ─────────────────────────────────────────────────────
   const [linking, setLinking] = useState(false)
 
@@ -153,6 +217,9 @@ export default function InboxClient({
     setFormError(null)
     setNotices([])
     setActions([])
+    setAnalysisState('idle')
+    setAnalysisSuggestions(null)
+    setAnalysisError(null)
     setBodyLoading(true)
     setActionsLoading(true)
 
@@ -298,6 +365,23 @@ export default function InboxClient({
     if (!selected) return
     await unlinkEmailFromEntity(entitySourceId)
     await refreshActions(selected.messageId)
+  }
+
+  // ── Email intelligence handler ────────────────────────────────────────────
+
+  async function handleAnalyse() {
+    if (!selected || analysisState === 'analysing') return
+    setAnalysisState('analysing')
+    setAnalysisSuggestions(null)
+    setAnalysisError(null)
+    const result = await analyzeEmailForSuggestions(selected.messageId)
+    if (result.error) {
+      setAnalysisError(result.error)
+      setAnalysisState('error')
+    } else {
+      setAnalysisSuggestions(result.data!)
+      setAnalysisState('done')
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -744,6 +828,64 @@ export default function InboxClient({
                     >
                       Save as waiting on
                     </button>
+                  </div>
+
+                  {/* ── Email intelligence ──────────────────────────── */}
+                  <div className="space-y-3" data-testid="email-intelligence">
+
+                    {/* Trigger / status row */}
+                    <div className="flex items-center gap-3">
+                      {analysisState !== 'analysing' && (
+                        <button
+                          onClick={handleAnalyse}
+                          data-testid="analyse-button"
+                          className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft hover:text-kk-ink transition-colors"
+                        >
+                          {analysisState === 'done'  ? 'Re-analyse' :
+                           analysisState === 'error' ? 'Retry' :
+                                                       'Analyse email'}
+                        </button>
+                      )}
+                      {analysisState === 'analysing' && (
+                        <span className="text-xs text-kk-muted" data-testid="analysing-state">
+                          Analysing…
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Error state */}
+                    {analysisState === 'error' && analysisError && (
+                      <div className="space-y-1" data-testid="analysis-error">
+                        <p className="text-xs text-kk-bad">{analysisError}</p>
+                      </div>
+                    )}
+
+                    {/* Results */}
+                    {analysisState === 'done' && analysisSuggestions && (
+                      <div className="space-y-2" data-testid="analysis-results">
+                        <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">
+                          Kockpit suggests
+                        </div>
+
+                        {analysisSuggestions.suggestions.length === 0 ? (
+                          <div data-testid="no-suggestions">
+                            <p className="text-xs text-kk-muted italic">No clear actions found.</p>
+                            {analysisSuggestions.analysis_note && (
+                              <p className="text-xs text-kk-muted mt-1">{analysisSuggestions.analysis_note}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {analysisSuggestions.suggestions.map((s, i) => (
+                              <SuggestionCard key={i} suggestion={s} />
+                            ))}
+                            {analysisSuggestions.analysis_note && (
+                              <p className="text-xs text-kk-muted">{analysisSuggestions.analysis_note}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Link pickers */}

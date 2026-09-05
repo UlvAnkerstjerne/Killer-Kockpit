@@ -57,7 +57,6 @@ const TODO_SUGGESTION = {
   title:         'Send the report',
   reason:        'Sender asked for the report by Friday.',
   evidence:      'Can you send the report by Friday?',
-  notes:         null,
   scheduled_for: '2026-09-11',
 }
 
@@ -66,7 +65,6 @@ const TASK_SUGGESTION_CURRENT_USER = {
   title:         'Review proposal',
   reason:        'Reader is asked to review.',
   evidence:      'Please review the attached proposal.',
-  description:   null,
   responsible:   { type: 'current_user', display_name: null },
   due_at:        null,
   priority_hint: null,
@@ -77,7 +75,6 @@ const TASK_SUGGESTION_NAMED_PERSON = {
   title:         'Prepare budget',
   reason:        'Alice is responsible.',
   evidence:      'Alice will prepare the budget.',
-  description:   null,
   responsible:   { type: 'named_person', display_name: 'Alice Smith' },
   due_at:        '2026-09-12T00:00:00Z',
   priority_hint: 'high',
@@ -88,7 +85,6 @@ const TASK_SUGGESTION_UNKNOWN = {
   title:         'Handle logistics',
   reason:        'Responsibility unclear.',
   evidence:      'Someone needs to handle logistics.',
-  description:   null,
   responsible:   { type: 'unknown', display_name: null },
   due_at:        null,
   priority_hint: null,
@@ -101,7 +97,6 @@ const WAITING_ON_SUGGESTION = {
   evidence:         'Let me know once legal approves it.',
   waiting_for_name: 'Legal team',
   due_at:           null,
-  notes:            null,
 }
 
 const MEETING_SUGGESTION = {
@@ -112,7 +107,6 @@ const MEETING_SUGGESTION = {
   scheduled_start: '2026-09-08T10:00:00+02:00',
   scheduled_end:   '2026-09-08T11:00:00+02:00',
   location:        null,
-  context:         'Project review',
 }
 
 const VALID_OUTPUT_SINGLE = {
@@ -222,7 +216,7 @@ describe('EmailAnalysisOutputSchema', () => {
     const result = EmailAnalysisOutputSchema.safeParse({
       suggestions: [
         { kind: 'meeting', title: 'Call', reason: 'Proposed.', evidence: null,
-          scheduled_start: null, scheduled_end: null, location: null, context: null },
+          scheduled_start: null, scheduled_end: null, location: null },
       ],
       analysis_note: null,
     })

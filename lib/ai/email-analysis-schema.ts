@@ -14,6 +14,16 @@
  * • `evidence` is a short verbatim excerpt — proof for the human reviewer.
  *   It is returned transiently only and must never be logged or persisted.
  * • Nullable fields default to null when the model cannot confidently infer them.
+ *
+ * Anthropic API constraint
+ * ────────────────────────
+ * `zodOutputFormat` compiles Zod schemas to JSON schema for structured output.
+ * The Anthropic API rejects schemas with more than 16 anyOf/array parameters
+ * (counted across the entire schema including discriminated union branches).
+ * Fields marked nullable each add one anyOf entry. The discriminated union adds
+ * one more. To stay within the 16-parameter limit, some semantically-optional
+ * fields (notes, description, context) have been omitted. They can be restored
+ * if Anthropic raises the limit, or if the schema is migrated to a flat layout.
  */
 
 import { z } from 'zod'
@@ -33,7 +43,6 @@ const TodoSuggestionSchema = z.object({
   title:         z.string(),
   reason:        z.string(),
   evidence:      z.string().nullable(),
-  notes:         z.string().nullable(),
   /** ISO date string (YYYY-MM-DD) — only when explicitly stated in the email. */
   scheduled_for: z.string().nullable(),
 })
@@ -43,7 +52,6 @@ const TaskSuggestionSchema = z.object({
   title:         z.string(),
   reason:        z.string(),
   evidence:      z.string().nullable(),
-  description:   z.string().nullable(),
   responsible:   ResponsibilitySchema,
   /** ISO timestamp — only when explicitly stated. */
   due_at:        z.string().nullable(),
@@ -59,7 +67,6 @@ const WaitingOnSuggestionSchema = z.object({
   waiting_for_name:  z.string().nullable(),
   /** ISO timestamp — only when explicitly stated. */
   due_at:            z.string().nullable(),
-  notes:             z.string().nullable(),
 })
 
 const MeetingSuggestionSchema = z.object({
@@ -73,8 +80,6 @@ const MeetingSuggestionSchema = z.object({
   scheduled_end:   z.string().nullable(),
   /** Free-text venue — only when explicitly stated. */
   location:        z.string().nullable(),
-  /** Proposed agenda or purpose. */
-  context:         z.string().nullable(),
 })
 
 // ─── Union ────────────────────────────────────────────────────────────────────

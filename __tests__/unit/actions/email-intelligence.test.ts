@@ -105,7 +105,6 @@ const VALID_OUTPUT = {
       title:         'Send the report',
       reason:        'Sender asked for the report by Friday',
       evidence:      'Can you send the report by Friday?',
-      notes:         null,
       scheduled_for: '2026-09-11',
     },
   ],
