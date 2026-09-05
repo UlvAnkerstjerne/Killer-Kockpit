@@ -25,7 +25,6 @@ import {
 import type { Todo } from '@/lib/types'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
-import { wallToUtc } from '@/lib/time'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -201,7 +200,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
   async function handleScheduledSave(todoId: string) {
     const dateStr = editingScheduledDate
     setEditingScheduledId(null)
-    const scheduled_for = dateStr ? wallToUtc(dateStr + 'T00:00') : null
+    const scheduled_for = dateStr || null
     const result = await updateTodo(todoId, { scheduled_for })
     if (result.error) {
       setActionError(result.error)

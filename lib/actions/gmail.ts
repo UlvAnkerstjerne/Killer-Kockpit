@@ -11,7 +11,6 @@ import { createTask } from '@/lib/actions/tasks'
 import { createWaitingOn } from '@/lib/actions/waiting-ons'
 import { createMeeting } from '@/lib/actions/meetings'
 import { createTodo, updateTodo } from '@/lib/actions/todos'
-import { wallToUtc } from '@/lib/time'
 import type { ActionResult } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -373,7 +372,7 @@ export async function createTodoFromEmail(
 
   // Set scheduled_for on the non-recurring path if the user supplied a date
   if (input.scheduledFor) {
-    await updateTodo(todoId, { scheduled_for: wallToUtc(input.scheduledFor + 'T00:00') })
+    await updateTodo(todoId, { scheduled_for: input.scheduledFor })
   }
 
   // Record provenance (non-fatal — to-do already created)

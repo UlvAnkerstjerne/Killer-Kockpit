@@ -238,15 +238,15 @@ describe('createTodoFromEmail', () => {
 
   // ── Date handling ────────────────────────────────────────────────────────
 
-  it('calls updateTodo with wallToUtc date when scheduledFor is provided', async () => {
+  it('calls updateTodo with the Copenhagen date string directly when scheduledFor is provided', async () => {
     await createTodoFromEmail('msg-abc123', VALID_TODO_INPUT)
 
     expect(mocks.mockUpdateTodo).toHaveBeenCalledTimes(1)
     const [id, patch] = mocks.mockUpdateTodo.mock.calls[0]
     expect(id).toBe(TODO_ID)
-    // wallToUtc stub appends 'Z' — proves the date was passed through wallToUtc
-    expect(patch.scheduled_for).toBe('2026-09-11T00:00Z')
-    expect(mocks.mockWallToUtc).toHaveBeenCalledWith('2026-09-11T00:00')
+    // scheduled_for is a DATE column — pass the YYYY-MM-DD string directly, no UTC conversion
+    expect(patch.scheduled_for).toBe('2026-09-11')
+    expect(mocks.mockWallToUtc).not.toHaveBeenCalled()
   })
 
   it('does NOT call updateTodo when scheduledFor is null', async () => {
