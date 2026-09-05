@@ -95,6 +95,12 @@ describe('utcToWall', () => {
     expect(utcToWall('2026-08-31T10:00:00+00:00')).toBe('2026-08-31T12:00')
   })
 
+  // M7E-C4 regression: task suggestion due_at (UTC ISO) must display in Copenhagen
+  // This is the value openTaskForm receives from AI and must pass to a datetime-local input
+  it('task due_at summer: 2026-09-07T10:00:00.000Z → 2026-09-07T12:00 (Copenhagen UTC+2)', () => {
+    expect(utcToWall('2026-09-07T10:00:00.000Z')).toBe('2026-09-07T12:00')
+  })
+
   it('null → empty string', () => {
     expect(utcToWall(null)).toBe('')
   })

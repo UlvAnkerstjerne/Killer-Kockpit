@@ -15,7 +15,7 @@ import {
 } from '@/lib/actions/gmail'
 import type { EmailAction } from '@/lib/actions/gmail'
 import { analyzeEmailForSuggestions } from '@/lib/actions/email-intelligence'
-import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion, TodoSuggestion } from '@/lib/ai/email-analysis-schema'
+import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion, TaskSuggestion, TodoSuggestion } from '@/lib/ai/email-analysis-schema'
 import {
   kindLabel,
   kindBadgeClass,
@@ -89,10 +89,12 @@ function SuggestionCard({
   suggestion,
   onReviewTodo,
   onReviewMeeting,
+  onReviewTask,
 }: {
   suggestion: EmailSuggestion
   onReviewTodo?: (s: TodoSuggestion) => void
   onReviewMeeting?: (s: MeetingSuggestion) => void
+  onReviewTask?: (s: TaskSuggestion) => void
 }) {
   const details = suggestionDetails(suggestion)
 
@@ -157,6 +159,18 @@ function SuggestionCard({
           className="text-xs px-3 py-1 border border-kk-line rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
         >
           Review meeting
+        </button>
+      )}
+
+      {/* Review action — task suggestions only */}
+      {suggestion.kind === 'task' && onReviewTask && (
+        <button
+          type="button"
+          onClick={() => onReviewTask(suggestion as TaskSuggestion)}
+          data-testid="review-task-button"
+          className="text-xs px-3 py-1 border border-kk-line rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+        >
+          Review Task
         </button>
       )}
     </div>
@@ -313,15 +327,19 @@ export default function InboxClient({
 
   // ── Form openers ─────────────────────────────────────────────────────────
 
-  function openTaskForm() {
+  function openTaskForm(suggestion?: TaskSuggestion) {
     setCreateMode('task')
-    setTaskTitle(selected?.subject ?? '')
+    setTaskTitle(suggestion ? suggestion.title : (selected?.subject ?? ''))
     setTaskDesc('')
     setTaskOwner(currentUserId)
     setTaskProject('')
     setTaskPriority(2)
     setTaskStatus('open')
-    setTaskDueAt(deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : '')
+    setTaskDueAt(
+      suggestion?.due_at
+        ? utcToWall(suggestion.due_at)
+        : (deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : ''),
+    )
     setFormError(null)
   }
 
@@ -1109,7 +1127,7 @@ export default function InboxClient({
                   {/* Create buttons */}
                   <div className="flex gap-2">
                     <button
-                      onClick={openTaskForm}
+                      onClick={() => openTaskForm()}
                       className="px-3 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl hover:opacity-90 transition-opacity"
                     >
                       Save as task
@@ -1169,7 +1187,7 @@ export default function InboxClient({
                         ) : (
                           <div className="space-y-2">
                             {analysisSuggestions.suggestions.map((s, i) => (
-                              <SuggestionCard key={i} suggestion={s} onReviewTodo={openTodoForm} onReviewMeeting={openMeetingForm} />
+                              <SuggestionCard key={i} suggestion={s} onReviewTodo={openTodoForm} onReviewMeeting={openMeetingForm} onReviewTask={openTaskForm} />
                             ))}
                             {analysisSuggestions.analysis_note && (
                               <p className="text-xs text-kk-muted">{analysisSuggestions.analysis_note}</p>
