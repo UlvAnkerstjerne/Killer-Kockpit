@@ -7,6 +7,7 @@ import {
   createTaskFromEmail,
   createWaitingOnFromEmail,
   createMeetingFromEmail,
+  createTodoFromEmail,
   fetchMoreInboxMessages,
   getMessageActions,
   linkEmailToEntity,
@@ -14,7 +15,7 @@ import {
 } from '@/lib/actions/gmail'
 import type { EmailAction } from '@/lib/actions/gmail'
 import { analyzeEmailForSuggestions } from '@/lib/actions/email-intelligence'
-import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion } from '@/lib/ai/email-analysis-schema'
+import type { EmailAnalysisOutput, EmailSuggestion, MeetingSuggestion, TodoSuggestion } from '@/lib/ai/email-analysis-schema'
 import {
   kindLabel,
   kindBadgeClass,
@@ -76,6 +77,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   location:   'Location',
   task:       'Task',
   waiting_on: 'Waiting on',
+  todo:       'To-Do',
 }
 
 // ─── Suggestion card ───────────────────────────────────────────────────────────
@@ -85,9 +87,11 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
 
 function SuggestionCard({
   suggestion,
+  onReviewTodo,
   onReviewMeeting,
 }: {
   suggestion: EmailSuggestion
+  onReviewTodo?: (s: TodoSuggestion) => void
   onReviewMeeting?: (s: MeetingSuggestion) => void
 }) {
   const details = suggestionDetails(suggestion)
@@ -132,7 +136,19 @@ function SuggestionCard({
       {/* Reason — most secondary */}
       <p className="text-[11px] text-kk-muted">{suggestion.reason}</p>
 
-      {/* Review action — only for meeting suggestions */}
+      {/* Review action — todo suggestions only */}
+      {suggestion.kind === 'todo' && onReviewTodo && (
+        <button
+          type="button"
+          onClick={() => onReviewTodo(suggestion as TodoSuggestion)}
+          data-testid="review-todo-button"
+          className="text-xs px-3 py-1 border border-kk-line rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+        >
+          Review To-Do
+        </button>
+      )}
+
+      {/* Review action — meeting suggestions only */}
       {suggestion.kind === 'meeting' && onReviewMeeting && (
         <button
           type="button"
@@ -172,7 +188,7 @@ export default function InboxClient({
   const [body, setBody]                 = useState<string | null>(null)
   const [bodyLoading, setBodyLoading]   = useState(false)
   const [deadlineHint, setDeadlineHint] = useState<DeadlineHint>(null)
-  const [createMode, setCreateMode]     = useState<'task' | 'waiting-on' | 'meeting' | null>(null)
+  const [createMode, setCreateMode]     = useState<'task' | 'waiting-on' | 'meeting' | 'todo' | null>(null)
 
   // ── Actions for the open message ─────────────────────────────────────────
   const [actions, setActions]         = useState<EmailAction[]>([])
@@ -189,6 +205,12 @@ export default function InboxClient({
   const [taskPriority, setTaskPriority] = useState<1|2|3|4>(2)
   const [taskStatus,   setTaskStatus]   = useState<string>('open')
   const [taskDueAt,    setTaskDueAt]    = useState('')
+
+  // ── To-Do form state ─────────────────────────────────────────────────────
+  const [todoTitle,        setTodoTitle]        = useState('')
+  const [todoPriority,     setTodoPriority]     = useState<1|2|3|4>(2)
+  const [todoScheduledFor, setTodoScheduledFor] = useState('')
+  const [todoNotes,        setTodoNotes]        = useState('')
 
   // ── Meeting form state ───────────────────────────────────────────────────
   const [meetingTitle,    setMeetingTitle]    = useState('')
@@ -316,6 +338,17 @@ export default function InboxClient({
     setFormError(null)
   }
 
+  function openTodoForm(suggestion: TodoSuggestion) {
+    setCreateMode('todo')
+    setTodoTitle(suggestion.title)
+    setTodoPriority(2)
+    // scheduled_for is already YYYY-MM-DD — exactly what type="date" needs
+    setTodoScheduledFor(suggestion.scheduled_for ?? '')
+    // Notes blank initially — evidence must not be copied
+    setTodoNotes('')
+    setFormError(null)
+  }
+
   function openMeetingForm(suggestion: MeetingSuggestion) {
     setCreateMode('meeting')
     setMeetingTitle(suggestion.title)
@@ -375,6 +408,28 @@ export default function InboxClient({
     } else {
       setCreateMode(null)
       setNotices((prev) => [...prev, { label: `Waiting on: ${woTitle.trim()}`, href: `/waiting-ons/${result.data!.id}` }])
+      setActionedIds((prev) => new Set([...prev, selected.messageId]))
+      await refreshActions(selected.messageId)
+    }
+  }
+
+  async function handleCreateTodo(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selected || !todoTitle.trim() || saving) return
+    setSaving(true)
+    setFormError(null)
+    const result = await createTodoFromEmail(selected.messageId, {
+      title:        todoTitle.trim(),
+      priority:     todoPriority,
+      notes:        todoNotes.trim() || null,
+      scheduledFor: todoScheduledFor || null,
+    })
+    setSaving(false)
+    if (result.error) {
+      setFormError(result.error)
+    } else {
+      setCreateMode(null)
+      setNotices((prev) => [...prev, { label: `To-Do: ${todoTitle.trim()}`, href: '/todos' }])
       setActionedIds((prev) => new Set([...prev, selected.messageId]))
       await refreshActions(selected.messageId)
     }
@@ -872,6 +927,87 @@ export default function InboxClient({
                 </form>
               )}
 
+              {/* ── To-Do creation form ────────────────────────────── */}
+              {createMode === 'todo' && (
+                <form onSubmit={handleCreateTodo} className="px-5 py-4 space-y-3">
+                  <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">New to-do from email</div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">Title *</label>
+                    <input
+                      type="text"
+                      value={todoTitle}
+                      onChange={(e) => setTodoTitle(e.target.value)}
+                      required
+                      maxLength={500}
+                      disabled={saving}
+                      className={field}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">Priority</label>
+                      <select
+                        value={todoPriority}
+                        onChange={(e) => setTodoPriority(Number(e.target.value) as 1|2|3|4)}
+                        disabled={saving}
+                        className={`${field} bg-white`}
+                      >
+                        {PRIORITY_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-kk-ink mb-1">
+                        Scheduled <span className="text-kk-muted font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={todoScheduledFor}
+                        onChange={(e) => setTodoScheduledFor(e.target.value)}
+                        disabled={saving}
+                        className={field}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-kk-ink mb-1">
+                      Notes <span className="text-kk-muted font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      value={todoNotes}
+                      onChange={(e) => setTodoNotes(e.target.value)}
+                      rows={2}
+                      disabled={saving}
+                      className={`${field} resize-none`}
+                    />
+                  </div>
+
+                  {formError && <p className="text-xs text-kk-bad">{formError}</p>}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={!todoTitle.trim() || saving}
+                      className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
+                    >
+                      {saving ? 'Creating…' : 'Create To-Do'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateMode(null)}
+                      disabled={saving}
+                      className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
               {/* ── Meeting creation form ──────────────────────────── */}
               {createMode === 'meeting' && (
                 <form onSubmit={handleCreateMeeting} className="px-5 py-4 space-y-3">
@@ -1033,7 +1169,7 @@ export default function InboxClient({
                         ) : (
                           <div className="space-y-2">
                             {analysisSuggestions.suggestions.map((s, i) => (
-                              <SuggestionCard key={i} suggestion={s} onReviewMeeting={openMeetingForm} />
+                              <SuggestionCard key={i} suggestion={s} onReviewTodo={openTodoForm} onReviewMeeting={openMeetingForm} />
                             ))}
                             {analysisSuggestions.analysis_note && (
                               <p className="text-xs text-kk-muted">{analysisSuggestions.analysis_note}</p>

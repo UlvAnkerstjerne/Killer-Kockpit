@@ -10,6 +10,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { createTask } from '@/lib/actions/tasks'
 import { createWaitingOn } from '@/lib/actions/waiting-ons'
 import { createMeeting } from '@/lib/actions/meetings'
+import { createTodo, updateTodo } from '@/lib/actions/todos'
+import { wallToUtc } from '@/lib/time'
 import type { ActionResult } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -40,6 +42,14 @@ type MeetingFromEmailInput = {
   scheduled_end?:   string
   location?:        string
   context?:         string
+}
+
+type TodoFromEmailInput = {
+  title:        string
+  priority?:    number
+  notes?:       string | null
+  /** YYYY-MM-DD Copenhagen wall date — null/undefined means no date. */
+  scheduledFor?: string | null
 }
 
 // ─── Public types ─────────────────────────────────────────────────────────
@@ -313,6 +323,74 @@ export async function createMeetingFromEmail(
   return { data: { id: meetingId } }
 }
 
+// ─── Create To-Do from email ──────────────────────────────────────────────
+
+/**
+ * Creates a KK To-Do from a Gmail message (AI suggestion review flow).
+ * The user must explicitly submit the reviewed/edited form.
+ *
+ * Date handling: createTodo does not accept scheduled_for directly.
+ * When a date is provided, it is set via updateTodo after creation
+ * (non-recurring path — same mechanism used by TodoPageClient).
+ *
+ * Provenance: entity_sources supports free-text entity_type so 'todo'
+ * is valid without schema changes.
+ */
+export async function createTodoFromEmail(
+  messageId: string,
+  input: TodoFromEmailInput,
+): Promise<ActionResult<{ id: string }>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const status = await getGoogleConnectionStatus(user.id)
+  if (!status.connected || !hasGmailScope(status.scopes)) {
+    return { error: 'Gmail is not connected. Please connect in Settings.' }
+  }
+
+  const oauthClient = await getGoogleOAuth2Client(user.id)
+  if (!oauthClient) return { error: 'Google connection unavailable.' }
+
+  let message
+  try {
+    message = await getMessageFull(oauthClient, messageId)
+  } catch {
+    return { error: 'Could not fetch email from Gmail. Please try again.' }
+  }
+  if (!message) return { error: 'Email not found in Gmail.' }
+
+  // Create via existing action (derives identity server-side, applies RLS)
+  const todoResult = await createTodo(
+    input.title,
+    input.priority ?? 2,
+    input.notes || null,
+  )
+  if (todoResult.error || !todoResult.data) {
+    return { error: todoResult.error ?? 'Failed to create to-do.' }
+  }
+
+  const todoId = todoResult.data.id
+
+  // Set scheduled_for on the non-recurring path if the user supplied a date
+  if (input.scheduledFor) {
+    await updateTodo(todoId, { scheduled_for: wallToUtc(input.scheduledFor + 'T00:00') })
+  }
+
+  // Record provenance (non-fatal — to-do already created)
+  const googleEmail = status.connected ? status.googleAccountEmail : null
+  const sourceId = await ensureGmailSource(
+    user.id, messageId, message.subject, message.from,
+    message.date, message.threadId, googleEmail,
+  )
+  if (sourceId) {
+    await linkEntityToSource('todo', todoId, sourceId)
+  }
+
+  revalidatePath('/todos')
+  revalidatePath('/today')
+  return { data: { id: todoId } }
+}
+
 // ─── Batch actioned status ────────────────────────────────────────────────
 
 /**
@@ -390,6 +468,7 @@ export async function getMessageActions(
     location:   { table: 'locations',   labelCol: 'name'  },
     task:       { table: 'tasks',       labelCol: 'title' },
     waiting_on: { table: 'waiting_ons', labelCol: 'title' },
+    todo:       { table: 'todos',       labelCol: 'title' },
   }
 
   const labelMap = new Map<string, string>()
