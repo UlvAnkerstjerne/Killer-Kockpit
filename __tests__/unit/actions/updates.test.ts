@@ -56,14 +56,16 @@ const mocks = vi.hoisted(() => {
   const mockGetCurrentUser          = vi.fn()
   const mockCanAccessManagementView = vi.fn()
   const mockRpc                     = vi.fn()
+  const mockFrom                    = vi.fn()
 
   // Authenticated user-session client (createClient — async)
-  const mockUserClient = { rpc: mockRpc }
+  const mockUserClient = { rpc: mockRpc, from: mockFrom }
 
   return {
     mockGetCurrentUser,
     mockCanAccessManagementView,
     mockRpc,
+    mockFrom,
     mockUserClient,
   }
 })
@@ -125,7 +127,7 @@ const VALID_INPUT = {
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 
-import { createUpdate } from '@/lib/actions/updates'
+import { createUpdate, getUpdatesForEntity } from '@/lib/actions/updates'
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -390,5 +392,297 @@ describe('createUpdate', () => {
     const [, args] = mocks.mockRpc.mock.calls[0]
     expect(args).not.toHaveProperty('supersedes_update_id')
     expect(args).not.toHaveProperty('p_supersedes_update_id')
+  })
+})
+
+// ─── getUpdatesForEntity ──────────────────────────────────────────────────────
+
+/**
+ * Helper that returns a chainable Supabase query builder mock.
+ * Every method returns `this` so chains compose freely.
+ * The object is also thenable, resolving with `result` when awaited directly.
+ * `.limit()` likewise resolves with `result`.
+ */
+function makeChain(result: { data: unknown; error: null | { message: string } }) {
+  const self: Record<string, unknown> = {}
+  const resolve = () => Promise.resolve(result)
+  self.select = vi.fn().mockReturnValue(self)
+  self.eq     = vi.fn().mockReturnValue(self)
+  self.in     = vi.fn().mockReturnValue(self)
+  self.limit  = vi.fn().mockImplementation(resolve)
+  self.then   = (onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) =>
+    resolve().then(onFulfilled, onRejected)
+  return self
+}
+
+const VALID_ENTITY_ID = '11111111-1111-1111-1111-111111111111'
+const UPDATE_ID_1     = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+const UPDATE_ID_2     = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+
+const BASE_UPDATE: {
+  id: string
+  body: string
+  occurred_on: string | null
+  created_at: string
+  created_by_user_id: string
+} = {
+  id:                  UPDATE_ID_1,
+  body:                'Supplier contract signed.',
+  occurred_on:         '2026-08-01',
+  created_at:          '2026-08-01T10:00:00Z',
+  created_by_user_id:  SUPER_ADMIN.id,
+}
+
+/** Set up the five sequential from() calls for a happy-path read. */
+function setupHappyPath({
+  linkRows         = [{ update_id: UPDATE_ID_1 }],
+  supersededRows   = [] as { supersedes_update_id: string | null }[],
+  updateRows       = [BASE_UPDATE],
+  allLinkRows      = [{ update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' }],
+  authorRows       = [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }],
+} = {}) {
+  mocks.mockFrom
+    .mockReturnValueOnce(makeChain({ data: linkRows,       error: null })) // kk_update_entities (link IDs)
+    .mockReturnValueOnce(makeChain({ data: supersededRows, error: null })) // kk_updates (superseded)
+    .mockReturnValueOnce(makeChain({ data: updateRows,     error: null })) // kk_updates (current rows)
+    .mockReturnValueOnce(makeChain({ data: allLinkRows,    error: null })) // kk_update_entities (all links)
+    .mockReturnValueOnce(makeChain({ data: authorRows,     error: null })) // app_users
+}
+
+describe('getUpdatesForEntity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
+    mocks.mockCanAccessManagementView.mockReturnValue(true)
+  })
+
+  // ── AUTH ─────────────────────────────────────────────────────────────────
+
+  it('rejects unauthenticated caller', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(null)
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toMatch(/not authenticated/i)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('rejects MEMBER role', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(MEMBER)
+    mocks.mockCanAccessManagementView.mockReturnValue(false)
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toMatch(/not authorised/i)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('allows UM role', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(UM_USER)
+    mocks.mockCanAccessManagementView.mockReturnValue(true)
+    setupHappyPath()
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data).toHaveLength(1)
+  })
+
+  it('allows SUPER_ADMIN role', async () => {
+    setupHappyPath()
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+  })
+
+  // ── VALIDATION ───────────────────────────────────────────────────────────
+
+  it('rejects unsupported entity type', async () => {
+    const result = await getUpdatesForEntity('meeting' as never, VALID_ENTITY_ID)
+    expect(result.error).toMatch(/unsupported entity type/i)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-UUID entity id', async () => {
+    const result = await getUpdatesForEntity('project', 'not-a-uuid')
+    expect(result.error).toMatch(/invalid entity id/i)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('accepts all three valid entity types', async () => {
+    for (const entityType of ['project', 'employee', 'location'] as const) {
+      vi.clearAllMocks()
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
+      mocks.mockCanAccessManagementView.mockReturnValue(true)
+      setupHappyPath()
+      const result = await getUpdatesForEntity(entityType, VALID_ENTITY_ID)
+      expect(result.error).toBeUndefined()
+    }
+  })
+
+  // ── EMPTY RESULTS ────────────────────────────────────────────────────────
+
+  it('returns empty array when no links exist for entity', async () => {
+    mocks.mockFrom.mockReturnValueOnce(makeChain({ data: [], error: null }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data).toEqual([])
+    // Should not query further after finding no links
+    expect(mocks.mockFrom).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns empty array when all linked updates are superseded', async () => {
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [{ supersedes_update_id: UPDATE_ID_1 }], error: null }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data).toEqual([])
+  })
+
+  // ── CURRENTNESS ──────────────────────────────────────────────────────────
+
+  it('excludes superseded updates from results', async () => {
+    // UPDATE_ID_1 is superseded by UPDATE_ID_2
+    setupHappyPath({
+      linkRows:       [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
+      supersededRows: [{ supersedes_update_id: UPDATE_ID_1 }],
+      updateRows:     [{ ...BASE_UPDATE, id: UPDATE_ID_2 }],
+      allLinkRows:    [{ update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' }],
+      authorRows:     [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data).toHaveLength(1)
+    expect(result.data![0].id).toBe(UPDATE_ID_2)
+  })
+
+  it('includes update with no successor (not superseded)', async () => {
+    setupHappyPath({ supersededRows: [] })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data).toHaveLength(1)
+    expect(result.data![0].id).toBe(UPDATE_ID_1)
+  })
+
+  // ── SHAPE ────────────────────────────────────────────────────────────────
+
+  it('returns correctly shaped UpdateRow', async () => {
+    setupHappyPath()
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    const row = result.data![0]
+    expect(row).toMatchObject({
+      id:          UPDATE_ID_1,
+      body:        'Supplier contract signed.',
+      occurred_on: '2026-08-01',
+      created_at:  '2026-08-01T10:00:00Z',
+      author: {
+        id:           SUPER_ADMIN.id,
+        display_name: SUPER_ADMIN.display_name,
+      },
+      entity_links: [{ entity_type: 'project', entity_id: 'proj-uuid' }],
+    })
+  })
+
+  it('author is null when author row not found', async () => {
+    setupHappyPath({ authorRows: [] })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data![0].author).toBeNull()
+  })
+
+  it('entity_links array is populated for each update', async () => {
+    setupHappyPath({
+      allLinkRows: [
+        { update_id: UPDATE_ID_1, entity_type: 'project',  entity_id: 'proj-uuid' },
+        { update_id: UPDATE_ID_1, entity_type: 'employee', entity_id: 'emp-uuid'  },
+      ],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data![0].entity_links).toHaveLength(2)
+  })
+
+  // ── ORDERING ─────────────────────────────────────────────────────────────
+
+  it('sorts by occurred_on DESC when both have occurred_on', async () => {
+    const older = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: '2026-07-01', created_at: '2026-07-01T10:00:00Z' }
+    const newer = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-08-01', created_at: '2026-08-01T10:00:00Z' }
+    setupHappyPath({
+      linkRows:  [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
+      updateRows: [older, newer],
+      allLinkRows: [
+        { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
+        { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
+      ],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data![0].id).toBe(UPDATE_ID_2)
+    expect(result.data![1].id).toBe(UPDATE_ID_1)
+  })
+
+  it('falls back to created_at date when occurred_on is null', async () => {
+    const noDate  = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: null, created_at: '2026-07-15T00:00:00Z' }
+    const withDate = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-07-01', created_at: '2026-07-01T00:00:00Z' }
+    // noDate created_at date = 2026-07-15 > withDate occurred_on 2026-07-01 → noDate first
+    setupHappyPath({
+      linkRows:   [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
+      updateRows: [noDate, withDate],
+      allLinkRows: [
+        { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
+        { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
+      ],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data![0].id).toBe(UPDATE_ID_1)
+  })
+
+  // ── SECURITY ─────────────────────────────────────────────────────────────
+
+  it('uses createClient (authenticated session), not createServiceClient', async () => {
+    // The mock for createServiceClient throws if called — this test would fail
+    // if getUpdatesForEntity ever called createServiceClient().
+    setupHappyPath()
+    await expect(getUpdatesForEntity('project', VALID_ENTITY_ID)).resolves.not.toThrow()
+    expect(mocks.mockFrom).toHaveBeenCalled()
+  })
+
+  // ── ERROR HANDLING ────────────────────────────────────────────────────────
+
+  it('returns safe error when link query fails', async () => {
+    mocks.mockFrom.mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toMatch(/please try again/i)
+    expect(result.data).toBeUndefined()
+  })
+
+  it('returns safe error when superseded query fails', async () => {
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toMatch(/please try again/i)
+  })
+
+  it('returns safe error when updates query fails', async () => {
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
+      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toMatch(/please try again/i)
+  })
+
+  it('returns safe error when all-links query fails', async () => {
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
+      .mockReturnValueOnce(makeChain({ data: [BASE_UPDATE],                 error: null }))
+      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toMatch(/please try again/i)
+  })
+
+  it('author query failure is non-fatal — author is null in results', async () => {
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
+      .mockReturnValueOnce(makeChain({ data: [BASE_UPDATE],                 error: null }))
+      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'author lookup failed' } }))
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data![0].author).toBeNull()
   })
 })

@@ -322,3 +322,22 @@ export interface KkUpdateEntity {
   entity_type: KkUpdateEntityType
   entity_id: string
 }
+
+export interface UpdateAuthor {
+  id: string
+  display_name: string
+}
+
+export interface UpdateEntityLinkRow {
+  entity_type: KkUpdateEntityType
+  entity_id: string
+}
+
+export interface UpdateRow {
+  id: string
+  body: string
+  occurred_on: string | null
+  created_at: string
+  author: UpdateAuthor | null
+  entity_links: UpdateEntityLinkRow[]
+}
