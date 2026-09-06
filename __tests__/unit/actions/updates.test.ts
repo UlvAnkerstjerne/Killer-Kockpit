@@ -665,11 +665,14 @@ describe('getUpdatesForEntity', () => {
   })
 
   it('returns safe error when all-links query fails', async () => {
+    // Queries iv (links) and v (authors) run in parallel — both from() calls are
+    // made synchronously when building the Promise.all array, so both need mocks.
     mocks.mockFrom
       .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
       .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
       .mockReturnValueOnce(makeChain({ data: [BASE_UPDATE],                 error: null }))
-      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } })) // links fails
+      .mockReturnValueOnce(makeChain({ data: [],                            error: null })) // authors (parallel, consumed)
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toMatch(/please try again/i)
   })
@@ -684,5 +687,108 @@ describe('getUpdatesForEntity', () => {
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toBeUndefined()
     expect(result.data![0].author).toBeNull()
+  })
+
+  // ── MULTI-ENTITY ─────────────────────────────────────────────────────────
+
+  it('multi-entity Update appears exactly once in results', async () => {
+    // Update linked to both project AND employee; querying for project returns it once
+    setupHappyPath({
+      linkRows:    [{ update_id: UPDATE_ID_1 }],
+      allLinkRows: [
+        { update_id: UPDATE_ID_1, entity_type: 'project',  entity_id: 'proj-uuid' },
+        { update_id: UPDATE_ID_1, entity_type: 'employee', entity_id: 'emp-uuid'  },
+      ],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data).toHaveLength(1)
+    expect(result.data![0].id).toBe(UPDATE_ID_1)
+    expect(result.data![0].entity_links).toHaveLength(2)
+  })
+
+  // ── CREATED_AT TIE-BREAK ─────────────────────────────────────────────────
+
+  it('created_at DESC is used as tie-break when effective dates are equal', async () => {
+    const earlier = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: '2026-08-01', created_at: '2026-08-01T08:00:00Z' }
+    const later   = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-08-01', created_at: '2026-08-01T18:00:00Z' }
+    setupHappyPath({
+      linkRows:    [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
+      updateRows:  [earlier, later],  // input: earlier created_at first
+      allLinkRows: [
+        { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
+        { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
+      ],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    // Same occurred_on → tie-break by created_at DESC → UPDATE_ID_2 first
+    expect(result.data![0].id).toBe(UPDATE_ID_2)
+    expect(result.data![1].id).toBe(UPDATE_ID_1)
+  })
+
+  // ── >50 REGRESSION ───────────────────────────────────────────────────────
+
+  it('>50 current Updates: returns the correct latest 50 sorted by effective date', async () => {
+    // 55 updates, index 0 = oldest effective date, index 54 = newest.
+    // Input is provided OLDEST-FIRST — a broken limit(50)-before-sort would
+    // return indices 0-49 (oldest 50); correct sort-then-slice returns indices 5-54.
+    const TOTAL = 55
+    const LIMIT = 50
+
+    const allUpdates = Array.from({ length: TOTAL }, (_, i) => {
+      // effective date increments by one day per index
+      const effDate = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10)
+      // Every 3rd has occurred_on=null (effective date comes from created_at)
+      const hasOccurredOn = i % 3 !== 0
+      return {
+        id: `upd${String(i).padStart(3, '0')}`,
+        body: `Body ${i}`,
+        occurred_on: hasOccurredOn ? effDate : null,
+        created_at: hasOccurredOn
+          ? `${effDate}T${String(i % 24).padStart(2, '0')}:00:00Z`
+          : `${effDate}T12:00:00Z`,   // null occurred_on → created_at carries effective date
+        created_by_user_id: SUPER_ADMIN.id,
+      }
+    })
+
+    const linkRows = allUpdates.map((u) => ({ update_id: u.id }))
+
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: linkRows,    error: null }))  // kk_update_entities
+      .mockReturnValueOnce(makeChain({ data: [],          error: null }))  // kk_updates superseded (none)
+      .mockReturnValueOnce(makeChain({ data: allUpdates,  error: null }))  // kk_updates current rows (oldest-first)
+      .mockReturnValueOnce(makeChain({ data: [],          error: null }))  // kk_update_entities all links
+      .mockReturnValueOnce(makeChain({ data: [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }], error: null }))
+
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+
+    // Exactly 50 returned
+    expect(result.data).toHaveLength(LIMIT)
+
+    const returnedIdSet = new Set(result.data!.map((r) => r.id))
+
+    // Oldest 5 (indices 0–4) must be EXCLUDED
+    for (let i = 0; i < 5; i++) {
+      expect(returnedIdSet.has(`upd${String(i).padStart(3, '0')}`)).toBe(false)
+    }
+
+    // Newest 50 (indices 5–54) must all be INCLUDED
+    for (let i = 5; i < TOTAL; i++) {
+      expect(returnedIdSet.has(`upd${String(i).padStart(3, '0')}`)).toBe(true)
+    }
+
+    // Order: newest effective date first (index 54), oldest of the 50 last (index 5)
+    expect(result.data![0].id).toBe('upd054')
+    expect(result.data![LIMIT - 1].id).toBe('upd005')
+
+    // Ordered strictly newest-to-oldest throughout
+    for (let pos = 0; pos < result.data!.length - 1; pos++) {
+      const curr = result.data![pos]
+      const next = result.data![pos + 1]
+      const effCurr = curr.occurred_on ?? curr.created_at.slice(0, 10)
+      const effNext = next.occurred_on ?? next.created_at.slice(0, 10)
+      // curr effective date must be ≥ next effective date
+      expect(effCurr >= effNext).toBe(true)
+    }
   })
 })
