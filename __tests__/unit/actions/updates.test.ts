@@ -425,28 +425,31 @@ const BASE_UPDATE: {
   occurred_on: string | null
   created_at: string
   created_by_user_id: string
+  supersedes_update_id: string | null
 } = {
-  id:                  UPDATE_ID_1,
-  body:                'Supplier contract signed.',
-  occurred_on:         '2026-08-01',
-  created_at:          '2026-08-01T10:00:00Z',
-  created_by_user_id:  SUPER_ADMIN.id,
+  id:                   UPDATE_ID_1,
+  body:                 'Supplier contract signed.',
+  occurred_on:          '2026-08-01',
+  created_at:           '2026-08-01T10:00:00Z',
+  created_by_user_id:   SUPER_ADMIN.id,
+  supersedes_update_id: null,
 }
 
-/** Set up the five sequential from() calls for a happy-path read. */
+/**
+ * Set up the three queries for a happy-path getUpdatesForEntity:
+ *   mockRpc  → get_current_updates_for_entity (returns top-N rows from DB)
+ *   mockFrom → kk_update_entities all-links query  (parallel)
+ *   mockFrom → app_users author query               (parallel)
+ */
 function setupHappyPath({
-  linkRows         = [{ update_id: UPDATE_ID_1 }],
-  supersededRows   = [] as { supersedes_update_id: string | null }[],
-  updateRows       = [BASE_UPDATE],
-  allLinkRows      = [{ update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' }],
-  authorRows       = [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }],
+  rpcRows    = [BASE_UPDATE],
+  allLinkRows = [{ update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' }],
+  authorRows  = [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }],
 } = {}) {
+  mocks.mockRpc.mockResolvedValueOnce({ data: rpcRows, error: null })
   mocks.mockFrom
-    .mockReturnValueOnce(makeChain({ data: linkRows,       error: null })) // kk_update_entities (link IDs)
-    .mockReturnValueOnce(makeChain({ data: supersededRows, error: null })) // kk_updates (superseded)
-    .mockReturnValueOnce(makeChain({ data: updateRows,     error: null })) // kk_updates (current rows)
-    .mockReturnValueOnce(makeChain({ data: allLinkRows,    error: null })) // kk_update_entities (all links)
-    .mockReturnValueOnce(makeChain({ data: authorRows,     error: null })) // app_users
+    .mockReturnValueOnce(makeChain({ data: allLinkRows, error: null }))  // kk_update_entities
+    .mockReturnValueOnce(makeChain({ data: authorRows,  error: null }))  // app_users
 }
 
 describe('getUpdatesForEntity', () => {
@@ -462,7 +465,7 @@ describe('getUpdatesForEntity', () => {
     mocks.mockGetCurrentUser.mockResolvedValue(null)
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toMatch(/not authenticated/i)
-    expect(mocks.mockFrom).not.toHaveBeenCalled()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
   it('rejects MEMBER role', async () => {
@@ -470,7 +473,7 @@ describe('getUpdatesForEntity', () => {
     mocks.mockCanAccessManagementView.mockReturnValue(false)
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toMatch(/not authorised/i)
-    expect(mocks.mockFrom).not.toHaveBeenCalled()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
   it('allows UM role', async () => {
@@ -490,16 +493,16 @@ describe('getUpdatesForEntity', () => {
 
   // ── VALIDATION ───────────────────────────────────────────────────────────
 
-  it('rejects unsupported entity type', async () => {
+  it('rejects unsupported entity type at application layer', async () => {
     const result = await getUpdatesForEntity('meeting' as never, VALID_ENTITY_ID)
     expect(result.error).toMatch(/unsupported entity type/i)
-    expect(mocks.mockFrom).not.toHaveBeenCalled()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
-  it('rejects non-UUID entity id', async () => {
+  it('rejects non-UUID entity id at application layer', async () => {
     const result = await getUpdatesForEntity('project', 'not-a-uuid')
     expect(result.error).toMatch(/invalid entity id/i)
-    expect(mocks.mockFrom).not.toHaveBeenCalled()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
   it('accepts all three valid entity types', async () => {
@@ -515,19 +518,16 @@ describe('getUpdatesForEntity', () => {
 
   // ── EMPTY RESULTS ────────────────────────────────────────────────────────
 
-  it('returns empty array when no links exist for entity', async () => {
-    mocks.mockFrom.mockReturnValueOnce(makeChain({ data: [], error: null }))
+  it('returns empty array when RPC returns no rows', async () => {
+    mocks.mockRpc.mockResolvedValueOnce({ data: [], error: null })
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toBeUndefined()
     expect(result.data).toEqual([])
-    // Should not query further after finding no links
-    expect(mocks.mockFrom).toHaveBeenCalledTimes(1)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
   })
 
-  it('returns empty array when all linked updates are superseded', async () => {
-    mocks.mockFrom
-      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
-      .mockReturnValueOnce(makeChain({ data: [{ supersedes_update_id: UPDATE_ID_1 }], error: null }))
+  it('returns empty array when all linked updates are superseded (RPC returns [])', async () => {
+    mocks.mockRpc.mockResolvedValueOnce({ data: [], error: null })
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toBeUndefined()
     expect(result.data).toEqual([])
@@ -535,14 +535,10 @@ describe('getUpdatesForEntity', () => {
 
   // ── CURRENTNESS ──────────────────────────────────────────────────────────
 
-  it('excludes superseded updates from results', async () => {
-    // UPDATE_ID_1 is superseded by UPDATE_ID_2
+  it('excludes superseded updates — RPC returns only the successor', async () => {
     setupHappyPath({
-      linkRows:       [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
-      supersededRows: [{ supersedes_update_id: UPDATE_ID_1 }],
-      updateRows:     [{ ...BASE_UPDATE, id: UPDATE_ID_2 }],
-      allLinkRows:    [{ update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' }],
-      authorRows:     [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }],
+      rpcRows:    [{ ...BASE_UPDATE, id: UPDATE_ID_2 }],
+      allLinkRows: [{ update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' }],
     })
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toBeUndefined()
@@ -551,7 +547,7 @@ describe('getUpdatesForEntity', () => {
   })
 
   it('includes update with no successor (not superseded)', async () => {
-    setupHappyPath({ supersededRows: [] })
+    setupHappyPath()
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.data).toHaveLength(1)
     expect(result.data![0].id).toBe(UPDATE_ID_1)
@@ -594,14 +590,13 @@ describe('getUpdatesForEntity', () => {
     expect(result.data![0].entity_links).toHaveLength(2)
   })
 
-  // ── ORDERING ─────────────────────────────────────────────────────────────
+  // ── ORDERING — application preserves DB-returned order ───────────────────
 
-  it('sorts by occurred_on DESC when both have occurred_on', async () => {
+  it('preserves RPC order: newer occurred_on first', async () => {
     const older = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: '2026-07-01', created_at: '2026-07-01T10:00:00Z' }
     const newer = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-08-01', created_at: '2026-08-01T10:00:00Z' }
     setupHappyPath({
-      linkRows:  [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
-      updateRows: [older, newer],
+      rpcRows:    [newer, older],
       allLinkRows: [
         { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
         { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
@@ -612,13 +607,11 @@ describe('getUpdatesForEntity', () => {
     expect(result.data![1].id).toBe(UPDATE_ID_1)
   })
 
-  it('falls back to created_at date when occurred_on is null', async () => {
-    const noDate  = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: null, created_at: '2026-07-15T00:00:00Z' }
+  it('preserves RPC order: null occurred_on falls back to created_at date', async () => {
+    const noDate   = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: null,         created_at: '2026-07-15T00:00:00Z' }
     const withDate = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-07-01', created_at: '2026-07-01T00:00:00Z' }
-    // noDate created_at date = 2026-07-15 > withDate occurred_on 2026-07-01 → noDate first
     setupHappyPath({
-      linkRows:   [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
-      updateRows: [noDate, withDate],
+      rpcRows:    [noDate, withDate],
       allLinkRows: [
         { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
         { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
@@ -628,60 +621,64 @@ describe('getUpdatesForEntity', () => {
     expect(result.data![0].id).toBe(UPDATE_ID_1)
   })
 
+  it('preserves RPC order: created_at DESC tie-break', async () => {
+    const earlier = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: '2026-08-01', created_at: '2026-08-01T08:00:00Z' }
+    const later   = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-08-01', created_at: '2026-08-01T18:00:00Z' }
+    setupHappyPath({
+      rpcRows:    [later, earlier],
+      allLinkRows: [
+        { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
+        { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
+      ],
+    })
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.data![0].id).toBe(UPDATE_ID_2)
+    expect(result.data![1].id).toBe(UPDATE_ID_1)
+  })
+
   // ── SECURITY ─────────────────────────────────────────────────────────────
 
   it('uses createClient (authenticated session), not createServiceClient', async () => {
-    // The mock for createServiceClient throws if called — this test would fail
-    // if getUpdatesForEntity ever called createServiceClient().
     setupHappyPath()
     await expect(getUpdatesForEntity('project', VALID_ENTITY_ID)).resolves.not.toThrow()
-    expect(mocks.mockFrom).toHaveBeenCalled()
+    expect(mocks.mockRpc).toHaveBeenCalledWith(
+      'get_current_updates_for_entity',
+      expect.objectContaining({ p_entity_type: 'project', p_entity_id: VALID_ENTITY_ID, p_limit: 50 }),
+    )
+  })
+
+  it('RPC is called with exactly the expected args', async () => {
+    setupHappyPath()
+    await getUpdatesForEntity('employee', VALID_ENTITY_ID)
+    expect(mocks.mockRpc).toHaveBeenCalledWith('get_current_updates_for_entity', {
+      p_entity_type: 'employee',
+      p_entity_id:   VALID_ENTITY_ID,
+      p_limit:       50,
+    })
   })
 
   // ── ERROR HANDLING ────────────────────────────────────────────────────────
 
-  it('returns safe error when link query fails', async () => {
-    mocks.mockFrom.mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+  it('returns safe error when RPC fails', async () => {
+    mocks.mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'db error' } })
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toMatch(/please try again/i)
     expect(result.data).toBeUndefined()
-  })
-
-  it('returns safe error when superseded query fails', async () => {
-    mocks.mockFrom
-      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
-      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
-    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
-    expect(result.error).toMatch(/please try again/i)
-  })
-
-  it('returns safe error when updates query fails', async () => {
-    mocks.mockFrom
-      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
-      .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
-      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
-    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
-    expect(result.error).toMatch(/please try again/i)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
   })
 
   it('returns safe error when all-links query fails', async () => {
-    // Queries iv (links) and v (authors) run in parallel — both from() calls are
-    // made synchronously when building the Promise.all array, so both need mocks.
+    mocks.mockRpc.mockResolvedValueOnce({ data: [BASE_UPDATE], error: null })
     mocks.mockFrom
-      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
-      .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
-      .mockReturnValueOnce(makeChain({ data: [BASE_UPDATE],                 error: null }))
-      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } })) // links fails
-      .mockReturnValueOnce(makeChain({ data: [],                            error: null })) // authors (parallel, consumed)
+      .mockReturnValueOnce(makeChain({ data: null, error: { message: 'db error' } }))
+      .mockReturnValueOnce(makeChain({ data: [],   error: null }))
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toMatch(/please try again/i)
   })
 
   it('author query failure is non-fatal — author is null in results', async () => {
+    mocks.mockRpc.mockResolvedValueOnce({ data: [BASE_UPDATE], error: null })
     mocks.mockFrom
-      .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1 }], error: null }))
-      .mockReturnValueOnce(makeChain({ data: [],                            error: null }))
-      .mockReturnValueOnce(makeChain({ data: [BASE_UPDATE],                 error: null }))
       .mockReturnValueOnce(makeChain({ data: [{ update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' }], error: null }))
       .mockReturnValueOnce(makeChain({ data: null, error: { message: 'author lookup failed' } }))
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
@@ -692,9 +689,7 @@ describe('getUpdatesForEntity', () => {
   // ── MULTI-ENTITY ─────────────────────────────────────────────────────────
 
   it('multi-entity Update appears exactly once in results', async () => {
-    // Update linked to both project AND employee; querying for project returns it once
     setupHappyPath({
-      linkRows:    [{ update_id: UPDATE_ID_1 }],
       allLinkRows: [
         { update_id: UPDATE_ID_1, entity_type: 'project',  entity_id: 'proj-uuid' },
         { update_id: UPDATE_ID_1, entity_type: 'employee', entity_id: 'emp-uuid'  },
@@ -706,89 +701,76 @@ describe('getUpdatesForEntity', () => {
     expect(result.data![0].entity_links).toHaveLength(2)
   })
 
-  // ── CREATED_AT TIE-BREAK ─────────────────────────────────────────────────
-
-  it('created_at DESC is used as tie-break when effective dates are equal', async () => {
-    const earlier = { ...BASE_UPDATE, id: UPDATE_ID_1, occurred_on: '2026-08-01', created_at: '2026-08-01T08:00:00Z' }
-    const later   = { ...BASE_UPDATE, id: UPDATE_ID_2, occurred_on: '2026-08-01', created_at: '2026-08-01T18:00:00Z' }
-    setupHappyPath({
-      linkRows:    [{ update_id: UPDATE_ID_1 }, { update_id: UPDATE_ID_2 }],
-      updateRows:  [earlier, later],  // input: earlier created_at first
-      allLinkRows: [
-        { update_id: UPDATE_ID_1, entity_type: 'project', entity_id: 'proj-uuid' },
-        { update_id: UPDATE_ID_2, entity_type: 'project', entity_id: 'proj-uuid' },
-      ],
-    })
-    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
-    // Same occurred_on → tie-break by created_at DESC → UPDATE_ID_2 first
-    expect(result.data![0].id).toBe(UPDATE_ID_2)
-    expect(result.data![1].id).toBe(UPDATE_ID_1)
-  })
-
   // ── >50 REGRESSION ───────────────────────────────────────────────────────
 
-  it('>50 current Updates: returns the correct latest 50 sorted by effective date', async () => {
-    // 55 updates, index 0 = oldest effective date, index 54 = newest.
-    // Input is provided OLDEST-FIRST — a broken limit(50)-before-sort would
-    // return indices 0-49 (oldest 50); correct sort-then-slice returns indices 5-54.
+  it('>50 current Updates: exactly 50 returned (DB selects correct latest 50)', async () => {
     const TOTAL = 55
     const LIMIT = 50
 
     const allUpdates = Array.from({ length: TOTAL }, (_, i) => {
-      // effective date increments by one day per index
       const effDate = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10)
-      // Every 3rd has occurred_on=null (effective date comes from created_at)
       const hasOccurredOn = i % 3 !== 0
       return {
-        id: `upd${String(i).padStart(3, '0')}`,
-        body: `Body ${i}`,
-        occurred_on: hasOccurredOn ? effDate : null,
-        created_at: hasOccurredOn
+        id:                   `upd${String(i).padStart(3, '0')}`,
+        body:                 `Body ${i}`,
+        occurred_on:          hasOccurredOn ? effDate : null,
+        created_at:           hasOccurredOn
           ? `${effDate}T${String(i % 24).padStart(2, '0')}:00:00Z`
-          : `${effDate}T12:00:00Z`,   // null occurred_on → created_at carries effective date
-        created_by_user_id: SUPER_ADMIN.id,
+          : `${effDate}T12:00:00Z`,
+        created_by_user_id:   SUPER_ADMIN.id,
+        supersedes_update_id: null,
       }
     })
 
-    const linkRows = allUpdates.map((u) => ({ update_id: u.id }))
+    // DB returns top 50 (indices 5–54), newest-first
+    const top50 = allUpdates.slice(5).reverse()
 
+    mocks.mockRpc.mockResolvedValueOnce({ data: top50, error: null })
     mocks.mockFrom
-      .mockReturnValueOnce(makeChain({ data: linkRows,    error: null }))  // kk_update_entities
-      .mockReturnValueOnce(makeChain({ data: [],          error: null }))  // kk_updates superseded (none)
-      .mockReturnValueOnce(makeChain({ data: allUpdates,  error: null }))  // kk_updates current rows (oldest-first)
-      .mockReturnValueOnce(makeChain({ data: [],          error: null }))  // kk_update_entities all links
+      .mockReturnValueOnce(makeChain({ data: [], error: null }))
       .mockReturnValueOnce(makeChain({ data: [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }], error: null }))
 
     const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
     expect(result.error).toBeUndefined()
-
-    // Exactly 50 returned
     expect(result.data).toHaveLength(LIMIT)
 
-    const returnedIdSet = new Set(result.data!.map((r) => r.id))
+    expect(mocks.mockRpc).toHaveBeenCalledTimes(1)
+    expect(mocks.mockRpc).toHaveBeenCalledWith('get_current_updates_for_entity', {
+      p_entity_type: 'project',
+      p_entity_id:   VALID_ENTITY_ID,
+      p_limit:       50,
+    })
 
-    // Oldest 5 (indices 0–4) must be EXCLUDED
+    const returnedIdSet = new Set(result.data!.map(r => r.id))
     for (let i = 0; i < 5; i++) {
       expect(returnedIdSet.has(`upd${String(i).padStart(3, '0')}`)).toBe(false)
     }
-
-    // Newest 50 (indices 5–54) must all be INCLUDED
     for (let i = 5; i < TOTAL; i++) {
       expect(returnedIdSet.has(`upd${String(i).padStart(3, '0')}`)).toBe(true)
     }
 
-    // Order: newest effective date first (index 54), oldest of the 50 last (index 5)
     expect(result.data![0].id).toBe('upd054')
     expect(result.data![LIMIT - 1].id).toBe('upd005')
+  })
 
-    // Ordered strictly newest-to-oldest throughout
-    for (let pos = 0; pos < result.data!.length - 1; pos++) {
-      const curr = result.data![pos]
-      const next = result.data![pos + 1]
-      const effCurr = curr.occurred_on ?? curr.created_at.slice(0, 10)
-      const effNext = next.occurred_on ?? next.created_at.slice(0, 10)
-      // curr effective date must be ≥ next effective date
-      expect(effCurr >= effNext).toBe(true)
-    }
+  it('large set (500 current Updates): application processes only 50 rows from RPC', async () => {
+    const LIMIT = 50
+    const top50 = Array.from({ length: LIMIT }, (_, i) => ({
+      ...BASE_UPDATE,
+      id:          `big${String(i).padStart(3, '0')}`,
+      occurred_on: new Date(Date.UTC(2026, 5, 1 + i)).toISOString().slice(0, 10),
+      created_at:  new Date(Date.UTC(2026, 5, 1 + i)).toISOString(),
+    }))
+
+    mocks.mockRpc.mockResolvedValueOnce({ data: top50, error: null })
+    mocks.mockFrom
+      .mockReturnValueOnce(makeChain({ data: [], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [{ id: SUPER_ADMIN.id, display_name: SUPER_ADMIN.display_name }], error: null }))
+
+    const result = await getUpdatesForEntity('project', VALID_ENTITY_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data).toHaveLength(LIMIT)
+    expect(mocks.mockRpc).toHaveBeenCalledTimes(1)
+    expect(mocks.mockFrom).toHaveBeenCalledTimes(2)
   })
 })

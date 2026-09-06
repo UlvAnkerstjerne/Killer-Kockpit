@@ -142,84 +142,46 @@ export async function getUpdatesForEntity(
 
   const supabase = await createClient()
 
-  // ── 3. All update IDs linked to this entity ───────────────────────────────
-  const { data: linkRows, error: linkErr } = await supabase
-    .from('kk_update_entities')
-    .select('update_id')
-    .eq('entity_type', entityType)
-    .eq('entity_id', entityId)
-
-  if (linkErr) {
-    console.error('[getUpdatesForEntity] link query', linkErr.message)
-    return { error: 'Failed to load Updates. Please try again.' }
-  }
-
-  if (!linkRows || linkRows.length === 0) return { data: [] }
-
-  const allUpdateIds = linkRows.map((r: { update_id: string }) => r.update_id)
-
-  // ── 4. Superseded IDs — updates that have a successor pointing at them ────
-  const { data: supersededRows, error: supersededErr } = await supabase
-    .from('kk_updates')
-    .select('supersedes_update_id')
-    .in('supersedes_update_id', allUpdateIds)
-
-  if (supersededErr) {
-    console.error('[getUpdatesForEntity] superseded query', supersededErr.message)
-    return { error: 'Failed to load Updates. Please try again.' }
-  }
-
-  const supersededIds = new Set(
-    (supersededRows ?? [])
-      .map((r: { supersedes_update_id: string | null }) => r.supersedes_update_id)
-      .filter((id): id is string => id !== null),
-  )
-
-  const currentIds = allUpdateIds.filter((id: string) => !supersededIds.has(id))
-  if (currentIds.length === 0) return { data: [] }
-
-  // ── 5. Fetch ALL current update rows — no DB-level limit ─────────────────
-  // PostgREST has no ORDER BY for COALESCE(occurred_on, created_at::date), so
-  // applying LIMIT before sort would cap an arbitrary heap-scan page, not the
-  // timeline-latest rows.  We fetch the full candidate set (already bounded by
-  // the link query above), sort correctly in TypeScript, then slice to 50.
+  // ── 3. Core query via read RPC — ordered and bounded in PostgreSQL ────────
+  // get_current_updates_for_entity performs:
+  //   JOIN kk_update_entities → kk_updates
+  //   WHERE entity matches AND NOT EXISTS (successor)
+  //   ORDER BY COALESCE(occurred_on, created_at::date) DESC, created_at DESC
+  //   LIMIT LEAST(p_limit, 50)
+  //
+  // The LIMIT is applied AFTER the ORDER BY inside the function, so the 50
+  // rows returned are the institutionally latest 50, not an arbitrary page.
+  //
+  // SECURITY INVOKER: the function runs as the calling user, so existing RLS
+  // policies on kk_updates and kk_update_entities remain authoritative.
+  // No service_role — createClient() carries the user's JWT.
   type RawUpdateRow = {
     id: string
     body: string
     occurred_on: string | null
     created_at: string
     created_by_user_id: string
+    supersedes_update_id: string | null
   }
 
-  const { data: updateRows, error: updateErr } = await supabase
-    .from('kk_updates')
-    .select('id, body, occurred_on, created_at, created_by_user_id')
-    .in('id', currentIds)
+  const { data: top50, error: rpcErr } = await supabase.rpc(
+    'get_current_updates_for_entity',
+    { p_entity_type: entityType, p_entity_id: entityId, p_limit: 50 },
+  )
 
-  if (updateErr) {
-    console.error('[getUpdatesForEntity] updates query', updateErr.message)
+  if (rpcErr) {
+    console.error('[getUpdatesForEntity] rpc', rpcErr.message)
     return { error: 'Failed to load Updates. Please try again.' }
   }
 
-  if (!updateRows || updateRows.length === 0) return { data: [] }
+  if (!top50 || (top50 as RawUpdateRow[]).length === 0) return { data: [] }
 
-  // ── 6. Sort then limit — LIMIT MUST COME AFTER SORT ──────────────────────
-  // effective date = COALESCE(occurred_on, created_at::date)
-  const sorted = [...(updateRows as RawUpdateRow[])].sort((a, b) => {
-    const dateA = a.occurred_on ?? a.created_at.slice(0, 10)
-    const dateB = b.occurred_on ?? b.created_at.slice(0, 10)
-    if (dateB !== dateA) return dateB < dateA ? -1 : 1
-    return b.created_at < a.created_at ? -1 : 1
-  })
-  const top50 = sorted.slice(0, 50)
-
-  if (top50.length === 0) return { data: [] }
-
-  const returnedIds = top50.map((u) => u.id)
-  const authorIdSet = new Set(top50.map((u) => u.created_by_user_id).filter(Boolean))
+  const rows = top50 as RawUpdateRow[]
+  const returnedIds = rows.map((u) => u.id)
+  const authorIdSet = new Set(rows.map((u) => u.created_by_user_id).filter(Boolean))
   const authorIds = [...authorIdSet] as string[]
 
-  // ── 7. Entity links + authors — independent, run in parallel ─────────────
+  // ── 6. Entity links + authors — independent, run in parallel ─────────────
   const [linksResult, authorsResult] = await Promise.all([
     supabase
       .from('kk_update_entities')
@@ -242,7 +204,7 @@ export async function getUpdatesForEntity(
     // Non-fatal — author will be null in results
   }
 
-  // ── 8. Build link map ─────────────────────────────────────────────────────
+  // ── 7. Build link map ─────────────────────────────────────────────────────
   const linkMap = new Map<string, UpdateEntityLinkRow[]>()
   for (const link of allLinkRows ?? []) {
     if (!linkMap.has(link.update_id)) linkMap.set(link.update_id, [])
@@ -252,14 +214,14 @@ export async function getUpdatesForEntity(
     })
   }
 
-  // ── 9. Build author map ───────────────────────────────────────────────────
+  // ── 8. Build author map ───────────────────────────────────────────────────
   const authorMap = new Map<string, UpdateAuthor>()
   for (const a of authorRows ?? []) {
     authorMap.set(a.id, { id: a.id, display_name: a.display_name })
   }
 
-  // ── 10. Assemble result ───────────────────────────────────────────────────
-  const result: UpdateRow[] = top50.map((u) => ({
+  // ── 9. Assemble result ────────────────────────────────────────────────────
+  const result: UpdateRow[] = rows.map((u) => ({
     id: u.id,
     body: u.body,
     occurred_on: u.occurred_on ?? null,
