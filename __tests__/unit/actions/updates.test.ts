@@ -1,39 +1,51 @@
 /**
- * Tests for lib/actions/updates.ts — createUpdate server action
+ * Tests for lib/actions/updates.ts — createUpdate server action (M8A3b hardened)
+ *
+ * Architecture under test:
+ *   Application layer (server action):  getCurrentUser() + canAccessManagementView()
+ *   Database layer (RPC):               get_my_app_user_id() + get_my_role()
+ *   RPC called via createClient() (JWT session) — NOT createServiceClient().
+ *   RPC accepts NO author id — identity derived inside the function.
  *
  * Coverage:
  *
  *   AUTH
- *     • unauthenticated caller rejected
- *     • MEMBER rejected
+ *     • unauthenticated caller rejected at action layer
+ *     • MEMBER rejected at action layer
  *     • UM allowed
  *     • SUPER_ADMIN allowed
- *     • author is always the session user — caller cannot choose
+ *
+ *   AUTHOR ISOLATION / SECURITY
+ *     • RPC args contain no author / user id field whatsoever
+ *     • RPC is called via the authenticated client (createClient), never service client
+ *     • SUPER_ADMIN cannot inject another user's id as author
+ *     • Two sessions each invoke the RPC without any user id in args
  *
  *   VALIDATION (application-layer, before the RPC is called)
  *     • blank body rejected
  *     • whitespace-only body rejected
+ *     • body is trimmed before passing to RPC
  *     • valid occurred_on (YYYY-MM-DD) accepted
  *     • null occurred_on accepted
- *     • malformed date rejected
+ *     • undefined occurred_on treated as null
+ *     • timestamp format rejected
+ *     • free-text date rejected
  *     • zero entity links rejected
  *     • unsupported entity type rejected
  *
  *   RPC DELEGATION
- *     • valid project link — RPC called with correct args
- *     • valid employee link — RPC called with correct args
- *     • valid location link — RPC called with correct args
- *     • multiple mixed links — all forwarded to RPC
- *     • nonexistent entity (RPC error "not found") → safe user error
- *     • one bad link among several → RPC error → safe user error
- *     • RPC generic error propagated safely
+ *     • project link forwarded correctly
+ *     • employee link forwarded correctly
+ *     • location link forwarded correctly
+ *     • multiple mixed links all forwarded
+ *     • RPC "not found" error → safe user message
+ *     • one bad link among several → RPC error → total failure
+ *     • generic RPC error propagated safely without exposing internals
  *     • RPC success → update id returned
+ *     • RPC auth error → generic failure (not exposed verbatim)
  *
  *   IMMUTABILITY
- *     • RPC never receives supersedes_update_id (not in the call args)
- *
- *   AUTHOR ISOLATION
- *     • p_created_by_user_id is always user.id, never from input
+ *     • RPC args contain no supersedes_update_id
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -41,16 +53,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
 
 const mocks = vi.hoisted(() => {
-  const mockGetCurrentUser        = vi.fn()
+  const mockGetCurrentUser          = vi.fn()
   const mockCanAccessManagementView = vi.fn()
-  const mockRpc                   = vi.fn()
-  const mockServiceClient         = { rpc: mockRpc }
+  const mockRpc                     = vi.fn()
+
+  // Authenticated user-session client (createClient — async)
+  const mockUserClient = { rpc: mockRpc }
 
   return {
     mockGetCurrentUser,
     mockCanAccessManagementView,
     mockRpc,
-    mockServiceClient,
+    mockUserClient,
   }
 })
 
@@ -62,8 +76,13 @@ vi.mock('@/lib/permissions', () => ({
   canAccessManagementView: mocks.mockCanAccessManagementView,
 }))
 
+// createClient is async (returns Promise<SupabaseClient>)
+// createServiceClient is NOT imported by updates.ts after M8A3b
 vi.mock('@/lib/supabase/server', () => ({
-  createServiceClient: vi.fn().mockReturnValue(mocks.mockServiceClient),
+  createClient:       vi.fn().mockResolvedValue(mocks.mockUserClient),
+  createServiceClient: vi.fn(() => {
+    throw new Error('createServiceClient must NOT be called by createUpdate')
+  }),
 }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -92,13 +111,7 @@ const MEMBER = {
   active:       true,
 }
 
-const OTHER_USER = {
-  id:   'other-uuid',
-  role: 'UM' as const,
-  display_name: 'Other',
-  email: 'other@killerkebab.com',
-  active: true,
-}
+const OTHER_USER_ID = 'other-uuid'
 
 const PROJECT_LINK  = { entity_type: 'project'  as const, entity_id: 'proj-uuid' }
 const EMPLOYEE_LINK = { entity_type: 'employee' as const, entity_id: 'emp-uuid'  }
@@ -133,7 +146,7 @@ describe('createUpdate', () => {
     expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
-  it('rejects MEMBER role', async () => {
+  it('rejects MEMBER role at action layer', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(MEMBER)
     mocks.mockCanAccessManagementView.mockReturnValue(false)
     const result = await createUpdate(VALID_INPUT)
@@ -155,16 +168,46 @@ describe('createUpdate', () => {
     expect(result.data?.id).toBe('new-update-uuid')
   })
 
-  it('p_created_by_user_id is always session user id, never from input', async () => {
-    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
-    // Caller passes no user id — the action derives it from the session
+  // ── AUTHOR ISOLATION / SECURITY ──────────────────────────────────────────────
+
+  it('RPC args contain no author or user id field', async () => {
     await createUpdate(VALID_INPUT)
     const [, args] = mocks.mockRpc.mock.calls[0]
-    expect(args.p_created_by_user_id).toBe(SUPER_ADMIN.id)
-    expect(args.p_created_by_user_id).not.toBe(OTHER_USER.id)
+    expect(args).not.toHaveProperty('p_created_by_user_id')
+    expect(args).not.toHaveProperty('p_actor_user_id')
+    expect(args).not.toHaveProperty('user_id')
+    expect(args).not.toHaveProperty('author_id')
+    expect(args).not.toHaveProperty('author')
   })
 
-  it('two calls with different sessions each use the correct user id', async () => {
+  it('RPC args have exactly the three expected keys', async () => {
+    await createUpdate(VALID_INPUT)
+    const [, args] = mocks.mockRpc.mock.calls[0]
+    expect(Object.keys(args).sort()).toEqual(['p_body', 'p_entity_links', 'p_occurred_on'])
+  })
+
+  it('createServiceClient is never called — RPC uses authenticated session client', async () => {
+    // The mock for createServiceClient throws if called — this test would fail
+    // if updates.ts ever called createServiceClient().
+    await expect(createUpdate(VALID_INPUT)).resolves.not.toThrow()
+    expect(mocks.mockRpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('SUPER_ADMIN cannot inject another user id as author', async () => {
+    // Even if input were extended with author fields, none reach the RPC
+    const maliciousInput = {
+      ...VALID_INPUT,
+      // These fields are not part of CreateUpdateInput; TypeScript would
+      // reject them at compile time, but verify the runtime path also
+      // never forwards them.
+    } as typeof VALID_INPUT & { p_created_by_user_id?: string }
+    maliciousInput.p_created_by_user_id = OTHER_USER_ID
+    await createUpdate(maliciousInput as typeof VALID_INPUT)
+    const [, args] = mocks.mockRpc.mock.calls[0]
+    expect(args).not.toHaveProperty('p_created_by_user_id')
+  })
+
+  it('two sessions both call the RPC with no user id in args', async () => {
     mocks.mockGetCurrentUser.mockResolvedValueOnce(SUPER_ADMIN)
     mocks.mockRpc.mockResolvedValueOnce({ data: 'id-1', error: null })
     await createUpdate(VALID_INPUT)
@@ -173,9 +216,30 @@ describe('createUpdate', () => {
     mocks.mockRpc.mockResolvedValueOnce({ data: 'id-2', error: null })
     await createUpdate(VALID_INPUT)
 
-    const calls = mocks.mockRpc.mock.calls
-    expect(calls[0][1].p_created_by_user_id).toBe(SUPER_ADMIN.id)
-    expect(calls[1][1].p_created_by_user_id).toBe(UM_USER.id)
+    for (const [, args] of mocks.mockRpc.mock.calls) {
+      expect(args).not.toHaveProperty('p_created_by_user_id')
+    }
+  })
+
+  it('RPC auth error (unauthenticated session) propagated as generic failure', async () => {
+    mocks.mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: 'Not authenticated' },
+    })
+    const result = await createUpdate(VALID_INPUT)
+    // Generic message — internal RPC error text must not be forwarded verbatim
+    expect(result.error).toMatch(/please try again/i)
+    expect(result.data).toBeUndefined()
+  })
+
+  it('RPC role error (MEMBER session at DB level) propagated as generic failure', async () => {
+    mocks.mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: 'Not authorised: role MEMBER cannot create Updates' },
+    })
+    const result = await createUpdate(VALID_INPUT)
+    expect(result.error).toMatch(/please try again/i)
+    expect(result.data).toBeUndefined()
   })
 
   // ── VALIDATION ───────────────────────────────────────────────────────────────
@@ -220,13 +284,13 @@ describe('createUpdate', () => {
     expect(args.p_occurred_on).toBeNull()
   })
 
-  it('rejects malformed date — timestamp format', async () => {
+  it('rejects timestamp format for occurred_on', async () => {
     const result = await createUpdate({ ...VALID_INPUT, occurred_on: '2026-09-01T00:00:00Z' })
     expect(result.error).toMatch(/YYYY-MM-DD/i)
     expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
-  it('rejects malformed date — free text', async () => {
+  it('rejects free-text date for occurred_on', async () => {
     const result = await createUpdate({ ...VALID_INPUT, occurred_on: 'Monday' })
     expect(result.error).toMatch(/YYYY-MM-DD/i)
     expect(mocks.mockRpc).not.toHaveBeenCalled()
@@ -278,37 +342,17 @@ describe('createUpdate', () => {
     expect(args.p_entity_links).toContainEqual(LOCATION_LINK)
   })
 
-  it('nonexistent project — RPC "not found" error → safe user message', async () => {
+  it('RPC "not found" error → safe user message', async () => {
     mocks.mockRpc.mockResolvedValue({
       data: null,
       error: { message: 'project not found: 00000000-0000-0000-0000-000000000000' },
     })
-    const result = await createUpdate({ ...VALID_INPUT, entity_links: [PROJECT_LINK] })
+    const result = await createUpdate(VALID_INPUT)
     expect(result.error).toMatch(/not found/i)
     expect(result.data).toBeUndefined()
   })
 
-  it('nonexistent employee — RPC "not found" error → safe user message', async () => {
-    mocks.mockRpc.mockResolvedValue({
-      data: null,
-      error: { message: 'employee not found: 00000000-0000-0000-0000-000000000000' },
-    })
-    const result = await createUpdate({ ...VALID_INPUT, entity_links: [EMPLOYEE_LINK] })
-    expect(result.error).toMatch(/not found/i)
-    expect(result.data).toBeUndefined()
-  })
-
-  it('nonexistent location — RPC "not found" error → safe user message', async () => {
-    mocks.mockRpc.mockResolvedValue({
-      data: null,
-      error: { message: 'location not found: 00000000-0000-0000-0000-000000000000' },
-    })
-    const result = await createUpdate({ ...VALID_INPUT, entity_links: [LOCATION_LINK] })
-    expect(result.error).toMatch(/not found/i)
-    expect(result.data).toBeUndefined()
-  })
-
-  it('one bad link among several → RPC error → total failure, safe message', async () => {
+  it('one bad link among several → RPC error → total failure', async () => {
     mocks.mockRpc.mockResolvedValue({
       data: null,
       error: { message: 'project not found: bad-id' },
@@ -317,22 +361,19 @@ describe('createUpdate', () => {
       ...VALID_INPUT,
       entity_links: [PROJECT_LINK, EMPLOYEE_LINK, LOCATION_LINK],
     })
-    // Entire operation fails — RPC rolls back atomically
     expect(result.error).toBeTruthy()
     expect(result.data).toBeUndefined()
-    // RPC was called exactly once (not retried)
     expect(mocks.mockRpc).toHaveBeenCalledTimes(1)
   })
 
-  it('generic RPC error propagated safely without exposing internal message', async () => {
+  it('generic RPC error — internal message not exposed verbatim', async () => {
     mocks.mockRpc.mockResolvedValue({
       data: null,
-      error: { message: 'internal server error' },
+      error: { message: 'internal server error XYZ' },
     })
     const result = await createUpdate(VALID_INPUT)
     expect(result.error).toMatch(/please try again/i)
-    // Internal error message must not leak verbatim
-    expect(result.error).not.toContain('internal server error')
+    expect(result.error).not.toContain('internal server error XYZ')
     expect(result.data).toBeUndefined()
   })
 
@@ -344,7 +385,7 @@ describe('createUpdate', () => {
 
   // ── IMMUTABILITY ─────────────────────────────────────────────────────────────
 
-  it('never passes supersedes_update_id to the RPC', async () => {
+  it('RPC args contain no supersedes_update_id', async () => {
     await createUpdate(VALID_INPUT)
     const [, args] = mocks.mockRpc.mock.calls[0]
     expect(args).not.toHaveProperty('supersedes_update_id')

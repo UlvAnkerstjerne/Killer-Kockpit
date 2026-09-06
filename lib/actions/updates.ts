@@ -1,6 +1,6 @@
 'use server'
 
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
 import type { ActionResult, KkUpdateEntityType } from '@/lib/types'
@@ -75,16 +75,19 @@ export async function createUpdate(
     return { error: 'occurred_on must be a date in YYYY-MM-DD format.' }
   }
 
-  // ── 6. Transactional RPC (service_role only) ──────────────────────────────
-  // p_created_by_user_id is always user.id from the session — never from input.
-  const serviceClient = createServiceClient()
-  const { data: updateId, error } = await serviceClient.rpc(
+  // ── 6. Transactional RPC via authenticated session client ────────────────
+  // createClient() carries the user's JWT (cookie-based SSR session).
+  // PostgREST sends that JWT with the request, so auth.uid() resolves inside
+  // the SECURITY DEFINER function and get_my_app_user_id() returns the
+  // caller's app_users.id.  No author id is supplied in the call args —
+  // the DB derives and verifies identity itself.
+  const supabase = await createClient()
+  const { data: updateId, error } = await supabase.rpc(
     'create_update_and_links',
     {
-      p_body:               body,
-      p_occurred_on:        occurred_on,
-      p_created_by_user_id: user.id,
-      p_entity_links:       input.entity_links,
+      p_body:          body,
+      p_occurred_on:   occurred_on,
+      p_entity_links:  input.entity_links,
     },
   )
 
