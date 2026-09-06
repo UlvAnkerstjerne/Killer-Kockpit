@@ -303,3 +303,22 @@ export interface TeamTodo {
   parent_todo_id: string | null
   owner: { id: string; display_name: string }
 }
+
+// ─── Universal Updates (M8) ───────────────────────────────────────────────────
+
+export type KkUpdateEntityType = 'project' | 'employee' | 'location'
+
+export interface KkUpdate {
+  id: string
+  body: string
+  created_by_user_id: string
+  occurred_on: string | null   // DATE — YYYY-MM-DD
+  created_at: string
+  supersedes_update_id: string | null
+}
+
+export interface KkUpdateEntity {
+  update_id: string
+  entity_type: KkUpdateEntityType
+  entity_id: string
+}
