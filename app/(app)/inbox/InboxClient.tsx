@@ -21,7 +21,7 @@ import {
   kindBadgeClass,
   suggestionDetails,
 } from '@/lib/ai/email-suggestion-display'
-import { utcToWall, suggestionDueToWall } from '@/lib/time'
+import { wallToUtc, utcToWall, suggestionDueParts } from '@/lib/time'
 import { resolveTaskOwner, priorityFromHint } from '@/lib/ai/task-suggestion-prefill'
 import { resolveWaitingFor } from '@/lib/ai/wo-suggestion-prefill'
 
@@ -234,7 +234,8 @@ export default function InboxClient({
   const [taskProject,  setTaskProject]  = useState('')
   const [taskPriority, setTaskPriority] = useState<1|2|3|4>(2)
   const [taskStatus,   setTaskStatus]   = useState<string>('open')
-  const [taskDueAt,    setTaskDueAt]    = useState('')
+  const [taskDueDate,  setTaskDueDate]  = useState('')
+  const [taskDueTime,  setTaskDueTime]  = useState('')
 
   // ── To-Do form state ─────────────────────────────────────────────────────
   const [todoTitle,        setTodoTitle]        = useState('')
@@ -256,7 +257,8 @@ export default function InboxClient({
   const [woForName,     setWoForName]     = useState('')
   const [woOwner,       setWoOwner]       = useState(currentUserId)
   const [woProject,     setWoProject]     = useState('')
-  const [woDueAt,       setWoDueAt]       = useState('')
+  const [woDueDate,     setWoDueDate]     = useState('')
+  const [woDueTime,     setWoDueTime]     = useState('')
   const [woNotes,       setWoNotes]       = useState('')
 
   // ── Shared submission state ──────────────────────────────────────────────
@@ -351,11 +353,18 @@ export default function InboxClient({
     setTaskProject('')
     setTaskPriority(suggestion?.priority_hint != null ? priorityFromHint(suggestion.priority_hint) : 2)
     setTaskStatus('open')
-    setTaskDueAt(
-      suggestion?.due_at
-        ? suggestionDueToWall(suggestion.due_at)
-        : (deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : ''),
-    )
+    if (suggestion?.due_at) {
+      const { dueDate, dueTime } = suggestionDueParts(suggestion.due_at)
+      setTaskDueDate(dueDate)
+      setTaskDueTime(dueTime)
+    } else if (deadlineHint?.dueDate) {
+      const dl = toDatetimeLocal(deadlineHint.dueDate)
+      setTaskDueDate(dl.slice(0, 10))
+      setTaskDueTime(dl.slice(11, 16))
+    } else {
+      setTaskDueDate('')
+      setTaskDueTime('')
+    }
     setFormError(null)
   }
 
@@ -378,18 +387,28 @@ export default function InboxClient({
         setWoForUserId('')
         setWoForName('')
       }
-      setWoDueAt(suggestionDueToWall(suggestion.due_at))
+      const { dueDate: wdd, dueTime: wdt } = suggestionDueParts(suggestion.due_at)
+      setWoDueDate(wdd)
+      setWoDueTime(wdt)
     } else {
       setWoUseExternal(true)
       setWoForUserId('')
       setWoForName(selected ? senderName(selected.from) : '')
-      setWoDueAt(deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : '')
+      if (deadlineHint?.dueDate) {
+        const dl = toDatetimeLocal(deadlineHint.dueDate)
+        setWoDueDate(dl.slice(0, 10))
+        setWoDueTime(dl.slice(11, 16))
+      } else {
+        setWoDueDate('')
+        setWoDueTime('')
+      }
     }
     setWoOwner(currentUserId)
     setWoProject('')
     setWoNotes('')
     setFormError(null)
   }
+
 
   function openTodoForm(suggestion: TodoSuggestion) {
     setCreateMode('todo')
@@ -419,6 +438,10 @@ export default function InboxClient({
   async function handleCreateTask(e: React.FormEvent) {
     e.preventDefault()
     if (!selected || !taskTitle.trim() || saving) return
+    if (taskDueDate && !taskDueTime) {
+      setFormError('Choose a time for this deadline.')
+      return
+    }
     setSaving(true)
     setFormError(null)
     const result = await createTaskFromEmail(selected.messageId, {
@@ -428,7 +451,7 @@ export default function InboxClient({
       project_id:    taskProject || undefined,
       priority:      taskPriority,
       status:        taskStatus as 'proposed' | 'open' | 'in_progress' | 'blocked',
-      due_at:        taskDueAt || undefined,
+      due_at:        (taskDueDate && taskDueTime) ? wallToUtc(`${taskDueDate}T${taskDueTime}`) : undefined,
     })
     setSaving(false)
     if (result.error) {
@@ -444,6 +467,10 @@ export default function InboxClient({
   async function handleCreateWo(e: React.FormEvent) {
     e.preventDefault()
     if (!selected || !woTitle.trim() || saving) return
+    if (woDueDate && !woDueTime) {
+      setFormError('Choose a time for this deadline.')
+      return
+    }
     setSaving(true)
     setFormError(null)
     const result = await createWaitingOnFromEmail(selected.messageId, {
@@ -452,7 +479,7 @@ export default function InboxClient({
       waiting_for_user_id: !woUseExternal && woForUserId ? woForUserId : undefined,
       waiting_for_name:    woUseExternal ? woForName.trim() || undefined : undefined,
       project_id:          woProject || undefined,
-      due_at:              woDueAt || undefined,
+      due_at:              (woDueDate && woDueTime) ? wallToUtc(`${woDueDate}T${woDueTime}`) : undefined,
       notes:               woNotes.trim() || undefined,
     })
     setSaving(false)
@@ -765,13 +792,26 @@ export default function InboxClient({
                       <label className="block text-xs font-medium text-kk-ink mb-1">
                         Due date <span className="text-kk-muted font-normal">(optional)</span>
                       </label>
-                      <input
-                        type="datetime-local"
-                        value={taskDueAt}
-                        onChange={(e) => setTaskDueAt(e.target.value)}
-                        disabled={saving}
-                        className={field}
-                      />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="date"
+                          value={taskDueDate}
+                          onChange={(e) => setTaskDueDate(e.target.value)}
+                          disabled={saving}
+                          className={field}
+                        />
+                        <input
+                          type="time"
+                          value={taskDueTime}
+                          onChange={(e) => setTaskDueTime(e.target.value)}
+                          disabled={saving || !taskDueDate}
+                          className={field}
+                          placeholder="Time"
+                        />
+                      </div>
+                      {taskDueDate && !taskDueTime && (
+                        <p className="text-xs text-kk-warn mt-1">Choose a time for this deadline.</p>
+                      )}
                       {deadlineHint?.evidence && (
                         <p className="text-xs text-kk-muted mt-1">
                           Suggested from email: &ldquo;{deadlineHint.evidence}&rdquo;
@@ -804,7 +844,7 @@ export default function InboxClient({
                   <div className="flex gap-2 pt-1">
                     <button
                       type="submit"
-                      disabled={!taskTitle.trim() || saving}
+                      disabled={!taskTitle.trim() || saving || !!(taskDueDate && !taskDueTime)}
                       className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
                     >
                       {saving ? 'Creating…' : 'Create task'}
@@ -931,13 +971,26 @@ export default function InboxClient({
                     <label className="block text-xs font-medium text-kk-ink mb-1">
                       Due <span className="text-kk-muted font-normal">(optional)</span>
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={woDueAt}
-                      onChange={(e) => setWoDueAt(e.target.value)}
-                      disabled={saving}
-                      className={field}
-                    />
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="date"
+                        value={woDueDate}
+                        onChange={(e) => setWoDueDate(e.target.value)}
+                        disabled={saving}
+                        className={field}
+                      />
+                      <input
+                        type="time"
+                        value={woDueTime}
+                        onChange={(e) => setWoDueTime(e.target.value)}
+                        disabled={saving || !woDueDate}
+                        className={field}
+                        placeholder="Time"
+                      />
+                    </div>
+                    {woDueDate && !woDueTime && (
+                      <p className="text-xs text-kk-warn mt-1">Choose a time for this deadline.</p>
+                    )}
                     {deadlineHint?.evidence && (
                       <p className="text-xs text-kk-muted mt-1">
                         Suggested from email: &ldquo;{deadlineHint.evidence}&rdquo;
@@ -963,7 +1016,7 @@ export default function InboxClient({
                   <div className="flex gap-2 pt-1">
                     <button
                       type="submit"
-                      disabled={!woTitle.trim() || saving}
+                      disabled={!woTitle.trim() || saving || !!(woDueDate && !woDueTime)}
                       className="px-4 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
                     >
                       {saving ? 'Creating…' : 'Create waiting on'}

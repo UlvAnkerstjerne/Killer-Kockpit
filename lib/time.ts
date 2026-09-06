@@ -97,25 +97,28 @@ export function utcToWall(utcIso: string | null): string {
 }
 
 /**
- * Converts an AI suggestion `due_at` value to a Copenhagen wall-clock string
- * for populating a datetime-local input ("YYYY-MM-DDTHH:MM").
+ * Splits an AI suggestion `due_at` value into separate date and time parts for
+ * populating separate `type="date"` and `type="time"` inputs.
  *
  * Two formats are handled:
  *   YYYY-MM-DD (date-only, length 10)
- *     → "YYYY-MM-DDT00:00"  (midnight local — no UTC conversion)
- *     Avoids fake timezone-shifted times (e.g. 02:00 from midnight UTC in CEST).
+ *     → { dueDate: "YYYY-MM-DD", dueTime: "" }
+ *     Time is left blank — the AI did not state a time and none should be invented.
  *
  *   Full ISO timestamp (e.g. "2026-09-09T12:00:00.000Z")
- *     → utcToWall(iso)  (UTC → Copenhagen wall time)
+ *     → { dueDate: "YYYY-MM-DD", dueTime: "HH:MM" }
+ *     Converts UTC → Copenhagen wall time, then splits on "T".
  *
- * Returns "" for null input.
+ *   null / empty
+ *     → { dueDate: "", dueTime: "" }
  */
-export function suggestionDueToWall(dueAt: string | null): string {
-  if (!dueAt) return ''
-  // Date-only (YYYY-MM-DD): set midnight local — no UTC conversion
-  if (dueAt.length === 10) return `${dueAt}T00:00`
-  // Full ISO timestamp: convert UTC → Copenhagen wall time
-  return utcToWall(dueAt)
+export function suggestionDueParts(dueAt: string | null): { dueDate: string; dueTime: string } {
+  if (!dueAt) return { dueDate: '', dueTime: '' }
+  // Date-only: return the date, leave time blank — never invent 00:00 or any time
+  if (dueAt.length === 10) return { dueDate: dueAt, dueTime: '' }
+  // Full ISO timestamp: convert UTC → Copenhagen, then split
+  const wall = utcToWall(dueAt) // "YYYY-MM-DDTHH:MM"
+  return { dueDate: wall.slice(0, 10), dueTime: wall.slice(11, 16) }
 }
 
 /**

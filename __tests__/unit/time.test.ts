@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { SCHEDULING_TZ, wallToUtc, utcToWall, formatCopenhagen, suggestionDueToWall } from '@/lib/time'
+import { SCHEDULING_TZ, wallToUtc, utcToWall, formatCopenhagen, suggestionDueParts } from '@/lib/time'
 
 // ─── SCHEDULING_TZ ─────────────────────────────────────────────────────────
 
@@ -134,63 +134,64 @@ describe('round-trip wallToUtc → utcToWall', () => {
   })
 })
 
-// ─── suggestionDueToWall ───────────────────────────────────────────────────
+// ─── suggestionDueParts ────────────────────────────────────────────────────
 //
-// Used by openTaskForm and openWoForm to prefill datetime-local inputs
-// from AI suggestion due_at values.
+// Splits an AI suggestion due_at into separate { dueDate, dueTime } parts
+// for the Task and Waiting On review forms. Date and time are shown in
+// separate inputs so the human can see that no time was invented.
 
-describe('suggestionDueToWall', () => {
-  // ── null → blank ──────────────────────────────────────────────────────────
+describe('suggestionDueParts — Task and Waiting On review forms', () => {
+  // ── null → both blank (no deadline, creation allowed) ────────────────────
 
-  it('null → empty string', () => {
-    expect(suggestionDueToWall(null)).toBe('')
+  it('null → { dueDate: "", dueTime: "" }', () => {
+    expect(suggestionDueParts(null)).toEqual({ dueDate: '', dueTime: '' })
   })
 
-  // ── Date-only (YYYY-MM-DD): no UTC conversion, midnight local ─────────────
+  // ── Date-only (YYYY-MM-DD): date populated, time blank ───────────────────
 
-  it('date-only "2026-09-09" → "2026-09-09T00:00" (no shift)', () => {
-    // Root cause of the 02:00 bug: utcToWall("2026-09-09T00:00:00Z") → "2026-09-09T02:00"
-    // suggestionDueToWall must NOT shift the date.
-    expect(suggestionDueToWall('2026-09-09')).toBe('2026-09-09T00:00')
+  it('date-only "2026-09-09" → date populated, time blank', () => {
+    expect(suggestionDueParts('2026-09-09')).toEqual({ dueDate: '2026-09-09', dueTime: '' })
+  })
+
+  it('date-only time is "" not "00:00" — no invented time', () => {
+    const { dueTime } = suggestionDueParts('2026-09-09')
+    expect(dueTime).toBe('')
+    expect(dueTime).not.toBe('00:00')
   })
 
   it('date-only stays on the correct calendar date (no off-by-one)', () => {
-    // Verify the 9th stays the 9th — no timezone-driven date flip
-    const result = suggestionDueToWall('2026-09-09')
-    expect(result.startsWith('2026-09-09')).toBe(true)
+    // 2026-09-09 must remain 9th — no timezone date shift
+    expect(suggestionDueParts('2026-09-09').dueDate).toBe('2026-09-09')
   })
 
-  it('date-only in winter "2026-12-15" → "2026-12-15T00:00" (no shift)', () => {
-    expect(suggestionDueToWall('2026-12-15')).toBe('2026-12-15T00:00')
+  it('date-only in winter "2026-12-15" → date populated, time blank', () => {
+    expect(suggestionDueParts('2026-12-15')).toEqual({ dueDate: '2026-12-15', dueTime: '' })
   })
 
-  it('date-only does NOT produce 02:00 (CEST timezone-shift artefact)', () => {
-    const result = suggestionDueToWall('2026-09-09')
-    expect(result).not.toContain('T02:00')
+  // ── Full ISO timestamp (CEST, UTC+2): correct Copenhagen date + time ───────
+
+  it('Task: explicit UTC timestamp (CEST) "2026-09-09T12:00:00.000Z" → date 2026-09-09, time 14:00', () => {
+    // 12:00 UTC = 14:00 Copenhagen CEST
+    expect(suggestionDueParts('2026-09-09T12:00:00.000Z')).toEqual({
+      dueDate: '2026-09-09',
+      dueTime: '14:00',
+    })
   })
 
-  it('date-only does NOT produce 01:00 (CET timezone-shift artefact)', () => {
-    const result = suggestionDueToWall('2026-12-15')
-    expect(result).not.toContain('T01:00')
+  it('Waiting On: explicit UTC timestamp (CET) "2026-12-15T11:00:00.000Z" → date 2026-12-15, time 12:00', () => {
+    // 11:00 UTC = 12:00 Copenhagen CET
+    expect(suggestionDueParts('2026-12-15T11:00:00.000Z')).toEqual({
+      dueDate: '2026-12-15',
+      dueTime: '12:00',
+    })
   })
 
-  // ── Full ISO timestamp: UTC → Copenhagen wall time ─────────────────────────
-
-  it('explicit UTC timestamp (CEST): "2026-09-09T12:00:00.000Z" → "2026-09-09T14:00"', () => {
-    // 12:00 UTC = 14:00 Copenhagen CEST (UTC+2)
-    expect(suggestionDueToWall('2026-09-09T12:00:00.000Z')).toBe('2026-09-09T14:00')
-  })
-
-  it('explicit UTC timestamp (CET): "2026-12-15T11:00:00.000Z" → "2026-12-15T12:00"', () => {
-    // 11:00 UTC = 12:00 Copenhagen CET (UTC+1)
-    expect(suggestionDueToWall('2026-12-15T11:00:00.000Z')).toBe('2026-12-15T12:00')
-  })
-
-  it('midnight UTC timestamp shifts to Copenhagen time (expected behaviour for explicit timestamps)', () => {
-    // Midnight UTC in September = 02:00 Copenhagen CEST
-    // This is CORRECT for an explicit "2026-09-09T00:00:00Z" timestamp
-    // (contrasted with date-only "2026-09-09" which must NOT shift)
-    expect(suggestionDueToWall('2026-09-09T00:00:00Z')).toBe('2026-09-09T02:00')
+  it('explicit midnight UTC "2026-09-09T00:00:00Z" → date 2026-09-09, time 02:00 (correct for explicit timestamps)', () => {
+    // A genuine midnight-UTC timestamp (not date-only) correctly shifts to 02:00 Copenhagen CEST
+    expect(suggestionDueParts('2026-09-09T00:00:00Z')).toEqual({
+      dueDate: '2026-09-09',
+      dueTime: '02:00',
+    })
   })
 })
 
