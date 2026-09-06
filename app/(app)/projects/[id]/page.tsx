@@ -3,7 +3,7 @@ import { Suspense } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
-import { canEditProject } from '@/lib/permissions'
+import { canEditProject, canAccessManagementView } from '@/lib/permissions'
 import { getGoogleConnectionStatus, hasDriveScope } from '@/lib/google/auth'
 import { getEntityDriveFiles } from '@/lib/actions/drive'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
@@ -17,6 +17,8 @@ import TaskList from '@/components/tasks/TaskList'
 import ProjectLifecycleButtons from '@/components/projects/ProjectLifecycleButtons'
 import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
+import ProjectUpdatesSection from '@/components/updates/ProjectUpdatesSection'
+import { getUpdatesForEntity } from '@/lib/actions/updates'
 import type { WaitingStatus, DecisionStatus, MeetingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -45,7 +47,7 @@ export default async function ProjectDetailPage({
 
   if (error || !project) notFound()
 
-  const [{ data: tasks }, { data: waitingOns }, { data: decisions }, { data: meetings }, driveFiles, gmailSourcesResult] = await Promise.all([
+  const [{ data: tasks }, { data: waitingOns }, { data: decisions }, { data: meetings }, driveFiles, gmailSourcesResult, updatesResult] = await Promise.all([
     supabase
       .from('tasks')
       .select(`
@@ -89,13 +91,16 @@ export default async function ProjectDetailPage({
 
     getEntityDriveFiles('project', id),
     getEntityGmailSources('project', id),
+    getUpdatesForEntity('project', id),
   ])
 
   const canEdit            = canEditProject(user.role, project.owner_user_id, user.id)
+  const canManageUpdates   = canAccessManagementView(user.role)
   const driveEnabled       = googleStatus.connected && hasDriveScope(googleStatus.scopes)
   const owner = Array.isArray(project.owner) ? project.owner[0] : project.owner
   const creator = Array.isArray(project.creator) ? project.creator[0] : project.creator
   const gmailSources = gmailSourcesResult.data ?? []
+  const projectUpdates = updatesResult.data ?? []
 
   const isOverdue = project.due_date && new Date(project.due_date) < new Date() && project.status !== 'completed'
 
@@ -127,6 +132,15 @@ export default async function ProjectDetailPage({
       <div className="grid grid-cols-3 gap-6">
         {/* Left: meta + tasks */}
         <div className="col-span-2 space-y-6">
+          {/* Updates */}
+          {canManageUpdates && (
+            <ProjectUpdatesSection
+              projectId={project.id}
+              initialUpdates={projectUpdates}
+              canAddUpdate={canManageUpdates}
+            />
+          )}
+
           {/* Task list */}
           <div className="bg-kk-panel border border-kk-line rounded-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
