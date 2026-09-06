@@ -36,6 +36,17 @@ export interface GmailMessageFull extends GmailMessageMeta {
   body: string
 }
 
+export interface GmailThreadMessage {
+  messageId:    string
+  threadId:     string
+  from:         string
+  date:         string
+  internalDate: string
+  body:         string
+  /** Gmail system labels (e.g. 'SENT', 'INBOX', 'UNREAD'). Used for direction detection. */
+  labelIds:     string[]
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function getHeader(
@@ -195,6 +206,47 @@ export async function listInboxMessages(
     }),
     nextPageToken,
   }
+}
+
+/**
+ * Fetches all messages in a Gmail thread and returns them sorted chronologically
+ * by internalDate (oldest first). Returns plain-text bodies (HTML stripped server-side).
+ * Content is ephemeral — never persisted by Kockpit.
+ *
+ * The OAuth client must be scoped to the authenticated user only.
+ * SUPER_ADMIN has no mailbox impersonation capability.
+ *
+ * @param oauthClient  OAuth client for the authenticated user.
+ * @param threadId     Gmail thread ID.
+ */
+export async function getThreadMessages(
+  oauthClient: Auth.OAuth2Client,
+  threadId: string,
+): Promise<GmailThreadMessage[]> {
+  const gmail = google.gmail({ version: 'v1', auth: oauthClient })
+
+  const res = await gmail.users.threads.get({
+    userId: 'me',
+    id:     threadId,
+    format: 'full',
+  })
+
+  const messages = res.data.messages ?? []
+
+  return messages
+    .map((msg): GmailThreadMessage => {
+      const headers = msg.payload?.headers ?? []
+      return {
+        messageId:    msg.id ?? '',
+        threadId:     msg.threadId ?? threadId,
+        from:         getHeader(headers, 'From'),
+        date:         getHeader(headers, 'Date'),
+        internalDate: msg.internalDate ?? '',
+        body:         msg.payload ? extractPlainText(msg.payload) : '',
+        labelIds:     msg.labelIds ?? [],
+      }
+    })
+    .sort((a, b) => Number(a.internalDate) - Number(b.internalDate))
 }
 
 /**

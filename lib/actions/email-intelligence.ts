@@ -32,8 +32,9 @@
 import { getCurrentUser } from '@/lib/auth'
 import { canUseGmailInbox } from '@/lib/permissions'
 import { getGoogleOAuth2Client, getGoogleConnectionStatus, hasGmailScope } from '@/lib/google/auth'
-import { getMessageFull } from '@/lib/google/gmail'
+import { getMessageFull, getThreadMessages } from '@/lib/google/gmail'
 import { analyzeEmail } from '@/lib/ai/analyze-email'
+import { boundThreadMessages, toThreadContext } from '@/lib/ai/thread-context'
 import type { EmailAnalysisOutput } from '@/lib/ai/email-analysis-schema'
 import type { ActionResult } from '@/lib/types'
 
@@ -79,6 +80,27 @@ export async function analyzeEmailForSuggestions(
   }
   if (!message) return { error: 'Email not found in Gmail.' }
 
+  // ── Fetch the thread for current-state analysis ───────────────────────────
+  // Thread fetch uses the same authenticated OAuth client — no impersonation.
+  // If the thread cannot be read we return a safe error rather than silently
+  // falling back to single-message analysis, which could produce stale
+  // suggestions from an earlier state of the conversation.
+  const mailboxEmail = status.connected ? status.googleAccountEmail : null
+
+  let thread: import('@/lib/ai/analyze-email').ThreadMessageContext[] | undefined
+
+  if (message.threadId) {
+    let rawThread
+    try {
+      rawThread = await getThreadMessages(oauthClient, message.threadId)
+    } catch {
+      return { error: "Couldn't read the full email conversation. Try again." }
+    }
+
+    const bounded = boundThreadMessages(rawThread)
+    thread = toThreadContext(bounded, mailboxEmail)
+  }
+
   // ── Call analyzer with trusted context ────────────────────────────────────
   const result = await analyzeEmail({
     subject:         message.subject,
@@ -87,6 +109,7 @@ export async function analyzeEmailForSuggestions(
     body:            message.body,
     currentUserName: user.display_name,
     timezone:        'Europe/Copenhagen',
+    thread,
   })
 
   if (!result.ok) {

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
   const mockHasGmailScope         = vi.fn()
   const mockGetOAuthClient        = vi.fn()
   const mockGetMessageFull        = vi.fn()
+  const mockGetThreadMessages     = vi.fn()
   const mockAnalyzeEmail          = vi.fn()
 
   return {
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => {
     mockHasGmailScope,
     mockGetOAuthClient,
     mockGetMessageFull,
+    mockGetThreadMessages,
     mockAnalyzeEmail,
   }
 })
@@ -44,7 +46,10 @@ vi.mock('@/lib/google/auth', () => ({
   getGoogleConnectionStatus: mocks.mockGetConnectionStatus,
   hasGmailScope:             mocks.mockHasGmailScope,
 }))
-vi.mock('@/lib/google/gmail', () => ({ getMessageFull: mocks.mockGetMessageFull }))
+vi.mock('@/lib/google/gmail', () => ({
+  getMessageFull:    mocks.mockGetMessageFull,
+  getThreadMessages: mocks.mockGetThreadMessages,
+}))
 vi.mock('@/lib/ai/analyze-email', () => ({ analyzeEmail: mocks.mockAnalyzeEmail }))
 
 // ---- Fixtures ----------------------------------------------------------------
@@ -89,13 +94,16 @@ const CONNECTED_STATUS  = {
 }
 
 const FAKE_MESSAGE = {
-  id:       'msg-abc123',
-  subject:  'Project update',
-  from:     'sender@example.com',
-  date:     'Fri, 05 Sep 2026 10:00:00 +0000',
-  threadId: 'thread-xyz',
-  snippet:  'Preview text...',
-  body:     'Can you send the report by Friday? Also, let\'s meet Tuesday at 10.',
+  id:           'msg-abc123',
+  messageId:    'msg-abc123',
+  subject:      'Project update',
+  from:         'sender@example.com',
+  date:         'Fri, 05 Sep 2026 10:00:00 +0000',
+  internalDate: '1000',
+  threadId:     'thread-xyz',
+  snippet:      'Preview text...',
+  body:         'Can you send the report by Friday? Also, let\'s meet Tuesday at 10.',
+  labelIds:     [] as string[],
 }
 
 const VALID_OUTPUT = {
@@ -127,6 +135,7 @@ describe('analyzeEmailForSuggestions', () => {
     mocks.mockHasGmailScope.mockReturnValue(true)
     mocks.mockGetOAuthClient.mockResolvedValue(FAKE_OAUTH_CLIENT)
     mocks.mockGetMessageFull.mockResolvedValue(FAKE_MESSAGE)
+    mocks.mockGetThreadMessages.mockResolvedValue([FAKE_MESSAGE])
     mocks.mockAnalyzeEmail.mockResolvedValue({ ok: true, output: VALID_OUTPUT })
   })
 
@@ -227,6 +236,7 @@ describe('analyzeEmailForSuggestions', () => {
     mocks.mockGetCurrentUser.mockResolvedValueOnce(SUPER_ADMIN_USER)
     mocks.mockGetOAuthClient.mockResolvedValueOnce(FAKE_OAUTH_CLIENT)
     mocks.mockGetMessageFull.mockResolvedValueOnce(FAKE_MESSAGE)
+    mocks.mockGetThreadMessages.mockResolvedValueOnce([FAKE_MESSAGE])
     mocks.mockAnalyzeEmail.mockResolvedValueOnce({ ok: true, output: VALID_OUTPUT })
     await analyzeEmailForSuggestions('msg-1')
 
@@ -234,6 +244,7 @@ describe('analyzeEmailForSuggestions', () => {
     mocks.mockGetCurrentUser.mockResolvedValueOnce(UM_USER)
     mocks.mockGetOAuthClient.mockResolvedValueOnce(FAKE_OAUTH_CLIENT)
     mocks.mockGetMessageFull.mockResolvedValueOnce(FAKE_MESSAGE)
+    mocks.mockGetThreadMessages.mockResolvedValueOnce([FAKE_MESSAGE])
     mocks.mockAnalyzeEmail.mockResolvedValueOnce({ ok: true, output: VALID_OUTPUT })
     await analyzeEmailForSuggestions('msg-2')
 
