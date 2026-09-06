@@ -119,7 +119,9 @@ CLASSIFICATION RULES:
 - Omit rather than invent. If uncertain whether something is actionable, omit it.
 
 DATES AND TIMES:
-- The email date and current reference date are provided. Use them to resolve relative language ("Friday", "next week", "tomorrow") into ISO dates or timestamps.
+- The email date and current reference date are provided. Use them to resolve relative language ("Friday", "next week", "tomorrow") to concrete dates.
+- If a date is mentioned but NO specific time is stated, use YYYY-MM-DD format (e.g. "2026-09-09"). Do NOT add T00:00:00Z or any time suffix — that invents a time that was not in the email.
+- If a specific time is also stated (e.g. "9 Sept at 14:00"), use a full UTC ISO timestamp (e.g. "2026-09-09T12:00:00Z" for 14:00 Copenhagen time).
 - Only include dates you can resolve with reasonable confidence given the reference date.
 - If a date or time cannot be resolved confidently, set the field to null.
 - Do not hallucinate dates, times, or venues.

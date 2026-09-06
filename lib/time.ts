@@ -97,6 +97,28 @@ export function utcToWall(utcIso: string | null): string {
 }
 
 /**
+ * Converts an AI suggestion `due_at` value to a Copenhagen wall-clock string
+ * for populating a datetime-local input ("YYYY-MM-DDTHH:MM").
+ *
+ * Two formats are handled:
+ *   YYYY-MM-DD (date-only, length 10)
+ *     → "YYYY-MM-DDT00:00"  (midnight local — no UTC conversion)
+ *     Avoids fake timezone-shifted times (e.g. 02:00 from midnight UTC in CEST).
+ *
+ *   Full ISO timestamp (e.g. "2026-09-09T12:00:00.000Z")
+ *     → utcToWall(iso)  (UTC → Copenhagen wall time)
+ *
+ * Returns "" for null input.
+ */
+export function suggestionDueToWall(dueAt: string | null): string {
+  if (!dueAt) return ''
+  // Date-only (YYYY-MM-DD): set midnight local — no UTC conversion
+  if (dueAt.length === 10) return `${dueAt}T00:00`
+  // Full ISO timestamp: convert UTC → Copenhagen wall time
+  return utcToWall(dueAt)
+}
+
+/**
  * Format a UTC ISO string for display as Europe/Copenhagen local time.
  * Returns null for null/undefined input.
  *

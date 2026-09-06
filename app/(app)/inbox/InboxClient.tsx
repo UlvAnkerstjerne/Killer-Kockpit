@@ -21,7 +21,7 @@ import {
   kindBadgeClass,
   suggestionDetails,
 } from '@/lib/ai/email-suggestion-display'
-import { utcToWall } from '@/lib/time'
+import { utcToWall, suggestionDueToWall } from '@/lib/time'
 import { resolveTaskOwner, priorityFromHint } from '@/lib/ai/task-suggestion-prefill'
 import { resolveWaitingFor } from '@/lib/ai/wo-suggestion-prefill'
 
@@ -353,7 +353,7 @@ export default function InboxClient({
     setTaskStatus('open')
     setTaskDueAt(
       suggestion?.due_at
-        ? utcToWall(suggestion.due_at)
+        ? suggestionDueToWall(suggestion.due_at)
         : (deadlineHint?.dueDate ? toDatetimeLocal(deadlineHint.dueDate) : ''),
     )
     setFormError(null)
@@ -378,7 +378,7 @@ export default function InboxClient({
         setWoForUserId('')
         setWoForName('')
       }
-      setWoDueAt(suggestion.due_at ? utcToWall(suggestion.due_at) : '')
+      setWoDueAt(suggestionDueToWall(suggestion.due_at))
     } else {
       setWoUseExternal(true)
       setWoForUserId('')

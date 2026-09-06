@@ -53,7 +53,7 @@ const TaskSuggestionSchema = z.object({
   reason:        z.string(),
   evidence:      z.string().nullable(),
   responsible:   ResponsibilitySchema,
-  /** ISO timestamp — only when explicitly stated. */
+  /** YYYY-MM-DD when only a date is mentioned; full UTC ISO timestamp when a specific time is stated. */
   due_at:        z.string().nullable(),
   priority_hint: z.enum(['high', 'normal', 'low']).nullable(),
 })
@@ -65,7 +65,7 @@ const WaitingOnSuggestionSchema = z.object({
   evidence:          z.string().nullable(),
   /** Person or organisation being waited on — free text, not a KK user ID. */
   waiting_for_name:  z.string().nullable(),
-  /** ISO timestamp — only when explicitly stated. */
+  /** YYYY-MM-DD when only a date is mentioned; full UTC ISO timestamp when a specific time is stated. */
   due_at:            z.string().nullable(),
 })
 
