@@ -34,41 +34,23 @@ import { canAccessManagementView } from '@/lib/permissions'
 import { createClient }            from '@/lib/supabase/server'
 import { analyzeCapture as runAI } from '@/lib/ai/analyze-capture'
 import type { KkUpdateEntityType } from '@/lib/types'
-import type { CandidateEntityRef } from '@/lib/ai/capture-analysis-schema'
+import { resolveEntityRef }        from './capture-resolve'
+import type {
+  EnrichedEntityRef,
+  ResolvedEntityRef,
+  AmbiguousEntityRef,
+  NotFoundEntityRef,
+} from './capture-resolve'
+
+// Re-export types for consumers (type exports are allowed from 'use server' files).
+export type { ResolvedEntityRef, AmbiguousEntityRef, NotFoundEntityRef, EnrichedEntityRef }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_RAW_TEXT_LENGTH = 5_000
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-// ─── Enriched output types ────────────────────────────────────────────────────
-
-export type ResolvedEntityRef = {
-  entity_type:  KkUpdateEntityType
-  name_hint:    string
-  status:       'resolved'
-  entity_id:    string
-  display_name: string
-  match_kind:   'exact' | 'partial'
-}
-
-export type AmbiguousEntityRef = {
-  entity_type: KkUpdateEntityType
-  name_hint:   string
-  status:      'ambiguous'
-  candidates:  { entity_id: string; display_name: string }[]
-}
-
-export type NotFoundEntityRef = {
-  entity_type: KkUpdateEntityType
-  name_hint:   string
-  status:      'not_found'
-}
-
-export type EnrichedEntityRef =
-  | ResolvedEntityRef
-  | AmbiguousEntityRef
-  | NotFoundEntityRef
+// ─── Output types ─────────────────────────────────────────────────────────────
 
 export interface EnrichedCandidateUpdate {
   body:         string
@@ -81,118 +63,6 @@ export interface EnrichedCandidateUpdate {
 /** Returns today's date in Europe/Copenhagen as YYYY-MM-DD. */
 function todayInCopenhagen(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Copenhagen' }).format(new Date())
-}
-
-/** Normalises a string for comparison: lowercase and trim. */
-function norm(s: string): string {
-  return s.toLowerCase().trim()
-}
-
-interface PoolEntry {
-  entity_id:    string
-  display_name: string
-  /** Secondary searchable name (e.g. short_name for locations). */
-  alt_name?:    string
-}
-
-function buildPool(
-  entityType: KkUpdateEntityType,
-  projects:   { id: string; title: string }[],
-  employees:  { id: string; name: string }[],
-  locations:  { id: string; name: string; short_name: string | null }[],
-): PoolEntry[] {
-  if (entityType === 'project') {
-    return projects.map(p => ({ entity_id: p.id, display_name: p.title }))
-  }
-  if (entityType === 'employee') {
-    return employees.map(e => ({ entity_id: e.id, display_name: e.name }))
-  }
-  // location
-  return locations.map(l => ({
-    entity_id:    l.id,
-    display_name: l.name,
-    alt_name:     l.short_name ?? undefined,
-  }))
-}
-
-function matchesExact(entry: PoolEntry, hint: string): boolean {
-  return (
-    norm(entry.display_name) === hint ||
-    (entry.alt_name !== undefined && norm(entry.alt_name) === hint)
-  )
-}
-
-function matchesPartial(entry: PoolEntry, hint: string): boolean {
-  const dn = norm(entry.display_name)
-  const an = entry.alt_name !== undefined ? norm(entry.alt_name) : null
-  return (
-    dn.includes(hint) ||
-    hint.includes(dn) ||
-    (an !== null && (an.includes(hint) || hint.includes(an)))
-  )
-}
-
-export function resolveEntityRef(
-  ref: CandidateEntityRef,
-  projects:  { id: string; title: string }[],
-  employees: { id: string; name: string }[],
-  locations: { id: string; name: string; short_name: string | null }[],
-): EnrichedEntityRef {
-  const pool = buildPool(ref.entity_type, projects, employees, locations)
-  const hint = norm(ref.name_hint)
-
-  // ── Exact match ────────────────────────────────────────────────────────────
-  const exact = pool.filter(e => matchesExact(e, hint))
-
-  if (exact.length === 1) {
-    return {
-      entity_type:  ref.entity_type,
-      name_hint:    ref.name_hint,
-      status:       'resolved',
-      entity_id:    exact[0].entity_id,
-      display_name: exact[0].display_name,
-      match_kind:   'exact',
-    }
-  }
-
-  if (exact.length > 1) {
-    return {
-      entity_type: ref.entity_type,
-      name_hint:   ref.name_hint,
-      status:      'ambiguous',
-      candidates:  exact.map(e => ({ entity_id: e.entity_id, display_name: e.display_name })),
-    }
-  }
-
-  // ── Partial match ──────────────────────────────────────────────────────────
-  const partial = pool.filter(e => matchesPartial(e, hint))
-
-  if (partial.length === 1) {
-    return {
-      entity_type:  ref.entity_type,
-      name_hint:    ref.name_hint,
-      status:       'resolved',
-      entity_id:    partial[0].entity_id,
-      display_name: partial[0].display_name,
-      match_kind:   'partial',
-    }
-  }
-
-  if (partial.length > 1) {
-    return {
-      entity_type: ref.entity_type,
-      name_hint:   ref.name_hint,
-      status:      'ambiguous',
-      candidates:  partial.map(e => ({ entity_id: e.entity_id, display_name: e.display_name })),
-    }
-  }
-
-  // ── Not found ──────────────────────────────────────────────────────────────
-  return {
-    entity_type: ref.entity_type,
-    name_hint:   ref.name_hint,
-    status:      'not_found',
-  }
 }
 
 // ─── Server action ────────────────────────────────────────────────────────────
@@ -210,7 +80,7 @@ export function resolveEntityRef(
 export async function analyzeCapture(
   rawText:     string,
   occurredOn?: string | null,
-): Promise<{ data: EnrichedCandidateUpdate[] } | { error: string }> {
+): Promise<{ data: EnrichedCandidateUpdate[]; analysisNote: string | null } | { error: string }> {
 
   // ── 1. Authenticate ────────────────────────────────────────────────────────
   const user = await getCurrentUser()
@@ -285,5 +155,84 @@ export async function analyzeCapture(
     ),
   }))
 
-  return { data: enriched }
+  return { data: enriched, analysisNote: aiResult.output.analysis_note }
+}
+
+// ─── searchCaptureEntities ────────────────────────────────────────────────────
+
+export type CaptureEntityResult = {
+  entity_type: KkUpdateEntityType
+  entity_id:   string
+  display_name: string
+}
+
+/**
+ * Authenticated read-only entity search for the Quick Capture review UI.
+ *
+ * Returns active employees, locations, and/or projects matching the query.
+ * Uses case-insensitive partial text matching (ilike).  No semantic search.
+ *
+ * @param query       Search string (1–100 chars)
+ * @param entityType  When provided, restricts to that entity type only.
+ */
+export async function searchCaptureEntities(
+  query:       string,
+  entityType?: KkUpdateEntityType,
+): Promise<{ data: CaptureEntityResult[] } | { error: string }> {
+
+  // ── Auth + gate ────────────────────────────────────────────────────────────
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canAccessManagementView(user.role)) return { error: 'Access denied.' }
+
+  // ── Input validation ───────────────────────────────────────────────────────
+  const q = query.trim()
+  if (!q) return { data: [] }
+  if (q.length > 100) return { error: 'Search query too long.' }
+
+  const supabase = await createClient()
+  const LIMIT    = 8
+  const types: KkUpdateEntityType[] = entityType ? [entityType] : ['employee', 'location', 'project']
+
+  const results: CaptureEntityResult[] = []
+
+  await Promise.all(types.map(async (type) => {
+    if (type === 'employee') {
+      const { data } = await supabase
+        .from('employees')
+        .select('id, name')
+        .eq('employment_status', 'active')
+        .ilike('name', `%${q}%`)
+        .order('name')
+        .limit(LIMIT)
+      for (const e of data ?? []) {
+        results.push({ entity_type: 'employee', entity_id: e.id, display_name: e.name })
+      }
+    } else if (type === 'location') {
+      const { data } = await supabase
+        .from('locations')
+        .select('id, name')
+        .eq('active', true)
+        .or(`name.ilike.%${q}%,short_name.ilike.%${q}%`)
+        .order('name')
+        .limit(LIMIT)
+      for (const l of data ?? []) {
+        results.push({ entity_type: 'location', entity_id: l.id, display_name: l.name })
+      }
+    } else {
+      const { data } = await supabase
+        .from('projects')
+        .select('id, title')
+        .is('archived_at', null)
+        .not('status', 'in', '("completed","archived","cancelled")')
+        .ilike('title', `%${q}%`)
+        .order('title')
+        .limit(LIMIT)
+      for (const p of data ?? []) {
+        results.push({ entity_type: 'project', entity_id: p.id, display_name: p.title })
+      }
+    }
+  }))
+
+  return { data: results.slice(0, LIMIT) }
 }

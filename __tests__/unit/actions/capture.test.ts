@@ -44,9 +44,10 @@ import { createClient }            from '@/lib/supabase/server'
 import { analyzeCapture as mockRunAI } from '@/lib/ai/analyze-capture'
 import {
   analyzeCapture,
-  resolveEntityRef,
+  searchCaptureEntities,
   type EnrichedCandidateUpdate,
 } from '@/lib/actions/capture'
+import { resolveEntityRef } from '@/lib/actions/capture-resolve'
 
 const mockGetCurrentUser       = getCurrentUser          as ReturnType<typeof vi.fn>
 const mockCanAccessManagement  = canAccessManagementView as ReturnType<typeof vi.fn>
@@ -539,5 +540,132 @@ describe('analyzeCapture — security: entity context passed to AI', () => {
     expect(aiCallCtx).toHaveProperty('locations')
     // The raw text passed through intact
     expect(aiCallCtx.rawText).toBe('Some note')
+  })
+})
+
+// ── analyzeCapture — analysisNote threading ───────────────────────────────────
+
+describe('analyzeCapture — analysisNote', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns analysisNote: null when AI returns null', async () => {
+    setupHappy()
+    const result = await analyzeCapture('Some note')
+    expect(result).toHaveProperty('analysisNote', null)
+  })
+
+  it('returns analysisNote: string when AI returns one', async () => {
+    mockGetCurrentUser.mockResolvedValue(MANAGER_USER)
+    mockCanAccessManagement.mockReturnValue(true)
+    mockCreateClient.mockResolvedValue(makeSupabase())
+    mockAI.mockResolvedValue({
+      ok: true,
+      output: {
+        candidates: [],
+        analysis_note: 'Note contained only action items — no facts extracted.',
+      },
+    })
+
+    const result = await analyzeCapture('Ahmed needs to submit the form.')
+    expect(result).toHaveProperty('analysisNote', 'Note contained only action items — no facts extracted.')
+  })
+})
+
+// ── searchCaptureEntities — authentication ────────────────────────────────────
+
+describe('searchCaptureEntities — authentication', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns error when not authenticated', async () => {
+    mockGetCurrentUser.mockResolvedValue(null)
+    const result = await searchCaptureEntities('Ahmed')
+    expect(result).toHaveProperty('error')
+    expect((result as { error: string }).error).toMatch(/not authenticated/i)
+  })
+})
+
+// ── searchCaptureEntities — role gate ─────────────────────────────────────────
+
+describe('searchCaptureEntities — role gate', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns error for MEMBER role', async () => {
+    mockGetCurrentUser.mockResolvedValue(MEMBER_USER)
+    mockCanAccessManagement.mockReturnValue(false)
+    const result = await searchCaptureEntities('Ahmed')
+    expect(result).toHaveProperty('error')
+    expect((result as { error: string }).error).toMatch(/access denied/i)
+  })
+})
+
+// ── searchCaptureEntities — input validation ──────────────────────────────────
+
+describe('searchCaptureEntities — input validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetCurrentUser.mockResolvedValue(MANAGER_USER)
+    mockCanAccessManagement.mockReturnValue(true)
+  })
+
+  it('returns empty data for blank query', async () => {
+    const result = await searchCaptureEntities('   ')
+    expect(result).toHaveProperty('data')
+    expect((result as { data: unknown[] }).data).toHaveLength(0)
+  })
+
+  it('returns error for query exceeding 100 characters', async () => {
+    const result = await searchCaptureEntities('a'.repeat(101))
+    expect(result).toHaveProperty('error')
+    expect((result as { error: string }).error).toMatch(/too long/i)
+  })
+
+  it('accepts a query of exactly 100 characters', async () => {
+    const terminal = { order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }
+    const chain: Record<string, () => unknown> = {
+      select: () => chain, eq: () => chain, is: () => chain,
+      not: () => chain, ilike: () => terminal, or: () => terminal,
+    }
+    mockCreateClient.mockResolvedValue({ from: vi.fn(() => chain) })
+    const result = await searchCaptureEntities('a'.repeat(100))
+    expect(result).not.toHaveProperty('error')
+  })
+})
+
+// ── searchCaptureEntities — entity type filter ────────────────────────────────
+
+describe('searchCaptureEntities — entity type filter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetCurrentUser.mockResolvedValue(MANAGER_USER)
+    mockCanAccessManagement.mockReturnValue(true)
+  })
+
+  function makeSearchSupabase(results: { id: string; name?: string; title?: string }[]) {
+    const terminal = { order: () => ({ limit: () => Promise.resolve({ data: results, error: null }) }) }
+    const chain: Record<string, () => unknown> = {
+      select: () => chain,
+      eq:     () => chain,
+      is:     () => chain,
+      not:    () => chain,
+      ilike:  () => terminal,
+      or:     () => terminal,
+    }
+    return { from: vi.fn(() => chain) }
+  }
+
+  it('queries only employees when entityType is employee', async () => {
+    const supabase = makeSearchSupabase([{ id: 'emp-1', name: 'Ahmed Al-Rashid' }])
+    mockCreateClient.mockResolvedValue(supabase)
+    const result = await searchCaptureEntities('Ahmed', 'employee')
+    expect(result).not.toHaveProperty('error')
+    // Only one from() call (employees only)
+    expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1)
+  })
+
+  it('queries all three tables when no entityType is given', async () => {
+    const supabase = makeSearchSupabase([])
+    mockCreateClient.mockResolvedValue(supabase)
+    await searchCaptureEntities('test')
+    expect((supabase.from as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3)
   })
 })

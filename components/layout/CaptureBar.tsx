@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AppUser, ViewMode } from '@/lib/types'
-import { canCreateDecision } from '@/lib/permissions'
+import { canCreateDecision, canAccessManagementView } from '@/lib/permissions'
 import QuickCreateModal from './QuickCreateModal'
+import QuickCaptureModal from '@/components/capture/QuickCaptureModal'
 
 type CaptureType = 'task' | 'project' | 'waiting-on' | 'decision'
 
@@ -16,7 +17,28 @@ export default function CaptureBar({
   inline?: boolean
 }) {
   const [open, setOpen] = useState<CaptureType | null>(null)
+  const [captureOpen, setCaptureOpen] = useState(false)
   const canDecide = canCreateDecision(user.role)
+  const canCapture = canAccessManagementView(user.role)
+
+  useEffect(() => {
+    if (!canCapture) return
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyC')) return
+      const target = e.target as HTMLElement
+      const tag = target.tagName.toLowerCase()
+      if (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        target.isContentEditable
+      ) return
+      e.preventDefault()
+      setCaptureOpen(true)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [canCapture])
 
   const buttons = (
     <div className={inline ? 'flex items-center gap-2' : 'border-b border-kk-line bg-kk-bg px-7 py-3 flex items-center gap-2'}>
@@ -54,6 +76,15 @@ export default function CaptureBar({
           + Note
         </button>
       )}
+      {canCapture && (
+        <button
+          onClick={() => setCaptureOpen(true)}
+          className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
+          title="Quick Capture (⌘⇧C)"
+        >
+          + Capture
+        </button>
+      )}
     </div>
   )
 
@@ -66,6 +97,9 @@ export default function CaptureBar({
           user={user}
           onClose={() => setOpen(null)}
         />
+      )}
+      {captureOpen && (
+        <QuickCaptureModal onClose={() => setCaptureOpen(false)} />
       )}
     </>
   )
