@@ -1,4 +1,9 @@
 export type KKRole = 'SUPER_ADMIN' | 'UM' | 'MEMBER'
+export type NotificationType =
+  | 'task.assigned'
+  | 'task.submitted_for_review'
+  | 'task.sent_back'
+  | 'task.approved'
 export type TodoStatus = 'open' | 'completed' | 'cancelled'
 export type ProjectStatus = 'planned' | 'active' | 'at_risk' | 'blocked' | 'completed' | 'archived' | 'cancelled'
 export type TaskStatus = 'proposed' | 'open' | 'in_progress' | 'blocked' | 'pending_review' | 'done' | 'cancelled'
