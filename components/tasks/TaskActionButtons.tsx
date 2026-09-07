@@ -167,7 +167,7 @@ export default function TaskActionButtons({
     if (userIsResponsible) {
       return (
         <p className="text-xs text-kk-muted">
-          Awaiting review by the requester.
+          Awaiting review by the owner.
         </p>
       )
     }
@@ -176,7 +176,7 @@ export default function TaskActionButtons({
     if (isSuperAdmin) {
       return (
         <div className="space-y-3">
-          <p className="text-xs text-kk-muted">You are not the requester or responsible party.</p>
+          <p className="text-xs text-kk-muted">You are not the owner or responsible party.</p>
           <div className="border-t border-kk-line pt-3">
             <p className="text-[10px] font-semibold text-kk-muted uppercase tracking-wide mb-2">Admin actions</p>
             {!showSendBack ? (

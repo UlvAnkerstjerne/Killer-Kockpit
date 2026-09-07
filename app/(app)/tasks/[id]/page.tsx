@@ -137,7 +137,7 @@ export default async function TaskDetailPage({
             {isReturned && (
               <div className="px-5 py-3 bg-amber-50 border-b border-amber-200">
                 <p className="text-xs font-semibold text-amber-800 mb-0.5">
-                  Returned by {returnedBy?.display_name || 'requester'}
+                  Returned by {returnedBy?.display_name || 'owner'}
                 </p>
                 {task.latest_review_note ? (
                   <p className="text-sm text-amber-900">{task.latest_review_note}</p>
@@ -207,7 +207,7 @@ export default async function TaskDetailPage({
           <div className="bg-kk-panel border border-kk-line rounded-2xl p-4 space-y-3">
             {/* Two-role display — always explicit regardless of self-assignment */}
             <div>
-              <div className="text-xs text-kk-muted mb-0.5">Requested by</div>
+              <div className="text-xs text-kk-muted mb-0.5">Owner</div>
               <div className="text-sm font-semibold text-kk-ink">{creator?.display_name || '—'}</div>
             </div>
             <div>
