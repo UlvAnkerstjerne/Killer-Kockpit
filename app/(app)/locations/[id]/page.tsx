@@ -6,6 +6,7 @@ import { canManageLocations, canAccessManagementView } from '@/lib/permissions'
 import { updateLocation } from '@/lib/actions/locations'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { getUpdatesForEntity } from '@/lib/actions/updates'
+import { getEmployeesForLocation } from '@/lib/actions/employee-locations'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import EntityUpdatesSection from '@/components/updates/EntityUpdatesSection'
 
@@ -24,7 +25,7 @@ export default async function LocationDetailPage({
   const supabase = await createClient()
 
   // Fetch location + any linked GBP location + gmail sources
-  const [locResult, gbpResult, gmailSourcesResult, updatesResult] = await Promise.all([
+  const [locResult, gbpResult, gmailSourcesResult, updatesResult, peopleResult] = await Promise.all([
     supabase
       .from('locations')
       .select('*')
@@ -36,6 +37,7 @@ export default async function LocationDetailPage({
       .eq('location_id', id),
     getEntityGmailSources('location', id),
     getUpdatesForEntity('location', id),
+    getEmployeesForLocation(id),
   ])
 
   if (locResult.error || !locResult.data) notFound()
@@ -44,6 +46,7 @@ export default async function LocationDetailPage({
   const gbpLinked        = gbpResult.data ?? []
   const gmailSources     = gmailSourcesResult.data ?? []
   const locationUpdates  = updatesResult.data ?? []
+  const locationPeople   = peopleResult.data ?? []
   const canManageUpdates = canAccessManagementView(user.role)
 
   async function handleUpdate(formData: FormData) {
@@ -93,6 +96,41 @@ export default async function LocationDetailPage({
             initialUpdates={locationUpdates}
             canAddUpdate={canManageUpdates}
           />
+        </div>
+      )}
+
+      {/* People — who is assigned to this location (read-only; edit from Person detail) */}
+      {canManageUpdates && (
+        <div className="mb-4">
+          <div className="bg-kk-panel border border-kk-line rounded-2xl">
+            <div className="px-5 py-4 border-b border-kk-line">
+              <h2 className="text-sm font-semibold text-kk-ink">People</h2>
+            </div>
+            <div>
+              {locationPeople.length === 0 ? (
+                <p className="px-5 py-4 text-sm text-kk-muted">No people assigned to this location.</p>
+              ) : (
+                locationPeople.map((person) => (
+                  <div
+                    key={person.employee_id}
+                    className="flex items-center justify-between px-5 py-3 border-b border-kk-line last:border-b-0"
+                  >
+                    <div>
+                      <Link
+                        href={`/people/${person.employee_id}`}
+                        className="text-sm text-kk-ink hover:underline"
+                      >
+                        {person.name}
+                      </Link>
+                      {person.role_title && (
+                        <p className="text-xs text-kk-muted mt-0.5">{person.role_title}</p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       )}
 

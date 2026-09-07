@@ -6,8 +6,10 @@ import { canManagePeople, canAccessManagementView } from '@/lib/permissions'
 import { updateEmployee } from '@/lib/actions/employees'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { getUpdatesForEntity } from '@/lib/actions/updates'
+import { getLocationsForEmployee } from '@/lib/actions/employee-locations'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import EntityUpdatesSection from '@/components/updates/EntityUpdatesSection'
+import EmployeeLocationsSection from '@/components/people/EmployeeLocationsSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +40,7 @@ export default async function PersonDetailPage({
     getActiveUsers(),
   ])
 
-  const [empResult, gmailSourcesResult, updatesResult] = await Promise.all([
+  const [empResult, gmailSourcesResult, updatesResult, locationsResult, allLocResult] = await Promise.all([
     supabase
       .from('employees')
       .select(`
@@ -50,13 +52,21 @@ export default async function PersonDetailPage({
       .single(),
     getEntityGmailSources('employee', id),
     getUpdatesForEntity('employee', id),
+    getLocationsForEmployee(id),
+    supabase
+      .from('locations')
+      .select('id, name, short_name')
+      .eq('active', true)
+      .order('name'),
   ])
 
   const { data: emp, error } = empResult
   if (error || !emp) notFound()
 
-  const gmailSources    = gmailSourcesResult.data ?? []
-  const employeeUpdates = updatesResult.data ?? []
+  const gmailSources     = gmailSourcesResult.data ?? []
+  const employeeUpdates  = updatesResult.data ?? []
+  const currentLocations = locationsResult.data ?? []
+  const allLocations     = allLocResult.data ?? []
   const canManageUpdates = canAccessManagementView(user.role)
   const linkedUser = Array.isArray(emp.linked_user) ? emp.linked_user[0] : emp.linked_user
   const manager    = Array.isArray(emp.manager)      ? emp.manager[0]     : emp.manager
@@ -110,6 +120,18 @@ export default async function PersonDetailPage({
             entityId={emp.id}
             initialUpdates={employeeUpdates}
             canAddUpdate={canManageUpdates}
+          />
+        </div>
+      )}
+
+      {/* Locations — canonical store/location assignments */}
+      {canManageUpdates && (
+        <div className="mb-4">
+          <EmployeeLocationsSection
+            employeeId={emp.id}
+            initialLocations={currentLocations}
+            allLocations={allLocations}
+            canManage={canManageUpdates}
           />
         </div>
       )}
