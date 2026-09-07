@@ -27,6 +27,25 @@ import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 
 // ---------------------------------------------------------------------------
+// Pure helpers — exported for unit testing
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when a keydown event on the notes textarea should trigger
+ * To-Do creation: Enter (without Shift), not composing, non-blank title,
+ * and no submission already in progress.
+ */
+export function shouldSubmitOnEnter(
+  key: string,
+  shiftKey: boolean,
+  isComposing: boolean,
+  title: string,
+  isPending: boolean,
+): boolean {
+  return key === 'Enter' && !shiftKey && !isComposing && !!title.trim() && !isPending
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -96,9 +115,8 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (!title.trim()) return
+  async function submitCreate() {
+    if (!title.trim() || isPending) return
     setCreateError(null)
 
     const result = await createTodo(
@@ -119,6 +137,11 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
     setShowNotes(false)
     startTransition(() => router.refresh())
     inputRef.current?.focus()
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    await submitCreate()
   }
 
   async function handleAction(action: () => Promise<{ error?: string }>) {
@@ -298,7 +321,13 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
             <textarea
               value={createNotes}
               onChange={e => setCreateNotes(e.target.value)}
-              placeholder="Add a note…"
+              onKeyDown={e => {
+                if (shouldSubmitOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing, title, isPending)) {
+                  e.preventDefault()
+                  submitCreate()
+                }
+              }}
+              placeholder="Add a note… (Enter to add, Shift+Enter for newline)"
               rows={2}
               className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-2 outline-none resize-none placeholder:text-kk-muted"
               disabled={isPending}
