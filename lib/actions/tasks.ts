@@ -12,7 +12,6 @@ import {
   isAdminOverride,
 } from '@/lib/permissions'
 import type { TaskStatus, TaskPriority, ActionResult } from '@/lib/types'
-import { createTaskNotification } from '@/lib/actions/notify-task'
 
 type TaskInput = {
   title: string
@@ -45,16 +44,6 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
   if (error) {
     console.error('[createTask]', error)
     return { error: 'Failed to create task. Please try again.' }
-  }
-
-  const resolvedOwnerId = input.owner_user_id || user.id
-  if (resolvedOwnerId !== user.id) {
-    await createTaskNotification({
-      type:            'task.assigned',
-      taskId:          taskId as string,
-      recipientUserId: resolvedOwnerId,
-      actorUserId:     user.id,
-    })
   }
 
   revalidatePath('/tasks')
@@ -119,15 +108,6 @@ export async function updateTask(
   if (error) {
     console.error('[updateTask]', error)
     return { error: 'Failed to save changes. Please try again.' }
-  }
-
-  if (patch.owner_user_id) {
-    await createTaskNotification({
-      type:            'task.assigned',
-      taskId,
-      recipientUserId: patch.owner_user_id as string,
-      actorUserId:     user.id,
-    })
   }
 
   revalidatePath('/tasks')
@@ -236,15 +216,6 @@ export async function submitTaskForReview(taskId: string): Promise<ActionResult>
 
   if (error) return { error: 'Failed to submit task for review.' }
 
-  if (current.created_by_user_id) {
-    await createTaskNotification({
-      type:            'task.submitted_for_review',
-      taskId,
-      recipientUserId: current.created_by_user_id,
-      actorUserId:     user.id,
-    })
-  }
-
   revalidatePath('/tasks')
   revalidatePath(`/tasks/${taskId}`)
   revalidatePath('/today')
@@ -259,7 +230,7 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: current, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, owner_user_id, created_by_user_id, status, project_id')
+    .select('id, created_by_user_id, status, project_id')
     .eq('id', taskId)
     .single()
 
@@ -282,15 +253,6 @@ export async function approveTask(taskId: string): Promise<ActionResult> {
 
   if (error) return { error: 'Failed to approve task.' }
 
-  if (current.owner_user_id) {
-    await createTaskNotification({
-      type:            'task.approved',
-      taskId,
-      recipientUserId: current.owner_user_id,
-      actorUserId:     user.id,
-    })
-  }
-
   revalidatePath('/tasks')
   revalidatePath(`/tasks/${taskId}`)
   revalidatePath('/today')
@@ -305,7 +267,7 @@ export async function sendTaskBack(taskId: string, reviewNote: string): Promise<
   const supabase = await createClient()
   const { data: current, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, owner_user_id, created_by_user_id, status, project_id')
+    .select('id, created_by_user_id, status, project_id')
     .eq('id', taskId)
     .single()
 
@@ -327,15 +289,6 @@ export async function sendTaskBack(taskId: string, reviewNote: string): Promise<
   })
 
   if (error) return { error: 'Failed to send task back.' }
-
-  if (current.owner_user_id) {
-    await createTaskNotification({
-      type:            'task.sent_back',
-      taskId,
-      recipientUserId: current.owner_user_id,
-      actorUserId:     user.id,
-    })
-  }
 
   revalidatePath('/tasks')
   revalidatePath(`/tasks/${taskId}`)
