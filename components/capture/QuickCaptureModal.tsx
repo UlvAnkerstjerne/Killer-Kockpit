@@ -3,26 +3,39 @@
 /**
  * components/capture/QuickCaptureModal.tsx
  *
- * Quick Capture modal — M8B4.
+ * Quick Capture modal — M8B4 UI + M8B5 persistence.
  *
  * State machine:
- *   capture → analysing → review
- *                ↓           ↓ (Back)
- *              error   ← capture
+ *   capture → analysing → review  ←→  (Back)
+ *                ↓           ↓ Save
+ *              error     [saving…]
+ *                          ↓ all ok
+ *                       (closes)
  *
- * NOTE: M8B4 does NOT wire createUpdate.  The review footer has Back/Close only.
- * The real Save action is added in M8B5 once this UI is approved.
+ * Partial failure: modal stays open; saved candidates show "Saved" badge
+ * and are locked from editing; failed candidates remain editable with a
+ * safe error and a Retry action.
  *
  * Privacy contract:
- *   • Raw note text lives only in client state — never persisted here.
- *   • analyzeCapture() handles server-side privacy; the component only renders
- *     the ephemeral enriched output.
- *   • createUpdate is NOT imported or called anywhere in this file.
+ *   • Raw note text lives only in client state — never persisted.
+ *   • analyzeCapture() handles server-side privacy; the component only
+ *     renders the ephemeral enriched output.
+ *   • saveApprovedCaptures() receives ONLY human-reviewed body / date /
+ *     canonical entity links — never raw_text, analysis_note, or author id.
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { analyzeCapture, searchCaptureEntities } from '@/lib/actions/capture'
-import type { EnrichedCandidateUpdate, EnrichedEntityRef, CaptureEntityResult } from '@/lib/actions/capture'
+import { useRouter }                    from 'next/navigation'
+import {
+  analyzeCapture,
+  searchCaptureEntities,
+  saveApprovedCaptures,
+} from '@/lib/actions/capture'
+import type {
+  EnrichedCandidateUpdate,
+  EnrichedEntityRef,
+  CaptureEntityResult,
+} from '@/lib/actions/capture'
 import type { KkUpdateEntityType } from '@/lib/types'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -49,6 +62,8 @@ export interface CandidateUI {
   occurredOn:  string | null
   entityRefs:  EntityRefUI[]
 }
+
+export type SaveState = 'pending' | 'saving' | 'saved' | 'failed'
 
 // ─── Pure helpers (exported for tests) ───────────────────────────────────────
 
@@ -94,6 +109,39 @@ export function enrichedToUI(candidates: EnrichedCandidateUpdate[]): CandidateUI
 /** Returns true if a selected candidate has zero canonical entity links. */
 export function hasZeroLinks(candidate: CandidateUI): boolean {
   return candidate.selected && candidate.entityRefs.every(r => r.canonical === null)
+}
+
+/**
+ * Extracts canonical entity links from a candidate, deduplicating by
+ * (entity_type, entity_id). Only canonical refs are included — unresolved,
+ * ambiguous, and not-found refs are silently skipped.
+ */
+export function canonicalLinks(
+  c: CandidateUI,
+): { entity_type: KkUpdateEntityType; entity_id: string }[] {
+  const seen  = new Set<string>()
+  const links: { entity_type: KkUpdateEntityType; entity_id: string }[] = []
+  for (const ref of c.entityRefs) {
+    if (!ref.canonical) continue
+    const key = `${ref.canonical.entity_type}:${ref.canonical.entity_id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    links.push({ entity_type: ref.canonical.entity_type, entity_id: ref.canonical.entity_id })
+  }
+  return links
+}
+
+/**
+ * Validates a selected candidate for persistence.
+ * Returns null when valid; a human-readable error string when invalid.
+ */
+export function validateCandidateForSave(c: CandidateUI): string | null {
+  if (!c.body.trim()) return 'Update body must not be blank.'
+  if (canonicalLinks(c).length === 0) return 'Choose at least one person, location, or project.'
+  if (c.occurredOn !== null && !/^\d{4}-\d{2}-\d{2}$/.test(c.occurredOn)) {
+    return 'Date must be in YYYY-MM-DD format.'
+  }
+  return null
 }
 
 // ─── Entity type labels ───────────────────────────────────────────────────────
@@ -218,11 +266,13 @@ function EntityRefBlock({
   onResolveAmbiguous,
   onRemoveCanonical,
   onManualLink,
+  locked,
 }: {
   ref:                EntityRefUI
   onResolveAmbiguous: (entity: CanonicalEntity) => void
   onRemoveCanonical:  () => void
   onManualLink:       (entity: CaptureEntityResult) => void
+  locked:             boolean
 }) {
   const [showSearch, setShowSearch] = useState(false)
 
@@ -232,13 +282,15 @@ function EntityRefBlock({
       <span className="inline-flex items-center gap-1 text-xs bg-kk-soft border border-kk-line rounded px-2 py-0.5 text-kk-ink">
         <span className="text-[9px] text-kk-muted">{ENTITY_TYPE_LABEL[entityRef.canonical.entity_type]}</span>
         <span className="font-medium">{entityRef.canonical.display_name}</span>
-        <button
-          onClick={onRemoveCanonical}
-          className="text-kk-muted hover:text-kk-bad ml-0.5 leading-none"
-          aria-label={`Remove ${entityRef.canonical.display_name}`}
-        >
-          ×
-        </button>
+        {!locked && (
+          <button
+            onClick={onRemoveCanonical}
+            className="text-kk-muted hover:text-kk-bad ml-0.5 leading-none"
+            aria-label={`Remove ${entityRef.canonical.display_name}`}
+          >
+            ×
+          </button>
+        )}
       </span>
     )
   }
@@ -251,7 +303,7 @@ function EntityRefBlock({
           <span className="text-xs text-kk-muted italic">
             "{entityRef.name_hint}"?
           </span>
-          {entityRef.ambiguousCandidates.map(c => (
+          {!locked && entityRef.ambiguousCandidates.map(c => (
             <button
               key={c.entity_id}
               onClick={() => onResolveAmbiguous(c)}
@@ -274,7 +326,7 @@ function EntityRefBlock({
           <span>"{entityRef.name_hint}"</span>
           <span className="text-kk-muted/60">— not found</span>
         </span>
-        {!showSearch && (
+        {!locked && !showSearch && (
           <button
             onClick={() => setShowSearch(true)}
             className="text-[11px] text-kk-muted hover:text-kk-ink border border-dashed border-kk-line/60 rounded px-1.5 py-0.5 transition-colors"
@@ -300,13 +352,22 @@ function CandidateCard({
   candidate,
   onChange,
   isOnly,
+  saveState,
+  saveError,
+  locked,
 }: {
-  candidate: CandidateUI
-  onChange:  (updated: CandidateUI) => void
-  isOnly:    boolean
+  candidate:  CandidateUI
+  onChange:   (updated: CandidateUI) => void
+  isOnly:     boolean
+  saveState:  SaveState
+  saveError:  string | null
+  locked:     boolean
 }) {
   const [showAddEntity, setShowAddEntity] = useState(false)
-  const zeroLinks = hasZeroLinks(candidate)
+  const isSaved    = saveState === 'saved'
+  const isFailed   = saveState === 'failed'
+  const isEditable = !locked && !isSaved
+  const zeroLinks  = hasZeroLinks(candidate) && !isSaved
 
   function setBody(body: string) {
     onChange({ ...candidate, body })
@@ -358,20 +419,26 @@ function CandidateCard({
     <div
       className={[
         'border rounded-xl transition-colors',
-        candidate.selected
+        isSaved
+          ? 'border-green-200 bg-green-50/30 opacity-75'
+          : candidate.selected
           ? 'border-kk-line bg-white'
           : 'border-kk-line/50 bg-kk-soft/40 opacity-60',
       ].join(' ')}
     >
-      {/* Header row: checkbox + occurred_on */}
+      {/* Header row: checkbox + saved badge + occurred_on */}
       <div className="flex items-center gap-3 px-3 py-2.5 border-b border-kk-line/60">
         {!isOnly && (
           <input
             type="checkbox"
             checked={candidate.selected}
             onChange={toggleSelected}
-            className="rounded border-kk-line text-kk-ink focus:ring-0 focus:ring-offset-0 shrink-0"
+            disabled={!isEditable}
+            className="rounded border-kk-line text-kk-ink focus:ring-0 focus:ring-offset-0 shrink-0 disabled:opacity-40"
           />
+        )}
+        {isSaved && (
+          <span className="text-[10px] font-medium text-green-700">Saved</span>
         )}
         <div className="flex items-center gap-2 ml-auto">
           <label className="text-[10px] text-kk-muted shrink-0">When</label>
@@ -379,7 +446,7 @@ function CandidateCard({
             type="date"
             value={candidate.occurredOn ?? ''}
             onChange={e => setOccurredOn(e.target.value || null)}
-            disabled={!candidate.selected}
+            disabled={!isEditable || !candidate.selected}
             className="text-xs text-kk-ink bg-transparent border border-kk-line rounded px-2 py-0.5 focus:outline-none focus:border-kk-ink disabled:opacity-40"
           />
         </div>
@@ -390,7 +457,7 @@ function CandidateCard({
         <textarea
           value={candidate.body}
           onChange={e => setBody(e.target.value)}
-          disabled={!candidate.selected}
+          disabled={!isEditable || !candidate.selected}
           rows={2}
           className="w-full text-sm text-kk-ink bg-transparent resize-none focus:outline-none disabled:opacity-40 leading-relaxed"
         />
@@ -403,6 +470,7 @@ function CandidateCard({
             <EntityRefBlock
               key={`${ref.entity_type}-${ref.name_hint}-${refIndex}`}
               ref={ref}
+              locked={!isEditable || !candidate.selected}
               onResolveAmbiguous={entity =>
                 updateRef(refIndex, { ...ref, canonical: entity, ambiguousCandidates: [] })
               }
@@ -412,7 +480,7 @@ function CandidateCard({
           ))}
 
           {/* Add entity */}
-          {candidate.selected && !showAddEntity && (
+          {isEditable && candidate.selected && !showAddEntity && (
             <button
               onClick={() => setShowAddEntity(true)}
               className="text-[11px] text-kk-muted hover:text-kk-ink border border-dashed border-kk-line/60 rounded px-1.5 py-0.5 transition-colors"
@@ -423,7 +491,7 @@ function CandidateCard({
         </div>
       )}
 
-      {showAddEntity && (
+      {showAddEntity && isEditable && (
         <div className="px-3 pb-2.5">
           <EntitySearch
             onSelect={handleAddNewEntity}
@@ -432,7 +500,16 @@ function CandidateCard({
         </div>
       )}
 
-      {/* Zero-link warning */}
+      {/* Save failure error */}
+      {isFailed && saveError && (
+        <div className="px-3 pb-2.5">
+          <p className="text-[11px] text-kk-bad bg-red-50 rounded px-2 py-1">
+            {saveError}
+          </p>
+        </div>
+      )}
+
+      {/* Zero-link warning (not shown for saved candidates) */}
       {zeroLinks && (
         <div className="px-3 pb-2.5">
           <p className="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1">
@@ -449,6 +526,8 @@ function CandidateCard({
 type Phase = 'capture' | 'analysing' | 'review' | 'error'
 
 export default function QuickCaptureModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter()
+
   // Persistent across steps
   const [rawText,    setRawText]    = useState('')
   const [occurredOn, setOccurredOn] = useState<string>(() => todayCopenhagen())
@@ -458,8 +537,13 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   // Review
-  const [candidates,    setCandidates]    = useState<CandidateUI[]>([])
-  const [analysisNote,  setAnalysisNote]  = useState<string | null>(null)
+  const [candidates,   setCandidates]   = useState<CandidateUI[]>([])
+  const [analysisNote, setAnalysisNote] = useState<string | null>(null)
+
+  // Save state (per-candidate)
+  const [saving,     setSaving]     = useState(false)
+  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({})
+  const [saveErrors, setSaveErrors] = useState<Record<string, string>>({})
 
   // Refs
   const textareaRef  = useRef<HTMLTextAreaElement>(null)
@@ -472,14 +556,33 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
     }
   }, [phase])
 
-  // Escape closes modal (unless analysing)
+  // Escape closes modal (unless analysing or actively saving)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && phase !== 'analysing') onClose()
+      if (e.key === 'Escape' && phase !== 'analysing' && !saving) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, phase])
+  }, [onClose, phase, saving])
+
+  // ── Computed save state ──────────────────────────────────────────────────────
+
+  const savedCount  = candidates.filter(c => saveStates[c.id] === 'saved').length
+  const failedCount = candidates.filter(c => saveStates[c.id] === 'failed').length
+  // Candidates that will be attempted on next Save/Retry press
+  const toSaveCount = candidates.filter(c => c.selected && saveStates[c.id] !== 'saved').length
+
+  const saveLabel = saving
+    ? 'Saving…'
+    : failedCount > 0
+    ? `Retry ${failedCount} ${failedCount === 1 ? 'update' : 'updates'}`
+    : toSaveCount === 1
+    ? 'Save update'
+    : `Save ${toSaveCount} updates`
+
+  const saveDisabled = saving || toSaveCount === 0
+  // Back is unavailable once any candidate has been saved (would abandon partial state)
+  const backDisabled = saving || savedCount > 0
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -500,16 +603,96 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
 
     setCandidates(enrichedToUI(result.data))
     setAnalysisNote(result.analysisNote)
+    setSaveStates({})
+    setSaveErrors({})
     setPhase('review')
   }
 
   function handleBack() {
     setPhase('capture')
     setCandidates([])
+    setSaveStates({})
+    setSaveErrors({})
   }
 
   function updateCandidate(id: string, updated: CandidateUI) {
     setCandidates(prev => prev.map(c => c.id === id ? updated : c))
+  }
+
+  async function handleSave() {
+    if (saving) return
+
+    // Determine candidates to attempt (selected, not yet saved)
+    const toAttempt = candidates.filter(c => c.selected && saveStates[c.id] !== 'saved')
+    if (toAttempt.length === 0) return
+
+    // Pre-validate ALL candidates to attempt before any persistence begins
+    for (const c of toAttempt) {
+      const err = validateCandidateForSave(c)
+      if (err) {
+        // Existing per-card validation UI already surfaces the issue.
+        // Don't start saving any candidate.
+        return
+      }
+    }
+
+    // Build payloads — human-reviewed values only; no raw_text, no analysis_note
+    const inputs = toAttempt.map(c => ({
+      body:         c.body.trim(),
+      occurred_on:  c.occurredOn,
+      entity_links: canonicalLinks(c),
+    }))
+
+    // Mark all as saving, lock UI
+    setSaving(true)
+    setSaveStates(prev => {
+      const next = { ...prev }
+      for (const c of toAttempt) next[c.id] = 'saving'
+      return next
+    })
+
+    // Persist sequentially — one createUpdate() call per candidate inside the action
+    const result = await saveApprovedCaptures(inputs)
+
+    if ('error' in result) {
+      // Auth/gate failure — mark all as failed
+      const newStates: Record<string, SaveState> = {}
+      const newErrors: Record<string, string>    = {}
+      for (const c of toAttempt) {
+        newStates[c.id] = 'failed'
+        newErrors[c.id] = 'Failed to save. Please try again.'
+      }
+      setSaveStates(prev => ({ ...prev, ...newStates }))
+      setSaveErrors(prev => ({ ...prev, ...newErrors }))
+      setSaving(false)
+      return
+    }
+
+    // Apply per-candidate results
+    const newStates: Record<string, SaveState> = {}
+    const newErrors: Record<string, string>    = {}
+    for (let i = 0; i < toAttempt.length; i++) {
+      const c = toAttempt[i]
+      const r = result.results[i]
+      newStates[c.id] = r.ok ? 'saved' : 'failed'
+      if (!r.ok) newErrors[c.id] = 'Failed to save. Please try again.'
+    }
+
+    const mergedStates = { ...saveStates, ...newStates }
+    setSaveStates(mergedStates)
+    setSaveErrors(prev => ({ ...prev, ...newErrors }))
+    setSaving(false)
+
+    // All selected candidates are now saved → close and refresh
+    const allDone = candidates
+      .filter(c => c.selected)
+      .every(c => mergedStates[c.id] === 'saved')
+
+    if (allDone) {
+      setRawText('')
+      router.refresh()
+      onClose()
+    }
   }
 
   // ── Capture step ─────────────────────────────────────────────────────────────
@@ -606,11 +789,14 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
               {selectedCount} of {candidates.length} selected
             </span>
             <button
+              disabled={saving}
               onClick={() => {
                 const allSelected = candidates.every(c => c.selected)
-                setCandidates(prev => prev.map(c => ({ ...c, selected: !allSelected })))
+                setCandidates(prev => prev.map(c =>
+                  saveStates[c.id] === 'saved' ? c : { ...c, selected: !allSelected }
+                ))
               }}
-              className="text-xs text-kk-muted hover:text-kk-ink transition-colors"
+              className="text-xs text-kk-muted hover:text-kk-ink transition-colors disabled:opacity-40"
             >
               {candidates.every(c => c.selected) ? 'Deselect all' : 'Select all'}
             </button>
@@ -624,6 +810,9 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
             candidate={candidate}
             onChange={updated => updateCandidate(candidate.id, updated)}
             isOnly={candidates.length === 1}
+            saveState={saveStates[candidate.id] ?? 'pending'}
+            saveError={saveErrors[candidate.id] ?? null}
+            locked={saving}
           />
         ))}
       </div>
@@ -631,16 +820,25 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
       <div className="px-6 py-4 border-t border-kk-line flex items-center gap-2 shrink-0">
         <button
           onClick={handleBack}
-          className="px-4 py-2 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+          disabled={backDisabled}
+          className="px-4 py-2 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors disabled:opacity-40"
         >
           Back
         </button>
         <div className="flex-1" />
         <button
           onClick={onClose}
-          className="px-4 py-2 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+          disabled={saving}
+          className="px-4 py-2 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors disabled:opacity-40"
         >
           Close
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saveDisabled}
+          className="px-4 py-2 bg-kk-ink text-white text-sm font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
+        >
+          {saveLabel}
         </button>
       </div>
     </>
@@ -651,7 +849,7 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[8vh]"
-      onClick={e => { if (e.target === e.currentTarget && phase !== 'analysing') onClose() }}
+      onClick={e => { if (e.target === e.currentTarget && phase !== 'analysing' && !saving) onClose() }}
     >
       <div className="absolute inset-0 bg-black/20" />
 
@@ -662,7 +860,7 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
           <h2 className="text-base font-semibold text-kk-ink">
             {phase === 'review' && candidates.length > 0 ? 'Kockpit will remember' : 'Quick Capture'}
           </h2>
-          {phase !== 'analysing' && (
+          {phase !== 'analysing' && !saving && (
             <button
               onClick={onClose}
               className="text-kk-muted hover:text-kk-ink text-sm leading-none transition-colors"

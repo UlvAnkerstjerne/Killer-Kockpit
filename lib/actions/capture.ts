@@ -3,10 +3,10 @@
 /**
  * lib/actions/capture.ts
  *
- * Server action for Quick Capture analysis (M8B3).
+ * Server actions for Quick Capture (M8B3 analysis, M8B5 persistence).
  *
- * Flow
- * ────
+ * analyzeCapture flow
+ * ───────────────────
  * 1. Authenticate the current user.
  * 2. Management role gate (canAccessManagementView).
  * 3. Validate raw input text and optional occurred_on date.
@@ -21,12 +21,18 @@
  *      no match → not_found
  * 8. Return enriched ephemeral candidates.
  *
- * What this action does NOT do
- * ─────────────────────────────
- * • Write any rows to the database.
- * • Call createUpdate — that is the apply step (M8B4+).
- * • Log the raw note text.
- * • Expose entity UUIDs to the AI model.
+ * saveApprovedCaptures flow (M8B5)
+ * ─────────────────────────────────
+ * 1. Authenticate + role gate.
+ * 2. Call createUpdate() for each approved candidate sequentially.
+ * 3. Return per-candidate results for partial-failure tracking in the UI.
+ *
+ * Privacy contract (both actions)
+ * ────────────────────────────────
+ * • Raw note text is NEVER written to the database.
+ * • analysis_note is NEVER written to the database.
+ * • Entity UUIDs are NEVER exposed to the AI model.
+ * • Author identity is derived server-side by createUpdate — never supplied by caller.
  */
 
 import { getCurrentUser }          from '@/lib/auth'
@@ -41,6 +47,8 @@ import type {
   AmbiguousEntityRef,
   NotFoundEntityRef,
 } from './capture-resolve'
+import { createUpdate }          from './updates'
+import type { UpdateEntityLink } from './updates'
 
 // Re-export types for consumers (type exports are allowed from 'use server' files).
 export type { ResolvedEntityRef, AmbiguousEntityRef, NotFoundEntityRef, EnrichedEntityRef }
@@ -235,4 +243,70 @@ export async function searchCaptureEntities(
   }))
 
   return { data: results.slice(0, LIMIT) }
+}
+
+// ─── saveApprovedCaptures ─────────────────────────────────────────────────────
+
+/**
+ * One approved candidate payload to be persisted.
+ * Contains ONLY the fields the human reviewed and approved.
+ * Never includes: raw_text, analysis_note, author id, supersedes_update_id.
+ */
+export interface CaptureApprovalInput {
+  body:         string
+  occurred_on:  string | null
+  entity_links: UpdateEntityLink[]
+}
+
+/** Per-candidate persistence result — used by the UI to track partial success. */
+export type CandidateSaveResult =
+  | { ok: true;  id: string }
+  | { ok: false; error: string }
+
+/**
+ * Persists approved Quick Capture candidates as Universal Updates.
+ *
+ * Calls createUpdate() once per input, sequentially.
+ * Each call is independently transactional — partial success is possible.
+ * Returns per-candidate results so the UI can surface exactly which candidates
+ * succeeded and which failed, enabling safe retry of failed candidates only.
+ *
+ * Privacy guarantees:
+ *   • raw_text is never present in any input and is never written.
+ *   • analysis_note is never present in any input and is never written.
+ *   • Author identity is derived inside createUpdate() / the DB function —
+ *     never supplied by this caller.
+ */
+export async function saveApprovedCaptures(
+  inputs: CaptureApprovalInput[],
+): Promise<{ results: CandidateSaveResult[] } | { error: string }> {
+
+  // ── 1. Auth ──────────────────────────────────────────────────────────────
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  // ── 2. Role gate ─────────────────────────────────────────────────────────
+  if (!canAccessManagementView(user.role)) {
+    return { error: 'Access denied. Management role required.' }
+  }
+
+  // ── 3. Sequential persistence — each call is independently transactional ─
+  const results: CandidateSaveResult[] = []
+
+  for (const input of inputs) {
+    const r = await createUpdate({
+      body:         input.body,
+      occurred_on:  input.occurred_on,
+      entity_links: input.entity_links,
+    })
+
+    if ('error' in r) {
+      // Expose a safe message — never the raw DB error string.
+      results.push({ ok: false, error: 'Failed to save. Please try again.' })
+    } else {
+      results.push({ ok: true, id: r.data!.id })
+    }
+  }
+
+  return { results }
 }

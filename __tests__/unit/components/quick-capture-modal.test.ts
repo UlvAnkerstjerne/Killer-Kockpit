@@ -17,6 +17,8 @@ import {
   enrichedRefToUI,
   enrichedToUI,
   hasZeroLinks,
+  canonicalLinks,
+  validateCandidateForSave,
   type EntityRefUI,
   type CandidateUI,
 } from '@/components/capture/QuickCaptureModal'
@@ -229,5 +231,208 @@ describe('hasZeroLinks', () => {
 
   it('returns false for an unselected candidate (warning not shown)', () => {
     expect(hasZeroLinks(makeCandidate({ selected: false, entityRefs: [] }))).toBe(false)
+  })
+})
+
+// ─── canonicalLinks ───────────────────────────────────────────────────────────
+
+describe('canonicalLinks', () => {
+  function makeCandidate(overrides: Partial<CandidateUI>): CandidateUI {
+    return {
+      id:         '0',
+      selected:   true,
+      body:       'Some fact.',
+      occurredOn: null,
+      entityRefs: [],
+      ...overrides,
+    }
+  }
+
+  function ref(opts: {
+    entity_type?: EntityRefUI['entity_type']
+    entity_id?:   string
+    canonical:    boolean
+  }): EntityRefUI {
+    const type = opts.entity_type ?? 'employee'
+    const id   = opts.entity_id   ?? 'e1'
+    return {
+      entity_type:         type,
+      name_hint:           'Hint',
+      canonical:           opts.canonical
+        ? { entity_id: id, display_name: 'Name', entity_type: type }
+        : null,
+      ambiguousCandidates: [],
+    }
+  }
+
+  it('returns empty array when candidate has no entity refs', () => {
+    expect(canonicalLinks(makeCandidate({ entityRefs: [] }))).toHaveLength(0)
+  })
+
+  it('returns empty array when all refs have null canonical', () => {
+    const c = makeCandidate({ entityRefs: [ref({ canonical: false }), ref({ canonical: false })] })
+    expect(canonicalLinks(c)).toHaveLength(0)
+  })
+
+  it('returns one link for a single resolved ref', () => {
+    const c = makeCandidate({ entityRefs: [ref({ canonical: true, entity_id: 'emp-1' })] })
+    const links = canonicalLinks(c)
+    expect(links).toHaveLength(1)
+    expect(links[0]).toEqual({ entity_type: 'employee', entity_id: 'emp-1' })
+  })
+
+  it('returns links for multiple distinct resolved refs', () => {
+    const c = makeCandidate({
+      entityRefs: [
+        ref({ canonical: true, entity_type: 'employee', entity_id: 'emp-1' }),
+        ref({ canonical: true, entity_type: 'project',  entity_id: 'proj-1' }),
+      ],
+    })
+    const links = canonicalLinks(c)
+    expect(links).toHaveLength(2)
+    expect(links.map(l => l.entity_id).sort()).toEqual(['emp-1', 'proj-1'])
+  })
+
+  it('deduplicates refs with same entity_type and entity_id', () => {
+    const c = makeCandidate({
+      entityRefs: [
+        ref({ canonical: true, entity_type: 'employee', entity_id: 'emp-1' }),
+        ref({ canonical: true, entity_type: 'employee', entity_id: 'emp-1' }),
+      ],
+    })
+    expect(canonicalLinks(c)).toHaveLength(1)
+  })
+
+  it('does not deduplicate refs with same id but different entity_type', () => {
+    // Same id string, different type — these are different canonical entities.
+    const empRef = ref({ canonical: true, entity_type: 'employee', entity_id: 'id-1' })
+    const projRef: EntityRefUI = {
+      entity_type: 'project',
+      name_hint:   'Proj Hint',
+      canonical:   { entity_id: 'id-1', display_name: 'Proj', entity_type: 'project' },
+      ambiguousCandidates: [],
+    }
+    const c = makeCandidate({ entityRefs: [empRef, projRef] })
+    expect(canonicalLinks(c)).toHaveLength(2)
+  })
+
+  it('skips unresolved refs and returns only canonical ones', () => {
+    const c = makeCandidate({
+      entityRefs: [
+        ref({ canonical: false }),
+        ref({ canonical: true, entity_id: 'emp-2' }),
+        ref({ canonical: false }),
+      ],
+    })
+    const links = canonicalLinks(c)
+    expect(links).toHaveLength(1)
+    expect(links[0].entity_id).toBe('emp-2')
+  })
+})
+
+// ─── validateCandidateForSave ─────────────────────────────────────────────────
+
+describe('validateCandidateForSave', () => {
+  function makeCandidate(overrides: Partial<CandidateUI>): CandidateUI {
+    return {
+      id:         '0',
+      selected:   true,
+      body:       'Valid body text.',
+      occurredOn: null,
+      entityRefs: [],
+      ...overrides,
+    }
+  }
+
+  function resolvedRef(entity_id = 'emp-1'): EntityRefUI {
+    return {
+      entity_type:         'employee',
+      name_hint:           'Ahmed',
+      canonical:           { entity_id, display_name: 'Ahmed', entity_type: 'employee' },
+      ambiguousCandidates: [],
+    }
+  }
+
+  // ── Invalid cases ──
+
+  it('returns error for blank body', () => {
+    const c = makeCandidate({ body: '', entityRefs: [resolvedRef()] })
+    expect(validateCandidateForSave(c)).not.toBeNull()
+    expect(validateCandidateForSave(c)).toMatch(/blank/i)
+  })
+
+  it('returns error for whitespace-only body', () => {
+    const c = makeCandidate({ body: '   ', entityRefs: [resolvedRef()] })
+    expect(validateCandidateForSave(c)).not.toBeNull()
+    expect(validateCandidateForSave(c)).toMatch(/blank/i)
+  })
+
+  it('returns error when candidate has no canonical entity links', () => {
+    const unresolvedRef: EntityRefUI = {
+      entity_type:         'employee',
+      name_hint:           'Unknown',
+      canonical:           null,
+      ambiguousCandidates: [],
+    }
+    const c = makeCandidate({ body: 'Good body.', entityRefs: [unresolvedRef] })
+    expect(validateCandidateForSave(c)).not.toBeNull()
+    expect(validateCandidateForSave(c)).toMatch(/person|location|project/i)
+  })
+
+  it('returns error when entityRefs is empty', () => {
+    const c = makeCandidate({ body: 'Good body.', entityRefs: [] })
+    expect(validateCandidateForSave(c)).not.toBeNull()
+  })
+
+  it('returns error for malformed occurredOn (not YYYY-MM-DD)', () => {
+    const c = makeCandidate({
+      body:       'Good body.',
+      entityRefs: [resolvedRef()],
+      occurredOn: '07-09-2026',
+    })
+    expect(validateCandidateForSave(c)).not.toBeNull()
+    expect(validateCandidateForSave(c)).toMatch(/YYYY-MM-DD/i)
+  })
+
+  it('returns error for occurredOn with time component', () => {
+    const c = makeCandidate({
+      body:       'Good body.',
+      entityRefs: [resolvedRef()],
+      occurredOn: '2026-09-07T10:00:00Z',
+    })
+    expect(validateCandidateForSave(c)).not.toBeNull()
+  })
+
+  // ── Valid cases ──
+
+  it('returns null for valid body + resolved link + null date', () => {
+    const c = makeCandidate({
+      body:       'Good body.',
+      entityRefs: [resolvedRef()],
+      occurredOn: null,
+    })
+    expect(validateCandidateForSave(c)).toBeNull()
+  })
+
+  it('returns null for valid body + resolved link + YYYY-MM-DD date', () => {
+    const c = makeCandidate({
+      body:       'Good body.',
+      entityRefs: [resolvedRef()],
+      occurredOn: '2026-09-05',
+    })
+    expect(validateCandidateForSave(c)).toBeNull()
+  })
+
+  it('returns null even if some refs are unresolved, as long as one is canonical', () => {
+    const unresolvedRef: EntityRefUI = {
+      entity_type: 'location', name_hint: 'Valby',
+      canonical: null, ambiguousCandidates: [],
+    }
+    const c = makeCandidate({
+      body:       'Good body.',
+      entityRefs: [unresolvedRef, resolvedRef()],
+      occurredOn: null,
+    })
+    expect(validateCandidateForSave(c)).toBeNull()
   })
 })
