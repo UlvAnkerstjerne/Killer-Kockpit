@@ -5,10 +5,11 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { canAccessManagementView, canAccessMarketing, canManagePeople, canManageLocations } from '@/lib/permissions'
 import type { AppUser, ViewMode } from '@/lib/types'
+import CaptureBar from './CaptureBar'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import NotificationBell from './NotificationBell'
 
-// ─── Nav icons ───────────────────────────────────────────────────────────────
+// ─── Inline nav icons (simple SVG, no external dep) ──────────────────────────
 
 function IconToday() {
   return (
@@ -74,6 +75,14 @@ function IconTeam() {
     </svg>
   )
 }
+function IconInbox() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M1.5 9h3.5l1.5 2h4l1.5-2h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>
+  )
+}
 function IconPeople() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
@@ -107,14 +116,6 @@ function IconSettings() {
     </svg>
   )
 }
-function IconInbox() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
-      <path d="M1.5 9h3.5l1.5 2h4l1.5-2h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-    </svg>
-  )
-}
 
 const ICON_MAP: Record<string, React.FC> = {
   '/today':       IconToday,
@@ -125,11 +126,11 @@ const ICON_MAP: Record<string, React.FC> = {
   '/todos':       IconTodos,
   '/meetings':    IconMeetings,
   '/team':        IconTeam,
+  '/inbox':       IconInbox,
   '/people':      IconPeople,
   '/locations':   IconLocations,
   '/knowledge':   IconKnowledge,
   '/settings':    IconSettings,
-  '/inbox':       IconInbox,
 }
 
 // ─── Nav groups ───────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ const PRIMARY_NAV = [
   { href: '/decisions',   label: 'Decisions' },
   { href: '/todos',       label: 'To-Dos' },
 ]
+
 
 export default function AppShell({
   user,
@@ -188,23 +190,21 @@ export default function AppShell({
     .toUpperCase()
     .slice(0, 2)
 
-  const isToday = pathname === '/today'
-
-  function NavLink({ href, label }: { href: string; label: string }) {
+  function NavLink({ href, label, deferred }: { href: string; label: string; deferred?: boolean }) {
     const isActive = pathname === href || pathname.startsWith(href + '/')
     const Icon = ICON_MAP[href]
     return (
       <Link
         href={href}
         className={[
-          'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13.5px] transition-colors',
+          'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm transition-colors',
           isActive
-            ? 'bg-[rgba(255,255,255,0.15)] text-white font-semibold'
-            : 'text-white/65 hover:bg-[rgba(255,255,255,0.08)] hover:text-white',
+            ? 'bg-[#ecddc8] text-kk-ink font-bold'
+            : 'text-kk-ink/60 hover:bg-kk-soft hover:text-kk-ink',
         ].join(' ')}
       >
         {Icon && (
-          <span className={isActive ? 'text-white' : 'text-white/50'}>
+          <span className={isActive ? 'text-kk-ink' : 'text-kk-ink/50'}>
             <Icon />
           </span>
         )}
@@ -215,28 +215,27 @@ export default function AppShell({
 
   return (
     <div className="flex min-h-screen">
-      {/* ─── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className="w-56 shrink-0 flex flex-col sticky top-0 h-screen" style={{ background: '#6b1616' }}>
+      {/* Sidebar */}
+      <aside className="w-56 shrink-0 bg-kk-sidebar border-r border-kk-line flex flex-col sticky top-0 h-screen">
 
         {/* Brand */}
-        <div className="px-5 pt-5 pb-4 border-b border-white/10">
-          <div className="font-brand text-white leading-tight">
-            <div className="text-[22px]">Killer</div>
-            <div className="text-[22px]">Kockpit</div>
+        <div className="px-5 pt-5 pb-4">
+          <div className="font-brand text-[26px] font-black text-kk-brand leading-none tracking-tight">
+            KILLER
           </div>
-          <div className="text-[9px] text-white/40 font-bold tracking-[0.14em] uppercase mt-2">
-            Killer Kebab
+          <div className="font-brand text-[12px] font-extrabold text-kk-ink/80 leading-tight tracking-[0.1em] uppercase mt-1">
+            KOCKPIT
           </div>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-3 overflow-y-auto">
+        <nav className="flex-1 px-3 overflow-y-auto">
           {/* Primary group */}
           <div className="mb-1">
-            <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-white/35">
+            <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/40">
               Operations
             </div>
-            <div className="space-y-px">
+            <div className="space-y-0.5">
               {PRIMARY_NAV.map(item => (
                 <NavLink key={item.href} href={item.href} label={item.label} />
               ))}
@@ -244,61 +243,32 @@ export default function AppShell({
           </div>
 
           {/* Divider */}
-          <div className="my-2.5 border-t border-white/10" />
+          <div className="my-2 border-t border-kk-line" />
 
           {/* Secondary group */}
-          <div className="mb-1">
-            <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-white/35">
-              Manage
-            </div>
-            <div className="space-y-px">
-              {secondaryNav.map(item => (
-                <NavLink key={item.href} href={item.href} label={item.label} />
-              ))}
-            </div>
+          <div className="space-y-0.5">
+            {secondaryNav.map(item => (
+              <NavLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                deferred={!item.active}
+              />
+            ))}
           </div>
-
-          {/* Marketing (if allowed) */}
-          {marketingAllowed && (
-            <>
-              <div className="my-2.5 border-t border-white/10" />
-              <div className="mb-1">
-                <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-white/35">
-                  Marketing
-                </div>
-                <div className="space-y-px">
-                  <Link
-                    href="/marketing"
-                    className={[
-                      'flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13.5px] transition-colors',
-                      pathname.startsWith('/marketing')
-                        ? 'bg-[rgba(255,255,255,0.15)] text-white font-semibold'
-                        : 'text-white/65 hover:bg-[rgba(255,255,255,0.08)] hover:text-white',
-                    ].join(' ')}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
-                      <path d="M1.5 10.5L5 7l3 2.5 5.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M10.5 4h3v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    <span className="flex-1 truncate">Campaigns</span>
-                  </Link>
-                </div>
-              </div>
-            </>
-          )}
         </nav>
 
         {/* Org / Personal view toggle */}
         {managementAllowed && (
           <div className="px-3 pb-2">
-            <div className="flex bg-white/10 border border-white/10 rounded-xl p-1">
+            <div className="flex bg-white border border-kk-line rounded-xl p-1">
               <button
                 onClick={() => setView('management')}
                 className={[
                   'flex-1 text-xs py-1.5 px-2 rounded-lg transition-colors',
                   currentView === 'management'
-                    ? 'bg-white text-kk-brand font-semibold'
-                    : 'text-white/60 hover:text-white',
+                    ? 'bg-kk-ink text-white font-medium'
+                    : 'text-kk-muted hover:text-kk-ink',
                 ].join(' ')}
               >
                 Org
@@ -308,8 +278,8 @@ export default function AppShell({
                 className={[
                   'flex-1 text-xs py-1.5 px-2 rounded-lg transition-colors',
                   currentView === 'personal'
-                    ? 'bg-white text-kk-brand font-semibold'
-                    : 'text-white/60 hover:text-white',
+                    ? 'bg-kk-ink text-white font-medium'
+                    : 'text-kk-muted hover:text-kk-ink',
                 ].join(' ')}
               >
                 Mine
@@ -318,24 +288,31 @@ export default function AppShell({
           </div>
         )}
 
+        {/* Workspace switcher */}
+        {marketingAllowed && (
+          <div className="px-3 pb-2">
+            <WorkspaceSwitcher currentWorkspace="management" />
+          </div>
+        )}
+
         {/* Notifications */}
         <NotificationBell />
 
         {/* User */}
-        <div className="border-t border-white/10 mx-3 mb-4 pt-3">
+        <div className="border-t border-kk-line mx-3 mb-4 pt-3">
           <div className="flex items-center gap-2.5 px-1">
-            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+            <div className="w-7 h-7 rounded-full bg-kk-line flex items-center justify-center text-[11px] font-bold text-kk-ink shrink-0">
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-medium text-white truncate leading-tight">
+              <div className="text-sm font-medium text-kk-ink truncate leading-tight">
                 {user.display_name}
               </div>
-              <div className="text-[10px] text-white/45">Killer Kebab</div>
+              <div className="text-[10px] text-kk-muted">{user.role}</div>
             </div>
             <button
               onClick={handleSignOut}
-              className="text-[11px] text-white/40 hover:text-white transition-colors shrink-0"
+              className="text-[11px] text-kk-muted hover:text-kk-ink transition-colors shrink-0"
               title="Sign out"
             >
               Log out
@@ -344,9 +321,10 @@ export default function AppShell({
         </div>
       </aside>
 
-      {/* ─── Main area ───────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 bg-kk-panel">
-        <main className={`flex-1 ${isToday ? '' : 'p-4 bg-kk-bg'}`}>
+      {/* Main area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {pathname !== '/today' && <CaptureBar user={user} currentView={currentView} />}
+        <main className="flex-1 p-4">
           {children}
         </main>
       </div>
