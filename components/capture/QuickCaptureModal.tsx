@@ -396,8 +396,8 @@ function CandidateCard({
         />
       </div>
 
-      {/* Entity refs */}
-      {(candidate.entityRefs.length > 0 || showAddEntity) && (
+      {/* Entity refs — always show when selected so "+ Link entity" is reachable even with zero refs */}
+      {(candidate.selected || candidate.entityRefs.length > 0 || showAddEntity) && (
         <div className="px-3 pb-2.5 flex flex-wrap gap-1.5 items-start">
           {candidate.entityRefs.map((ref, refIndex) => (
             <EntityRefBlock
