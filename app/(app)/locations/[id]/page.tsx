@@ -2,10 +2,12 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { canManageLocations } from '@/lib/permissions'
+import { canManageLocations, canAccessManagementView } from '@/lib/permissions'
 import { updateLocation } from '@/lib/actions/locations'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
+import { getUpdatesForEntity } from '@/lib/actions/updates'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
+import EntityUpdatesSection from '@/components/updates/EntityUpdatesSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +24,7 @@ export default async function LocationDetailPage({
   const supabase = await createClient()
 
   // Fetch location + any linked GBP location + gmail sources
-  const [locResult, gbpResult, gmailSourcesResult] = await Promise.all([
+  const [locResult, gbpResult, gmailSourcesResult, updatesResult] = await Promise.all([
     supabase
       .from('locations')
       .select('*')
@@ -33,13 +35,16 @@ export default async function LocationDetailPage({
       .select('id, store_name, store_short_name, address_summary, active, google_account_id, google_location_id')
       .eq('location_id', id),
     getEntityGmailSources('location', id),
+    getUpdatesForEntity('location', id),
   ])
 
   if (locResult.error || !locResult.data) notFound()
 
-  const loc         = locResult.data
-  const gbpLinked   = gbpResult.data ?? []
-  const gmailSources = gmailSourcesResult.data ?? []
+  const loc              = locResult.data
+  const gbpLinked        = gbpResult.data ?? []
+  const gmailSources     = gmailSourcesResult.data ?? []
+  const locationUpdates  = updatesResult.data ?? []
+  const canManageUpdates = canAccessManagementView(user.role)
 
   async function handleUpdate(formData: FormData) {
     'use server'
@@ -78,6 +83,18 @@ export default async function LocationDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Updates — operational memory for this location */}
+      {canManageUpdates && (
+        <div className="mb-4">
+          <EntityUpdatesSection
+            entityType="location"
+            entityId={loc.id}
+            initialUpdates={locationUpdates}
+            canAddUpdate={canManageUpdates}
+          />
+        </div>
+      )}
 
       {/* Edit form */}
       <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">

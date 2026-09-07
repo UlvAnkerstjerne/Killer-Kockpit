@@ -2,10 +2,12 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
-import { canManagePeople } from '@/lib/permissions'
+import { canManagePeople, canAccessManagementView } from '@/lib/permissions'
 import { updateEmployee } from '@/lib/actions/employees'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
+import { getUpdatesForEntity } from '@/lib/actions/updates'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
+import EntityUpdatesSection from '@/components/updates/EntityUpdatesSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,7 +38,7 @@ export default async function PersonDetailPage({
     getActiveUsers(),
   ])
 
-  const [empResult, gmailSourcesResult] = await Promise.all([
+  const [empResult, gmailSourcesResult, updatesResult] = await Promise.all([
     supabase
       .from('employees')
       .select(`
@@ -47,12 +49,15 @@ export default async function PersonDetailPage({
       .eq('id', id)
       .single(),
     getEntityGmailSources('employee', id),
+    getUpdatesForEntity('employee', id),
   ])
 
   const { data: emp, error } = empResult
   if (error || !emp) notFound()
 
-  const gmailSources = gmailSourcesResult.data ?? []
+  const gmailSources    = gmailSourcesResult.data ?? []
+  const employeeUpdates = updatesResult.data ?? []
+  const canManageUpdates = canAccessManagementView(user.role)
   const linkedUser = Array.isArray(emp.linked_user) ? emp.linked_user[0] : emp.linked_user
   const manager    = Array.isArray(emp.manager)      ? emp.manager[0]     : emp.manager
 
@@ -96,6 +101,18 @@ export default async function PersonDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Updates — organisational memory for this person */}
+      {canManageUpdates && (
+        <div className="mb-4">
+          <EntityUpdatesSection
+            entityType="employee"
+            entityId={emp.id}
+            initialUpdates={employeeUpdates}
+            canAddUpdate={canManageUpdates}
+          />
+        </div>
+      )}
 
       {/* Edit form */}
       <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
