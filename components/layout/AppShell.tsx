@@ -7,6 +7,7 @@ import { canAccessManagementView, canAccessMarketing, canManagePeople, canManage
 import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
+import NotificationBell from './NotificationBell'
 
 // ─── Inline nav icons (simple SVG, no external dep) ──────────────────────────
 
@@ -293,6 +294,9 @@ export default function AppShell({
             <WorkspaceSwitcher currentWorkspace="management" />
           </div>
         )}
+
+        {/* Notifications */}
+        <NotificationBell />
 
         {/* User */}
         <div className="border-t border-kk-line mx-3 mb-4 pt-3">

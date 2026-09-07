@@ -68,13 +68,15 @@ vi.mock('@/lib/supabase/server', () => ({
 // ─── Import after mocks ────────────────────────────────────────────────────
 
 import {
-  formatNotificationMessage,
   getUnreadNotificationCount,
   getRecentNotifications,
   markNotificationRead,
   markAllNotificationsRead,
   type NotificationType,
 } from '@/lib/actions/notifications'
+import {
+  formatNotificationMessage,
+} from '@/lib/notification-format'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────
 

@@ -22,6 +22,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import type { ActionResult } from '@/lib/types'
+import type { NotificationType } from '@/lib/notification-format'
 
 // ─── Loose UUID validation ─────────────────────────────────────────────────
 
@@ -29,11 +30,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-export type NotificationType =
-  | 'task.assigned'
-  | 'task.submitted_for_review'
-  | 'task.sent_back'
-  | 'task.approved'
+export type { NotificationType } from '@/lib/notification-format'
 
 export interface AppNotification {
   id:            string
@@ -47,41 +44,6 @@ export interface AppNotification {
   actor_name:    string | null
   /** Current title of the referenced task, or null if task unavailable */
   task_title:    string | null
-}
-
-// ─── Pure presentation helper (exported for testing / UI) ──────────────────
-
-/**
- * Derives a concise human-readable notification message.
- * No database terminology exposed.
- *
- * actor  — display name of the actor, or a fallback when unknown
- * title  — current task title, or a fallback when unavailable
- *
- * Examples:
- *   task.assigned            → "Adam assigned you "Film videos for SSP""
- *   task.submitted_for_review → "Adam submitted "Film videos for SSP" for your review"
- *   task.sent_back           → "Ulv sent "Film videos for SSP" back to you"
- *   task.approved            → "Ulv approved "Film videos for SSP""
- */
-export function formatNotificationMessage(
-  type:      NotificationType,
-  actorName: string | null,
-  taskTitle: string | null,
-): string {
-  const actor = actorName ?? 'Someone'
-  const title = taskTitle ?? 'a task'
-
-  switch (type) {
-    case 'task.assigned':
-      return `${actor} assigned you "${title}"`
-    case 'task.submitted_for_review':
-      return `${actor} submitted "${title}" for your review`
-    case 'task.sent_back':
-      return `${actor} sent "${title}" back to you`
-    case 'task.approved':
-      return `${actor} approved "${title}"`
-  }
 }
 
 // ─── getUnreadNotificationCount ────────────────────────────────────────────
