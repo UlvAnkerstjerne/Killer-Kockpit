@@ -11,6 +11,12 @@ import type {
   UpdateRow,
 } from '@/lib/types'
 
+export interface CorrectUpdateInput {
+  updateId:    string
+  body:        string
+  occurred_on: string | null   // YYYY-MM-DD or null
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const VALID_ENTITY_TYPES: ReadonlySet<string> = new Set<KkUpdateEntityType>([
@@ -226,9 +232,81 @@ export async function getUpdatesForEntity(
     body: u.body,
     occurred_on: u.occurred_on ?? null,
     created_at: u.created_at,
+    supersedes_update_id: u.supersedes_update_id ?? null,
     author: authorMap.get(u.created_by_user_id) ?? null,
     entity_links: linkMap.get(u.id) ?? [],
   }))
 
   return { data: result }
+}
+
+// ─── correctUpdate ────────────────────────────────────────────────────────────
+
+/**
+ * Corrects a CURRENT Universal Update by creating an immutable successor row.
+ *
+ * The original Update is never mutated — it remains the historical record.
+ * The successor:
+ *   - has supersedes_update_id = old Update id
+ *   - inherits ALL entity links from the old Update (DB-side copy)
+ *   - has created_by_user_id = current authenticated session user (DB-derived)
+ *
+ * Caller supplies only: which Update to correct, the corrected body, and the
+ * corrected occurred_on.  Author identity is never caller-supplied.
+ *
+ * Returns the new successor Update id on success, or a safe error string.
+ */
+export async function correctUpdate(
+  input: CorrectUpdateInput,
+): Promise<ActionResult<{ id: string }>> {
+  // ── 1. Auth ──────────────────────────────────────────────────────────────
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  // ── 2. Role gate ──────────────────────────────────────────────────────────
+  if (!canAccessManagementView(user.role)) {
+    return { error: 'Not authorised to correct Updates.' }
+  }
+
+  // ── 3. Validate updateId ──────────────────────────────────────────────────
+  if (!input.updateId || !UUID_RE.test(input.updateId)) {
+    return { error: 'Invalid update id.' }
+  }
+
+  // ── 4. Validate body ──────────────────────────────────────────────────────
+  const body = input.body.trim()
+  if (!body) return { error: 'Corrected body must not be blank.' }
+
+  // ── 5. Validate occurred_on format ────────────────────────────────────────
+  const occurred_on = input.occurred_on ?? null
+  if (occurred_on !== null && !DATE_RE.test(occurred_on)) {
+    return { error: 'occurred_on must be a date in YYYY-MM-DD format.' }
+  }
+
+  // ── 6. Correction RPC via authenticated session client ───────────────────
+  // createClient() carries the user's JWT so auth.uid() resolves inside the
+  // SECURITY DEFINER function.  No author id is supplied in the call args —
+  // the DB derives and validates identity independently.
+  const supabase = await createClient()
+  const { data: newUpdateId, error } = await supabase.rpc('correct_update', {
+    p_update_id:   input.updateId,
+    p_body:        body,
+    p_occurred_on: occurred_on,
+  })
+
+  if (error) {
+    console.error('[correctUpdate]', error.message)
+    if (error.message.includes('already been corrected')) {
+      return {
+        error:
+          'This update has already been corrected. Refresh to see the current version.',
+      }
+    }
+    if (error.message.includes('not found')) {
+      return { error: 'Update not found.' }
+    }
+    return { error: 'Failed to save correction. Please try again.' }
+  }
+
+  return { data: { id: newUpdateId as string } }
 }

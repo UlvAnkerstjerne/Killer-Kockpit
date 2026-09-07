@@ -338,6 +338,7 @@ export interface UpdateRow {
   body: string
   occurred_on: string | null
   created_at: string
+  supersedes_update_id: string | null
   author: UpdateAuthor | null
   entity_links: UpdateEntityLinkRow[]
 }
