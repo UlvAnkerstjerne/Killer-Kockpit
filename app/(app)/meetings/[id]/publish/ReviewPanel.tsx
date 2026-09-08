@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { updateMeeting, publishMeeting } from '@/lib/actions/meetings'
 import { updateMeetingOutcome, removeMeetingOutcome } from '@/lib/actions/meeting-outcomes'
+import { utcToWall, wallToUtc } from '@/lib/time'
 
 type User = { id: string; display_name: string }
 type Project = { id: string; title: string }
@@ -64,9 +65,7 @@ function payloadToForm(outcome: Outcome): EditForm {
     title: outcome.title,
     owner_user_id: (p.owner_user_id as string) || '',
     priority: String(p.priority || 2),
-    due_at: p.due_at
-      ? new Date(p.due_at as string).toISOString().slice(0, 16)
-      : '',
+    due_at: p.due_at ? utcToWall(p.due_at as string) : '',
     project_id: (p.project_id as string) || '',
     waiting_for_user_id: (p.waiting_for_user_id as string) || '',
     waiting_for_name: (p.waiting_for_name as string) || '',
@@ -80,7 +79,7 @@ function formToPayload(kind: OutcomeKind, form: EditForm): Record<string, unknow
     return {
       owner_user_id: form.owner_user_id || null,
       priority: Number(form.priority),
-      due_at: form.due_at || null,
+      due_at: form.due_at ? wallToUtc(form.due_at) : null,
       project_id: form.project_id || null,
     }
   }
@@ -90,7 +89,7 @@ function formToPayload(kind: OutcomeKind, form: EditForm): Record<string, unknow
       waiting_for_user_id: form.waiting_for_user_id || null,
       waiting_for_name: form.waiting_for_user_id ? null : form.waiting_for_name || null,
       project_id: form.project_id || null,
-      due_at: form.due_at || null,
+      due_at: form.due_at ? wallToUtc(form.due_at) : null,
     }
   }
   // decision

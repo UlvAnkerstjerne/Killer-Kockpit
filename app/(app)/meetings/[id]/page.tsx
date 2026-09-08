@@ -155,7 +155,7 @@ export default async function MeetingDetailPage({
       <div className="flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 text-sm text-kk-muted mb-1">
-            <Link href="/meetings" className="hover:text-kk-ink transition-colors">Meetings</Link>
+            <Link href="/meetings" className="hover:text-kk-ink transition-colors">← Meetings</Link>
             <span>/</span>
             <span className="text-kk-ink">{meeting.title}</span>
           </div>

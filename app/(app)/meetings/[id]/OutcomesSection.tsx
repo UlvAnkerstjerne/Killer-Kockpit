@@ -9,6 +9,7 @@ import {
   updateMeetingOutcome,
 } from '@/lib/actions/meeting-outcomes'
 import type { MeetingOutcome, MeetingOutcomeKind } from '@/lib/types'
+import { utcToWall, wallToUtc } from '@/lib/time'
 
 type User = { id: string; display_name: string }
 type Project = { id: string; title: string }
@@ -65,9 +66,7 @@ export function payloadToForm(outcome: MeetingOutcome): EditForm {
     title: outcome.title,
     owner_user_id: (p.owner_user_id as string) || '',
     priority: String(p.priority || 2),
-    due_at: p.due_at
-      ? new Date(p.due_at as string).toISOString().slice(0, 16)
-      : '',
+    due_at: p.due_at ? utcToWall(p.due_at as string) : '',
     project_id: (p.project_id as string) || '',
     waiting_for_user_id: (p.waiting_for_user_id as string) || '',
     waiting_for_name: (p.waiting_for_name as string) || '',
@@ -84,7 +83,7 @@ export function formToPayload(
     return {
       owner_user_id: form.owner_user_id || null,
       priority: Number(form.priority),
-      due_at: form.due_at || null,
+      due_at: form.due_at ? wallToUtc(form.due_at) : null,
       project_id: form.project_id || null,
     }
   }
@@ -96,7 +95,7 @@ export function formToPayload(
         ? null
         : form.waiting_for_name || null,
       project_id: form.project_id || null,
-      due_at: form.due_at || null,
+      due_at: form.due_at ? wallToUtc(form.due_at) : null,
     }
   }
   return {

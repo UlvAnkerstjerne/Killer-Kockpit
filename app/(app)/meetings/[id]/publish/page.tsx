@@ -60,7 +60,7 @@ export default async function PublishMeetingPage({
     <div className="max-w-2xl">
       <div className="mb-6">
         <div className="flex items-center gap-2 text-sm text-kk-muted mb-1">
-          <Link href="/meetings" className="hover:text-kk-ink transition-colors">Meetings</Link>
+          <Link href="/meetings" className="hover:text-kk-ink transition-colors">← Meetings</Link>
           <span>/</span>
           <Link href={`/meetings/${id}`} className="hover:text-kk-ink transition-colors">{meeting.title}</Link>
           <span>/</span>

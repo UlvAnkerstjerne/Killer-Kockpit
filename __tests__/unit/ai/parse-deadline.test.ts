@@ -139,4 +139,51 @@ describe('parseDeadlineFromEvidence', () => {
     )
     expect(result).toBe('2026-10-01T00:00:00.000Z')
   })
+
+  // ── Europe/Copenhagen calendar anchoring ────────────────────────────────────
+  // The anchor must use the Copenhagen calendar date, not the UTC date.
+  // Edge case: a meeting that starts at 00:30 CEST is UTC 22:30 the PREVIOUS day.
+  // Without the Copenhagen timezone fix, "tomorrow" would resolve one day early.
+
+  it('Sep 8 00:30 CEST meeting (= Sep 7 22:30 UTC): "tomorrow" → Sep 9', () => {
+    // 2026-09-07T22:30:00Z = Sep 8 00:30 CEST (UTC+2)
+    const ref = new Date('2026-09-07T22:30:00Z')
+    const result = parseDeadlineFromEvidence('tomorrow', ref)
+    expect(result).toBe('2026-09-09T00:00:00.000Z')
+  })
+
+  it('ordinary Sep 8 daytime CEST meeting: "tomorrow" → Sep 9', () => {
+    const ref = new Date('2026-09-08T10:00:00Z')  // Sep 8 noon Copenhagen
+    const result = parseDeadlineFromEvidence('tomorrow', ref)
+    expect(result).toBe('2026-09-09T00:00:00.000Z')
+  })
+
+  it('DST summer (CEST, UTC+2): Sep 8 meeting + "tomorrow" → Sep 9', () => {
+    const ref = new Date('2026-09-08T10:00:00Z')  // Sep 8 noon Copenhagen
+    const result = parseDeadlineFromEvidence('tomorrow', ref)
+    expect(result).toBe('2026-09-09T00:00:00.000Z')
+  })
+
+  it('DST winter (CET, UTC+1): Jan 8 00:30 CET meeting (= Jan 7 23:30 UTC): "tomorrow" → Jan 9', () => {
+    // 2027-01-07T23:30:00Z = Jan 8 00:30 CET (UTC+1)
+    const ref = new Date('2027-01-07T23:30:00Z')
+    const result = parseDeadlineFromEvidence('tomorrow', ref)
+    expect(result).toBe('2027-01-09T00:00:00.000Z')
+  })
+
+  it('reviewed later does not alter resolved deadline — anchor is meeting date, not review date', () => {
+    // "tomorrow" relative to a Sep 8 meeting = Sep 9.
+    // If someone reviews the page on Sep 15, the stored value must remain Sep 9.
+    // This test confirms the anchor is the meeting date passed to parseDeadlineFromEvidence,
+    // not the wall-clock time of the caller.
+    const meetingRef = new Date('2026-09-08T10:00:00Z')
+    const result = parseDeadlineFromEvidence('tomorrow', meetingRef)
+    expect(result).toBe('2026-09-09T00:00:00.000Z')
+
+    // Calling with a later reference gives a different result — proving anchor matters.
+    const laterRef = new Date('2026-09-15T10:00:00Z')
+    const resultLater = parseDeadlineFromEvidence('tomorrow', laterRef)
+    expect(resultLater).toBe('2026-09-16T00:00:00.000Z')
+    expect(resultLater).not.toBe(result)
+  })
 })

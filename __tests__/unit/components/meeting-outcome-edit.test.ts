@@ -18,6 +18,7 @@ import {
   shortDate,
 } from '@/app/(app)/meetings/[id]/OutcomesSection'
 import type { MeetingOutcome, MeetingOutcomeKind } from '@/lib/types'
+import { wallToUtc, utcToWall } from '@/lib/time'
 
 // OutcomesSection is a 'use client' file — mock Next.js deps it imports
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
@@ -170,7 +171,10 @@ describe('formToPayload — task', () => {
     const p = formToPayload('task', base)
     expect(p.owner_user_id).toBe('u-1')
     expect(p.priority).toBe(1)          // Number(), not string
-    expect(p.due_at).toBe('2026-10-01T09:00')
+    // due_at is converted from Copenhagen wall-clock to UTC ISO
+    expect(p.due_at).toBe(wallToUtc('2026-10-01T09:00'))
+    expect(typeof p.due_at).toBe('string')
+    expect(p.due_at as string).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     expect(p.project_id).toBe('p-1')
     // waiting_on / decision fields must NOT appear
     expect('waiting_for_user_id' in p).toBe(false)
@@ -346,6 +350,85 @@ describe('outcomeMeta — empty state', () => {
     const { who, when } = outcomeMeta(outcome, [])
     expect(who).toBeNull()
     expect(when).toBeNull()
+  })
+})
+
+// ─── datetime-local display and save (Copenhagen wall-clock) ─────────────────
+// payloadToForm converts stored UTC ISO → Copenhagen local YYYY-MM-DDTHH:MM (for input display).
+// formToPayload converts Copenhagen local → UTC ISO (for DB storage via publish).
+
+describe('datetime-local — display (payloadToForm)', () => {
+  it('converts stored UTC midnight to Copenhagen local — Sep 15 midnight UTC = Sep 15 in CEST', () => {
+    // Sep 15 2026 00:00 UTC = Sep 15 02:00 CEST; utcToWall gives "2026-09-15T02:00"
+    const outcome = makeOutcome('task', 'X', { due_at: '2026-09-15T00:00:00.000Z' })
+    const form = payloadToForm(outcome)
+    expect(form.due_at).toBe(utcToWall('2026-09-15T00:00:00.000Z'))
+    expect(form.due_at).toMatch(/^2026-09-15T/)
+  })
+
+  it('converts 14:00 UTC to Copenhagen local (16:00 CEST)', () => {
+    const outcome = makeOutcome('task', 'X', { due_at: '2026-09-20T14:00:00.000Z' })
+    const form = payloadToForm(outcome)
+    expect(form.due_at).toBe('2026-09-20T16:00')  // CEST +2
+  })
+
+  it('converts CET winter time correctly (UTC+1)', () => {
+    // Jan 15 2027 11:00 UTC = Jan 15 12:00 CET
+    const outcome = makeOutcome('task', 'X', { due_at: '2027-01-15T11:00:00.000Z' })
+    const form = payloadToForm(outcome)
+    expect(form.due_at).toBe('2027-01-15T12:00')  // CET +1
+  })
+
+  it('leaves due_at empty when absent', () => {
+    const outcome = makeOutcome('task', 'X', {})
+    expect(payloadToForm(outcome).due_at).toBe('')
+  })
+})
+
+describe('datetime-local — save (formToPayload)', () => {
+  const base = {
+    title: 'T', owner_user_id: '', priority: '2',
+    due_at: '', project_id: '',
+    waiting_for_user_id: '', waiting_for_name: '',
+    decision_text: '', rationale: '',
+  }
+
+  it('converts Copenhagen wall-clock to UTC ISO on save (CEST summer)', () => {
+    // 09:00 Copenhagen CEST (UTC+2) → 07:00 UTC
+    const p = formToPayload('task', { ...base, due_at: '2026-09-15T09:00' })
+    expect(p.due_at).toBe('2026-09-15T07:00:00.000Z')
+  })
+
+  it('converts Copenhagen wall-clock to UTC ISO on save (CET winter)', () => {
+    // 12:00 Copenhagen CET (UTC+1) → 11:00 UTC
+    const p = formToPayload('task', { ...base, due_at: '2027-01-15T12:00' })
+    expect(p.due_at).toBe('2027-01-15T11:00:00.000Z')
+  })
+
+  it('round-trips: payloadToForm → formToPayload restores same UTC ISO', () => {
+    const stored = '2026-09-15T07:00:00.000Z'
+    const outcome = makeOutcome('task', 'X', { due_at: stored, priority: 2 })
+    const form = payloadToForm(outcome)
+    const payload = formToPayload('task', form)
+    expect(payload.due_at).toBe(stored)
+  })
+
+  it('round-trip works for CET winter case', () => {
+    const stored = '2027-01-15T11:00:00.000Z'
+    const outcome = makeOutcome('task', 'X', { due_at: stored, priority: 2 })
+    const form = payloadToForm(outcome)
+    const payload = formToPayload('task', form)
+    expect(payload.due_at).toBe(stored)
+  })
+
+  it('produces null for empty due_at', () => {
+    const p = formToPayload('task', { ...base, due_at: '' })
+    expect(p.due_at).toBeNull()
+  })
+
+  it('applies same conversion for waiting_on due_at', () => {
+    const p = formToPayload('waiting_on', { ...base, due_at: '2026-09-20T09:00' })
+    expect(p.due_at).toBe('2026-09-20T07:00:00.000Z')  // CEST -2h
   })
 })
 
