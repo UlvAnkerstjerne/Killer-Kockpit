@@ -18,6 +18,7 @@
  * Pure helpers are exported so they can be tested in Node without jsdom.
  */
 
+import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -129,8 +130,13 @@ function IconBell() {
 export default function NotificationBell() {
   const router       = useRouter()
   const containerRef     = useRef<HTMLDivElement>(null)
+  const popoverRef       = useRef<HTMLDivElement>(null)
   const mountedRef       = useRef(true)
   const fetchingCountRef = useRef(false)
+
+  // Fixed coordinates for the portal popover, computed at open time from
+  // the sidebar's right edge to escape the nav's overflow-y:auto clipping.
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null)
 
   const [unreadCount,   setUnreadCount]   = useState(0)
   const [isOpen,        setIsOpen]        = useState(false)
@@ -191,6 +197,15 @@ export default function NotificationBell() {
 
   function handleToggle() {
     if (!isOpen) {
+      // Compute fixed position from the sidebar's right edge so the popover
+      // renders outside the nav's overflow-y:auto clipping context.
+      const aside = containerRef.current?.closest('aside')
+      const asideRect = aside?.getBoundingClientRect()
+      const containerRect = containerRef.current?.getBoundingClientRect()
+      setPopoverPos({
+        top:  containerRect?.top  ?? 0,
+        left: (asideRect?.right   ?? 224) + 8,
+      })
       setIsOpen(true)
       fetchList()
     } else {
@@ -199,12 +214,13 @@ export default function NotificationBell() {
   }
 
   // ── Outside click ────────────────────────────────────────────────────────
+  // Must check both the trigger container and the portal popover (separate DOM trees).
   useEffect(() => {
     if (!isOpen) return
     function onMouseDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-      }
+      const inContainer = containerRef.current?.contains(e.target as Node)
+      const inPopover   = popoverRef.current?.contains(e.target as Node)
+      if (!inContainer && !inPopover) setIsOpen(false)
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
@@ -253,7 +269,7 @@ export default function NotificationBell() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef}>
 
       {/* ── Bell button ───────────────────────────────────────────────────── */}
       <button
@@ -291,13 +307,18 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* ── Popover ───────────────────────────────────────────────────────── */}
-      {isOpen && (
+      {/* ── Popover (portal) ─────────────────────────────────────────────── */}
+      {/* Rendered in document.body via portal so it escapes the nav's          */}
+      {/* overflow-y:auto clipping. Position is fixed, anchored to the sidebar  */}
+      {/* right edge computed at open time.                                      */}
+      {isOpen && popoverPos && createPortal(
         <div
+          ref={popoverRef}
           role="dialog"
           aria-label="Notifications"
+          style={{ position: 'fixed', top: popoverPos.top, left: popoverPos.left }}
           className={[
-            'absolute top-0 left-full ml-2 z-50',
+            'z-[9999]',
             'w-80 max-w-[calc(100vw-240px)]',                   // viewport-safe on narrow screens
             'bg-white border border-kk-line rounded-2xl shadow-xl',
             'flex flex-col max-h-[calc(100vh-80px)]',           // never taller than viewport
@@ -377,7 +398,8 @@ export default function NotificationBell() {
             )}
 
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

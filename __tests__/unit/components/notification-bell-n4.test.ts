@@ -10,7 +10,11 @@
  *   - Old bottom placement removed (no second NotificationBell in AppShell)
  *   - Bell icon and "Notifications" label visible in nav row
  *   - Full sidebar row is clickable (button wraps entire row)
- *   - popover opens from new placement
+ *   - Click opens portal popover rendered in document.body with position:fixed
+ *     (escapes nav overflow-y:auto clipping that made the old absolute popover invisible)
+ *   - Popover position computed from sidebar right edge via getBoundingClientRect()
+ *   - Zero-notification state: click still opens panel (shows "No notifications yet.")
+ *   - outside-click checks both containerRef and popoverRef (separate DOM trees)
  *   - count fetch fires immediately on mount (fetchCount() called before setInterval)
  *   - interval cleans up on unmount (clearInterval in useEffect return)
  *   - visibilitychange listener cleans up on unmount (removeEventListener in return)
