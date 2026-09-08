@@ -231,6 +231,8 @@ export default async function MeetingDetailPage({
               outcomes={outcomes}
               canEdit={canEdit}
               isEditable={isActive && (status === 'open' || status === 'draft')}
+              allUsers={usersResult.data ?? []}
+              allProjects={projectsResult.data ?? []}
             />
           )}
 

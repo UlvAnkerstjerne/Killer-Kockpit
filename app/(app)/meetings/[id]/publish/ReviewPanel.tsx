@@ -235,7 +235,40 @@ export default function ReviewPanel({
                   {outcome.ai_draft_id && (
                     <span className="text-xs font-medium text-purple-600 shrink-0">✦ AI</span>
                   )}
-                  <span className="text-sm text-kk-ink flex-1 truncate">{outcome.title}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-kk-ink truncate">{outcome.title}</span>
+                    {(() => {
+                      const p = outcome.payload_json
+                      const parts: string[] = []
+                      if (outcome.kind === 'task' || outcome.kind === 'decision') {
+                        const name = p.owner_user_id
+                          ? (allUsers.find((u) => u.id === (p.owner_user_id as string))?.display_name ?? null)
+                          : null
+                        if (name) parts.push(name)
+                      }
+                      if (outcome.kind === 'waiting_on') {
+                        const name = p.waiting_for_user_id
+                          ? (allUsers.find((u) => u.id === (p.waiting_for_user_id as string))?.display_name ?? null)
+                          : (p.waiting_for_name as string) || null
+                        if (name) parts.push(name)
+                      }
+                      if (outcome.kind !== 'decision' && p.due_at) {
+                        parts.push(
+                          new Date(p.due_at as string).toLocaleString('en-GB', {
+                            timeZone: 'Europe/Copenhagen',
+                            day: 'numeric',
+                            month: 'short',
+                          }),
+                        )
+                      }
+                      if (parts.length === 0) return null
+                      return (
+                        <span className="block text-[11px] text-kk-muted mt-0.5">
+                          {parts.join(' · ')}
+                        </span>
+                      )
+                    })()}
+                  </span>
                   <div className="flex items-center gap-3 shrink-0">
                     <button
                       onClick={() => (isEditing ? cancelEdit() : startEdit(outcome))}
