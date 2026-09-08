@@ -6,7 +6,7 @@
 
 - **Product:** Killer Kockpit — internal company HQ for Killer Kebab
 - **Production:** kockpit.killerkebab.com (Railway)
-- **Dev server:** `npm run dev` → `http://localhost:3001`
+- **Dev server:** `npm run dev` → `http://localhost:3000`
 - **Stack:** Next.js 16 App Router · TypeScript · Tailwind CSS · Supabase (PostgreSQL + RLS)
 
 ## Roles
