@@ -136,7 +136,7 @@ const ICON_MAP: Record<string, React.FC> = {
 // ─── Nav groups ───────────────────────────────────────────────────────────────
 
 const PRIMARY_NAV = [
-  { href: '/today',       label: 'Today' },
+  { href: '/today',       label: 'Today' },       // rendered first explicitly; slice(1) in JSX
   { href: '/tasks',       label: 'Tasks' },
   { href: '/projects',    label: 'Projects' },
   { href: '/waiting-ons', label: 'Waiting On' },
@@ -236,7 +236,10 @@ export default function AppShell({
               Operations
             </div>
             <div className="space-y-0.5">
-              {PRIMARY_NAV.map(item => (
+              {/* Today is first; Notifications follows immediately as a primary attention surface */}
+              <NavLink href="/today" label="Today" />
+              <NotificationBell />
+              {PRIMARY_NAV.slice(1).map(item => (
                 <NavLink key={item.href} href={item.href} label={item.label} />
               ))}
             </div>
@@ -294,9 +297,6 @@ export default function AppShell({
             <WorkspaceSwitcher currentWorkspace="management" />
           </div>
         )}
-
-        {/* Notifications */}
-        <NotificationBell />
 
         {/* User */}
         <div className="border-t border-kk-line mx-3 mb-4 pt-3">

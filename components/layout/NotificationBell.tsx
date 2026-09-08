@@ -3,10 +3,12 @@
 /**
  * components/layout/NotificationBell.tsx — N4 notification bell UI
  *
- * Placement: sidebar, directly above the user card.
+ * Placement: primary sidebar navigation, directly below Today.
  *
  * Features:
- *   - Bell button with unread badge (polling every 30 s, count-only)
+ *   - Bell button with unread badge (polling every 60 s, count-only)
+ *   - Overlap guard: concurrent unread-count requests are suppressed
+ *   - visibilitychange: immediate count refresh when tab becomes active
  *   - Popover with recent notifications (fetched on open, not on poll)
  *   - Click row → optimistic mark-read + navigate to /tasks/[entity_id]
  *   - "Mark all as read" header action
@@ -28,7 +30,7 @@ import {
 
 // ─── Constants (exported for testing) ─────────────────────────────────────────
 
-export const POLL_INTERVAL_MS = 30_000
+export const POLL_INTERVAL_MS = 60_000
 
 export const KNOWN_TYPES = [
   'task.assigned',
@@ -102,6 +104,14 @@ export function shouldDecrement(
   return n.read_at === null && !localReadIds.has(n.id)
 }
 
+/**
+ * Returns true when a visibilitychange event should trigger a count refresh.
+ * Only 'visible' transitions trigger a refresh; 'hidden' and others do not.
+ */
+export function shouldRefreshOnVisibility(visibilityState: string): boolean {
+  return visibilityState === 'visible'
+}
+
 // ─── SVG ──────────────────────────────────────────────────────────────────────
 
 function IconBell() {
@@ -118,8 +128,9 @@ function IconBell() {
 
 export default function NotificationBell() {
   const router       = useRouter()
-  const containerRef = useRef<HTMLDivElement>(null)
-  const mountedRef   = useRef(true)
+  const containerRef     = useRef<HTMLDivElement>(null)
+  const mountedRef       = useRef(true)
+  const fetchingCountRef = useRef(false)
 
   const [unreadCount,   setUnreadCount]   = useState(0)
   const [isOpen,        setIsOpen]        = useState(false)
@@ -134,17 +145,34 @@ export default function NotificationBell() {
     return () => { mountedRef.current = false }
   }, [])
 
-  // ── Unread count polling ─────────────────────────────────────────────────
+  // ── Unread count polling (overlap-guarded) ───────────────────────────────
   const fetchCount = useCallback(async () => {
-    const result = await getUnreadNotificationCount()
-    if (!mountedRef.current) return
-    if (result.data !== undefined) setUnreadCount(result.data)
+    // Suppress concurrent requests — only one count fetch in flight at a time.
+    if (fetchingCountRef.current) return
+    fetchingCountRef.current = true
+    try {
+      const result = await getUnreadNotificationCount()
+      if (!mountedRef.current) return
+      if (result.data !== undefined) setUnreadCount(result.data)
+    } finally {
+      if (mountedRef.current) fetchingCountRef.current = false
+    }
   }, [])
 
+  // Immediate fetch on mount + 60-second interval.
   useEffect(() => {
     fetchCount()
     const id = setInterval(fetchCount, POLL_INTERVAL_MS)
     return () => clearInterval(id)
+  }, [fetchCount])
+
+  // Refresh count when the browser tab returns to the foreground.
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (shouldRefreshOnVisibility(document.visibilityState)) fetchCount()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [fetchCount])
 
   // ── Recent list (fetched only when popover opens) ────────────────────────
@@ -225,7 +253,7 @@ export default function NotificationBell() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="relative mx-3 mb-1">
+    <div ref={containerRef} className="relative">
 
       {/* ── Bell button ───────────────────────────────────────────────────── */}
       <button
@@ -269,7 +297,7 @@ export default function NotificationBell() {
           role="dialog"
           aria-label="Notifications"
           className={[
-            'absolute bottom-0 left-full ml-2 z-50',
+            'absolute top-0 left-full ml-2 z-50',
             'w-80 max-w-[calc(100vw-240px)]',                   // viewport-safe on narrow screens
             'bg-white border border-kk-line rounded-2xl shadow-xl',
             'flex flex-col max-h-[calc(100vh-80px)]',           // never taller than viewport

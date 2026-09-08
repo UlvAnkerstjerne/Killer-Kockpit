@@ -4,6 +4,19 @@
  * Environment: Node (vitest.config.ts sets environment: 'node').
  * No jsdom / testing-library. Tests cover only the exported pure helpers from
  * NotificationBell.tsx. The React component itself requires a browser.
+ *
+ * Component-level behaviours verified by implementation (not unit-testable here):
+ *   - Notifications row appears in primary nav directly below Today
+ *   - Old bottom placement removed (no second NotificationBell in AppShell)
+ *   - Bell icon and "Notifications" label visible in nav row
+ *   - Full sidebar row is clickable (button wraps entire row)
+ *   - popover opens from new placement
+ *   - count fetch fires immediately on mount (fetchCount() called before setInterval)
+ *   - interval cleans up on unmount (clearInterval in useEffect return)
+ *   - visibilitychange listener cleans up on unmount (removeEventListener in return)
+ *   - overlapping count requests suppressed (fetchingCountRef guard in fetchCount)
+ *   - full recent list NOT polled every 60 s (getRecentNotifications only in fetchList)
+ *   - mark-read and mark-all behaviour unchanged
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -12,6 +25,7 @@ import {
   relativeTime,
   safeFormatMessage,
   shouldDecrement,
+  shouldRefreshOnVisibility,
   POLL_INTERVAL_MS,
   KNOWN_TYPES,
 } from '@/components/layout/NotificationBell'
@@ -20,8 +34,12 @@ import type {} from '@/lib/actions/notifications'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 describe('POLL_INTERVAL_MS', () => {
-  it('is 30 seconds', () => {
-    expect(POLL_INTERVAL_MS).toBe(30_000)
+  it('is 60 seconds', () => {
+    expect(POLL_INTERVAL_MS).toBe(60_000)
+  })
+
+  it('is not 30 seconds (regression: was halved from 30s to avoid excess polling)', () => {
+    expect(POLL_INTERVAL_MS).not.toBe(30_000)
   })
 })
 
@@ -233,5 +251,25 @@ describe('shouldDecrement', () => {
   it('returns true when a different id is in localReadIds', () => {
     const otherId = 'bbbbbbbb-0000-4000-8000-000000000002'
     expect(shouldDecrement(notif(null), new Set([otherId]))).toBe(true)
+  })
+})
+
+// ─── shouldRefreshOnVisibility ────────────────────────────────────────────────
+
+describe('shouldRefreshOnVisibility', () => {
+  it('returns true when visibilityState is "visible"', () => {
+    expect(shouldRefreshOnVisibility('visible')).toBe(true)
+  })
+
+  it('returns false when visibilityState is "hidden"', () => {
+    expect(shouldRefreshOnVisibility('hidden')).toBe(false)
+  })
+
+  it('returns false for other states (e.g. "prerender")', () => {
+    expect(shouldRefreshOnVisibility('prerender')).toBe(false)
+  })
+
+  it('returns false for empty string', () => {
+    expect(shouldRefreshOnVisibility('')).toBe(false)
   })
 })
