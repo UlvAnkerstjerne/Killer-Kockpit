@@ -1,9 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { canAccessManagementView, canAccessMarketing, canManagePeople, canManageLocations } from '@/lib/permissions'
+import { canAccessManagementView, canAccessMarketing, canManagePeople, canManageLocations, canAccessQualityCheck } from '@/lib/permissions'
 import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
@@ -116,21 +117,29 @@ function IconSettings() {
     </svg>
   )
 }
+function IconQuality() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M8 1.5L9.8 5.2l4.2.6-3 2.9.7 4.1L8 10.8l-3.7 2 .7-4.1-3-2.9 4.2-.6L8 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
+  )
+}
 
 const ICON_MAP: Record<string, React.FC> = {
-  '/today':       IconToday,
-  '/tasks':       IconTasks,
-  '/projects':    IconProjects,
-  '/waiting-ons': IconWaiting,
-  '/decisions':   IconDecisions,
-  '/todos':       IconTodos,
-  '/meetings':    IconMeetings,
-  '/team':        IconTeam,
-  '/inbox':       IconInbox,
-  '/people':      IconPeople,
-  '/locations':   IconLocations,
-  '/knowledge':   IconKnowledge,
-  '/settings':    IconSettings,
+  '/today':            IconToday,
+  '/tasks':            IconTasks,
+  '/projects':         IconProjects,
+  '/waiting-ons':      IconWaiting,
+  '/decisions':        IconDecisions,
+  '/todos':            IconTodos,
+  '/meetings':         IconMeetings,
+  '/team':             IconTeam,
+  '/inbox':            IconInbox,
+  '/people':           IconPeople,
+  '/locations':        IconLocations,
+  '/knowledge':        IconKnowledge,
+  '/settings':         IconSettings,
+  '/kkc/ssp-cph':      IconQuality,
 }
 
 // ─── Nav groups ───────────────────────────────────────────────────────────────
@@ -157,6 +166,9 @@ export default function AppShell({
   const searchParams = useSearchParams()
   const managementAllowed = canAccessManagementView(user.role)
   const marketingAllowed = canAccessMarketing(user.role, user.marketing_access)
+  const qualityCheckAllowed = canAccessQualityCheck(user.role)
+
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const secondaryNav = [
     { href: '/meetings',  label: 'Meetings',  active: true  },
@@ -190,12 +202,20 @@ export default function AppShell({
     .toUpperCase()
     .slice(0, 2)
 
-  function NavLink({ href, label, deferred }: { href: string; label: string; deferred?: boolean }) {
+  // ── NavLink — used in both desktop sidebar and mobile drawer ──────────────
+
+  function NavLink({ href, label, deferred, onNavigate }: {
+    href: string
+    label: string
+    deferred?: boolean
+    onNavigate?: () => void
+  }) {
     const isActive = pathname === href || pathname.startsWith(href + '/')
     const Icon = ICON_MAP[href]
     return (
       <Link
         href={href}
+        onClick={onNavigate}
         className={[
           'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm transition-colors',
           isActive
@@ -213,54 +233,66 @@ export default function AppShell({
     )
   }
 
-  return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0 bg-kk-sidebar border-r border-kk-line flex flex-col sticky top-0 h-screen">
+  // ── NavContent — shared between desktop sidebar and mobile drawer ──────────
+  // onNavigate is called when a nav link is tapped (used to close the mobile drawer).
 
-        {/* Brand */}
-        <div className="px-5 pt-5 pb-4">
-          <div className="font-brand text-[26px] font-black text-kk-brand leading-none tracking-tight">
-            KILLER
+  function NavContent({ onNavigate }: { onNavigate?: () => void }) {
+    return (
+      <nav className="flex-1 px-3 overflow-y-auto">
+        {/* Primary group */}
+        <div className="mb-1">
+          <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/40">
+            Operations
           </div>
-          <div className="font-brand text-[12px] font-extrabold text-kk-ink/80 leading-tight tracking-[0.1em] uppercase mt-1">
-            KOCKPIT
+          <div className="space-y-0.5">
+            {/* Today is first; Notifications follows immediately as a primary attention surface */}
+            <NavLink href="/today" label="Today" onNavigate={onNavigate} />
+            <NotificationBell />
+            {PRIMARY_NAV.slice(1).map(item => (
+              <NavLink key={item.href} href={item.href} label={item.label} onNavigate={onNavigate} />
+            ))}
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 px-3 overflow-y-auto">
-          {/* Primary group */}
-          <div className="mb-1">
-            <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/40">
-              Operations
+        {/* Divider */}
+        <div className="my-2 border-t border-kk-line" />
+
+        {/* Secondary group */}
+        <div className="space-y-0.5">
+          {secondaryNav.map(item => (
+            <NavLink
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              deferred={!item.active}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+
+        {/* Killer Kuality Check group */}
+        {qualityCheckAllowed && (
+          <>
+            <div className="my-2 border-t border-kk-line" />
+            <div>
+              <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/40">
+                Killer Kuality Check
+              </div>
+              <div className="space-y-0.5">
+                <NavLink href="/kkc/ssp-cph" label="SSP / CPH Airport" onNavigate={onNavigate} />
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {/* Today is first; Notifications follows immediately as a primary attention surface */}
-              <NavLink href="/today" label="Today" />
-              <NotificationBell />
-              {PRIMARY_NAV.slice(1).map(item => (
-                <NavLink key={item.href} href={item.href} label={item.label} />
-              ))}
-            </div>
-          </div>
+          </>
+        )}
+      </nav>
+    )
+  }
 
-          {/* Divider */}
-          <div className="my-2 border-t border-kk-line" />
+  // ── Shared sidebar footer (view toggle + workspace switcher + user) ─────────
 
-          {/* Secondary group */}
-          <div className="space-y-0.5">
-            {secondaryNav.map(item => (
-              <NavLink
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                deferred={!item.active}
-              />
-            ))}
-          </div>
-        </nav>
-
+  function SidebarFooter({ onSignOut }: { onSignOut: () => void }) {
+    return (
+      <>
         {/* Org / Personal view toggle */}
         {managementAllowed && (
           <div className="px-3 pb-2">
@@ -311,7 +343,7 @@ export default function AppShell({
               <div className="text-[10px] text-kk-muted">{user.role}</div>
             </div>
             <button
-              onClick={handleSignOut}
+              onClick={onSignOut}
               className="text-[11px] text-kk-muted hover:text-kk-ink transition-colors shrink-0"
               title="Sign out"
             >
@@ -319,10 +351,83 @@ export default function AppShell({
             </button>
           </div>
         </div>
+      </>
+    )
+  }
+
+  return (
+    <div className="flex min-h-screen">
+
+      {/* ── Desktop sidebar (hidden on mobile) ── */}
+      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen">
+        {/* Brand */}
+        <div className="px-5 pt-5 pb-4">
+          <div className="font-brand text-[26px] font-black text-kk-brand leading-none tracking-tight">
+            KILLER
+          </div>
+          <div className="font-brand text-[12px] font-extrabold text-kk-ink/80 leading-tight tracking-[0.1em] uppercase mt-1">
+            KOCKPIT
+          </div>
+        </div>
+
+        <NavContent />
+        <SidebarFooter onSignOut={handleSignOut} />
       </aside>
 
-      {/* Main area */}
+      {/* ── Mobile nav drawer ── */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-50 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+          style={{ background: 'rgba(23,23,23,0.35)', backdropFilter: 'blur(1px)' }}
+        >
+          <div
+            className="h-full w-64 bg-kk-sidebar flex flex-col overflow-hidden shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drawer header — compact to preserve vertical space for all nav items */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-kk-line shrink-0">
+              <div className="font-brand leading-none">
+                <span className="text-[18px] font-black text-kk-brand tracking-tight">KILLER</span>
+                <span className="text-[11px] font-extrabold text-kk-ink/80 tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-1.5 text-kk-muted hover:text-kk-ink transition-colors"
+                aria-label="Close navigation"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <NavContent onNavigate={() => setMobileMenuOpen(false)} />
+            <SidebarFooter onSignOut={handleSignOut} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Main area ── */}
       <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Mobile header with hamburger (hidden on desktop) */}
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-kk-sidebar border-b border-kk-line shrink-0">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-1.5 -ml-1.5 text-kk-ink/60 hover:text-kk-ink transition-colors"
+            aria-label="Open navigation"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <div className="font-brand leading-none">
+            <span className="text-[18px] font-black text-kk-brand tracking-tight">KILLER</span>
+            <span className="text-[11px] font-extrabold text-kk-ink/80 tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
+          </div>
+        </div>
+
         {pathname !== '/today' && <CaptureBar user={user} currentView={currentView} />}
         <main className="flex-1 p-4">
           {children}

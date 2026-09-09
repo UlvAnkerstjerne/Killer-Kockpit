@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { disconnectGoogleCalendar } from '@/lib/actions/google'
 import type { GoogleConnectionStatus } from '@/lib/google/auth'
+import type { KKRole } from '@/lib/types'
 
 /**
  * Unified Google Workspace connection card.
@@ -15,8 +16,10 @@ import type { GoogleConnectionStatus } from '@/lib/google/auth'
  */
 export default function GoogleConnectionCard({
   status,
+  userRole,
 }: {
   status: GoogleConnectionStatus
+  userRole: KKRole
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -146,6 +149,26 @@ export default function GoogleConnectionCard({
                   </a>
                 )}
               </div>
+              {userRole === 'SUPER_ADMIN' && (
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-medium text-kk-ink">Sheets</span>
+                    <span className="ml-1.5 text-xs text-kk-muted">
+                      System credential for Killer Kuality Check data — enable once, shared across all users
+                    </span>
+                  </div>
+                  {status.sheetsEnabled ? (
+                    <span className="text-xs text-kk-good shrink-0">Enabled</span>
+                  ) : (
+                    <a
+                      href="/api/google/connect/sheets"
+                      className="text-xs text-kk-ink underline shrink-0 hover:opacity-70 transition-opacity"
+                    >
+                      Enable →
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="text-xs text-kk-muted">

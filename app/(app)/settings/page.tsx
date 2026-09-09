@@ -15,7 +15,7 @@ export default async function SettingsPage() {
       <h1 className="text-2xl font-black tracking-tight text-kk-ink mb-6">Settings</h1>
 
       <div className="space-y-5">
-        <GoogleConnectionCard status={googleStatus} />
+        <GoogleConnectionCard status={googleStatus} userRole={user.role} />
       </div>
     </div>
   )
