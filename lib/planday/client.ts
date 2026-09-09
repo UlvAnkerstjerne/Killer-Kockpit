@@ -196,6 +196,38 @@ export async function getDeactivatedEmployeesWithBirthDate(
 }
 
 /**
+ * Fetches all active employees for lightweight sync (no BirthDate, no shifts).
+ * Only requests id, firstName, lastName — sufficient for P3 roster sync.
+ */
+export async function getActiveEmployees(
+  clientId: string,
+  accessToken: string,
+): Promise<Pick<PlandayEmployee, 'id' | 'firstName' | 'lastName'>[]> {
+  return fetchAllPlandayPages<Pick<PlandayEmployee, 'id' | 'firstName' | 'lastName'>>(
+    '/hr/v1.0/employees',
+    clientId,
+    accessToken,
+    { fields: 'id,firstName,lastName' },
+  )
+}
+
+/**
+ * Fetches all deactivated employees for lightweight sync (no BirthDate, no shifts).
+ * Only requests id, firstName, lastName — sufficient for P3 roster sync.
+ */
+export async function getDeactivatedEmployees(
+  clientId: string,
+  accessToken: string,
+): Promise<Pick<PlandayEmployee, 'id' | 'firstName' | 'lastName'>[]> {
+  return fetchAllPlandayPages<Pick<PlandayEmployee, 'id' | 'firstName' | 'lastName'>>(
+    '/hr/v1.0/employees/deactivated',
+    clientId,
+    accessToken,
+    { fields: 'id,firstName,lastName' },
+  )
+}
+
+/**
  * Fetches all shifts from fromDate (default 2020-01-01) to today.
  * Used to derive proposedStartedOn — the earliest shift date per employee.
  * Requires shift:read scope.

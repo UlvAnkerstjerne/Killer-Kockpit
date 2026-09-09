@@ -6,6 +6,7 @@ import {
   savePlandayCredentials,
 } from '@/lib/actions/planday-bootstrap'
 import { executeBootstrapImport } from '@/lib/actions/planday-import'
+import { runPlandaySync } from '@/lib/actions/planday-sync'
 import type { PlandayConnectionStatus } from '@/lib/planday/auth'
 import type {
   ReconciliationResult,
@@ -13,6 +14,7 @@ import type {
   ImportDecision,
   ImportDecisionAction,
   ImportResult,
+  SyncResult,
 } from '@/lib/planday/types'
 import type { PlandayPreviewResult } from '@/lib/actions/planday-bootstrap'
 
@@ -255,9 +257,19 @@ export default function PlandayBootstrapCard({
   const [tab, setTab] = useState<TabKey>('all')
   const [search, setSearch] = useState('')
 
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(
+    initialStatus.connected ? initialStatus.lastSyncAt : null,
+  )
+  const [lastSyncStatus, setLastSyncStatus] = useState<'success' | 'error' | null>(
+    initialStatus.connected ? initialStatus.lastSyncStatus : null,
+  )
+
   const [isPreviewing, startPreview] = useTransition()
   const [isSaving, startSaving] = useTransition()
   const [isImporting, startImporting] = useTransition()
+  const [isSyncing, startSync] = useTransition()
 
   // ── Default decisions when preview loads ────────────────────────────────────
   function applyDefaultDecisions(results: ReconciliationResult[]) {
@@ -292,7 +304,7 @@ export default function PlandayBootstrapCard({
         setPreviewError(result.error)
       } else if (result.data) {
         setPreview(result.data)
-        setStatus({ connected: true as const, portalId: null, portalName: result.data.portalName })
+        setStatus({ connected: true as const, portalId: null, portalName: result.data.portalName, lastSyncAt, lastSyncStatus, lastSyncError: null })
         applyDefaultDecisions(result.data.results)
       }
     })
@@ -311,7 +323,7 @@ export default function PlandayBootstrapCard({
         setCredError(result.error)
       } else {
         setCredSaved(true)
-        setStatus({ connected: true as const, portalId: null, portalName: null })
+        setStatus({ connected: true as const, portalId: null, portalName: null, lastSyncAt: null, lastSyncStatus: null, lastSyncError: null })
         setShowCredForm(false)
       }
     })
@@ -359,6 +371,24 @@ export default function PlandayBootstrapCard({
         setPreview(null)
         setDecisions(new Map())
         setLinkedIds(new Map())
+      }
+    })
+  }
+
+  function handleSync() {
+    setSyncError(null)
+    setSyncResult(null)
+    startSync(async () => {
+      const result = await runPlandaySync()
+      const now = new Date().toISOString()
+      if (result.error) {
+        setSyncError(result.error)
+        setLastSyncAt(now)
+        setLastSyncStatus('error')
+      } else if (result.data) {
+        setSyncResult(result.data)
+        setLastSyncAt(now)
+        setLastSyncStatus('success')
       }
     })
   }
@@ -557,12 +587,79 @@ export default function PlandayBootstrapCard({
             </div>
           )}
 
+          {/* Sync section */}
+          {status.connected && !showCredForm && (
+            <div className="pt-1 space-y-3">
+              {/* Last sync metadata */}
+              {lastSyncAt && (
+                <div className="flex items-center gap-2 text-xs text-kk-muted">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      lastSyncStatus === 'success' ? 'bg-kk-good' : 'bg-red-500'
+                    }`}
+                  />
+                  <span>
+                    Last sync{' '}
+                    {new Date(lastSyncAt).toLocaleString('en-GB', {
+                      day: 'numeric', month: 'short',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                    {lastSyncStatus === 'error' && ' — failed'}
+                  </span>
+                </div>
+              )}
+
+              {/* Sync error */}
+              {syncError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
+                  {syncError}
+                </div>
+              )}
+
+              {/* Sync result */}
+              {syncResult && (
+                <div className="p-3 rounded-xl bg-kk-good-bg border border-kk-good space-y-1.5">
+                  <p className="text-xs font-semibold text-kk-good">Sync complete</p>
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-kk-muted">
+                    <span><span className="font-medium text-kk-ink">{syncResult.namesUpdated}</span> names updated</span>
+                    <span><span className="font-medium text-kk-ink">{syncResult.activated}</span> reactivated</span>
+                    <span><span className="font-medium text-kk-ink">{syncResult.markedLeft}</span> marked left</span>
+                    <span><span className="font-medium text-kk-ink">{syncResult.mappedProcessed}</span> mapped</span>
+                    <span><span className="font-medium text-kk-ink">{syncResult.unmappedCount}</span> unmapped</span>
+                    {syncResult.manualInactivePreserved > 0 && (
+                      <span><span className="font-medium text-kk-ink">{syncResult.manualInactivePreserved}</span> inactive preserved</span>
+                    )}
+                  </div>
+                  {syncResult.unmappedCount > 0 && (
+                    <p className="text-xs text-amber-700">
+                      {syncResult.unmappedCount} Planday employee{syncResult.unmappedCount !== 1 ? 's' : ''} not yet mapped — run preview to import.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Sync now button */}
+              <button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="px-4 py-2 bg-kk-ink text-white text-sm font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40"
+              >
+                {isSyncing ? 'Syncing…' : 'Sync now'}
+              </button>
+            </div>
+          )}
+
+          {/* Divider */}
+          {status.connected && !showCredForm && (
+            <div className="border-t border-kk-line pt-3" />
+          )}
+
           {/* Run preview button */}
           {status.connected && !showCredForm && (
             <button
               onClick={handleRunPreview}
               disabled={isPreviewing}
-              className="px-4 py-2 bg-kk-ink text-white text-sm font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40"
+              className="px-4 py-2 bg-kk-soft text-kk-ink text-sm font-medium rounded-xl border border-kk-line hover:bg-kk-line transition-colors disabled:opacity-40"
             >
               {isPreviewing
                 ? 'Fetching Planday…'

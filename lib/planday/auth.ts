@@ -69,7 +69,14 @@ export interface PlandayCredentials {
 
 export type PlandayConnectionStatus =
   | { connected: false }
-  | { connected: true; portalId: string | null; portalName: string | null }
+  | {
+      connected: true
+      portalId: string | null
+      portalName: string | null
+      lastSyncAt: string | null
+      lastSyncStatus: 'success' | 'error' | null
+      lastSyncError: string | null
+    }
 
 /** Upsert: encrypts and stores client_id + refresh_token. Single org-level row. */
 export async function storePlandayCredentials(
@@ -121,14 +128,17 @@ export async function getPlandayConnectionStatus(): Promise<PlandayConnectionSta
   const serviceClient = createServiceClient()
   const { data } = await serviceClient
     .from('planday_credentials')
-    .select('portal_id, portal_name')
+    .select('portal_id, portal_name, last_sync_at, last_sync_status, last_sync_error')
     .eq('singleton_key', 'default')
     .single()
 
   if (!data) return { connected: false }
   return {
-    connected:  true,
-    portalId:   (data.portal_id   as string | null) ?? null,
-    portalName: (data.portal_name as string | null) ?? null,
+    connected:      true,
+    portalId:       (data.portal_id        as string | null) ?? null,
+    portalName:     (data.portal_name      as string | null) ?? null,
+    lastSyncAt:     (data.last_sync_at     as string | null) ?? null,
+    lastSyncStatus: (data.last_sync_status as 'success' | 'error' | null) ?? null,
+    lastSyncError:  (data.last_sync_error  as string | null) ?? null,
   }
 }

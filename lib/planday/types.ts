@@ -99,3 +99,22 @@ export interface ImportResult {
   active_new: number
   former_new: number
 }
+
+// ─── Ongoing sync result ───────────────────────────────────────────────────────
+
+export interface SyncResult {
+  /** Planday employees that had an existing identity mapping. */
+  mappedProcessed: number
+  /** Mapped employees whose name was updated in Kockpit. */
+  namesUpdated: number
+  /** Employees reactivated in Kockpit (Planday says active, KK had 'left'). */
+  activated: number
+  /** Employees marked left in Kockpit (Planday says deactivated, KK had 'active'). */
+  markedLeft: number
+  /** Mapped employees with status 'inactive' — preserved without any changes. */
+  manualInactivePreserved: number
+  /** Mapped employees with a linked app user — name was not synced from Planday. */
+  managementPreserved: number
+  /** Planday employees without an identity mapping — not imported. */
+  unmappedCount: number
+}
