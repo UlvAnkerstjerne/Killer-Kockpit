@@ -11,6 +11,9 @@ type EmployeeInput = {
   role_title?: string
   store_or_team?: string
   employment_status?: string
+  birthday_month?: number | null
+  birthday_day?: number | null
+  started_on?: string | null
   linked_user_id?: string | null
   manager_employee_id?: string | null
 }
@@ -24,6 +27,12 @@ export async function createEmployee(
 
   const serviceClient = createServiceClient()
 
+  const hasBirthdayMonth = input.birthday_month != null
+  const hasBirthdayDay   = input.birthday_day   != null
+  if (hasBirthdayMonth !== hasBirthdayDay) {
+    return { error: 'Birthday requires both a month and a day.' }
+  }
+
   const { data, error } = await serviceClient
     .from('employees')
     .insert({
@@ -31,6 +40,9 @@ export async function createEmployee(
       role_title: input.role_title?.trim() || null,
       store_or_team: input.store_or_team?.trim() || null,
       employment_status: input.employment_status || 'active',
+      birthday_month: input.birthday_month ?? null,
+      birthday_day:   input.birthday_day   ?? null,
+      started_on:     input.started_on     ?? null,
       linked_user_id: input.linked_user_id || null,
       manager_employee_id: input.manager_employee_id || null,
     })
@@ -56,11 +68,29 @@ export async function updateEmployee(
 
   const serviceClient = createServiceClient()
 
+  const hasBirthdayMonth = 'birthday_month' in input
+  const hasBirthdayDay   = 'birthday_day'   in input
+  if (hasBirthdayMonth !== hasBirthdayDay) {
+    return { error: 'Birthday requires both a month and a day.' }
+  }
+  if (hasBirthdayMonth && hasBirthdayDay) {
+    const bothNull  = input.birthday_month == null && input.birthday_day == null
+    const bothValue = input.birthday_month != null && input.birthday_day != null
+    if (!bothNull && !bothValue) {
+      return { error: 'Birthday requires both a month and a day.' }
+    }
+  }
+
   const patch: Record<string, unknown> = {}
   if (input.name !== undefined)               patch.name               = input.name.trim()
   if (input.role_title !== undefined)         patch.role_title         = input.role_title?.trim() || null
   if (input.store_or_team !== undefined)      patch.store_or_team      = input.store_or_team?.trim() || null
   if (input.employment_status !== undefined)  patch.employment_status  = input.employment_status
+  if (hasBirthdayMonth) {
+    patch.birthday_month = input.birthday_month ?? null
+    patch.birthday_day   = input.birthday_day   ?? null
+  }
+  if ('started_on' in input)                  patch.started_on         = input.started_on ?? null
   if ('linked_user_id' in input)              patch.linked_user_id     = input.linked_user_id ?? null
   if ('manager_employee_id' in input)         patch.manager_employee_id = input.manager_employee_id ?? null
 

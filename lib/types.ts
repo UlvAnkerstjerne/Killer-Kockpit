@@ -258,12 +258,25 @@ export interface Employee {
   store_or_team: string | null
   role_title: string | null
   employment_status: string
+  birthday_month: number | null
+  birthday_day: number | null
+  started_on: string | null
   manager_employee_id: string | null
   linked_user_id: string | null
   created_at: string
   updated_at: string
   linked_user?: Pick<AppUser, 'id' | 'display_name' | 'email'>
   manager?: Pick<Employee, 'id' | 'name'>
+}
+
+export interface EmployeeExternalIdentity {
+  id: string
+  employee_id: string
+  provider: string
+  external_scope: string
+  external_id: string
+  created_at: string
+  updated_at: string
 }
 
 export interface Location {

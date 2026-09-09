@@ -18,11 +18,20 @@ export default async function NewPersonPage() {
     const name       = (formData.get('name') as string)?.trim()
     if (!name) return
 
+    const birthdayMonthRaw = formData.get('birthday_month') as string
+    const birthdayDayRaw   = formData.get('birthday_day')   as string
+    const birthdayMonth = birthdayMonthRaw ? parseInt(birthdayMonthRaw, 10) : null
+    const birthdayDay   = birthdayDayRaw   ? parseInt(birthdayDayRaw, 10)   : null
+    const startedOnRaw  = formData.get('started_on') as string
+
     const result = await createEmployee({
       name,
       role_title:      formData.get('role_title') as string || undefined,
       store_or_team:   formData.get('store_or_team') as string || undefined,
       employment_status: formData.get('employment_status') as string || 'active',
+      birthday_month:  birthdayMonth,
+      birthday_day:    birthdayDay,
+      started_on:      startedOnRaw || null,
       linked_user_id:  formData.get('linked_user_id') as string || null,
     })
 
@@ -85,6 +94,46 @@ export default async function NewPersonPage() {
               <option value="inactive">Inactive</option>
               <option value="left">Left</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-kk-ink mb-1">
+              Birthday
+              <span className="ml-1 text-kk-muted font-normal">(day &amp; month — no year)</span>
+            </label>
+            <div className="flex gap-2">
+              <select
+                name="birthday_day"
+                className="w-24 text-sm px-3 py-2 bg-kk-soft border border-kk-line rounded-xl focus:outline-none focus:ring-2 focus:ring-kk-ink/20"
+              >
+                <option value="">Day</option>
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <select
+                name="birthday_month"
+                className="flex-1 text-sm px-3 py-2 bg-kk-soft border border-kk-line rounded-xl focus:outline-none focus:ring-2 focus:ring-kk-ink/20"
+              >
+                <option value="">Month</option>
+                {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
+                  <option key={m} value={i + 1}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-kk-muted mt-1">Set both or leave both empty.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-kk-ink mb-1">
+              Started
+              <span className="ml-1 text-kk-muted font-normal">(Killer Kebab employment start)</span>
+            </label>
+            <input
+              name="started_on"
+              type="date"
+              className="w-full text-sm px-3 py-2 bg-kk-soft border border-kk-line rounded-xl placeholder:text-kk-muted focus:outline-none focus:ring-2 focus:ring-kk-ink/20"
+            />
           </div>
 
           <div>

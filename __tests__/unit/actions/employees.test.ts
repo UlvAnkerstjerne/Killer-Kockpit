@@ -135,6 +135,75 @@ describe('createEmployee', () => {
     expect(result.error).toMatch(/Failed to create employee/)
     expect(result.data).toBeUndefined()
   })
+
+  it('can create an employee with a valid birthday', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockInsertSingle.mockResolvedValue({ data: { id: NEW_EMPLOYEE_ID }, error: null })
+
+    const result = await createEmployee({
+      name: 'Birthday Person',
+      employment_status: 'active',
+      birthday_month: 3,
+      birthday_day: 14,
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.id).toBe(NEW_EMPLOYEE_ID)
+  })
+
+  it('can create an employee with a Feb 29 birthday', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockInsertSingle.mockResolvedValue({ data: { id: NEW_EMPLOYEE_ID }, error: null })
+
+    const result = await createEmployee({
+      name: 'Leap Day Person',
+      employment_status: 'active',
+      birthday_month: 2,
+      birthday_day: 29,
+    })
+
+    expect(result.error).toBeUndefined()
+  })
+
+  it('rejects a birthday with only month set', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+
+    const result = await createEmployee({
+      name: 'Partial Birthday',
+      employment_status: 'active',
+      birthday_month: 5,
+    })
+
+    expect(result.error).toMatch(/Birthday requires both/)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('rejects a birthday with only day set', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+
+    const result = await createEmployee({
+      name: 'Partial Birthday',
+      employment_status: 'active',
+      birthday_day: 15,
+    })
+
+    expect(result.error).toMatch(/Birthday requires both/)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('can create an employee with started_on', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockInsertSingle.mockResolvedValue({ data: { id: NEW_EMPLOYEE_ID }, error: null })
+
+    const result = await createEmployee({
+      name: 'New Starter',
+      employment_status: 'active',
+      started_on: '2023-09-12',
+    })
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.id).toBe(NEW_EMPLOYEE_ID)
+  })
 })
 
 describe('updateEmployee', () => {
@@ -178,5 +247,59 @@ describe('updateEmployee', () => {
     const result = await updateEmployee('emp-uuid', { name: 'Fail' })
 
     expect(result.error).toMatch(/Failed to update employee/)
+  })
+
+  it('can update birthday to a valid pair', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockUpdateEq.mockResolvedValue({ error: null })
+
+    const result = await updateEmployee('emp-uuid', { birthday_month: 8, birthday_day: 22 })
+
+    expect(result.error).toBeUndefined()
+  })
+
+  it('can clear birthday by setting both to null', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockUpdateEq.mockResolvedValue({ error: null })
+
+    const result = await updateEmployee('emp-uuid', { birthday_month: null, birthday_day: null })
+
+    expect(result.error).toBeUndefined()
+  })
+
+  it('rejects birthday update with only one field', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+
+    const result = await updateEmployee('emp-uuid', { birthday_month: 6 })
+
+    expect(result.error).toMatch(/Birthday requires both/)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('rejects mismatched null birthday pair (one null, one value)', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+
+    const result = await updateEmployee('emp-uuid', { birthday_month: null, birthday_day: 15 })
+
+    expect(result.error).toMatch(/Birthday requires both/)
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('can update started_on', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockUpdateEq.mockResolvedValue({ error: null })
+
+    const result = await updateEmployee('emp-uuid', { started_on: '2021-03-01' })
+
+    expect(result.error).toBeUndefined()
+  })
+
+  it('can clear started_on', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockUpdateEq.mockResolvedValue({ error: null })
+
+    const result = await updateEmployee('emp-uuid', { started_on: null })
+
+    expect(result.error).toBeUndefined()
   })
 })
