@@ -76,3 +76,26 @@ export interface PlandayPage<T> {
   }
   data: T[]
 }
+
+// ─── Bootstrap import decisions ───────────────────────────────────────────────
+
+export type ImportDecisionAction = 'CREATE_NEW' | 'LINK_EXISTING' | 'SKIP'
+
+/**
+ * Client-supplied decision for one Planday employee.
+ * Only externalId, action, and optionally existingEmployeeId come from the browser.
+ * All name/birthday/started_on values are server-filled from fresh Planday data.
+ */
+export interface ImportDecision {
+  externalId: string
+  action: ImportDecisionAction
+  existingEmployeeId?: string  // required when action === 'LINK_EXISTING'
+}
+
+export interface ImportResult {
+  created: number
+  linked: number
+  skipped: number
+  active_new: number
+  former_new: number
+}
