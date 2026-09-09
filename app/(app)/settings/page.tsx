@@ -1,6 +1,9 @@
 import { getCurrentUser } from '@/lib/auth'
 import { getGoogleConnectionStatus } from '@/lib/google/auth'
+import { getPlandayConnectionStatus } from '@/lib/planday/auth'
+import { canAccessAdminSettings } from '@/lib/permissions'
 import GoogleConnectionCard from './GoogleConnectionCard'
+import PlandayBootstrapCard from './PlandayBootstrapCard'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +11,12 @@ export default async function SettingsPage() {
   const user = await getCurrentUser()
   if (!user) return null
 
-  const googleStatus = await getGoogleConnectionStatus(user.id)
+  const isAdmin = canAccessAdminSettings(user.role)
+
+  const [googleStatus, plandayStatus] = await Promise.all([
+    getGoogleConnectionStatus(user.id),
+    isAdmin ? getPlandayConnectionStatus() : Promise.resolve(null),
+  ])
 
   return (
     <div className="max-w-xl">
@@ -16,6 +24,9 @@ export default async function SettingsPage() {
 
       <div className="space-y-5">
         <GoogleConnectionCard status={googleStatus} userRole={user.role} />
+        {isAdmin && plandayStatus && (
+          <PlandayBootstrapCard initialStatus={plandayStatus} />
+        )}
       </div>
     </div>
   )
