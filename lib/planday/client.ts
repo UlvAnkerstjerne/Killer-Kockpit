@@ -149,16 +149,16 @@ export async function getPortal(
   clientId: string,
   accessToken: string,
 ): Promise<PlandayPortalInfo> {
-  const body = await plandayGet<{ data: Array<{ id: number; name: string; subdomain: string }> }>(
-    '/hr/v1.0/portals',
+  const body = await plandayGet<{ data: { id: number; name: string; companyName?: string } }>(
+    '/portal/v1.0/info',
     clientId,
     accessToken,
   )
-  const portal = body.data?.[0]
-  if (!portal) {
+  const portal = body.data
+  if (!portal?.id) {
     throw new PlandayApiError('No Planday portal is accessible with these credentials.')
   }
-  return { id: portal.id, name: portal.name }
+  return { id: portal.id, name: portal.companyName ?? portal.name }
 }
 
 /**

@@ -69,26 +69,39 @@ describe('getPlandayAccessToken', () => {
 describe('getPortal', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('returns the first portal', async () => {
-    mockFetch.mockReturnValue(mockJsonResponse({
-      paging: { offset: 0, limit: 100, total: 1 },
-      data: [{ id: 42, name: 'Killer Kebab HQ', subdomain: 'killerkebab' }],
-    }))
+  it('requests /portal/v1.0/info', async () => {
+    mockFetch.mockReturnValue(mockJsonResponse({ data: { id: 42, name: 'KK', companyName: 'Killer Kebab HQ' } }))
+    await getPortal(CLIENT_ID, ACCESS_TOKEN)
+    const [url] = mockFetch.mock.calls[0] as [string]
+    expect(url).toContain('/portal/v1.0/info')
+    expect(url).not.toContain('/hr/v1.0/portals')
+  })
+
+  it('parses data.id correctly', async () => {
+    mockFetch.mockReturnValue(mockJsonResponse({ data: { id: 42, name: 'KK', companyName: 'Killer Kebab HQ' } }))
     const portal = await getPortal(CLIENT_ID, ACCESS_TOKEN)
     expect(portal.id).toBe(42)
+  })
+
+  it('prefers companyName over name as display name', async () => {
+    mockFetch.mockReturnValue(mockJsonResponse({ data: { id: 42, name: 'kk-subdomain', companyName: 'Killer Kebab HQ' } }))
+    const portal = await getPortal(CLIENT_ID, ACCESS_TOKEN)
     expect(portal.name).toBe('Killer Kebab HQ')
   })
 
-  it('throws PlandayApiError when no portals accessible', async () => {
-    mockFetch.mockReturnValue(mockJsonResponse({ paging: { offset: 0, limit: 100, total: 0 }, data: [] }))
+  it('falls back to name when companyName is absent', async () => {
+    mockFetch.mockReturnValue(mockJsonResponse({ data: { id: 7, name: 'Kebab Portal' } }))
+    const portal = await getPortal(CLIENT_ID, ACCESS_TOKEN)
+    expect(portal.name).toBe('Kebab Portal')
+  })
+
+  it('throws PlandayApiError when data.id is missing', async () => {
+    mockFetch.mockReturnValue(mockJsonResponse({ data: {} }))
     await expect(getPortal(CLIENT_ID, ACCESS_TOKEN)).rejects.toBeInstanceOf(PlandayApiError)
   })
 
   it('sends correct auth headers', async () => {
-    mockFetch.mockReturnValue(mockJsonResponse({
-      paging: { offset: 0, limit: 100, total: 1 },
-      data: [{ id: 1, name: 'Portal', subdomain: 'p' }],
-    }))
+    mockFetch.mockReturnValue(mockJsonResponse({ data: { id: 1, name: 'Portal', companyName: 'P' } }))
     await getPortal(CLIENT_ID, ACCESS_TOKEN)
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit]
     expect((init.headers as Record<string, string>)['X-ClientId']).toBe(CLIENT_ID)
