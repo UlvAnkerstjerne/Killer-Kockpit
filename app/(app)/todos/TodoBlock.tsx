@@ -28,14 +28,14 @@ interface Props {
   completedThisWeek: Todo[]
   maxItems?: number     // if set, cap visible open todos (badge still shows full count)
   showFooter?: boolean  // if true, render a footer link instead of the header "All →" link
-  redHeader?: boolean   // if true, apply red/yellow header styling (Today page)
+  accentHeader?: boolean   // if true, apply warm-grey header (Today page)
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function TodoBlock({ openTodos, completedThisWeek, maxItems, showFooter, redHeader }: Props) {
+export default function TodoBlock({ openTodos, completedThisWeek, maxItems, showFooter, accentHeader }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -73,9 +73,9 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
   return (
     <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
       {/* Header */}
-      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${redHeader ? ' bg-[#AD3919]' : ''}`}>
-        <h2 className={`text-sm font-bold flex items-center gap-1.5${redHeader ? ' text-[#F5DA93]' : ' text-kk-ink'}`}>
-          <span className={`shrink-0${redHeader ? ' text-[#F5DA93]' : ' text-kk-ink/50'}`}>
+      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${accentHeader ? ' bg-kk-soft' : ''}`}>
+        <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
+          <span className="text-kk-ink/50 shrink-0">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2.5" y="2.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
               <rect x="2.5" y="9.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
@@ -84,7 +84,7 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
           </span>
           To-Dos
           {openTodos.length > 0 && (
-            <span className={`font-normal ml-1${redHeader ? ' text-[#F5DA93]' : ' text-kk-muted'}`}>· {openTodos.length} open</span>
+            <span className="text-kk-muted font-normal ml-1">· {openTodos.length} open</span>
           )}
         </h2>
         <div className="flex items-center gap-3">

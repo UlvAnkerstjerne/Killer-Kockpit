@@ -168,7 +168,7 @@ function IconReturned() {
 // ─── Dashboard card shell ────────────────────────────────────────────────────
 
 function DashCard({
-  title, badge, footerHref, footerLabel, children, icon, redHeader,
+  title, badge, footerHref, footerLabel, children, icon, accentHeader,
 }: {
   title: string
   badge?: number | string
@@ -176,16 +176,16 @@ function DashCard({
   footerLabel?: string
   children: React.ReactNode
   icon?: React.ReactNode
-  redHeader?: boolean
+  accentHeader?: boolean
 }) {
   return (
     <div className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
-      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${redHeader ? ' bg-[#AD3919]' : ''}`}>
-        <h2 className={`text-sm font-bold flex items-center gap-1.5${redHeader ? ' text-[#F5DA93]' : ' text-kk-ink'}`}>
-          {icon && <span className={`shrink-0${redHeader ? ' text-[#F5DA93]' : ' text-kk-ink/50'}`}>{icon}</span>}
+      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${accentHeader ? ' bg-kk-soft' : ''}`}>
+        <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
+          {icon && <span className="text-kk-ink/50 shrink-0">{icon}</span>}
           {title}
           {badge !== undefined && (
-            <span className={`font-normal ml-1${redHeader ? ' text-[#F5DA93]' : ' text-kk-muted'}`}>· {badge}</span>
+            <span className="text-kk-muted font-normal ml-1">· {badge}</span>
           )}
         </h2>
       </div>
@@ -530,7 +530,7 @@ export default async function TodayPage({
             footerHref="/tasks"
             footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : 'View all tasks'}
             icon={<IconUrgent />}
-            redHeader
+            accentHeader
           >
             {urgentItems.length === 0 ? (
               <EmptyRow text="No overdue or imminent items." />
@@ -577,7 +577,7 @@ export default async function TodayPage({
             completedThisWeek={[]}
             maxItems={5}
             showFooter
-            redHeader
+            accentHeader
           />
         </div>
 
@@ -589,7 +589,7 @@ export default async function TodayPage({
             footerHref="/tasks"
             footerLabel="View all tasks"
             icon={<IconWorkWeek />}
-            redHeader
+            accentHeader
           >
             {weekTaskItems.length === 0 ? (
               <EmptyRow text="No remaining tasks this week." />
@@ -636,7 +636,7 @@ export default async function TodayPage({
             footerHref="/waiting-ons"
             footerLabel="View all waiting ons"
             icon={<IconWaiting />}
-            redHeader
+            accentHeader
           >
             {nonUrgentWOs.length === 0 ? (
               <EmptyRow text="No open waiting ons." />
