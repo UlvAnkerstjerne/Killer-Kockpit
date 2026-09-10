@@ -14,7 +14,7 @@
 
 export const PRIORITY_CONFIG: Record<number, { label: string; dot: string }> = {
   1: { label: 'Critical',   dot: 'bg-red-600' },
-  2: { label: 'Normal',     dot: 'bg-orange-500' },
+  2: { label: 'Normal',     dot: 'bg-[#AD3919]' },
   3: { label: 'Low',        dot: 'bg-yellow-500' },
   4: { label: 'Background', dot: 'bg-stone-400' },
 }

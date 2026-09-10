@@ -365,7 +365,7 @@ export default function AppShell({
           <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
             KILLER
           </div>
-          <div className="font-brand text-[12px] font-extrabold text-kk-ink/80 leading-tight tracking-[0.1em] uppercase mt-1">
+          <div className="font-brand text-[26px] font-extrabold text-[#AD3919] leading-tight tracking-[0.1em] uppercase mt-1">
             KOCKPIT
           </div>
         </div>
@@ -389,7 +389,7 @@ export default function AppShell({
             <div className="flex items-center justify-between px-4 py-3 border-b border-kk-line shrink-0">
               <div className="font-brand leading-none">
                 <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
-                <span className="text-[11px] font-extrabold text-kk-ink/80 tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
+                <span className="text-[18px] font-extrabold text-[#AD3919] tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
               </div>
               <button
                 onClick={() => setMobileMenuOpen(false)}
@@ -424,7 +424,7 @@ export default function AppShell({
           </button>
           <div className="font-brand leading-none">
             <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
-            <span className="text-[11px] font-extrabold text-kk-ink/80 tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
+            <span className="text-[18px] font-extrabold text-[#AD3919] tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
           </div>
         </div>
 
