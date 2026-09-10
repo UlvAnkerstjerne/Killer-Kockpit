@@ -490,7 +490,7 @@ export default async function TodayPage({
     <div>
 
       {/* ── Header — Killer Red brand strip ─────────────────────────────────── */}
-      <div className="flex items-start justify-between -mx-4 px-5 py-3 mb-3 bg-[#AD3919]">
+      <div className="flex items-start justify-between -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-[#AD3919]">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-[#F5DA93]">This week</h1>
           <p className="text-sm mt-0.5 text-[#F5DA93]/75">{weekRangeLabel}</p>
