@@ -30,31 +30,18 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { buildSubmissionDetail } from '@/lib/kkc/detail'
+import {
+  SECTION_ORDER,
+  displaySection,
+  sortCheckpoints,
+  groupBySection,
+} from '@/lib/kkc/presentation'
 import type {
   KKCSspCphData,
   KKCResult,
   KKCConfigCheckpoint,
   KKCScoreRow,
 } from '@/lib/kkc/ssp-cph'
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const SECTION_ORDER = [
-  'Prep / Operations', 'Service / Staff',
-  'Fries',
-  'Kebab Wrap', 'Chicken Wrap', 'Falafel Wrap', 'Falafel Cup',
-  'Lemonade',
-]
-
-// Display-name overrides for section headers (data keys stay unchanged)
-const SECTION_DISPLAY: Record<string, string> = {
-  'Kebab Wrap':   'Killer Kebab',
-  'Chicken Wrap': 'Killer Kylling',
-  'Falafel Wrap': 'Killer Falafel',
-}
-function displaySection(s: string): string {
-  return SECTION_DISPLAY[s] ?? s
-}
 
 const CHECKPOINT_COL_W = 224  // px — frozen left column
 const VISIT_COL_W      = 96   // px — each visit column
@@ -130,117 +117,9 @@ function buildResultMatrix(data: KKCSspCphData): Map<string, ResultRow> {
   return matrix
 }
 
-// ── Checkpoint display order ────────────────────────────────────────────────────
-// Presentation-layer only. Config order, critical flags, and source data are unchanged.
-
-const CHECKPOINT_ORDER: Record<string, string[]> = {
-  'Prep / Operations': [
-    'Prep correctly dated and within date / fresh',
-    'Meat weighed using scale',
-    'Meat holding temperature',
-    'Lid used correctly',
-    'Blade properly sharp / cut straight with no mushrooming',
-    'Bread baked fresh to order',
-  ],
-  'Service / Staff': [
-    'All staff in uniform',
-    'Eye contact when ordering',
-    'Eye contact at pickup',
-    'Verbal interaction at pickup',
-  ],
-  'Kebab Wrap': [
-    'Meat temperature',
-    'Bread temperature',
-    'Bread fluffiness',
-    'Bread caramelisation',
-    'Meat caramelisation',
-    'Meat texture / juiciness',
-    'Distribution',
-    'Mint yoghurt sauce',
-    'Parsley',
-    'Onion',
-    'Dukkah',
-    'Harissa',
-  ],
-  'Chicken Wrap': [
-    'Chicken temperature',
-    'Bread temperature',
-    'Bread fluffiness',
-    'Bread caramelisation',
-    'Chicken caramelisation',
-    'Chicken texture / juiciness',
-    'Distribution',
-    'Zhugurt',
-    'Parsley',
-    'Killer Cucumbers',
-    'Cabbage',
-    'Harissa',
-  ],
-  'Falafel Wrap': [
-    'Falafel hot and fully cooked',
-    'Bread temperature',
-    'Bread fluffiness',
-    'Bread caramelisation',
-    'Falafel consistency',
-    'Falafel size',
-    'Distribution',
-    'Apple',
-    'Mint',
-    'Truffle mayo',
-    'Cabbage',
-    'Harissa',
-  ],
-  'Falafel Cup': [
-    'Falafel hot and fully cooked',
-    'Falafel consistency',
-    'Falafel size',
-    'Quantity — 3 falafels',
-    'Truffle dip',
-    'Dip amount',
-  ],
-  'Fries': [
-    'Warm',
-    'Crispy',
-    'Salt',
-    'Dukkah present',
-  ],
-  'Lemonade': [
-    'Available',
-    'Taste',
-  ],
-}
-
-function sortCheckpoints(section: string, cps: KKCConfigCheckpoint[]): KKCConfigCheckpoint[] {
-  const order = CHECKPOINT_ORDER[section]
-  if (!order) return cps
-  const idx = new Map(order.map((name, i) => [name, i]))
-  return [...cps].sort((a, b) => {
-    const ai = idx.get(a.checkpoint) ?? order.length
-    const bi = idx.get(b.checkpoint) ?? order.length
-    return ai - bi
-  })
-}
-
 // ── Section grouping ───────────────────────────────────────────────────────────
 
-interface SectionGroup { section: string; checkpoints: KKCConfigCheckpoint[] }
-
-function groupBySections(config: KKCConfigCheckpoint[]): SectionGroup[] {
-  const sectionMap = new Map<string, KKCConfigCheckpoint[]>()
-  for (const cp of config) {
-    const arr = sectionMap.get(cp.section) ?? []
-    arr.push(cp)
-    sectionMap.set(cp.section, arr)
-  }
-  const result: SectionGroup[] = []
-  for (const s of SECTION_ORDER) {
-    if (sectionMap.has(s)) result.push({ section: s, checkpoints: sortCheckpoints(s, sectionMap.get(s)!) })
-  }
-  for (const [s, cps] of sectionMap) {
-    if (!SECTION_ORDER.includes(s)) result.push({ section: s, checkpoints: sortCheckpoints(s, cps) })
-  }
-  return result
-}
+type SectionGroup = { section: string; checkpoints: KKCConfigCheckpoint[] }
 
 // ── Cell symbols ───────────────────────────────────────────────────────────────
 
@@ -393,7 +272,7 @@ export default function KualityMatrix({ data, onVisitClick }: Props) {
   const latestTs = visits[visits.length - 1]?.timestamp
 
   const resultMatrix = useMemo(() => buildResultMatrix(data), [data])
-  const sections     = useMemo(() => groupBySections(data.config), [data.config])
+  const sections     = useMemo(() => groupBySection(data.config) as SectionGroup[], [data.config])
 
   const tableMinWidth = CHECKPOINT_COL_W + visits.length * VISIT_COL_W
 

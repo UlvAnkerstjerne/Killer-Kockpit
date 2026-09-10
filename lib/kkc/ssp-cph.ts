@@ -148,6 +148,19 @@ async function getSheetsOAuthClient() {
 
 // ─── Fetch + parse ────────────────────────────────────────────────────────────
 
+/**
+ * Fetches and parses live KKC SSP/CPH data directly from Google Sheets,
+ * bypassing the Next.js Data Cache.
+ *
+ * Use this in server-side jobs and scripts that need fresh data without
+ * going through unstable_cache (e.g. the automated delivery service).
+ *
+ * Throws 'no_sheets_credential' if no user has granted spreadsheets.readonly.
+ */
+export async function fetchSSPCphDataDirect(): Promise<KKCSspCphData> {
+  return fetchSSPCphFromSheets()
+}
+
 async function fetchSSPCphFromSheets(): Promise<KKCSspCphData> {
   const oauthClient = await getSheetsOAuthClient()
   if (!oauthClient) {
