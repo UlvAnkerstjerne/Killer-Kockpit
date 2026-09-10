@@ -500,13 +500,13 @@ export default async function TodayPage({
           <div className="flex gap-1 text-sm">
             <Link
               href="/today?view=personal"
-              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-[#F5DA93] text-[#AD3919] font-semibold' : 'text-[#F5DA93]/70 hover:bg-white/10 hover:text-[#F5DA93]'}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-white text-kk-ink font-semibold shadow-sm ring-1 ring-kk-line' : 'text-kk-muted hover:bg-kk-line/50 hover:text-kk-ink'}`}
             >
               Personal
             </Link>
             <Link
               href="/today?view=management"
-              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-[#F5DA93] text-[#AD3919] font-semibold' : 'text-[#F5DA93]/70 hover:bg-white/10 hover:text-[#F5DA93]'}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-white text-kk-ink font-semibold shadow-sm ring-1 ring-kk-line' : 'text-kk-muted hover:bg-kk-line/50 hover:text-kk-ink'}`}
             >
               Management
             </Link>
