@@ -40,8 +40,8 @@ export default function CaptureBar({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [canCapture])
 
-  const buttons = (
-    <div className={inline ? 'flex items-center gap-2' : 'border-b border-kk-line bg-kk-bg px-7 py-3 flex items-center gap-2'}>
+  const buttonRow = (
+    <>
       <button
         onClick={() => setOpen('task')}
         className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
@@ -85,12 +85,18 @@ export default function CaptureBar({
           + Capture
         </button>
       )}
-    </div>
+    </>
   )
 
   return (
     <>
-      {buttons}
+      {inline ? (
+        <div className="flex items-center gap-2">{buttonRow}</div>
+      ) : (
+        <div className="border-b border-kk-line bg-kk-bg overflow-x-auto">
+          <div className="flex items-center gap-2 px-7 py-3 min-w-max">{buttonRow}</div>
+        </div>
+      )}
       {open && (
         <QuickCreateModal
           type={open}

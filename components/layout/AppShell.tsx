@@ -124,6 +124,15 @@ function IconQuality() {
     </svg>
   )
 }
+function IconAudit() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M4 5.5l.5.5 1-1" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
 
 const ICON_MAP: Record<string, React.FC> = {
   '/today':            IconToday,
@@ -140,6 +149,7 @@ const ICON_MAP: Record<string, React.FC> = {
   '/knowledge':        IconKnowledge,
   '/settings':         IconSettings,
   '/kkc/ssp-cph':      IconQuality,
+  '/kkc/audit':        IconAudit,
 }
 
 // ─── Nav groups ───────────────────────────────────────────────────────────────
@@ -280,6 +290,7 @@ export default function AppShell({
               </div>
               <div className="space-y-0.5">
                 <NavLink href="/kkc/ssp-cph" label="SSP / CPH Airport" onNavigate={onNavigate} />
+                <NavLink href="/kkc/audit" label="Operational Audit" onNavigate={onNavigate} />
               </div>
             </div>
           </>
