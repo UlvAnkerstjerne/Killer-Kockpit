@@ -5,6 +5,23 @@ import { useRouter } from 'next/navigation'
 import { attachDriveFile, detachDriveFile } from '@/lib/actions/drive'
 import type { DriveFileSource } from '@/lib/actions/drive'
 
+/**
+ * Pure guard for Enter-to-attach keyboard behaviour. Exported for unit testing.
+ * Returns true only when the keypress should trigger an attach:
+ *   - key is Enter
+ *   - not during IME composition (isComposing)
+ *   - URL is non-blank
+ *   - not already saving
+ */
+export function shouldAttachLink(
+  key: string,
+  isComposing: boolean,
+  url: string,
+  attaching: boolean,
+): boolean {
+  return key === 'Enter' && !isComposing && !!url.trim() && !attaching
+}
+
 // Defined inline to avoid importing googleapis in the client bundle.
 // This file is 'use client' — lib/google/drive.ts uses Node-only googleapis.
 function getDriveFileTypeLabel(mimeType: string): string {
@@ -41,7 +58,7 @@ export default function RelatedFilesSection({
 
   async function handleAttach(e: React.FormEvent) {
     e.preventDefault()
-    if (!url.trim()) return
+    if (!url.trim() || attaching) return
     setAttaching(true)
     setError(null)
     const result = await attachDriveFile(entityType, entityId, url.trim())
@@ -129,6 +146,11 @@ export default function RelatedFilesSection({
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  // Block Enter during IME composition (CJK/accent input).
+                  // Non-composing Enter is handled by the form's onSubmit.
+                  if (e.key === 'Enter' && e.nativeEvent.isComposing) e.preventDefault()
+                }}
                 placeholder="Paste a Google Drive or Docs link…"
                 className="flex-1 min-w-0 text-sm px-3 py-2 bg-kk-soft border border-kk-line rounded-xl placeholder:text-kk-muted focus:outline-none focus:ring-2 focus:ring-kk-ink/20"
                 disabled={attaching}

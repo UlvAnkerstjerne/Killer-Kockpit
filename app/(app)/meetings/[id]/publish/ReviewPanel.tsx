@@ -28,6 +28,57 @@ type Props = {
   allProjects: Project[]
 }
 
+// ─── Pure helpers (exported for unit testing) ──────────────────────────────
+
+/**
+ * Returns true for outcome kinds that support inline Responsible + Due editing.
+ * task and waiting_on both have owner_user_id + due_at in their payloads.
+ * decision has neither a due date nor a "responsible" concept.
+ */
+export function outcomeSupportsInlineEdit(kind: OutcomeKind): boolean {
+  return kind === 'task' || kind === 'waiting_on'
+}
+
+/**
+ * Resolves the display name of the Responsible (owner_user_id) from the payload.
+ * Returns null when unassigned or the user is not in the provided list.
+ */
+export function getResponsibleName(
+  payload: Record<string, unknown>,
+  users: { id: string; display_name: string }[],
+): string | null {
+  const ownerId = payload.owner_user_id as string | undefined
+  if (!ownerId) return null
+  return users.find((u) => u.id === ownerId)?.display_name ?? null
+}
+
+/**
+ * Formats a UTC ISO timestamp for compact display in the review row ("14 Sept").
+ * Returns null for absent / null / undefined input.
+ */
+export function formatReviewDue(utcIso: string | null | undefined): string | null {
+  if (!utcIso) return null
+  return new Date(utcIso as string).toLocaleString('en-GB', {
+    timeZone: 'Europe/Copenhagen',
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+/**
+ * Merges a single field change into an existing payload without touching any
+ * other fields. Exported to allow tests to verify the merge is clean.
+ */
+export function buildInlinePayload(
+  payload: Record<string, unknown>,
+  field: 'owner_user_id' | 'due_at',
+  value: string | null,
+): Record<string, unknown> {
+  return { ...payload, [field]: value }
+}
+
+// ─── Local helpers ──────────────────────────────────────────────────────────
+
 const KIND_LABELS: Record<OutcomeKind, string> = {
   task: 'Task',
   waiting_on: 'Waiting On',
@@ -114,6 +165,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
+// ─── Component ─────────────────────────────────────────────────────────────
+
 export default function ReviewPanel({
   meetingId,
   initialNotes,
@@ -133,6 +186,13 @@ export default function ReviewPanel({
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
+  // Inline Responsible / Due editing on the collapsed row
+  const [inlineEdit, setInlineEdit] = useState<{
+    outcomeId: string
+    field: 'responsible' | 'due'
+  } | null>(null)
+  const [inlineSaving, setInlineSaving] = useState(false)
+
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
 
@@ -140,6 +200,7 @@ export default function ReviewPanel({
     setEditingId(outcome.id)
     setEditForm(payloadToForm(outcome))
     setEditError(null)
+    setInlineEdit(null)
   }
 
   function cancelEdit() {
@@ -183,6 +244,24 @@ export default function ReviewPanel({
     if (!result.error) router.refresh()
   }
 
+  // Inline save: merges a single field into existing payload without touching others.
+  // owner_user_id → Responsible; due_at → Due.
+  // Called from the collapsed row chips — no full edit panel involved.
+  async function saveInlineField(
+    outcome: Outcome,
+    field: 'owner_user_id' | 'due_at',
+    value: string | null,
+  ) {
+    if (inlineSaving) return
+    setInlineSaving(true)
+    const result = await updateMeetingOutcome(outcome.id, meetingId, {
+      payload_json: buildInlinePayload(outcome.payload_json, field, value),
+    })
+    setInlineSaving(false)
+    setInlineEdit(null)
+    if (!result.error) router.refresh()
+  }
+
   async function handlePublish() {
     setPublishing(true)
     setPublishError(null)
@@ -222,53 +301,111 @@ export default function ReviewPanel({
         <div className="divide-y divide-kk-line">
           {initialOutcomes.map((outcome) => {
             const isEditing = editingId === outcome.id
+            const supportsInline = outcomeSupportsInlineEdit(outcome.kind)
+            const responsibleName = getResponsibleName(outcome.payload_json, allUsers)
+            const dueDateDisplay = formatReviewDue(outcome.payload_json.due_at as string | null)
+
             return (
               <div key={outcome.id}>
                 {/* Summary row */}
-                <div className="flex items-center gap-3 px-5 py-3.5">
+                <div className="flex items-start gap-3 px-5 py-3.5">
                   <span
-                    className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${KIND_STYLES[outcome.kind]}`}
+                    className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5 ${KIND_STYLES[outcome.kind]}`}
                   >
                     {KIND_LABELS[outcome.kind]}
                   </span>
                   {outcome.ai_draft_id && (
-                    <span className="text-xs font-medium text-purple-600 shrink-0">✦ AI</span>
+                    <span className="text-xs font-medium text-purple-600 shrink-0 mt-0.5">✦ AI</span>
                   )}
+
+                  {/* Title + inline meta */}
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm text-kk-ink truncate">{outcome.title}</span>
-                    {(() => {
-                      const p = outcome.payload_json
-                      const parts: string[] = []
-                      if (outcome.kind === 'task' || outcome.kind === 'decision') {
-                        const name = p.owner_user_id
-                          ? (allUsers.find((u) => u.id === (p.owner_user_id as string))?.display_name ?? null)
-                          : null
-                        if (name) parts.push(name)
-                      }
-                      if (outcome.kind === 'waiting_on') {
-                        const name = p.waiting_for_user_id
-                          ? (allUsers.find((u) => u.id === (p.waiting_for_user_id as string))?.display_name ?? null)
-                          : (p.waiting_for_name as string) || null
-                        if (name) parts.push(name)
-                      }
-                      if (outcome.kind !== 'decision' && p.due_at) {
-                        parts.push(
-                          new Date(p.due_at as string).toLocaleString('en-GB', {
-                            timeZone: 'Europe/Copenhagen',
-                            day: 'numeric',
-                            month: 'short',
-                          }),
-                        )
-                      }
-                      if (parts.length === 0) return null
-                      return (
-                        <span className="block text-[11px] text-kk-muted mt-0.5">
-                          {parts.join(' · ')}
+
+                    {/* Inline Responsible + Due chips for task and waiting_on */}
+                    {supportsInline && !isEditing && (
+                      <span className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1">
+
+                        {/* Responsible chip */}
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-kk-muted">Responsible</span>
+                          {inlineEdit?.outcomeId === outcome.id && inlineEdit.field === 'responsible' ? (
+                            <select
+                              defaultValue={(outcome.payload_json.owner_user_id as string) || ''}
+                              onChange={(e) => saveInlineField(outcome, 'owner_user_id', e.target.value || null)}
+                              onBlur={() => setInlineEdit(null)}
+                              // eslint-disable-next-line jsx-a11y/no-autofocus
+                              autoFocus
+                              disabled={inlineSaving}
+                              className="text-[11px] border border-kk-line rounded px-1.5 py-0.5 text-kk-ink bg-white focus:outline-none focus:border-kk-ink disabled:opacity-40"
+                            >
+                              <option value="">— Unassigned —</option>
+                              {allUsers.map((u) => (
+                                <option key={u.id} value={u.id}>{u.display_name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              onClick={() => setInlineEdit({ outcomeId: outcome.id, field: 'responsible' })}
+                              disabled={inlineSaving}
+                              className="text-[11px] text-kk-ink font-medium hover:underline disabled:cursor-default disabled:no-underline"
+                            >
+                              {responsibleName ?? (
+                                <span className="text-kk-muted font-normal">Choose responsible</span>
+                              )}
+                            </button>
+                          )}
                         </span>
-                      )
+
+                        {/* Due chip */}
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-kk-muted">Due</span>
+                          {inlineEdit?.outcomeId === outcome.id && inlineEdit.field === 'due' ? (
+                            <input
+                              type="datetime-local"
+                              defaultValue={utcToWall(outcome.payload_json.due_at as string | null)}
+                              onBlur={(e) =>
+                                saveInlineField(
+                                  outcome,
+                                  'due_at',
+                                  e.target.value ? wallToUtc(e.target.value) : null,
+                                )
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur()
+                                if (e.key === 'Escape') setInlineEdit(null)
+                              }}
+                              // eslint-disable-next-line jsx-a11y/no-autofocus
+                              autoFocus
+                              disabled={inlineSaving}
+                              className="text-[11px] border border-kk-line rounded px-1.5 py-0.5 text-kk-ink bg-white focus:outline-none focus:border-kk-ink disabled:opacity-40"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setInlineEdit({ outcomeId: outcome.id, field: 'due' })}
+                              disabled={inlineSaving}
+                              className="text-[11px] text-kk-ink font-medium hover:underline disabled:cursor-default disabled:no-underline"
+                            >
+                              {dueDateDisplay ?? (
+                                <span className="text-kk-muted font-normal">Set due date</span>
+                              )}
+                            </button>
+                          )}
+                        </span>
+
+                      </span>
+                    )}
+
+                    {/* Decision: show owner as plain meta if present */}
+                    {outcome.kind === 'decision' && (() => {
+                      const ownerName = getResponsibleName(outcome.payload_json, allUsers)
+                      return ownerName ? (
+                        <span className="block text-[11px] text-kk-muted mt-0.5">{ownerName}</span>
+                      ) : null
                     })()}
                   </span>
-                  <div className="flex items-center gap-3 shrink-0">
+
+                  <div className="flex items-center gap-3 shrink-0 mt-0.5">
                     <button
                       onClick={() => (isEditing ? cancelEdit() : startEdit(outcome))}
                       className="text-xs text-kk-muted hover:text-kk-ink transition-colors"
