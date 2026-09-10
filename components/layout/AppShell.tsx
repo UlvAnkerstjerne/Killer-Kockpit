@@ -362,7 +362,7 @@ export default function AppShell({
       <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen">
         {/* Brand */}
         <div className="px-5 pt-5 pb-4">
-          <div className="font-brand text-[26px] font-black text-kk-brand leading-none tracking-tight">
+          <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
             KILLER
           </div>
           <div className="font-brand text-[12px] font-extrabold text-kk-ink/80 leading-tight tracking-[0.1em] uppercase mt-1">
@@ -388,7 +388,7 @@ export default function AppShell({
             {/* Drawer header — compact to preserve vertical space for all nav items */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-kk-line shrink-0">
               <div className="font-brand leading-none">
-                <span className="text-[18px] font-black text-kk-brand tracking-tight">KILLER</span>
+                <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
                 <span className="text-[11px] font-extrabold text-kk-ink/80 tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
               </div>
               <button
@@ -423,7 +423,7 @@ export default function AppShell({
             </svg>
           </button>
           <div className="font-brand leading-none">
-            <span className="text-[18px] font-black text-kk-brand tracking-tight">KILLER</span>
+            <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
             <span className="text-[11px] font-extrabold text-kk-ink/80 tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
           </div>
         </div>
