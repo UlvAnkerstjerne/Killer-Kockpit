@@ -73,7 +73,7 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
   return (
     <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
       {/* Header */}
-      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${accentHeader ? ' bg-kk-soft' : ''}`}>
+      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${accentHeader ? ' bg-[#DDD9D1]' : ''}`}>
         <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
           <span className="text-kk-ink/50 shrink-0">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
