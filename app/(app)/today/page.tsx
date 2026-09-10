@@ -489,23 +489,23 @@ export default async function TodayPage({
   return (
     <div>
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-1.5">
+      {/* ── Header — Killer Red brand strip ─────────────────────────────────── */}
+      <div className="flex items-start justify-between -mx-4 px-5 py-3 mb-3 bg-[#AD3919]">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-kk-ink">This week</h1>
-          <p className="text-sm text-kk-muted mt-0.5">{weekRangeLabel}</p>
+          <h1 className="text-2xl font-black tracking-tight text-[#F5DA93]">This week</h1>
+          <p className="text-sm mt-0.5 text-[#F5DA93]/75">{weekRangeLabel}</p>
         </div>
         {canManage && (
           <div className="flex gap-1 text-sm">
             <Link
               href="/today?view=personal"
-              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-kk-ink text-white' : 'text-kk-muted hover:bg-kk-soft'}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-[#F5DA93] text-[#AD3919] font-semibold' : 'text-[#F5DA93]/70 hover:bg-white/10 hover:text-[#F5DA93]'}`}
             >
               Personal
             </Link>
             <Link
               href="/today?view=management"
-              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-kk-ink text-white' : 'text-kk-muted hover:bg-kk-soft'}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-[#F5DA93] text-[#AD3919] font-semibold' : 'text-[#F5DA93]/70 hover:bg-white/10 hover:text-[#F5DA93]'}`}
             >
               Management
             </Link>
