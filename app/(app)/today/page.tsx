@@ -490,11 +490,11 @@ export default async function TodayPage({
   return (
     <div>
 
-      {/* ── Header — Killer Red brand strip ─────────────────────────────────── */}
-      <div className="flex items-start justify-between -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-[#AD3919]">
+      {/* ── Header — warm grey banner ────────────────────────────────────────── */}
+      <div className="flex items-start justify-between -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-kk-soft">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-[#F5DA93]">This week</h1>
-          <p className="text-sm mt-0.5 text-[#F5DA93]/75">{weekRangeLabel}</p>
+          <h1 className="text-2xl font-black tracking-tight text-kk-ink">This week</h1>
+          <p className="text-sm mt-0.5 text-kk-muted">{weekRangeLabel}</p>
         </div>
         {canManage && (
           <div className="flex gap-1 text-sm">
