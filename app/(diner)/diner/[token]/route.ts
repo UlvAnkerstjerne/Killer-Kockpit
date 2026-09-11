@@ -15,7 +15,7 @@
  *
  * Security:
  *   - No Supabase anon credentials used; all DB access is service_role.
- *   - Cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/diner.
+ *   - Cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/ (sent to /api/diner/* too).
  *   - Expired / submitted / unknown tokens receive an HTML error page — not a redirect
  *     into the Kockpit application.
  *   - timingSafeEqual used in verifyDinerSession; no branch on secret length.
@@ -97,10 +97,16 @@ export async function GET(
   let submissionId: string
 
   if (invitation.status === 'pending') {
-    // First access — create submission and mark invitation active
+    // First access — find the published template, create submission, mark invitation active
+    const { data: tpl } = await db
+      .from('diner_templates')
+      .select('id')
+      .eq('status', 'published')
+      .maybeSingle()
+
     const { data: newSub, error: subErr } = await db
       .from('diner_submissions')
-      .insert({ invitation_id: invitation.id })
+      .insert({ invitation_id: invitation.id, template_id: tpl?.id ?? null })
       .select('id')
       .single()
 
@@ -169,7 +175,7 @@ export async function GET(
     httpOnly:  true,
     secure:    process.env.NODE_ENV === 'production',
     sameSite:  'lax',
-    path:      '/diner',
+    path:      '/',
     maxAge:    maxSeconds,
   })
 

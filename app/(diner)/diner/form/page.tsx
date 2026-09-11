@@ -1,72 +1,113 @@
 /**
  * /diner/form
  *
- * Mystery Diner form — placeholder for the questionnaire.
+ * Server component: verifies session, loads template + checkpoints + existing
+ * responses, then renders the interactive DinerForm client component.
  *
- * Access requires a valid dk_session cookie issued by GET /diner/[token].
- * Verifies session integrity and confirms the submission is still in progress
- * before rendering.
- *
- * Questionnaire, autosave, and submit UI will be added in a future iteration.
+ * Access requires a valid dk_session cookie (HttpOnly, HMAC-SHA256 signed)
+ * issued by GET /diner/[token]. Invalid or missing sessions redirect to /.
  */
 
 import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+import { redirect }  from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase/server'
 import { verifyDinerSession, DINER_COOKIE_NAME } from '@/lib/diner/session'
+import type { DinerCheckpoint, DinerResponsesMap } from '@/lib/diner/types'
+import DinerForm from './DinerForm'
 
 export default async function DinerFormPage() {
-  // ── Session verification ─────────────────────────────────────────────────
+  // ── Session ─────────────────────────────────────────────────────────────
   const cookieStore = await cookies()
   const raw         = cookieStore.get(DINER_COOKIE_NAME)
-
   if (!raw) redirect('/')
 
   const session = verifyDinerSession(raw.value)
   if (!session) redirect('/')
 
-  // ── Submission check ─────────────────────────────────────────────────────
-  // Verify the submission still exists, belongs to the session invitation,
-  // and is in progress. A submitted session should not reach the form.
   const db = createServiceClient()
+
+  // ── Submission + invitation ──────────────────────────────────────────────
   const { data: submission } = await db
     .from('diner_submissions')
-    .select('id, status')
+    .select('id, status, template_id, invitation_id')
     .eq('id',            session.submissionId)
     .eq('invitation_id', session.invitationId)
     .maybeSingle()
 
   if (!submission) redirect('/')
 
-  if (submission.status === 'submitted') {
-    return <SubmittedMessage />
+  const { data: invitation } = await db
+    .from('diner_invitations')
+    .select('diner_name, location_id')
+    .eq('id', session.invitationId)
+    .maybeSingle()
+
+  // ── Template + checkpoints ───────────────────────────────────────────────
+  // Use the template stored on the submission if available, otherwise fall
+  // back to the currently published template (for submissions created before
+  // migration 058 added template_id).
+  const templateId = submission.template_id
+
+  let checkpoints: DinerCheckpoint[] = []
+
+  if (templateId) {
+    const { data } = await db
+      .from('diner_checkpoints')
+      .select('id, template_id, section, order_index, label, description, hint, type, is_critical, is_conditional')
+      .eq('template_id', templateId)
+      .order('order_index')
+    checkpoints = (data ?? []) as DinerCheckpoint[]
+  } else {
+    // Fall back to published template
+    const { data: tpl } = await db
+      .from('diner_templates')
+      .select('id')
+      .eq('status', 'published')
+      .maybeSingle()
+
+    if (tpl) {
+      const { data } = await db
+        .from('diner_checkpoints')
+        .select('id, template_id, section, order_index, label, description, hint, type, is_critical, is_conditional')
+        .eq('template_id', tpl.id)
+        .order('order_index')
+      checkpoints = (data ?? []) as DinerCheckpoint[]
+    }
   }
 
-  // ── Placeholder ───────────────────────────────────────────────────────────
-  return (
-    <main className="flex min-h-svh flex-col items-center justify-center bg-[#f8f8f7] p-6">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-sm">
-        <h1 className="mb-2 text-xl font-semibold">Mystery Diner Audit</h1>
-        <p className="text-sm text-gray-500">
-          Your session is active. The questionnaire will appear here.
-        </p>
-        <p className="mt-4 rounded-md bg-gray-50 px-3 py-2 font-mono text-xs text-gray-400">
-          submission: {session.submissionId}
-        </p>
-      </div>
-    </main>
-  )
-}
+  // ── Existing responses (refresh-safe) ────────────────────────────────────
+  const { data: rawResponses } = await db
+    .from('diner_responses')
+    .select('checkpoint_id, result, notes')
+    .eq('submission_id', session.submissionId)
 
-function SubmittedMessage() {
+  const initialResponses: DinerResponsesMap = {}
+  for (const r of rawResponses ?? []) {
+    initialResponses[r.checkpoint_id] = {
+      result: (r.result as 'pass' | 'fail' | 'na' | null) ?? null,
+      notes:  r.notes ?? '',
+    }
+  }
+
+  // ── Location name ────────────────────────────────────────────────────────
+  let locationName: string | null = null
+  if (invitation?.location_id) {
+    const { data: loc } = await db
+      .from('locations')
+      .select('name')
+      .eq('id', invitation.location_id)
+      .maybeSingle()
+    locationName = loc?.name ?? null
+  }
+
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center bg-[#f8f8f7] p-6">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-sm text-center">
-        <h1 className="mb-2 text-xl font-semibold">Audit submitted</h1>
-        <p className="text-sm text-gray-500">
-          This Mystery Diner audit has already been submitted. Thank you.
-        </p>
-      </div>
-    </main>
+    <DinerForm
+      checkpoints={checkpoints}
+      initialResponses={initialResponses}
+      submissionId={session.submissionId}
+      submissionStatus={submission.status as 'in_progress' | 'submitted'}
+      dimerName={invitation?.diner_name ?? ''}
+      locationName={locationName}
+    />
   )
 }
