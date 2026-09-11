@@ -175,6 +175,128 @@ export async function upsertSectionComment(
   return {}
 }
 
+// ── Store audit matrix ─────────────────────────────────────────────────────────
+
+export interface MatrixCheckpoint {
+  id: string
+  sort_order: number
+  section: string
+  title: string
+  is_core_standard: boolean
+  is_red_flag: boolean
+}
+
+export interface MatrixColumn {
+  submissionId: string
+  submittedAt: string
+  auditorName: string
+  score_pct: number | null
+  core_score_pct: number | null
+  red_flag_count: number | null
+  audit_status: string | null
+  responses: Record<string, 'pass' | 'fail' | 'na'>
+}
+
+export type StoreAuditMatrixResult =
+  | { ok: false; error: string }
+  | { ok: true; consistent: boolean; inconsistencyNote?: string; checkpoints: MatrixCheckpoint[]; columns: MatrixColumn[] }
+
+/**
+ * Fetches all checkpoint definitions and responses for submitted audits at a
+ * given location, structured for the checkpoint matrix view.
+ *
+ * Template versioning: if submissions span multiple template versions, only the
+ * latest version group is returned and inconsistencyNote is set. Older audits
+ * whose checkpoints differ are excluded rather than guessed.
+ */
+export async function fetchStoreAuditMatrix(locationId: string): Promise<StoreAuditMatrixResult> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'Not authenticated' }
+  if (!canAccessQualityCheck(user.role)) return { ok: false, error: 'Not authorised' }
+
+  const supabase = await createClient()
+
+  // 1. Submitted audits for this location, oldest first
+  const { data: subs, error: subErr } = await supabase
+    .from('audit_submissions')
+    .select(`
+      id, template_id, submitted_at,
+      score_pct, core_score_pct, red_flag_count, audit_status,
+      app_users!auditor_user_id ( display_name )
+    `)
+    .eq('location_id', locationId)
+    .eq('status', 'submitted')
+    .order('submitted_at', { ascending: true })
+
+  if (subErr) return { ok: false, error: subErr.message }
+  if (!subs || subs.length === 0) {
+    return { ok: true, consistent: true, checkpoints: [], columns: [] }
+  }
+
+  // 2. Template consistency check
+  const templateIds = [...new Set(subs.map(s => s.template_id as string))]
+  const consistent = templateIds.length === 1
+
+  // Latest template = template of the most recently submitted audit (last in asc sort)
+  const activeTemplateId = subs[subs.length - 1].template_id as string
+  const activeSubs = consistent ? subs : subs.filter(s => s.template_id === activeTemplateId)
+
+  // 3. Checkpoints for the active template, in sort_order
+  const { data: checkpoints, error: cpErr } = await supabase
+    .from('audit_checkpoints')
+    .select('id, sort_order, section, title, is_core_standard, is_red_flag')
+    .eq('template_id', activeTemplateId)
+    .order('sort_order', { ascending: true })
+
+  if (cpErr) return { ok: false, error: cpErr.message }
+
+  // 4. Responses for all active submissions in one query
+  const subIds = activeSubs.map(s => s.id as string)
+  const { data: responses, error: rErr } = await supabase
+    .from('audit_responses')
+    .select('submission_id, checkpoint_id, result')
+    .in('submission_id', subIds)
+
+  if (rErr) return { ok: false, error: rErr.message }
+
+  // 5. Build response lookup: submissionId → { checkpointId → result }
+  const bySubmission = new Map<string, Record<string, 'pass' | 'fail' | 'na'>>()
+  for (const r of responses ?? []) {
+    if (!r.result) continue
+    const sid = r.submission_id as string
+    const cid = r.checkpoint_id as string
+    const map = bySubmission.get(sid) ?? {}
+    map[cid] = r.result as 'pass' | 'fail' | 'na'
+    bySubmission.set(sid, map)
+  }
+
+  const columns: MatrixColumn[] = activeSubs.map(s => ({
+    submissionId:   s.id as string,
+    submittedAt:    s.submitted_at as string,
+    auditorName:    (s.app_users as unknown as { display_name: string } | null)?.display_name ?? '—',
+    score_pct:      s.score_pct      as number | null,
+    core_score_pct: s.core_score_pct as number | null,
+    red_flag_count: s.red_flag_count as number | null,
+    audit_status:   s.audit_status   as string | null,
+    responses:      bySubmission.get(s.id as string) ?? {},
+  }))
+
+  const matrixCheckpoints: MatrixCheckpoint[] = (checkpoints ?? []).map(c => ({
+    id:               c.id as string,
+    sort_order:       c.sort_order as number,
+    section:          (c.section as string) ?? '',
+    title:            c.title as string,
+    is_core_standard: c.is_core_standard as boolean,
+    is_red_flag:      c.is_red_flag as boolean,
+  }))
+
+  const inconsistencyNote = consistent
+    ? undefined
+    : `${templateIds.length - 1} older audit version(s) not shown — checkpoint sets differ across template versions.`
+
+  return { ok: true, consistent, inconsistencyNote, checkpoints: matrixCheckpoints, columns }
+}
+
 export async function startAudit(
   locationId: string,
   managerOnDuty: string,

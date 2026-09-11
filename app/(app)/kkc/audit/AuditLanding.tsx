@@ -1,7 +1,10 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import Link from 'next/link'
 import type { AuditSubmissionRow, AuditHealthStatus, ActiveLocation } from '@/lib/audit/submissions'
+import type { MatrixCheckpoint, MatrixColumn, StoreAuditMatrixResult } from '@/lib/actions/audit'
+import { fetchStoreAuditMatrix } from '@/lib/actions/audit'
 import StartAuditModal from './StartAuditModal'
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
@@ -350,11 +353,277 @@ function AuditTable({ rows, showLocation }: { rows: AuditSubmissionRow[]; showLo
   )
 }
 
+// ── Checkpoint matrix ──────────────────────────────────────────────────────────
+
+const CP_COL_W  = 240  // frozen checkpoint name column (px)
+const AUDIT_COL_W = 88  // each audit column (px)
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function parseColDate(iso: string) {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${parseInt(m[3], 10)} ${MONTHS[parseInt(m[2], 10) - 1] ?? ''}` : iso.slice(0, 10)
+}
+
+function cellBg(result: 'pass' | 'fail' | 'na' | null | undefined): string {
+  if (result === 'pass') return '#c8e6d0'
+  if (result === 'fail') return '#f09090'
+  if (result === 'na')   return '#eceae4'
+  return 'transparent'
+}
+
+function MatrixIconCheck() {
+  return (
+    <svg width="9" height="8" viewBox="0 0 9 8" fill="none" aria-hidden="true">
+      <path d="M1.5 4L3.5 6L7.5 1.5" stroke="#2f6d4c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function MatrixIconCross() {
+  return (
+    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+      <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="#6e1f1f" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function AuditCheckpointMatrix({ checkpoints, columns }: { checkpoints: MatrixCheckpoint[]; columns: MatrixColumn[] }) {
+  const scrollRef       = useRef<HTMLDivElement>(null)
+  const headerScrollRef = useRef<HTMLDivElement>(null)
+
+  // Group checkpoints by section in sort_order
+  const sections = useMemo(() => {
+    const groups = new Map<string, MatrixCheckpoint[]>()
+    for (const cp of checkpoints) {
+      const key = cp.section || '(General)'
+      const arr = groups.get(key) ?? []
+      arr.push(cp)
+      groups.set(key, arr)
+    }
+    return [...groups.entries()].map(([section, cps]) => ({ section, cps }))
+  }, [checkpoints])
+
+  const tableMinWidth = CP_COL_W + columns.length * AUDIT_COL_W
+  const lastColId = columns[columns.length - 1]?.submissionId
+
+  function syncHeader() {
+    if (scrollRef.current && headerScrollRef.current) {
+      headerScrollRef.current.scrollLeft = scrollRef.current.scrollLeft
+    }
+  }
+
+  // Auto-scroll to newest (rightmost) column
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth
+      syncHeader()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns.length])
+
+  const ColGroup = () => (
+    <colgroup>
+      <col style={{ width: CP_COL_W }} />
+      {columns.map(c => <col key={c.submissionId} style={{ width: AUDIT_COL_W }} />)}
+    </colgroup>
+  )
+
+  const SUMMARY_BG = '#f0ede7'
+
+  return (
+    <div className="bg-kk-panel border border-kk-line rounded-2xl" style={{ overflow: 'clip' }}>
+
+      {/* Sticky column header bar (document-level sticky) */}
+      <div className="sticky top-0 z-20 bg-kk-panel border-b-2 border-kk-line">
+        <div ref={headerScrollRef} style={{ overflowX: 'hidden', overflowY: 'hidden' }} aria-hidden="true">
+          <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableMinWidth, minWidth: tableMinWidth }}>
+            <ColGroup />
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-30 bg-kk-panel border-r border-kk-line/60" style={{ width: CP_COL_W }} />
+                {columns.map(col => {
+                  const isLatest = col.submissionId === lastColId
+                  const auditorFirst = col.auditorName.split(' ')[0]
+                  return (
+                    <th
+                      key={col.submissionId}
+                      scope="col"
+                      className="px-1 pb-2 pt-2 align-bottom bg-kk-panel"
+                      style={{ width: AUDIT_COL_W }}
+                    >
+                      <Link
+                        href={`/kkc/audit/${col.submissionId}`}
+                        className="flex flex-col items-center gap-0.5 hover:opacity-70 transition-opacity"
+                        title={`Open audit — ${col.submittedAt.slice(0, 10)}`}
+                      >
+                        {isLatest && (
+                          <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 bg-kk-ink text-white rounded-full leading-none mb-0.5">
+                            Latest
+                          </span>
+                        )}
+                        <span className="text-[11px] font-semibold text-kk-ink leading-tight">
+                          {parseColDate(col.submittedAt)}
+                        </span>
+                        <span className="text-[9px] text-kk-muted/70 leading-tight truncate max-w-full px-1">
+                          {auditorFirst}
+                        </span>
+                      </Link>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+          </table>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="px-4 py-2 border-b border-kk-line flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
+          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#c8e6d0' }}><MatrixIconCheck /></span>
+          Acceptable
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
+          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#f09090' }}><MatrixIconCross /></span>
+          Unacceptable
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
+          <span className="inline-block w-5 h-5 rounded border border-kk-line" style={{ backgroundColor: '#eceae4' }} />
+          Not assessed
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
+          <span className="shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] text-[9px] font-bold leading-none" style={{ backgroundColor: '#F5DA93', color: '#AD3919' }}>C</span>
+          Core Standard
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
+          <span className="shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] text-[9px] font-bold leading-none bg-kk-bad-bg text-kk-bad">RF</span>
+          Red Flag
+        </div>
+        <span className="text-[10px] text-kk-muted ml-auto hidden sm:block">Column header → full audit</span>
+      </div>
+
+      {/* Summary rows */}
+      <div ref={scrollRef} style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' } as React.CSSProperties} onScroll={syncHeader}>
+        <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableMinWidth, minWidth: tableMinWidth }} aria-label="Audit checkpoint matrix">
+          <ColGroup />
+          <tbody>
+            {/* Overall row */}
+            <tr className="border-b border-kk-line/60">
+              <td className="sticky left-0 z-10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wide text-kk-muted whitespace-nowrap border-r border-kk-line/60" style={{ minWidth: CP_COL_W, width: CP_COL_W, backgroundColor: SUMMARY_BG }}>Overall</td>
+              {columns.map(col => (
+                <td key={col.submissionId} className="text-center px-1 py-1.5" style={{ width: AUDIT_COL_W, backgroundColor: SUMMARY_BG }}>
+                  <span className={`text-xs font-bold tabular-nums ${scoreColor(col.score_pct)}`}>
+                    {col.score_pct !== null ? `${Math.round(col.score_pct)}%` : '—'}
+                  </span>
+                </td>
+              ))}
+            </tr>
+            {/* Core row */}
+            <tr className="border-b border-kk-line/60">
+              <td className="sticky left-0 z-10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wide text-kk-muted whitespace-nowrap border-r border-kk-line/60" style={{ minWidth: CP_COL_W, width: CP_COL_W, backgroundColor: SUMMARY_BG }}>Core</td>
+              {columns.map(col => (
+                <td key={col.submissionId} className="text-center px-1 py-1.5" style={{ width: AUDIT_COL_W, backgroundColor: SUMMARY_BG }}>
+                  <span className={`text-xs font-bold tabular-nums ${scoreColor(col.core_score_pct)}`}>
+                    {col.core_score_pct !== null ? `${Math.round(col.core_score_pct)}%` : '—'}
+                  </span>
+                </td>
+              ))}
+            </tr>
+            {/* Red Flags row */}
+            <tr className="border-b-2 border-kk-line">
+              <td className="sticky left-0 z-10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wide text-kk-muted whitespace-nowrap border-r border-kk-line/60" style={{ minWidth: CP_COL_W, width: CP_COL_W, backgroundColor: SUMMARY_BG }}>Red Flags</td>
+              {columns.map(col => (
+                <td key={col.submissionId} className="text-center px-1 py-1.5" style={{ width: AUDIT_COL_W, backgroundColor: SUMMARY_BG }}>
+                  <span className={`text-xs font-bold tabular-nums ${col.red_flag_count ? 'text-kk-bad' : 'text-kk-good'}`}>
+                    {col.red_flag_count ?? '—'}
+                  </span>
+                </td>
+              ))}
+            </tr>
+
+            {/* Section groups */}
+            {sections.map(({ section, cps }) => (
+              <React.Fragment key={section}>
+                <tr>
+                  <td
+                    colSpan={1 + columns.length}
+                    className="sticky left-0 z-10 px-3 py-1"
+                    style={{ backgroundColor: SUMMARY_BG }}
+                  >
+                    <span className="text-[9px] font-extrabold uppercase tracking-[0.06em] text-kk-muted">{section}</span>
+                  </td>
+                </tr>
+                {cps.map((cp, cpIdx) => (
+                  <tr
+                    key={cp.id}
+                    className={[
+                      'group transition-colors hover:bg-kk-soft',
+                      cpIdx === cps.length - 1 ? 'border-b border-kk-line' : 'border-b border-kk-line/40',
+                    ].join(' ')}
+                  >
+                    {/* Frozen checkpoint name */}
+                    <td
+                      className="sticky left-0 z-10 bg-kk-panel group-hover:bg-kk-soft px-3 py-1 transition-colors overflow-hidden border-r border-kk-line/60"
+                      style={{ width: CP_COL_W }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {cp.is_red_flag ? (
+                          <span className="shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] text-[8px] font-bold leading-none bg-kk-bad-bg text-kk-bad">RF</span>
+                        ) : cp.is_core_standard ? (
+                          <span className="shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] text-[9px] font-bold leading-none" style={{ backgroundColor: '#F5DA93', color: '#AD3919' }}>C</span>
+                        ) : null}
+                        <span className="text-xs text-kk-ink leading-snug truncate">{cp.title}</span>
+                      </div>
+                    </td>
+
+                    {/* Result cells */}
+                    {columns.map(col => {
+                      const result = col.responses[cp.id] ?? null
+                      return (
+                        <td
+                          key={col.submissionId}
+                          className="px-1 py-1 group-hover:bg-kk-soft transition-colors"
+                          style={{ width: AUDIT_COL_W }}
+                        >
+                          <Link
+                            href={`/kkc/audit/${col.submissionId}`}
+                            className="w-6 h-6 rounded flex items-center justify-center mx-auto hover:opacity-70 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-kk-ink"
+                            style={{ backgroundColor: cellBg(result) }}
+                            title={result === 'pass' ? 'Acceptable' : result === 'fail' ? 'Unacceptable' : result === 'na' ? 'Not assessed' : 'No response'}
+                            aria-label={`${cp.title}: ${result ?? 'no response'}`}
+                          >
+                            {result === 'pass' && <MatrixIconCheck />}
+                            {result === 'fail' && <MatrixIconCross />}
+                          </Link>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function AuditLanding({ submissions, locations }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
+  const [matrixData, setMatrixData] = useState<StoreAuditMatrixResult | null>(null)
+  const [matrixLoading, setMatrixLoading] = useState(false)
+
+  useEffect(() => {
+    if (!selectedLocationId) { setMatrixData(null); return }
+    setMatrixLoading(true)
+    fetchStoreAuditMatrix(selectedLocationId).then(result => {
+      setMatrixData(result)
+      setMatrixLoading(false)
+    })
+  }, [selectedLocationId])
 
   // Latest submitted audit per location (not in_progress)
   const latestByLocation = new Map<string, AuditSubmissionRow>()
@@ -458,6 +727,28 @@ export default function AuditLanding({ submissions, locations }: Props) {
                 <AuditScoreTrend rows={storeSubmittedChronological} />
               ) : (
                 <p className="text-xs text-kk-muted px-1">More audits needed for trend</p>
+              )}
+
+              {/* Checkpoint matrix */}
+              {matrixLoading && (
+                <div className="bg-kk-panel border border-kk-line rounded-2xl px-5 py-8 text-center">
+                  <p className="text-sm text-kk-muted">Loading checkpoint matrix…</p>
+                </div>
+              )}
+              {!matrixLoading && matrixData && matrixData.ok && (
+                <>
+                  {!matrixData.consistent && matrixData.inconsistencyNote && (
+                    <div className="px-4 py-2 bg-kk-warn-bg border border-kk-warn rounded-lg text-xs text-kk-warn">
+                      {matrixData.inconsistencyNote}
+                    </div>
+                  )}
+                  {matrixData.columns.length > 0 ? (
+                    <AuditCheckpointMatrix checkpoints={matrixData.checkpoints} columns={matrixData.columns} />
+                  ) : null}
+                </>
+              )}
+              {!matrixLoading && matrixData && !matrixData.ok && (
+                <p className="text-xs text-kk-bad px-1">Matrix load failed: {matrixData.error}</p>
               )}
             </>
           ) : (
