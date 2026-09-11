@@ -80,3 +80,38 @@ export async function createDinerInvitation(
     },
   }
 }
+
+export async function cancelDinerInvitation(
+  invitationId: string,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+  if (!canAccessManagementView(user.role)) return { error: 'Not authorised' }
+
+  if (!invitationId) return { error: 'invitationId is required' }
+
+  const db = createServiceClient()
+
+  // Only pending/active invitations can be cancelled
+  const { data: inv } = await db
+    .from('diner_invitations')
+    .select('id, status')
+    .eq('id', invitationId)
+    .maybeSingle()
+
+  if (!inv) return { error: 'Invitation not found' }
+  if (inv.status === 'submitted') return { error: 'Cannot cancel a submitted audit' }
+  if (inv.status === 'expired')   return { error: 'Invitation is already expired' }
+
+  const { error } = await db
+    .from('diner_invitations')
+    .update({ status: 'expired' })
+    .eq('id', invitationId)
+
+  if (error) {
+    console.error('[diner-invitations] cancelDinerInvitation error:', error.message)
+    return { error: 'Failed to cancel invitation. Please try again.' }
+  }
+
+  return { data: undefined }
+}

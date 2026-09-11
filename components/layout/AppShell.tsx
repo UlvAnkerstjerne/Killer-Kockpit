@@ -133,6 +133,16 @@ function IconAudit() {
     </svg>
   )
 }
+function IconDiner() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M2.5 6.5C2.5 4.29 5 2.5 8 2.5s5.5 1.79 5.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M1.5 6.5h13v1.5a6.5 6.5 0 01-13 0V6.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M5.5 13.5V15M10.5 13.5V15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M3.5 15h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  )
+}
 
 const ICON_MAP: Record<string, React.FC> = {
   '/today':            IconToday,
@@ -150,6 +160,7 @@ const ICON_MAP: Record<string, React.FC> = {
   '/settings':         IconSettings,
   '/kkc/ssp-cph':      IconQuality,
   '/kkc/audit':        IconAudit,
+  '/kkc/diner':        IconDiner,
 }
 
 // ─── Nav groups ───────────────────────────────────────────────────────────────
@@ -291,6 +302,7 @@ export default function AppShell({
               <div className="space-y-0.5">
                 <NavLink href="/kkc/ssp-cph" label="SSP / CPH Airport" onNavigate={onNavigate} />
                 <NavLink href="/kkc/audit" label="Audit" onNavigate={onNavigate} />
+                <NavLink href="/kkc/diner" label="Mystery Diner" onNavigate={onNavigate} />
               </div>
             </div>
           </>
