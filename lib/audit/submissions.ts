@@ -26,6 +26,7 @@ export interface AuditSubmissionRow {
   audit_status: AuditHealthStatus | null
   created_at: string
   submitted_at: string | null
+  location_id: string
   location_name: string
   auditor_name: string
 }
@@ -52,7 +53,7 @@ export async function getOperationalAuditSubmissions(): Promise<{
     .from('audit_submissions')
     .select(`
       id, status, score_pct, core_score_pct, red_flag_count, audit_status,
-      created_at, submitted_at,
+      created_at, submitted_at, location_id,
       locations!location_id ( name ),
       app_users!auditor_user_id ( display_name )
     `)
@@ -72,6 +73,7 @@ export async function getOperationalAuditSubmissions(): Promise<{
     audit_status: row.audit_status as AuditHealthStatus | null,
     created_at: row.created_at as string,
     submitted_at: row.submitted_at as string | null,
+    location_id: row.location_id as string,
     location_name: (row.locations as { name: string } | null)?.name ?? '—',
     auditor_name: (row.app_users as { display_name: string } | null)?.display_name ?? '—',
   }))

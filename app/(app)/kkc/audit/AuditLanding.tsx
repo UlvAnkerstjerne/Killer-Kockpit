@@ -30,6 +30,78 @@ function HealthBadge({ status }: { status: AuditHealthStatus }) {
   )
 }
 
+// ── Store overview ─────────────────────────────────────────────────────────────
+
+const STORE_OVERVIEW: { short: string; locationId: string }[] = [
+  { short: 'Borgergade',     locationId: '3dc58270-f9e0-49e2-8341-1c78be950dae' },
+  { short: 'Christianshavn', locationId: 'fc7fa67f-dc59-46a1-947c-f8519b642b32' },
+  { short: 'Frederiksberg',  locationId: 'ac7dd67c-cc32-4bb2-aac4-295a390ea33f' },
+  { short: 'Vesterbro',      locationId: '1052d6ff-22b9-43a8-b954-588c67380f5e' },
+  { short: 'Fisketorvet',    locationId: '84e5038b-acbe-48e6-b74c-dc55bed32462' },
+  { short: 'Nørrebro',       locationId: '06eb4453-db78-4ee7-ab0e-51b3452b3825' },
+]
+
+interface StoreCardProps {
+  short: string
+  submission: AuditSubmissionRow | null
+  selected: boolean
+  onClick: () => void
+}
+
+function StoreCard({ short, submission, selected, onClick }: StoreCardProps) {
+  const borderCls = selected
+    ? 'border-kk-ink ring-2 ring-kk-ink ring-offset-1'
+    : 'border-kk-line hover:border-kk-muted'
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left bg-kk-panel rounded-xl border shadow-[0_1px_3px_0_rgba(0,0,0,0.07)] px-4 py-3 transition-all cursor-pointer ${borderCls}`}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <span className="text-sm font-bold text-kk-ink leading-tight">{short}</span>
+        {submission?.audit_status ? (
+          <HealthBadge status={submission.audit_status} />
+        ) : submission ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-kk-soft text-kk-muted border border-kk-line">
+            In progress
+          </span>
+        ) : null}
+      </div>
+
+      {submission ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-kk-muted w-12 shrink-0">Overall</span>
+            <ScorePill value={submission.score_pct} label="Overall Score" />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-kk-muted w-12 shrink-0">Core</span>
+            <ScorePill value={submission.core_score_pct} label="Core Score" />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-kk-muted w-12 shrink-0">Red flags</span>
+            {submission.red_flag_count === null ? (
+              <span className="text-xs text-kk-muted">—</span>
+            ) : submission.red_flag_count === 0 ? (
+              <span className="text-xs text-kk-muted">0</span>
+            ) : (
+              <span className="inline-flex items-center justify-center w-4.5 h-4.5 rounded-full bg-kk-bad-bg text-kk-bad text-[11px] font-bold leading-none px-1">
+                {submission.red_flag_count}
+              </span>
+            )}
+          </div>
+          <div className="pt-0.5 text-[11px] text-kk-muted">
+            {formatDate(submission.submitted_at ?? submission.created_at)}
+          </div>
+        </div>
+      ) : (
+        <div className="text-[11px] text-kk-muted mt-1">No audit yet</div>
+      )}
+    </button>
+  )
+}
+
 function ScorePill({ value, label }: { value: number | null; label: string }) {
   if (value === null) return <span className="text-xs text-kk-muted">—</span>
   const cls = value >= 90 ? 'text-kk-good' : value >= 80 ? 'text-emerald-600' : value >= 70 ? 'text-kk-warn' : value >= 60 ? 'text-orange-500' : 'text-kk-bad'
@@ -55,9 +127,33 @@ interface Props {
 
 export default function AuditLanding({ submissions, locations }: Props) {
   const [showModal, setShowModal] = useState(false)
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
+
+  // Latest submitted audit per location (not in_progress)
+  const latestByLocation = new Map<string, AuditSubmissionRow>()
+  for (const s of submissions) {
+    if (s.status !== 'submitted') continue
+    const existing = latestByLocation.get(s.location_id)
+    if (!existing || s.submitted_at! > (existing.submitted_at ?? '')) {
+      latestByLocation.set(s.location_id, s)
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
+
+      {/* Store overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {STORE_OVERVIEW.map(({ short, locationId }) => (
+          <StoreCard
+            key={locationId}
+            short={short}
+            submission={latestByLocation.get(locationId) ?? null}
+            selected={selectedLocationId === locationId}
+            onClick={() => setSelectedLocationId(id => id === locationId ? null : locationId)}
+          />
+        ))}
+      </div>
 
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
