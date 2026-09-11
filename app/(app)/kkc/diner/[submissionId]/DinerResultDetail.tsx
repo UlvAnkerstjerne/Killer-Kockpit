@@ -320,14 +320,21 @@ export default function DinerResultDetail({ submission, checkpoints, responses }
         />
       ))}
 
-      {/* Back link */}
-      <div className="pb-4">
+      {/* Actions */}
+      <div className="pb-4 flex items-center justify-between gap-4">
         <Link
           href="/kkc/diner"
           className="text-sm text-kk-muted hover:text-kk-ink transition-colors"
         >
           ← Back to Mystery Diner
         </Link>
+        <a
+          href={`/api/diner/pdf/${submission.id}`}
+          download
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-kk-muted hover:text-kk-ink transition-colors"
+        >
+          Download PDF ↓
+        </a>
       </div>
     </div>
   )

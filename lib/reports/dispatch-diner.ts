@@ -18,6 +18,12 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { sendDinerResultEmail } from './send-diner-result-email'
 import { resolveUsersByEmail, createSystemNotificationIdempotent } from './notify-users'
 import { DINER_RESULT_DELIVERY } from './delivery-config'
+import {
+  generateDinerPdf,
+  buildDinerPdfFilename,
+  type DinerPdfCheckpoint,
+  type DinerPdfResponse,
+} from './generate-diner-pdf'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,7 +108,7 @@ export async function processDinerDelivery(
   // ── Fetch submission ───────────────────────────────────────────────────
   const { data: sub, error: subErr } = await db
     .from('diner_submissions')
-    .select('id, invitation_id, score_pct, critical_fail_count, gold_star_count, waiting_time_band, final_status, submitted_at')
+    .select('id, invitation_id, template_id, score_pct, critical_fail_count, gold_star_count, waiting_time_band, final_status, submitted_at')
     .eq('id', submissionId)
     .eq('status', 'submitted')
     .maybeSingle()
@@ -116,22 +122,36 @@ export async function processDinerDelivery(
     return outcomes
   }
 
-  // ── Fetch invitation + location ────────────────────────────────────────
-  const { data: inv } = await db
-    .from('diner_invitations')
-    .select('diner_name, locations ( name )')
-    .eq('id', sub.invitation_id as string)
-    .maybeSingle()
+  // ── Fetch invitation + location, all checkpoints, all responses ───────
+  const [
+    { data: inv },
+    { data: critResponses },
+    { data: checkpointRows },
+    { data: allResponseRows },
+  ] = await Promise.all([
+    db
+      .from('diner_invitations')
+      .select('diner_name, locations ( name )')
+      .eq('id', sub.invitation_id as string)
+      .maybeSingle(),
+    db
+      .from('diner_responses')
+      .select('checkpoint_id, diner_checkpoints ( label, is_critical, type )')
+      .eq('submission_id', submissionId)
+      .eq('result', 'fail'),
+    db
+      .from('diner_checkpoints')
+      .select('id, order_index, section, label, type, is_critical, is_conditional')
+      .eq('template_id', sub.template_id as string)
+      .order('order_index', { ascending: true }),
+    db
+      .from('diner_responses')
+      .select('checkpoint_id, result, notes')
+      .eq('submission_id', submissionId),
+  ])
 
   const locationName = (inv?.locations as unknown as { name: string } | null)?.name ?? '—'
   const dinerName    = (inv?.diner_name as string | null) ?? '—'
-
-  // ── Fetch critical failure checkpoint labels ────────────────────────────
-  const { data: critResponses } = await db
-    .from('diner_responses')
-    .select('checkpoint_id, diner_checkpoints ( label, is_critical, type )')
-    .eq('submission_id', submissionId)
-    .eq('result', 'fail')
 
   const criticalFailLabels: string[] = (critResponses ?? [])
     .filter((r: any) => {
@@ -163,6 +183,47 @@ export async function processDinerDelivery(
     waiting_time_band:   waitingTimeBand,
   }
 
+  // ── PDF generation ─────────────────────────────────────────────────────
+  // Failure does NOT block email or notifications — runs without attachment instead.
+  let pdfAttachment: { buffer: Buffer; filename: string } | undefined
+  try {
+    const checkpoints: DinerPdfCheckpoint[] = (checkpointRows ?? []).map((c: any) => ({
+      id:            c.id as string,
+      orderIndex:    c.order_index as number,
+      section:       c.section as string,
+      label:         c.label as string,
+      type:          c.type as DinerPdfCheckpoint['type'],
+      isCritical:    c.is_critical as boolean,
+      isConditional: c.is_conditional as boolean,
+    }))
+    const responses: DinerPdfResponse[] = (allResponseRows ?? []).map((r: any) => ({
+      checkpointId: r.checkpoint_id as string,
+      result:       (r.result as 'pass' | 'fail' | 'na' | null) ?? null,
+      notes:        (r.notes as string | null) ?? null,
+    }))
+    const pdfInput = {
+      locationName,
+      dinerName,
+      submittedAt:       sub.submitted_at as string,
+      scorePct,
+      criticalFailCount,
+      goldStarCount,
+      waitingTimeBand,
+      finalStatus,
+      checkpoints,
+      responses,
+    }
+    const buf = await generateDinerPdf(pdfInput, new Date().toISOString())
+    pdfAttachment = {
+      buffer:   buf,
+      filename: buildDinerPdfFilename(locationName, sub.submitted_at as string),
+    }
+    console.log(`[diner/dispatch] PDF generated: ${pdfAttachment.filename} (${(buf.byteLength / 1024).toFixed(1)} KB)`)
+  } catch (err) {
+    console.error('[diner/dispatch] PDF generation failed (email will send without attachment):',
+      err instanceof Error ? err.message : String(err))
+  }
+
   // ── Email channels ─────────────────────────────────────────────────────
   for (const emailRecipient of DINER_RESULT_DELIVERY.emailRecipients) {
     const alreadyDone = await isTerminallyDelivered(submissionId, emailRecipient)
@@ -183,6 +244,7 @@ export async function processDinerDelivery(
       waitingTimeBand,
       criticalFailLabels,
       recipientEmail:     emailRecipient,
+      pdfAttachment,
     })
 
     if (result.ok) {

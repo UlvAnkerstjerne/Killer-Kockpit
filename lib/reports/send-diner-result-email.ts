@@ -30,6 +30,8 @@ export interface DinerResultEmailInput {
   /** Checkpoint labels for critical failures — shown in email body */
   criticalFailLabels: string[]
   recipientEmail:     string
+  /** Optional PDF attachment. If absent, the email body-only summary is sent. */
+  pdfAttachment?:     { buffer: Buffer; filename: string }
 }
 
 export type DinerResultEmailResult =
@@ -275,6 +277,9 @@ export async function sendDinerResultEmail(
       subject,
       text:    buildPlainBody(input, resultUrl),
       html:    buildHtmlBody(input, resultUrl),
+      ...(input.pdfAttachment
+        ? { attachments: [{ filename: input.pdfAttachment.filename, content: input.pdfAttachment.buffer }] }
+        : {}),
     })
 
     if (error) return { ok: false, error: `Resend API error: ${error.message}` }
