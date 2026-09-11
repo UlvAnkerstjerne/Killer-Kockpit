@@ -24,6 +24,7 @@ import { buildSubmissionDetail } from '@/lib/kkc/detail'
 import { generateKKCPdf } from '@/lib/reports/generate-pdf'
 import { sendKKCReportEmail } from '@/lib/reports/send-email'
 import { KKC_SSP_CPH_DELIVERY } from '@/lib/reports/delivery-config'
+import { resolveUsersByDisplayName, createSystemNotificationIdempotent } from '@/lib/reports/notify-users'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,14 +96,16 @@ async function recordOutcome(
  * Runs one delivery cycle for the KKC SSP/CPH report.
  *
  * - Fetches all current SSP/CPH submissions fresh from Google Sheets.
- * - For each submission × recipient: skips if already terminally delivered,
- *   otherwise generates PDF and sends via Resend.
+ * - For each submission × email recipient: skips if already terminally
+ *   delivered, otherwise generates PDF and sends via Resend.
+ * - For each submission × notification recipient (Kasper + Ulv): creates a
+ *   Kockpit notification idempotently via create_system_notification().
  * - Records every outcome in report_deliveries.
  *
  * Never throws — all errors are captured in the returned outcomes.
  */
 export async function runKKCSspCphDelivery(): Promise<DeliveryRunResult> {
-  const { reportType, locationLabel, recipients } = KKC_SSP_CPH_DELIVERY
+  const { reportType, locationLabel, recipients, notifyUserDisplayNames } = KKC_SSP_CPH_DELIVERY
   const outcomes: DeliveryOutcome[] = []
 
   // ── Fetch submissions ──────────────────────────────────────────────────────
@@ -112,13 +115,21 @@ export async function runKKCSspCphDelivery(): Promise<DeliveryRunResult> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[kkc/delivery] Failed to fetch SSP/CPH data:', msg)
-    // Return early — no submissions to process
     return { totalSubmissions: 0, outcomes: [], sent: 0, failed: 0, skipped: 0 }
   }
 
   const totalSubmissions = data.scores.length
 
-  // ── Process each recipient ─────────────────────────────────────────────────
+  // ── Resolve notification user IDs (once per run) ───────────────────────────
+  let notifyUserMap = new Map<string, string>()
+  try {
+    notifyUserMap = await resolveUsersByDisplayName(notifyUserDisplayNames)
+  } catch (err) {
+    console.error('[kkc/delivery] Failed to resolve notification users:', err)
+    // Continue — email delivery still runs
+  }
+
+  // ── Process each email recipient ───────────────────────────────────────────
   for (const recipient of recipients) {
     let delivered: Set<string>
     try {
@@ -141,7 +152,6 @@ export async function runKKCSspCphDelivery(): Promise<DeliveryRunResult> {
       // Build submission detail
       const detail = buildSubmissionDetail(data, submissionKey)
       if (!detail) {
-        // Score row exists but no matching form row — cannot generate PDF
         console.warn(`[kkc/delivery] No form row for submission ${submissionKey}`)
         outcomes.push({ submissionKey, recipient, action: 'skipped' })
         continue
@@ -164,6 +174,36 @@ export async function runKKCSspCphDelivery(): Promise<DeliveryRunResult> {
         })
         outcomes.push({ submissionKey, recipient, action: 'failed', error: emailResult.error })
         console.error(`[kkc/delivery] Failed ${submissionKey} → ${recipient}: ${emailResult.error}`)
+      }
+
+      // ── Kockpit notifications (once per submission, after first email) ──
+      // Only fire on the first email recipient iteration to avoid duplicating
+      // notification checks per submission.
+      if (recipient === recipients[0] && emailResult.ok && notifyUserMap.size > 0) {
+        const notifMetadata = {
+          overall_score:     detail.overallScore,
+          critical_score:    detail.criticalScore,
+          critical_failures: detail.criticalFailures,
+          submission_key:    submissionKey,
+        }
+
+        for (const [name, userId] of notifyUserMap) {
+          // entity_id for kkc_submission is a generated UUID — routing uses entity_type
+          const entityId = crypto.randomUUID()
+          const outcome = await createSystemNotificationIdempotent({
+            reportType,
+            submissionKey,
+            userId,
+            type:       'kkc.result',
+            entityType: 'kkc_submission',
+            entityId,
+            metadata:   notifMetadata,
+          }).catch(err => {
+            console.error(`[kkc/delivery] Notification for ${name} threw:`, err)
+            return 'failed' as const
+          })
+          console.log(`[kkc/delivery] Notification for ${name}: ${outcome} (${submissionKey})`)
+        }
       }
     }
   }

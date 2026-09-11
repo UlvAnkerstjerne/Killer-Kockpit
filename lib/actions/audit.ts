@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canAccessQualityCheck } from '@/lib/permissions'
+import { dispatchAuditResult } from '@/lib/reports/dispatch-audit'
 import type { ActionResult } from '@/lib/types'
 
 export async function upsertAuditResponse(
@@ -61,6 +62,12 @@ export async function submitAudit(
     console.error('[audit] submitAudit error:', error)
     return { error: error.message }
   }
+
+  // Fire-and-forget: dispatch email + notifications after successful submit.
+  // Failures are logged inside dispatchAuditResult — they never fail the action.
+  void dispatchAuditResult(submissionId).catch(err => {
+    console.error('[audit] dispatchAuditResult error:', err)
+  })
 
   return {}
 }

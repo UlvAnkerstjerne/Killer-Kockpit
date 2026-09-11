@@ -44,6 +44,8 @@ export interface AppNotification {
   actor_name:    string | null
   /** Current title of the referenced task, or null if task unavailable */
   task_title:    string | null
+  /** Structured display data for system notifications (audit.result, kkc.result) */
+  metadata:      Record<string, unknown> | null
 }
 
 // ─── getUnreadNotificationCount ────────────────────────────────────────────
@@ -97,7 +99,7 @@ export async function getRecentNotifications(): Promise<ActionResult<AppNotifica
   // ── 1. Fetch own notifications (RLS-gated) ─────────────────────────────
   const { data: rows, error: notifErr } = await supabase
     .from('notifications')
-    .select('id, type, entity_type, entity_id, created_at, read_at, actor_user_id')
+    .select('id, type, entity_type, entity_id, created_at, read_at, actor_user_id, metadata')
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -127,9 +129,12 @@ export async function getRecentNotifications(): Promise<ActionResult<AppNotifica
     }
   }
 
-  // ── 3. Batch: task titles ─────────────────────────────────────────────
-  // For v1, entity_type is always 'task'.
-  const taskIds = [...new Set(rows.map(r => r.entity_id))]
+  // ── 3. Batch: task titles (task entity_type only) ────────────────────
+  const taskIds = [...new Set(
+    rows
+      .filter(r => r.entity_type === 'task')
+      .map(r => r.entity_id),
+  )]
 
   const taskMap = new Map<string, string>()
   if (taskIds.length > 0) {
@@ -153,7 +158,8 @@ export async function getRecentNotifications(): Promise<ActionResult<AppNotifica
     read_at:       r.read_at,
     actor_user_id: r.actor_user_id,
     actor_name:    r.actor_user_id ? (actorMap.get(r.actor_user_id) ?? null) : null,
-    task_title:    taskMap.get(r.entity_id) ?? null,
+    task_title:    r.entity_type === 'task' ? (taskMap.get(r.entity_id) ?? null) : null,
+    metadata:      (r.metadata as Record<string, unknown> | null) ?? null,
   }))
 
   return { data: result }

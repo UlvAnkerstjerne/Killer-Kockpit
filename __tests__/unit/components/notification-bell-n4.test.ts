@@ -48,8 +48,10 @@ describe('POLL_INTERVAL_MS', () => {
 })
 
 describe('KNOWN_TYPES', () => {
-  it('contains exactly the four task lifecycle types', () => {
+  it('contains the task lifecycle types plus audit.result and kkc.result', () => {
     expect([...KNOWN_TYPES].sort()).toEqual([
+      'audit.result',
+      'kkc.result',
       'task.approved',
       'task.assigned',
       'task.sent_back',

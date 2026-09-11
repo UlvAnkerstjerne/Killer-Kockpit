@@ -38,6 +38,8 @@ export const KNOWN_TYPES = [
   'task.submitted_for_review',
   'task.sent_back',
   'task.approved',
+  'audit.result',
+  'kkc.result',
 ] as const
 
 // ─── Pure helpers (exported for testing) ──────────────────────────────────────
@@ -81,16 +83,46 @@ export function relativeTime(dateStr: string): string {
  * Null actor → "Someone". Null title → "a task".
  */
 export function safeFormatMessage(
-  n: Pick<AppNotification, 'type' | 'actor_name' | 'task_title'>,
+  n: Pick<AppNotification, 'type' | 'actor_name' | 'task_title'> & { metadata?: Record<string, unknown> | null },
 ): string {
   const actor = n.actor_name ?? 'Someone'
   const title = n.task_title ?? 'a task'
+  const m = n.metadata
+
   switch (n.type) {
-    case 'task.assigned':            return `${actor} assigned you "${title}"`
+    case 'task.assigned':             return `${actor} assigned you "${title}"`
     case 'task.submitted_for_review': return `${actor} submitted "${title}" for your review`
-    case 'task.sent_back':           return `${actor} sent "${title}" back to you`
-    case 'task.approved':            return `${actor} approved "${title}"`
-    default:                         return `${actor} updated a task`
+    case 'task.sent_back':            return `${actor} sent "${title}" back to you`
+    case 'task.approved':             return `${actor} approved "${title}"`
+
+    case 'audit.result': {
+      if (!m) return 'Audit submitted'
+      const loc    = (m.location as string | undefined) ?? '?'
+      const ovr    = m.overall_pct   as number | undefined
+      const core   = m.core_pct      as number | undefined
+      const rf     = m.red_flag_count as number | undefined
+      const status = m.audit_status  as string | undefined
+      const parts  = [`Audit — ${loc}`]
+      if (ovr   !== undefined) parts.push(`${ovr}% overall`)
+      if (core  !== undefined) parts.push(`${core}% core`)
+      if (rf    !== undefined) parts.push(`${rf} red flag${rf === 1 ? '' : 's'}`)
+      if (status)              parts.push(status)
+      return parts.join(' · ')
+    }
+
+    case 'kkc.result': {
+      if (!m) return 'KQC submitted'
+      const ovr  = m.overall_score    as number | undefined
+      const crit = m.critical_score   as number | undefined
+      const fail = m.critical_failures as number | undefined
+      const parts = ['KQC — SSP/CPH']
+      if (ovr  !== undefined) parts.push(`${ovr}% overall`)
+      if (crit !== undefined) parts.push(`${crit}% critical`)
+      if (fail !== undefined) parts.push(`${fail} failure${fail === 1 ? '' : 's'}`)
+      return parts.join(' · ')
+    }
+
+    default: return `${actor} updated a task`
   }
 }
 
@@ -248,7 +280,15 @@ export default function NotificationBell() {
     markNotificationRead(n.id)
 
     setIsOpen(false)
-    router.push(`/tasks/${n.entity_id}`)
+
+    // Route by entity_type
+    if (n.entity_type === 'audit_submission') {
+      router.push(`/kkc/audit/${n.entity_id}`)
+    } else if (n.entity_type === 'kkc_submission') {
+      router.push('/kkc/ssp-cph')
+    } else {
+      router.push(`/tasks/${n.entity_id}`)
+    }
   }
 
   // ── Mark all as read ─────────────────────────────────────────────────────
