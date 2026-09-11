@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useRef, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createDinerInvitation, cancelDinerInvitation } from '@/lib/actions/diner-invitations'
+import { createDinerInvitation, cancelDinerInvitation, retryDinerInvitationEmail } from '@/lib/actions/diner-invitations'
 import { fetchDinerStoreMatrix } from '@/lib/actions/diner-results'
 import type { DinerMatrixCheckpoint, DinerMatrixColumn, DinerStoreMatrixResult } from '@/lib/actions/diner-results'
 import { computeDinerStatus, dinerScoreColor, DINER_STATUS_CLS, DINER_STATUS_LABEL } from '@/lib/diner/scoring'
 import type { DinerStatus } from '@/lib/diner/scoring'
-import type { DinerInvitationRow, DinerResultRow } from './page'
+import type { DinerInvitationRow, DinerResultRow, DinerEmailStatus } from './page'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -68,6 +68,27 @@ function InvStatusBadge({ status }: { status: InvStatus }) {
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${INV_STATUS_CLS[status]}`}>
       {INV_STATUS_LABEL[status]}
+    </span>
+  )
+}
+
+// ─── Email status pill ────────────────────────────────────────────────────────
+
+const EMAIL_STATUS_CLS: Record<DinerEmailStatus, string> = {
+  sent:     'text-kk-good',
+  failed:   'text-kk-bad',
+  not_sent: 'text-kk-muted',
+}
+const EMAIL_STATUS_LABEL: Record<DinerEmailStatus, string> = {
+  sent:     'Email sent',
+  failed:   'Email failed',
+  not_sent: 'Not sent',
+}
+
+function EmailStatusPill({ status }: { status: DinerEmailStatus }) {
+  return (
+    <span className={`text-[10px] font-medium ${EMAIL_STATUS_CLS[status]}`}>
+      {EMAIL_STATUS_LABEL[status]}
     </span>
   )
 }
@@ -538,7 +559,7 @@ function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; on
   const [dinerEmail, setDinerEmail] = useState('')
   const [expiresIn,  setExpiresIn]  = useState(72)
   const [error,      setError]      = useState<string | null>(null)
-  const [createdUrl, setCreatedUrl] = useState<string | null>(null)
+  const [createdData, setCreatedData] = useState<{ url: string; emailStatus: 'sent' | 'failed' | 'not_sent'; emailError?: string } | null>(null)
   const [copied,     setCopied]     = useState(false)
 
   useEffect(() => {
@@ -558,19 +579,23 @@ function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; on
         expiresInHours: expiresIn,
       })
       if (result.error) { setError(result.error); return }
-      setCreatedUrl(result.data!.inviteUrl)
+      setCreatedData({
+        url:         result.data!.inviteUrl,
+        emailStatus: result.data!.emailStatus,
+        emailError:  result.data!.emailError,
+      })
     })
   }
 
   async function handleCopy() {
-    if (!createdUrl) return
-    try { await navigator.clipboard.writeText(createdUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch {}
+    if (!createdData?.url) return
+    try { await navigator.clipboard.writeText(createdData.url); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch {}
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(23,23,23,0.4)', backdropFilter: 'blur(2px)' }}
-      onClick={e => { if (!createdUrl && e.target === e.currentTarget) onClose() }}>
+      onClick={e => { if (!createdData && e.target === e.currentTarget) onClose() }}>
       <div className="bg-kk-panel border border-kk-line rounded-2xl shadow-2xl w-full max-w-md"
         role="dialog" aria-modal="true" aria-labelledby="create-diner-title">
         <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
@@ -580,14 +605,30 @@ function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; on
           </button>
         </div>
 
-        {createdUrl ? (
+        {createdData ? (
           <div className="px-5 py-5 space-y-4">
-            <div className="bg-kk-good-bg border border-kk-good rounded-xl px-4 py-3">
-              <p className="text-xs font-semibold text-kk-good mb-1">Invitation created</p>
-              <p className="text-xs text-kk-muted">Copy this link and send it to the diner. It will not be shown again.</p>
+            {/* Creation + email status */}
+            <div className={`border rounded-xl px-4 py-3 space-y-1 ${
+              createdData.emailStatus === 'failed'
+                ? 'bg-kk-warn-bg border-kk-warn'
+                : 'bg-kk-good-bg border-kk-good'
+            }`}>
+              <p className={`text-xs font-semibold ${createdData.emailStatus === 'failed' ? 'text-kk-warn' : 'text-kk-good'}`}>
+                Invitation created
+              </p>
+              {createdData.emailStatus === 'sent' && (
+                <p className="text-xs text-kk-muted">Email sent. Copy this link as a fallback — it will not be shown again.</p>
+              )}
+              {createdData.emailStatus === 'failed' && (
+                <p className="text-xs text-kk-muted">Email delivery failed — copy and send this link manually.</p>
+              )}
+              {createdData.emailStatus === 'not_sent' && (
+                <p className="text-xs text-kk-muted">Copy this link and send it to the diner. It will not be shown again.</p>
+              )}
             </div>
+            {/* Copy link */}
             <div className="flex gap-2">
-              <input readOnly value={createdUrl}
+              <input readOnly value={createdData.url}
                 className="flex-1 min-w-0 text-xs bg-kk-soft border border-kk-line rounded-xl px-3 py-2.5 text-kk-ink font-mono outline-none"
                 onFocus={e => e.target.select()} />
               <button onClick={handleCopy}
@@ -724,6 +765,8 @@ export default function DinerLanding({ invitations, results }: Props) {
   const [matrixLoading, setMatrixLoading]         = useState(false)
   const [showCreate, setShowCreate]               = useState(false)
   const [cancelTarget, setCancelTarget]           = useState<DinerInvitationRow | null>(null)
+  const [retryingId, setRetryingId]               = useState<string | null>(null)
+  const [retryErrors, setRetryErrors]             = useState<Record<string, string>>({})
 
   // Latest submitted result per location
   const latestByLocation = useMemo(() => {
@@ -767,6 +810,18 @@ export default function DinerLanding({ invitations, results }: Props) {
   )
 
   function refresh() { router.refresh() }
+
+  async function handleRetryEmail(inv: DinerInvitationRow) {
+    setRetryingId(inv.id)
+    setRetryErrors(prev => { const next = { ...prev }; delete next[inv.id]; return next })
+    const result = await retryDinerInvitationEmail(inv.id)
+    setRetryingId(null)
+    if (result.error) {
+      setRetryErrors(prev => ({ ...prev, [inv.id]: result.error! }))
+    } else {
+      refresh()
+    }
+  }
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto space-y-6">
@@ -933,7 +988,32 @@ export default function DinerLanding({ invitations, results }: Props) {
                     <tr key={inv.id} className="hover:bg-kk-soft transition-colors">
                       <td className="px-4 py-3">
                         <div className="font-medium text-kk-ink">{inv.diner_name}</div>
-                        {inv.diner_email && <div className="text-xs text-kk-muted mt-0.5">{inv.diner_email}</div>}
+                        {inv.diner_email && (
+                          <div className="text-xs text-kk-muted mt-0.5">{inv.diner_email}</div>
+                        )}
+                        {/* Email delivery status — secondary, shown only when relevant */}
+                        {inv.email_status && inv.email_status !== 'sent' && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <EmailStatusPill status={inv.email_status} />
+                            {inv.email_status === 'failed' && inv.can_retry_email && (
+                              retryErrors[inv.id]
+                                ? <span className="text-[10px] text-kk-bad">{retryErrors[inv.id]}</span>
+                                : (
+                                  <button
+                                    disabled={retryingId === inv.id}
+                                    onClick={() => handleRetryEmail(inv)}
+                                    className="text-[10px] font-medium text-kk-muted underline hover:text-kk-ink transition-colors disabled:opacity-40">
+                                    {retryingId === inv.id ? 'Sending…' : 'Retry'}
+                                  </button>
+                                )
+                            )}
+                          </div>
+                        )}
+                        {inv.email_status === 'sent' && (
+                          <div className="mt-1">
+                            <EmailStatusPill status="sent" />
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-kk-muted">
                         {inv.location_name ?? <span className="italic text-kk-line">—</span>}

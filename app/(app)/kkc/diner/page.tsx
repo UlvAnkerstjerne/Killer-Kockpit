@@ -10,18 +10,24 @@ export const dynamic = 'force-dynamic'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
+export type DinerEmailStatus = 'sent' | 'failed' | 'not_sent'
+
 export interface DinerInvitationRow {
-  id:            string
-  diner_name:    string
-  diner_email:   string | null
-  location_id:   string | null
-  location_name: string | null
-  created_at:    string
-  expires_at:    string
-  status:        'pending' | 'active' | 'submitted' | 'expired'
-  submitted_at:  string | null
-  score_pct:     number | null
-  submission_id: string | null
+  id:               string
+  diner_name:       string
+  diner_email:      string | null
+  location_id:      string | null
+  location_name:    string | null
+  created_at:       string
+  expires_at:       string
+  status:           'pending' | 'active' | 'submitted' | 'expired'
+  submitted_at:     string | null
+  score_pct:        number | null
+  submission_id:    string | null
+  /** null = no email address on the invitation */
+  email_status:     DinerEmailStatus | null
+  /** true when DINER_INVITE_SECRET was configured at creation — retry is possible */
+  can_retry_email:  boolean
 }
 
 export interface DinerResultRow {
@@ -47,6 +53,7 @@ async function getDinerInvitations(): Promise<DinerInvitationRow[]> {
     .from('diner_invitations')
     .select(`
       id, diner_name, diner_email, location_id, created_at, expires_at, status,
+      encrypted_invite_url,
       locations ( name ),
       diner_submissions ( id, score_pct, updated_at, status )
     `)
@@ -58,23 +65,67 @@ async function getDinerInvitations(): Promise<DinerInvitationRow[]> {
     return []
   }
 
-  return (data ?? []).map((row: any) => {
+  const rows = data ?? []
+  if (rows.length === 0) return []
+
+  // Batch-load delivery status for all invitations that have an email address
+  const invIds = rows
+    .filter((r: any) => !!r.diner_email)
+    .map((r: any) => r.id as string)
+
+  const deliveryMap = new Map<string, DinerEmailStatus>() // invitationId → email_status
+
+  if (invIds.length > 0) {
+    const { data: deliveries } = await db
+      .from('report_deliveries')
+      .select('submission_key, status')
+      .eq('report_type', 'diner_invitation')
+      .in('submission_key', invIds)
+
+    // For each invitation, determine email status:
+    //   any 'sent' row → 'sent'
+    //   only 'failed' rows → 'failed'
+    //   no rows → 'not_sent'
+    const byInvitation = new Map<string, string[]>()
+    for (const d of deliveries ?? []) {
+      const arr = byInvitation.get(d.submission_key as string) ?? []
+      arr.push(d.status as string)
+      byInvitation.set(d.submission_key as string, arr)
+    }
+
+    for (const invId of invIds) {
+      const statuses = byInvitation.get(invId) ?? []
+      if (statuses.includes('sent')) {
+        deliveryMap.set(invId, 'sent')
+      } else if (statuses.length > 0) {
+        deliveryMap.set(invId, 'failed')
+      } else {
+        deliveryMap.set(invId, 'not_sent')
+      }
+    }
+  }
+
+  return rows.map((row: any) => {
     const sub = Array.isArray(row.diner_submissions)
       ? row.diner_submissions[0] ?? null
       : row.diner_submissions ?? null
 
+    const hasDinerEmail = !!row.diner_email
+
     return {
-      id:            row.id,
-      diner_name:    row.diner_name,
-      diner_email:   row.diner_email ?? null,
-      location_id:   row.location_id ?? null,
-      location_name: (row.locations as any)?.name ?? null,
-      created_at:    row.created_at,
-      expires_at:    row.expires_at,
-      status:        row.status,
-      submitted_at:  sub?.status === 'submitted' ? sub.updated_at : null,
-      score_pct:     sub?.score_pct ?? null,
-      submission_id: sub?.id ?? null,
+      id:              row.id,
+      diner_name:      row.diner_name,
+      diner_email:     row.diner_email ?? null,
+      location_id:     row.location_id ?? null,
+      location_name:   (row.locations as any)?.name ?? null,
+      created_at:      row.created_at,
+      expires_at:      row.expires_at,
+      status:          row.status,
+      submitted_at:    sub?.status === 'submitted' ? sub.updated_at : null,
+      score_pct:       sub?.score_pct ?? null,
+      submission_id:   sub?.id ?? null,
+      email_status:    hasDinerEmail ? (deliveryMap.get(row.id as string) ?? 'not_sent') : null,
+      can_retry_email: hasDinerEmail && !!(row.encrypted_invite_url as string | null),
     }
   })
 }
