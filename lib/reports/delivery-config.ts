@@ -33,3 +33,15 @@ export const AUDIT_DELIVERY = {
    */
   notifyUserEmails: ['drift@killerkebab.com', 'ulv@killerkebab.com'] as string[],
 }
+
+export const DINER_RESULT_DELIVERY = {
+  /** Stable identifier stored in report_deliveries.report_type */
+  reportType:      'diner_result' as const,
+  /** Fixed email recipient list for Mystery Diner result emails */
+  emailRecipients: ['drift@killerkebab.com'] as string[],
+  /**
+   * app_users.email values for Kockpit notification recipients.
+   * Resolved to user IDs at runtime — no UUIDs hardcoded.
+   */
+  notifyUserEmails: ['drift@killerkebab.com', 'ulv@killerkebab.com'] as string[],
+}

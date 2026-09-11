@@ -13,6 +13,7 @@ export type NotificationType =
   | 'task.approved'
   | 'audit.result'
   | 'kkc.result'
+  | 'diner.result'
 
 /**
  * Derives a concise human-readable notification message.
@@ -71,6 +72,21 @@ export function formatNotificationMessage(
       if (ovr  !== undefined) parts.push(`${ovr}% overall`)
       if (crit !== undefined) parts.push(`${crit}% critical`)
       if (fail !== undefined) parts.push(`${fail} failure${fail === 1 ? '' : 's'}`)
+      return parts.join(' · ')
+    }
+
+    case 'diner.result': {
+      if (!metadata) return 'Mystery Diner submitted'
+      const loc    = (metadata.location         as string | undefined) ?? '?'
+      const score  = metadata.score_pct         as number | undefined
+      const status = metadata.final_status      as string | undefined
+      const crits  = metadata.critical_fail_count as number | undefined
+      const stars  = metadata.gold_star_count   as number | undefined
+      const parts  = [`Diner — ${loc}`]
+      if (score  !== undefined) parts.push(`${Math.round(score)}%`)
+      if (status)               parts.push(status)
+      if (crits  !== undefined) parts.push(`${crits} critical${crits === 1 ? '' : 's'}`)
+      if (stars  !== undefined && stars > 0) parts.push(`${stars}★`)
       return parts.join(' · ')
     }
   }

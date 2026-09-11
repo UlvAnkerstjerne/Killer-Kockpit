@@ -40,6 +40,7 @@ export const KNOWN_TYPES = [
   'task.approved',
   'audit.result',
   'kkc.result',
+  'diner.result',
 ] as const
 
 // ─── Pure helpers (exported for testing) ──────────────────────────────────────
@@ -119,6 +120,21 @@ export function safeFormatMessage(
       if (ovr  !== undefined) parts.push(`${ovr}% overall`)
       if (crit !== undefined) parts.push(`${crit}% critical`)
       if (fail !== undefined) parts.push(`${fail} failure${fail === 1 ? '' : 's'}`)
+      return parts.join(' · ')
+    }
+
+    case 'diner.result': {
+      if (!m) return 'Mystery Diner submitted'
+      const loc    = (m.location          as string | undefined) ?? '?'
+      const score  = m.score_pct          as number | undefined
+      const status = m.final_status       as string | undefined
+      const crits  = m.critical_fail_count as number | undefined
+      const stars  = m.gold_star_count    as number | undefined
+      const parts  = [`Diner — ${loc}`]
+      if (score  !== undefined) parts.push(`${Math.round(score)}%`)
+      if (status)               parts.push(status)
+      if (crits  !== undefined) parts.push(`${crits} critical${crits === 1 ? '' : 's'}`)
+      if (stars  !== undefined && stars > 0) parts.push(`${stars}★`)
       return parts.join(' · ')
     }
 
@@ -286,6 +302,8 @@ export default function NotificationBell() {
       router.push(`/kkc/audit/${n.entity_id}`)
     } else if (n.entity_type === 'kkc_submission') {
       router.push('/kkc/ssp-cph')
+    } else if (n.entity_type === 'diner_submission') {
+      router.push(`/kkc/diner/${n.entity_id}`)
     } else {
       router.push(`/tasks/${n.entity_id}`)
     }

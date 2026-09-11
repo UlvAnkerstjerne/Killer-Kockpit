@@ -19,6 +19,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { verifyDinerSession, DINER_COOKIE_NAME } from '@/lib/diner/session'
+import { dispatchDinerResult } from '@/lib/reports/dispatch-diner'
 
 export async function POST(request: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────
@@ -59,6 +60,9 @@ export async function POST(request: NextRequest) {
       : 'Submission failed. Please try again.'
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+
+  // Fire-and-forget — result distribution must not block the diner's response
+  dispatchDinerResult(session.submissionId)
 
   return NextResponse.json(data)
 }
