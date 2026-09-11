@@ -657,7 +657,7 @@ export default function AuditLanding({ submissions, locations }: Props) {
   const listCount = storeAllRows.length
   const subtitle = selectedStore
     ? `${selectedStore.short} · ${listCount} ${listCount === 1 ? 'audit' : 'audits'}`
-    : `Master Operational Audit · ${submissions.length} ${submissions.length === 1 ? 'audit' : 'audits'}`
+    : `Audit · ${submissions.length} ${submissions.length === 1 ? 'audit' : 'audits'}`
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -764,7 +764,7 @@ export default function AuditLanding({ submissions, locations }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-kk-ink">Operational Audit</h1>
+          <h1 className="text-xl font-bold text-kk-ink">Audit</h1>
           <p className="text-sm text-kk-muted mt-0.5">{subtitle}</p>
         </div>
         <button

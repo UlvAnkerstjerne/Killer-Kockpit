@@ -99,7 +99,7 @@ export default async function AuditSubmissionPage({ params }: Props) {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-kk-muted">
         <Link href="/kkc/audit" className="hover:text-kk-ink transition-colors">
-          Operational Audit
+          Audit
         </Link>
         <span>/</span>
         <span className="text-kk-ink font-medium">{locationName}</span>

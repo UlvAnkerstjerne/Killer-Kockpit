@@ -252,7 +252,7 @@ export default function AuditQuestionnaire({
       <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07)] px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-bold text-kk-ink">Master Operational Audit</h1>
+            <h1 className="text-lg font-bold text-kk-ink">Audit</h1>
             <p className="text-sm text-kk-muted mt-0.5">{locationName}</p>
           </div>
           {isReadOnly && (

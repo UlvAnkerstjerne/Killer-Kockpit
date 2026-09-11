@@ -60,7 +60,7 @@ export default function StartAuditModal({ locations, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
           <h2 id="start-audit-title" className="text-base font-bold text-kk-ink">
-            Start Operational Audit
+            Start Audit
           </h2>
           <button
             onClick={onClose}

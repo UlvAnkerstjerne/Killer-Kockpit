@@ -290,7 +290,7 @@ export default function AppShell({
               </div>
               <div className="space-y-0.5">
                 <NavLink href="/kkc/ssp-cph" label="SSP / CPH Airport" onNavigate={onNavigate} />
-                <NavLink href="/kkc/audit" label="Operational Audit" onNavigate={onNavigate} />
+                <NavLink href="/kkc/audit" label="Audit" onNavigate={onNavigate} />
               </div>
             </div>
           </>
