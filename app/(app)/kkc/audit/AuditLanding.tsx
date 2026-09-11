@@ -53,8 +53,8 @@ interface StoreCardProps {
 
 function StoreCard({ short, submission, selected, onClick }: StoreCardProps) {
   const borderCls = selected
-    ? 'border-kk-ink ring-2 ring-kk-ink ring-offset-1'
-    : 'border-kk-line hover:border-kk-muted'
+    ? 'border border-kk-line ring-2 ring-kk-ink'
+    : 'border border-kk-line hover:border-kk-muted'
 
   return (
     <button
@@ -689,6 +689,9 @@ export default function AuditLanding({ submissions, locations }: Props) {
                 Latest audit: {formatDate(latestSubmitted.submitted_at)}
               </span>
             )}
+            {storeSubmittedChronological.length === 1 && (
+              <span className="text-[11px] text-kk-muted italic">· More audits needed for trend</span>
+            )}
           </div>
 
           {latestSubmitted ? (
@@ -723,10 +726,8 @@ export default function AuditLanding({ submissions, locations }: Props) {
                 />
               </div>
 
-              {storeSubmittedChronological.length >= 2 ? (
+              {storeSubmittedChronological.length >= 2 && (
                 <AuditScoreTrend rows={storeSubmittedChronological} />
-              ) : (
-                <p className="text-xs text-kk-muted px-1">More audits needed for trend</p>
               )}
 
               {/* Checkpoint matrix */}
