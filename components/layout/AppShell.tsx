@@ -230,11 +230,11 @@ export default function AppShell({
           'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm transition-colors',
           isActive
             ? 'bg-[#ecddc8] text-kk-ink font-bold'
-            : 'text-kk-ink/60 hover:bg-kk-soft hover:text-kk-ink',
+            : 'text-kk-ink font-medium hover:bg-kk-soft',
         ].join(' ')}
       >
         {Icon && (
-          <span className={isActive ? 'text-kk-ink' : 'text-kk-ink/50'}>
+          <span className={isActive ? 'text-kk-ink' : 'text-kk-ink/70'}>
             <Icon />
           </span>
         )}
@@ -251,7 +251,7 @@ export default function AppShell({
       <nav className="flex-1 px-3 overflow-y-auto">
         {/* Primary group */}
         <div className="mb-1">
-          <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/40">
+          <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/60">
             Operations
           </div>
           <div className="space-y-0.5">
@@ -285,7 +285,7 @@ export default function AppShell({
           <>
             <div className="my-2 border-t border-kk-line" />
             <div>
-              <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/40">
+              <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/60">
                 Killer Kuality Check
               </div>
               <div className="space-y-0.5">
