@@ -18,31 +18,31 @@ import { createServiceClient } from '@/lib/supabase/server'
 // ─── User resolution ──────────────────────────────────────────────────────────
 
 /**
- * Resolves display_name → user_id for a list of display names.
- * Users not found are omitted with a console warning.
- * Uses service_role to bypass RLS on app_users.
+ * Resolves app_users.email → app_users.id for a list of email addresses.
+ * Uses service_role to bypass RLS.
+ * Users not found are omitted from the map with a console warning.
  */
-export async function resolveUsersByDisplayName(
-  displayNames: string[],
+export async function resolveUsersByEmail(
+  emails: string[],
 ): Promise<Map<string, string>> {
-  if (displayNames.length === 0) return new Map()
+  if (emails.length === 0) return new Map()
 
   const db = createServiceClient()
   const { data, error } = await db
     .from('app_users')
-    .select('id, display_name')
-    .in('display_name', displayNames)
+    .select('id, email')
+    .in('email', emails)
 
   if (error) throw new Error(`User lookup failed: ${error.message}`)
 
   const map = new Map<string, string>()
   for (const row of data ?? []) {
-    map.set(row.display_name, row.id)
+    map.set(row.email, row.id)
   }
 
-  for (const name of displayNames) {
-    if (!map.has(name)) {
-      console.warn(`[notify-users] User "${name}" not found in app_users — notification skipped`)
+  for (const email of emails) {
+    if (!map.has(email)) {
+      console.warn(`[notify-users] No app_user found for email "${email}" — notification skipped`)
     }
   }
 
@@ -70,6 +70,9 @@ export interface SystemNotificationInput {
 
 /**
  * Creates a system notification for one user, idempotent via report_deliveries.
+ *
+ * The report_deliveries recipient key is 'notification:<userId>' — one row
+ * per (report_type, submission_key, userId) combination.
  *
  * Returns 'sent' on first delivery, 'skipped' if already delivered,
  * 'failed' if the RPC or DB insert fails (error is logged, not thrown).
