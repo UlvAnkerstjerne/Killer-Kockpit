@@ -106,7 +106,7 @@ export async function runTaskOverdueReminderJob(
   // ── 1. Fetch overdue tasks ────────────────────────────────────────────────
   const { data: taskRows, error: taskErr } = await db
     .from('tasks')
-    .select('id, title, due_at, owner_user_id, projects(name)')
+    .select('id, title, due_at, owner_user_id, projects(title)')
     .not('owner_user_id', 'is', null)
     .not('due_at', 'is', null)
     .lt('due_at', now.toISOString())
@@ -145,7 +145,7 @@ export async function runTaskOverdueReminderJob(
       continue
     }
 
-    const projectName = (task.projects as unknown as { name: string } | null)?.name ?? null
+    const projectName = (task.projects as unknown as { title: string } | null)?.title ?? null
     const stages      = getEligibleStages(dueAt, now)
 
     for (const stageHours of stages) {
