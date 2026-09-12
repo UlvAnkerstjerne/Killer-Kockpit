@@ -5,7 +5,7 @@
  *
  * Env vars required:
  *   RESEND_API_KEY — Resend API key
- *   RESEND_FROM    — Verified sender, e.g. "Killer Kockpit <kockpit@killerkebab.com>"
+ *   RESEND_FROM    — Verified sender, e.g. "Killer Kockpit <notifications@kockpit.killerkebab.com>"
  *
  * Server-only — never import from client components.
  */

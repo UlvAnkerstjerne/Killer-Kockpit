@@ -9,7 +9,7 @@
  *
  * Required env vars:
  *   RESEND_API_KEY      — Resend API key
- *   RESEND_FROM         — Verified sender, e.g. "Killer Kockpit <kockpit@killerkebab.com>"
+ *   RESEND_FROM         — Verified sender, e.g. "Killer Kockpit <notifications@kockpit.killerkebab.com>"
  *   NEXT_PUBLIC_APP_URL — App base URL, e.g. "https://kockpit.killerkebab.com"
  */
 

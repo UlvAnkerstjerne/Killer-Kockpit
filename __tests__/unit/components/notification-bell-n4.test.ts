@@ -48,8 +48,9 @@ describe('POLL_INTERVAL_MS', () => {
 })
 
 describe('KNOWN_TYPES', () => {
-  it('contains the task lifecycle types plus audit.result, kkc.result, and diner.result', () => {
+  it('contains the task lifecycle types plus system notification types', () => {
     expect([...KNOWN_TYPES].sort()).toEqual([
+      'audit.followup.overdue',
       'audit.result',
       'diner.result',
       'kkc.result',

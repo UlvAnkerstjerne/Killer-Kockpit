@@ -6,8 +6,8 @@
  *
  * Required env vars (add to .env.local and Railway):
  *   RESEND_API_KEY   — Resend API key (re_...)
- *   RESEND_FROM      — Verified sender address, e.g. "Killer Kockpit <kockpit@killerkebab.com>"
- *                      The domain (killerkebab.com) must be verified in Resend.
+ *   RESEND_FROM      — Verified sender address, e.g. "Killer Kockpit <notifications@kockpit.killerkebab.com>"
+ *                      The domain (kockpit.killerkebab.com) must be verified in Resend.
  *
  * Usage:
  *   const result = await sendKKCReportEmail({
@@ -222,7 +222,7 @@ function buildHtmlBody(detail: KKCSubmissionDetail, locationLabel: string): stri
  *
  * Env vars required:
  *   RESEND_API_KEY  — Resend API key
- *   RESEND_FROM     — Verified sender, e.g. "Killer Kockpit <kockpit@killerkebab.com>"
+ *   RESEND_FROM     — Verified sender, e.g. "Killer Kockpit <notifications@kockpit.killerkebab.com>"
  */
 export async function sendKKCReportEmail(
   input: SendKKCEmailInput,

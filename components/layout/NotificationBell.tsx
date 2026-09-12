@@ -41,6 +41,7 @@ export const KNOWN_TYPES = [
   'audit.result',
   'kkc.result',
   'diner.result',
+  'audit.followup.overdue',
 ] as const
 
 // ─── Pure helpers (exported for testing) ──────────────────────────────────────
@@ -135,6 +136,15 @@ export function safeFormatMessage(
       if (status)               parts.push(status)
       if (crits  !== undefined) parts.push(`${crits} critical${crits === 1 ? '' : 's'}`)
       if (stars  !== undefined && stars > 0) parts.push(`${stars}★`)
+      return parts.join(' · ')
+    }
+
+    case 'audit.followup.overdue': {
+      if (!m) return 'Overdue Red Flag follow-up'
+      const loc = (m.location       as string | undefined) ?? '?'
+      const rf  = m.red_flag_count  as number | undefined
+      const parts = [`Overdue follow-up — ${loc}`]
+      if (rf !== undefined) parts.push(`${rf} red flag${rf === 1 ? '' : 's'}`)
       return parts.join(' · ')
     }
 

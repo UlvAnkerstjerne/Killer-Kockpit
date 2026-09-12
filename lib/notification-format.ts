@@ -14,6 +14,7 @@ export type NotificationType =
   | 'audit.result'
   | 'kkc.result'
   | 'diner.result'
+  | 'audit.followup.overdue'
 
 /**
  * Derives a concise human-readable notification message.
@@ -87,6 +88,15 @@ export function formatNotificationMessage(
       if (status)               parts.push(status)
       if (crits  !== undefined) parts.push(`${crits} critical${crits === 1 ? '' : 's'}`)
       if (stars  !== undefined && stars > 0) parts.push(`${stars}★`)
+      return parts.join(' · ')
+    }
+
+    case 'audit.followup.overdue': {
+      if (!metadata) return 'Overdue Red Flag follow-up'
+      const loc = (metadata.location       as string | undefined) ?? '?'
+      const rf  = metadata.red_flag_count  as number | undefined
+      const parts = [`Overdue follow-up — ${loc}`]
+      if (rf !== undefined) parts.push(`${rf} red flag${rf === 1 ? '' : 's'}`)
       return parts.join(' · ')
     }
   }

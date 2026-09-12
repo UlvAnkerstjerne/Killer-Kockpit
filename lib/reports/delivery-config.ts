@@ -45,3 +45,52 @@ export const DINER_RESULT_DELIVERY = {
    */
   notifyUserEmails: ['drift@killerkebab.com', 'ulv@killerkebab.com'] as string[],
 }
+
+/**
+ * Overdue Red Flag follow-up escalation delivery config.
+ *
+ * When an audit_followup is past its due_at and not resolved, a one-time
+ * escalation is sent to three parties:
+ *   1. Kasper (always)  — drift@killerkebab.com
+ *   2. Regional Manager — resolved per location (see regionManagerByLocation)
+ *   3. Ulv (always)     — ulv@killerkebab.com
+ *
+ * If a location has no RM configured (e.g. Copenhagen Airport) only Kasper
+ * and Ulv receive the escalation.
+ *
+ * Location name strings are the exact values from the locations table.
+ */
+export const AUDIT_FOLLOWUP_ESCALATION = {
+  /** Stable identifier stored in report_deliveries.report_type */
+  reportType: 'audit_followup_overdue' as const,
+
+  /** Always-included email recipients (Kasper + Ulv) */
+  fixedEmailRecipients: [
+    'drift@killerkebab.com',
+    'ulv@killerkebab.com',
+  ] as string[],
+
+  /**
+   * app_users.email values resolved to user IDs for Kockpit notifications.
+   * Fixed recipients only — RM notification is added dynamically at runtime.
+   */
+  fixedNotifyEmails: [
+    'drift@killerkebab.com',
+    'ulv@killerkebab.com',
+  ] as string[],
+
+  /**
+   * Maps exact locations.name values to the Regional Manager's app_users.email.
+   * Lydia: Borgergade, Christianshavn, Nørrebro, Frederiksberg
+   * Sara:  Vesterbro, Fisketorvet, Parken
+   */
+  regionManagerByLocation: new Map<string, string>([
+    ['Killer Kebab Borgergade',       'lydia@killerkebab.com'],
+    ['Killer Kebab Christianshavn',   'lydia@killerkebab.com'],
+    ['Killer Kebab Nørrebro',         'lydia@killerkebab.com'],
+    ['Killer Kebab Frederiksberg',    'lydia@killerkebab.com'],
+    ['Killer Kebab Vesterbro',        'sara@killerkebab.com'],
+    ['Killer Kebab Fisketorvet',      'sara@killerkebab.com'],
+    ['Killer Kebab Parken',           'sara@killerkebab.com'],
+  ]),
+}
