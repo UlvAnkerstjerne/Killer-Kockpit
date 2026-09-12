@@ -13,10 +13,13 @@
  * Intended to be called hourly by Railway Cron or cron-job.org.
  *
  * Returns:
- *   200 — run complete (check body.sent / body.failed for details)
+ *   200 — run complete; body contains { totalTasks, sent, failed, skipped }
+ *         failed > 0 means some emails bounced — check logs for details;
+ *         retries are automatic on the next cron run (failed rows are
+ *         non-terminal in report_deliveries)
  *   401 — missing or invalid CRON_SECRET
  *   405 — wrong HTTP method
- *   500 — unexpected error
+ *   500 — unexpected / unhandled error only (not email delivery failures)
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
@@ -39,8 +42,7 @@ export async function POST(request: NextRequest) {
   // ── Run reminder job ───────────────────────────────────────────────────────
   try {
     const result = await runTaskOverdueReminderJob()
-    const status = result.failed > 0 && result.sent === 0 ? 500 : 200
-    return NextResponse.json(result, { status })
+    return NextResponse.json(result, { status: 200 })
   } catch (err) {
     console.error('[api/tasks/overdue-reminders] Unexpected error:', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'Reminder job failed unexpectedly.' }, { status: 500 })
