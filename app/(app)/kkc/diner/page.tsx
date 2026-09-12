@@ -12,22 +12,17 @@ export const dynamic = 'force-dynamic'
 
 export type DinerEmailStatus = 'sent' | 'failed' | 'not_sent'
 
-export interface DinerInvitationRow {
-  id:               string
-  diner_name:       string
-  diner_email:      string | null
-  location_id:      string | null
-  location_name:    string | null
-  created_at:       string
-  expires_at:       string
-  status:           'pending' | 'active' | 'submitted' | 'expired'
-  submitted_at:     string | null
-  score_pct:        number | null
-  submission_id:    string | null
-  /** null = no email address on the invitation */
-  email_status:     DinerEmailStatus | null
-  /** true when DINER_INVITE_SECRET was configured at creation — retry is possible */
-  can_retry_email:  boolean
+export interface DinerRosterRow {
+  id:            string
+  name:          string
+  email:         string
+  status:        'active' | 'disabled'
+  created_at:    string
+  disabled_at:   string | null
+  visit_count:   number
+  last_visit_at: string | null
+  email_status:  DinerEmailStatus
+  can_resend:    boolean
 }
 
 export interface DinerResultRow {
@@ -46,86 +41,82 @@ export interface DinerResultRow {
 
 // ─── Data fetchers ─────────────────────────────────────────────────────────────
 
-async function getDinerInvitations(): Promise<DinerInvitationRow[]> {
+async function getDinerRoster(): Promise<DinerRosterRow[]> {
   const db = createServiceClient()
 
   const { data, error } = await db
-    .from('diner_invitations')
-    .select(`
-      id, diner_name, diner_email, location_id, created_at, expires_at, status,
-      encrypted_invite_url,
-      locations ( name ),
-      diner_submissions ( id, score_pct, updated_at, status )
-    `)
+    .from('diner_diners')
+    .select('id, name, email, status, created_at, disabled_at, encrypted_access_url')
     .order('created_at', { ascending: false })
     .limit(200)
 
   if (error) {
-    console.error('[kkc/diner] getDinerInvitations error:', error.message)
+    console.error('[kkc/diner] getDinerRoster error:', error.message)
     return []
   }
 
   const rows = data ?? []
   if (rows.length === 0) return []
 
-  // Batch-load delivery status for all invitations that have an email address
-  const invIds = rows
-    .filter((r: any) => !!r.diner_email)
-    .map((r: any) => r.id as string)
+  const dinerIds = rows.map((r: any) => r.id as string)
 
-  const deliveryMap = new Map<string, DinerEmailStatus>() // invitationId → email_status
+  // Batch load visit counts + last visit per diner
+  const { data: invRows } = await db
+    .from('diner_invitations')
+    .select('diner_id, diner_submissions ( submitted_at, status )')
+    .in('diner_id', dinerIds)
 
-  if (invIds.length > 0) {
-    const { data: deliveries } = await db
-      .from('report_deliveries')
-      .select('submission_key, status')
-      .eq('report_type', 'diner_invitation')
-      .in('submission_key', invIds)
-
-    // For each invitation, determine email status:
-    //   any 'sent' row → 'sent'
-    //   only 'failed' rows → 'failed'
-    //   no rows → 'not_sent'
-    const byInvitation = new Map<string, string[]>()
-    for (const d of deliveries ?? []) {
-      const arr = byInvitation.get(d.submission_key as string) ?? []
-      arr.push(d.status as string)
-      byInvitation.set(d.submission_key as string, arr)
-    }
-
-    for (const invId of invIds) {
-      const statuses = byInvitation.get(invId) ?? []
-      if (statuses.includes('sent')) {
-        deliveryMap.set(invId, 'sent')
-      } else if (statuses.length > 0) {
-        deliveryMap.set(invId, 'failed')
-      } else {
-        deliveryMap.set(invId, 'not_sent')
+  const visitMap = new Map<string, { count: number; lastAt: string | null }>()
+  for (const inv of invRows ?? []) {
+    const did  = inv.diner_id as string
+    const subs = Array.isArray((inv as any).diner_submissions)
+      ? (inv as any).diner_submissions
+      : (inv as any).diner_submissions ? [(inv as any).diner_submissions] : []
+    const submitted = subs.filter((s: any) => s.status === 'submitted')
+    const cur = visitMap.get(did) ?? { count: 0, lastAt: null }
+    cur.count += submitted.length
+    for (const s of submitted) {
+      if (!cur.lastAt || (s.submitted_at as string) > cur.lastAt) {
+        cur.lastAt = s.submitted_at as string
       }
     }
+    visitMap.set(did, cur)
+  }
+
+  // Batch load email delivery status (most recent per diner)
+  const { data: deliveries } = await db
+    .from('report_deliveries')
+    .select('submission_key, status')
+    .eq('report_type', 'diner_access')
+    .in('submission_key', dinerIds)
+
+  const deliveryMap = new Map<string, DinerEmailStatus>()
+  const byDiner = new Map<string, string[]>()
+  for (const d of deliveries ?? []) {
+    const arr = byDiner.get(d.submission_key as string) ?? []
+    arr.push(d.status as string)
+    byDiner.set(d.submission_key as string, arr)
+  }
+  for (const did of dinerIds) {
+    const statuses = byDiner.get(did) ?? []
+    if (statuses.includes('sent'))       deliveryMap.set(did, 'sent')
+    else if (statuses.length > 0)        deliveryMap.set(did, 'failed')
+    else                                  deliveryMap.set(did, 'not_sent')
   }
 
   return rows.map((row: any) => {
-    const sub = Array.isArray(row.diner_submissions)
-      ? row.diner_submissions[0] ?? null
-      : row.diner_submissions ?? null
-
-    const hasDinerEmail = !!row.diner_email
-
+    const visits = visitMap.get(row.id as string) ?? { count: 0, lastAt: null }
     return {
-      id:              row.id,
-      diner_name:      row.diner_name,
-      diner_email:     row.diner_email ?? null,
-      location_id:     row.location_id ?? null,
-      location_name:   (row.locations as any)?.name ?? null,
-      created_at:      row.created_at,
-      expires_at:      row.expires_at,
-      status:          row.status,
-      submitted_at:    sub?.status === 'submitted' ? sub.updated_at : null,
-      score_pct:       sub?.score_pct ?? null,
-      submission_id:   sub?.id ?? null,
-      email_status:    hasDinerEmail ? (deliveryMap.get(row.id as string) ?? 'not_sent') : null,
-      can_retry_email: hasDinerEmail && !!(row.encrypted_invite_url as string | null),
+      id:            row.id            as string,
+      name:          row.name          as string,
+      email:         row.email         as string,
+      status:        row.status        as 'active' | 'disabled',
+      created_at:    row.created_at    as string,
+      disabled_at:   row.disabled_at   as string | null,
+      visit_count:   visits.count,
+      last_visit_at: visits.lastAt,
+      email_status:  deliveryMap.get(row.id as string) ?? 'not_sent',
+      can_resend:    !!(row.encrypted_access_url as string | null),
     }
   })
 }
@@ -181,10 +172,10 @@ export default async function DinerPage() {
   if (!user) redirect('/login')
   if (!canAccessQualityCheck(user.role)) redirect('/today')
 
-  const [invitations, results] = await Promise.all([
-    getDinerInvitations(),
+  const [roster, results] = await Promise.all([
+    getDinerRoster(),
     getDinerResults(),
   ])
 
-  return <DinerLanding invitations={invitations} results={results} />
+  return <DinerLanding roster={roster} results={results} />
 }

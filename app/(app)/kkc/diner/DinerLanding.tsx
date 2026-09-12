@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useRef, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createDinerInvitation, cancelDinerInvitation, retryDinerInvitationEmail } from '@/lib/actions/diner-invitations'
+import { createDinerAccess, resendDinerAccessEmail, disableDiner, enableDiner } from '@/lib/actions/diner-diners'
 import { fetchDinerStoreMatrix } from '@/lib/actions/diner-results'
 import type { DinerMatrixCheckpoint, DinerMatrixColumn, DinerStoreMatrixResult } from '@/lib/actions/diner-results'
 import { computeDinerStatus, dinerScoreColor, DINER_STATUS_CLS, DINER_STATUS_LABEL } from '@/lib/diner/scoring'
 import type { DinerStatus } from '@/lib/diner/scoring'
-import type { DinerInvitationRow, DinerResultRow, DinerEmailStatus } from './page'
+import type { DinerRosterRow, DinerResultRow, DinerEmailStatus } from './page'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -22,13 +22,6 @@ const STORE_OVERVIEW = [
 ]
 
 const LOCATIONS = STORE_OVERVIEW.map(s => ({ id: s.locationId, name: s.short }))
-
-const EXPIRY_OPTIONS = [
-  { value: 24,  label: '24 hours' },
-  { value: 48,  label: '48 hours' },
-  { value: 72,  label: '72 hours (default)' },
-  { value: 168, label: '7 days' },
-]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -52,22 +45,17 @@ function DinerStatusBadge({ status }: { status: DinerStatus }) {
   )
 }
 
-type InvStatus = 'pending' | 'active' | 'submitted' | 'expired'
+// ─── Diner status badge ───────────────────────────────────────────────────────
 
-const INV_STATUS_CLS: Record<InvStatus, string> = {
-  pending:   'bg-kk-warn-bg text-kk-warn border-kk-warn',
-  active:    'bg-blue-50 text-blue-600 border-blue-300',
-  submitted: 'bg-kk-good-bg text-kk-good border-kk-good',
-  expired:   'bg-kk-soft text-kk-muted border-kk-line',
-}
-const INV_STATUS_LABEL: Record<InvStatus, string> = {
-  pending: 'Pending', active: 'Active', submitted: 'Submitted', expired: 'Expired',
+const DINER_ACCESS_STATUS_CLS: Record<'active' | 'disabled', string> = {
+  active:   'bg-kk-good-bg text-kk-good border-kk-good',
+  disabled: 'bg-kk-soft text-kk-muted border-kk-line',
 }
 
-function InvStatusBadge({ status }: { status: InvStatus }) {
+function DinerAccessBadge({ status }: { status: 'active' | 'disabled' }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${INV_STATUS_CLS[status]}`}>
-      {INV_STATUS_LABEL[status]}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${DINER_ACCESS_STATUS_CLS[status]}`}>
+      {status === 'active' ? 'Active' : 'Disabled'}
     </span>
   )
 }
@@ -80,8 +68,8 @@ const EMAIL_STATUS_CLS: Record<DinerEmailStatus, string> = {
   not_sent: 'text-kk-muted',
 }
 const EMAIL_STATUS_LABEL: Record<DinerEmailStatus, string> = {
-  sent:     'Email sent',
-  failed:   'Email failed',
+  sent:     'Link sent',
+  failed:   'Send failed',
   not_sent: 'Not sent',
 }
 
@@ -550,17 +538,14 @@ function HistoryTable({ rows }: { rows: DinerResultRow[] }) {
   )
 }
 
-// ─── Create invitation modal ──────────────────────────────────────────────────
+// ─── Add Mystery Diner modal ──────────────────────────────────────────────────
 
-function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function AddDinerModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [isPending, startTransition] = useTransition()
-  const [locationId, setLocationId] = useState('')
-  const [dinerName,  setDinerName]  = useState('')
-  const [dinerEmail, setDinerEmail] = useState('')
-  const [expiresIn,  setExpiresIn]  = useState(72)
-  const [error,      setError]      = useState<string | null>(null)
-  const [createdData, setCreatedData] = useState<{ url: string; emailStatus: 'sent' | 'failed' | 'not_sent'; emailError?: string } | null>(null)
-  const [copied,     setCopied]     = useState(false)
+  const [name,  setName]  = useState('')
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [done,  setDone]  = useState<{ emailStatus: 'sent' | 'failed'; emailError?: string } | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -568,73 +553,40 @@ function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; on
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     startTransition(async () => {
-      const result = await createDinerInvitation({
-        dinerName,
-        dinerEmail: dinerEmail.trim() || null,
-        locationId: locationId || null,
-        expiresInHours: expiresIn,
-      })
+      const result = await createDinerAccess({ name: name.trim(), email: email.trim() })
       if (result.error) { setError(result.error); return }
-      setCreatedData({
-        url:         result.data!.inviteUrl,
-        emailStatus: result.data!.emailStatus,
-        emailError:  result.data!.emailError,
-      })
+      setDone({ emailStatus: result.data!.emailStatus, emailError: result.data!.emailError })
     })
-  }
-
-  async function handleCopy() {
-    if (!createdData?.url) return
-    try { await navigator.clipboard.writeText(createdData.url); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch {}
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(23,23,23,0.4)', backdropFilter: 'blur(2px)' }}
-      onClick={e => { if (!createdData && e.target === e.currentTarget) onClose() }}>
+      onClick={e => { if (!done && e.target === e.currentTarget) onClose() }}>
       <div className="bg-kk-panel border border-kk-line rounded-2xl shadow-2xl w-full max-w-md"
-        role="dialog" aria-modal="true" aria-labelledby="create-diner-title">
+        role="dialog" aria-modal="true" aria-labelledby="add-diner-title">
         <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
-          <h2 id="create-diner-title" className="text-base font-bold text-kk-ink">New Mystery Diner Invitation</h2>
+          <h2 id="add-diner-title" className="text-base font-bold text-kk-ink">Add Mystery Diner</h2>
           <button onClick={onClose} className="p-1.5 text-kk-muted hover:text-kk-ink transition-colors rounded-lg" aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
         </div>
 
-        {createdData ? (
+        {done ? (
           <div className="px-5 py-5 space-y-4">
-            {/* Creation + email status */}
-            <div className={`border rounded-xl px-4 py-3 space-y-1 ${
-              createdData.emailStatus === 'failed'
-                ? 'bg-kk-warn-bg border-kk-warn'
-                : 'bg-kk-good-bg border-kk-good'
-            }`}>
-              <p className={`text-xs font-semibold ${createdData.emailStatus === 'failed' ? 'text-kk-warn' : 'text-kk-good'}`}>
-                Invitation created
+            <div className={`border rounded-xl px-4 py-3 ${done.emailStatus === 'sent' ? 'bg-kk-good-bg border-kk-good' : 'bg-kk-warn-bg border-kk-warn'}`}>
+              <p className={`text-xs font-semibold mb-1 ${done.emailStatus === 'sent' ? 'text-kk-good' : 'text-kk-warn'}`}>
+                {done.emailStatus === 'sent' ? 'Diner added — access link sent' : 'Diner added — email delivery failed'}
               </p>
-              {createdData.emailStatus === 'sent' && (
-                <p className="text-xs text-kk-muted">Email sent. Copy this link as a fallback — it will not be shown again.</p>
-              )}
-              {createdData.emailStatus === 'failed' && (
-                <p className="text-xs text-kk-muted">Email delivery failed — copy and send this link manually.</p>
-              )}
-              {createdData.emailStatus === 'not_sent' && (
-                <p className="text-xs text-kk-muted">Copy this link and send it to the diner. It will not be shown again.</p>
-              )}
-            </div>
-            {/* Copy link */}
-            <div className="flex gap-2">
-              <input readOnly value={createdData.url}
-                className="flex-1 min-w-0 text-xs bg-kk-soft border border-kk-line rounded-xl px-3 py-2.5 text-kk-ink font-mono outline-none"
-                onFocus={e => e.target.select()} />
-              <button onClick={handleCopy}
-                className="shrink-0 px-3 py-2.5 bg-kk-ink text-white text-xs font-semibold rounded-xl hover:opacity-80 transition-opacity">
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
+              <p className="text-xs text-kk-muted">
+                {done.emailStatus === 'sent'
+                  ? 'The diner will receive a personal link to start visits. You can resend it from the roster at any time.'
+                  : `Email error: ${done.emailError ?? 'unknown'}. Use the Resend link action in the roster.`}
+              </p>
             </div>
             <button onClick={() => { onCreated(); onClose() }}
               className="w-full py-2.5 text-sm bg-kk-ink text-white font-semibold rounded-xl hover:opacity-80 transition-opacity">
@@ -644,45 +596,31 @@ function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; on
         ) : (
           <form onSubmit={handleSubmit} className="px-5 py-5 space-y-4">
             <div>
-              <label htmlFor="di-location" className="block text-xs font-semibold text-kk-ink mb-1.5">Location</label>
-              <select id="di-location" value={locationId} onChange={e => setLocationId(e.target.value)} disabled={isPending}
-                className="w-full text-sm bg-white border border-kk-line rounded-xl px-3 py-2.5 outline-none focus:border-kk-ink transition-colors text-kk-ink disabled:opacity-50">
-                <option value="">No specific location</option>
-                {LOCATIONS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="di-name" className="block text-xs font-semibold text-kk-ink mb-1.5">
-                Diner name <span className="text-kk-bad">*</span>
+              <label htmlFor="add-dn-name" className="block text-xs font-semibold text-kk-ink mb-1.5">
+                Full name <span className="text-kk-bad">*</span>
               </label>
-              <input id="di-name" type="text" value={dinerName} onChange={e => setDinerName(e.target.value)}
+              <input id="add-dn-name" type="text" value={name} onChange={e => setName(e.target.value)}
                 placeholder="Full name" maxLength={100} disabled={isPending} required autoFocus
                 className="w-full text-sm bg-white border border-kk-line rounded-xl px-3 py-2.5 outline-none focus:border-kk-ink transition-colors text-kk-ink placeholder:text-kk-muted disabled:opacity-50" />
             </div>
             <div>
-              <label htmlFor="di-email" className="block text-xs font-semibold text-kk-ink mb-1.5">
-                Email <span className="text-kk-muted font-normal">(optional)</span>
+              <label htmlFor="add-dn-email" className="block text-xs font-semibold text-kk-ink mb-1.5">
+                Email <span className="text-kk-bad">*</span>
               </label>
-              <input id="di-email" type="email" value={dinerEmail} onChange={e => setDinerEmail(e.target.value)}
-                placeholder="diner@example.com" maxLength={200} disabled={isPending}
+              <input id="add-dn-email" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="diner@example.com" maxLength={200} disabled={isPending} required
                 className="w-full text-sm bg-white border border-kk-line rounded-xl px-3 py-2.5 outline-none focus:border-kk-ink transition-colors text-kk-ink placeholder:text-kk-muted disabled:opacity-50" />
             </div>
-            <div>
-              <label htmlFor="di-expiry" className="block text-xs font-semibold text-kk-ink mb-1.5">Link valid for</label>
-              <select id="di-expiry" value={expiresIn} onChange={e => setExpiresIn(Number(e.target.value))} disabled={isPending}
-                className="w-full text-sm bg-white border border-kk-line rounded-xl px-3 py-2.5 outline-none focus:border-kk-ink transition-colors text-kk-ink disabled:opacity-50">
-                {EXPIRY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
             {error && <p className="text-xs text-kk-bad">{error}</p>}
+            <p className="text-xs text-kk-muted">An access link will be emailed immediately. The diner can use the same link for every future visit.</p>
             <div className="flex gap-3 pt-1">
               <button type="button" onClick={onClose} disabled={isPending}
                 className="flex-1 py-2.5 text-sm border border-kk-line rounded-xl text-kk-muted hover:text-kk-ink hover:border-kk-ink transition-colors disabled:opacity-40">
                 Cancel
               </button>
-              <button type="submit" disabled={isPending || !dinerName.trim()}
+              <button type="submit" disabled={isPending || !name.trim() || !email.trim()}
                 className="flex-1 py-2.5 text-sm bg-kk-ink text-white font-semibold rounded-xl disabled:opacity-40 hover:opacity-80 transition-opacity">
-                {isPending ? 'Creating…' : 'Create invitation'}
+                {isPending ? 'Adding…' : 'Add diner'}
               </button>
             </div>
           </form>
@@ -692,15 +630,16 @@ function CreateInvitationModal({ onClose, onCreated }: { onClose: () => void; on
   )
 }
 
-// ─── Cancel invitation modal ──────────────────────────────────────────────────
+// ─── Disable / Enable confirmation modal ──────────────────────────────────────
 
-function CancelInvitationModal({ invitation, onClose, onCancelled }: {
-  invitation:  DinerInvitationRow
-  onClose:     () => void
-  onCancelled: () => void
+function ToggleDinerModal({ diner, onClose, onDone }: {
+  diner:   DinerRosterRow
+  onClose: () => void
+  onDone:  () => void
 }) {
   const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError]            = useState<string | null>(null)
+  const disabling                    = diner.status === 'active'
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -708,12 +647,11 @@ function CancelInvitationModal({ invitation, onClose, onCancelled }: {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  function handleCancel() {
+  function handleToggle() {
     startTransition(async () => {
-      const result = await cancelDinerInvitation(invitation.id)
+      const result = disabling ? await disableDiner(diner.id) : await enableDiner(diner.id)
       if (result.error) { setError(result.error); return }
-      onCancelled()
-      onClose()
+      onDone(); onClose()
     })
   }
 
@@ -722,26 +660,32 @@ function CancelInvitationModal({ invitation, onClose, onCancelled }: {
       style={{ background: 'rgba(23,23,23,0.4)', backdropFilter: 'blur(2px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-kk-panel border border-kk-line rounded-2xl shadow-2xl w-full max-w-sm"
-        role="dialog" aria-modal="true" aria-labelledby="cancel-diner-title">
+        role="dialog" aria-modal="true" aria-labelledby="toggle-diner-title">
         <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
-          <h2 id="cancel-diner-title" className="text-base font-bold text-kk-ink">Cancel invitation</h2>
+          <h2 id="toggle-diner-title" className="text-base font-bold text-kk-ink">
+            {disabling ? 'Disable diner' : 'Re-enable diner'}
+          </h2>
           <button onClick={onClose} className="p-1.5 text-kk-muted hover:text-kk-ink transition-colors rounded-lg" aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
         </div>
         <div className="px-5 py-5 space-y-4">
           <p className="text-sm text-kk-ink">
-            Cancel the invitation for <strong>{invitation.diner_name}</strong>? The link will immediately stop working.
+            {disabling
+              ? <>Disable access for <strong>{diner.name}</strong>? Their link will immediately stop working.</>
+              : <>Re-enable access for <strong>{diner.name}</strong>? Their existing link will work again.</>}
           </p>
           {error && <p className="text-xs text-kk-bad">{error}</p>}
           <div className="flex gap-3">
             <button type="button" onClick={onClose} disabled={isPending}
               className="flex-1 py-2.5 text-sm border border-kk-line rounded-xl text-kk-muted hover:text-kk-ink hover:border-kk-ink transition-colors disabled:opacity-40">
-              Keep
+              Cancel
             </button>
-            <button type="button" onClick={handleCancel} disabled={isPending}
-              className="flex-1 py-2.5 text-sm bg-kk-bad text-white font-semibold rounded-xl disabled:opacity-40 hover:opacity-80 transition-opacity">
-              {isPending ? 'Cancelling…' : 'Cancel invitation'}
+            <button type="button" onClick={handleToggle} disabled={isPending}
+              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-40 hover:opacity-80 transition-opacity text-white ${disabling ? 'bg-kk-bad' : 'bg-kk-good'}`}>
+              {isPending
+                ? (disabling ? 'Disabling…' : 'Enabling…')
+                : (disabling ? 'Disable' : 'Re-enable')}
             </button>
           </div>
         </div>
@@ -753,20 +697,20 @@ function CancelInvitationModal({ invitation, onClose, onCancelled }: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
-  invitations: DinerInvitationRow[]
-  results:     DinerResultRow[]
+  roster:  DinerRosterRow[]
+  results: DinerResultRow[]
 }
 
-export default function DinerLanding({ invitations, results }: Props) {
+export default function DinerLanding({ roster, results }: Props) {
   const router = useRouter()
-  const [tab, setTab]                             = useState<'results' | 'invitations'>('results')
+  const [tab, setTab]                             = useState<'results' | 'diners'>('results')
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
   const [matrixData, setMatrixData]               = useState<DinerStoreMatrixResult | null>(null)
   const [matrixLoading, setMatrixLoading]         = useState(false)
-  const [showCreate, setShowCreate]               = useState(false)
-  const [cancelTarget, setCancelTarget]           = useState<DinerInvitationRow | null>(null)
-  const [retryingId, setRetryingId]               = useState<string | null>(null)
-  const [retryErrors, setRetryErrors]             = useState<Record<string, string>>({})
+  const [showAdd, setShowAdd]                     = useState(false)
+  const [toggleTarget, setToggleTarget]           = useState<DinerRosterRow | null>(null)
+  const [resendingId, setResendingId]             = useState<string | null>(null)
+  const [resendErrors, setResendErrors]           = useState<Record<string, string>>({})
 
   // Latest submitted result per location
   const latestByLocation = useMemo(() => {
@@ -811,13 +755,13 @@ export default function DinerLanding({ invitations, results }: Props) {
 
   function refresh() { router.refresh() }
 
-  async function handleRetryEmail(inv: DinerInvitationRow) {
-    setRetryingId(inv.id)
-    setRetryErrors(prev => { const next = { ...prev }; delete next[inv.id]; return next })
-    const result = await retryDinerInvitationEmail(inv.id)
-    setRetryingId(null)
+  async function handleResendLink(diner: DinerRosterRow) {
+    setResendingId(diner.id)
+    setResendErrors(prev => { const next = { ...prev }; delete next[diner.id]; return next })
+    const result = await resendDinerAccessEmail(diner.id)
+    setResendingId(null)
     if (result.error) {
-      setRetryErrors(prev => ({ ...prev, [inv.id]: result.error! }))
+      setResendErrors(prev => ({ ...prev, [diner.id]: result.error! }))
     } else {
       refresh()
     }
@@ -834,16 +778,16 @@ export default function DinerLanding({ invitations, results }: Props) {
               className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors ${tab === 'results' ? 'bg-white text-kk-ink shadow-sm' : 'text-kk-muted hover:text-kk-ink'}`}>
               Results
             </button>
-            <button onClick={() => setTab('invitations')}
-              className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors ${tab === 'invitations' ? 'bg-white text-kk-ink shadow-sm' : 'text-kk-muted hover:text-kk-ink'}`}>
-              Invitations
+            <button onClick={() => setTab('diners')}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors ${tab === 'diners' ? 'bg-white text-kk-ink shadow-sm' : 'text-kk-muted hover:text-kk-ink'}`}>
+              Mystery Diners
             </button>
           </div>
         </div>
-        {tab === 'invitations' && (
-          <button onClick={() => setShowCreate(true)}
+        {tab === 'diners' && (
+          <button onClick={() => setShowAdd(true)}
             className="px-4 py-2 bg-kk-ink text-white text-sm font-semibold rounded-xl hover:opacity-80 transition-opacity">
-            New invitation
+            Add Mystery Diner
           </button>
         )}
       </div>
@@ -954,19 +898,20 @@ export default function DinerLanding({ invitations, results }: Props) {
             <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07)] px-6 py-14 text-center">
               <div className="text-sm font-semibold text-kk-ink mb-1">No submitted results yet</div>
               <div className="text-sm text-kk-muted">
-                Switch to the Invitations tab to create a new diner invite.
+                Switch to the Mystery Diners tab to add a diner.
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Invitations tab ── */}
-      {tab === 'invitations' && (
+      {/* ── Mystery Diners tab ── */}
+      {tab === 'diners' && (
         <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07)] overflow-hidden">
-          {invitations.length === 0 ? (
+          {roster.length === 0 ? (
             <div className="px-6 py-12 text-center">
-              <p className="text-sm text-kk-muted">No invitations yet. Create one to get started.</p>
+              <p className="text-sm font-semibold text-kk-ink mb-1">No Mystery Diners yet</p>
+              <p className="text-sm text-kk-muted">Add one to generate a reusable personal access link.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -974,74 +919,59 @@ export default function DinerLanding({ invitations, results }: Props) {
                 <thead>
                   <tr className="border-b border-kk-line">
                     <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Diner</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Location</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Created</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Expires</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Submitted</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Score</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Visits</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Last visit</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-kk-muted">Added</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-kk-line">
-                  {invitations.map(inv => (
-                    <tr key={inv.id} className="hover:bg-kk-soft transition-colors">
+                  {roster.map(diner => (
+                    <tr key={diner.id} className="hover:bg-kk-soft transition-colors">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-kk-ink">{inv.diner_name}</div>
-                        {inv.diner_email && (
-                          <div className="text-xs text-kk-muted mt-0.5">{inv.diner_email}</div>
-                        )}
-                        {/* Email delivery status — secondary, shown only when relevant */}
-                        {inv.email_status && inv.email_status !== 'sent' && (
-                          <div className="mt-1 flex items-center gap-2">
-                            <EmailStatusPill status={inv.email_status} />
-                            {inv.email_status === 'failed' && inv.can_retry_email && (
-                              retryErrors[inv.id]
-                                ? <span className="text-[10px] text-kk-bad">{retryErrors[inv.id]}</span>
-                                : (
-                                  <button
-                                    disabled={retryingId === inv.id}
-                                    onClick={() => handleRetryEmail(inv)}
-                                    className="text-[10px] font-medium text-kk-muted underline hover:text-kk-ink transition-colors disabled:opacity-40">
-                                    {retryingId === inv.id ? 'Sending…' : 'Retry'}
-                                  </button>
-                                )
-                            )}
-                          </div>
-                        )}
-                        {inv.email_status === 'sent' && (
-                          <div className="mt-1">
-                            <EmailStatusPill status="sent" />
-                          </div>
-                        )}
+                        <div className="font-medium text-kk-ink">{diner.name}</div>
+                        <div className="text-xs text-kk-muted mt-0.5">{diner.email}</div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <EmailStatusPill status={diner.email_status} />
+                          {diner.email_status === 'failed' && diner.can_resend && (
+                            resendErrors[diner.id]
+                              ? <span className="text-[10px] text-kk-bad">{resendErrors[diner.id]}</span>
+                              : (
+                                <button
+                                  disabled={resendingId === diner.id}
+                                  onClick={() => handleResendLink(diner)}
+                                  className="text-[10px] font-medium text-kk-muted underline hover:text-kk-ink transition-colors disabled:opacity-40">
+                                  {resendingId === diner.id ? 'Sending…' : 'Retry'}
+                                </button>
+                              )
+                          )}
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-kk-muted">
-                        {inv.location_name ?? <span className="italic text-kk-line">—</span>}
+                      <td className="px-4 py-3"><DinerAccessBadge status={diner.status} /></td>
+                      <td className="px-4 py-3 font-semibold tabular-nums text-kk-ink">
+                        {diner.visit_count > 0 ? diner.visit_count : <span className="text-kk-muted font-normal">0</span>}
                       </td>
-                      <td className="px-4 py-3 text-kk-muted whitespace-nowrap">{fmtDate(inv.created_at)}</td>
-                      <td className="px-4 py-3 text-kk-muted whitespace-nowrap">{fmtDate(inv.expires_at)}</td>
-                      <td className="px-4 py-3"><InvStatusBadge status={inv.status} /></td>
                       <td className="px-4 py-3 text-kk-muted whitespace-nowrap">
-                        {inv.submitted_at ? fmtDateTime(inv.submitted_at) : <span className="text-kk-line">—</span>}
+                        {diner.last_visit_at ? fmtDate(diner.last_visit_at) : <span className="text-kk-line">—</span>}
                       </td>
-                      <td className="px-4 py-3">
-                        {inv.score_pct != null
-                          ? <span className={`font-semibold tabular-nums ${dinerScoreColor(inv.score_pct)}`}>{inv.score_pct.toFixed(0)}%</span>
-                          : <span className="text-kk-line">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {inv.status === 'submitted' && inv.submission_id && (
-                          <Link href={`/kkc/diner/${inv.submission_id}`}
-                            className="text-xs text-kk-muted hover:text-kk-ink transition-colors mr-3">
-                            View →
-                          </Link>
-                        )}
-                        {(inv.status === 'pending' || inv.status === 'active') && (
-                          <button onClick={() => setCancelTarget(inv)}
-                            className="text-xs text-kk-muted hover:text-kk-bad transition-colors">
-                            Cancel
+                      <td className="px-4 py-3 text-kk-muted whitespace-nowrap">{fmtDate(diner.created_at)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-3">
+                          {diner.can_resend && diner.status === 'active' && (
+                            <button
+                              disabled={resendingId === diner.id}
+                              onClick={() => handleResendLink(diner)}
+                              className="text-xs text-kk-muted hover:text-kk-ink transition-colors disabled:opacity-40">
+                              {resendingId === diner.id ? 'Sending…' : 'Resend link'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setToggleTarget(diner)}
+                            className={`text-xs transition-colors ${diner.status === 'active' ? 'text-kk-muted hover:text-kk-bad' : 'text-kk-muted hover:text-kk-good'}`}>
+                            {diner.status === 'active' ? 'Disable' : 'Enable'}
                           </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1053,14 +983,14 @@ export default function DinerLanding({ invitations, results }: Props) {
       )}
 
       {/* Modals */}
-      {showCreate && (
-        <CreateInvitationModal onClose={() => setShowCreate(false)} onCreated={refresh} />
+      {showAdd && (
+        <AddDinerModal onClose={() => setShowAdd(false)} onCreated={refresh} />
       )}
-      {cancelTarget && (
-        <CancelInvitationModal
-          invitation={cancelTarget}
-          onClose={() => setCancelTarget(null)}
-          onCancelled={refresh}
+      {toggleTarget && (
+        <ToggleDinerModal
+          diner={toggleTarget}
+          onClose={() => setToggleTarget(null)}
+          onDone={refresh}
         />
       )}
     </div>

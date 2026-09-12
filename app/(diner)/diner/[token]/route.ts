@@ -1,30 +1,37 @@
 /**
  * GET /diner/[token]
  *
- * Public token-exchange endpoint for Mystery Diner invitations.
+ * Public token-exchange endpoint. Handles two token types:
  *
- * Flow:
- *   1. Hash the raw URL token (SHA-256).
- *   2. Look up the invitation by token_hash via service_role.
- *   3. Validate: exists / not expired / not already submitted.
- *   4. If 'pending': create submission row, mark invitation 'active'.
- *      If 'active':  retrieve existing in-progress submission.
- *      Race (23505): fall back to fetching the winning row.
- *   5. Issue a signed HMAC-SHA256 session cookie scoped to (invitationId, submissionId).
- *   6. Redirect to /diner/form.
+ * A) Reusable diner identity token (diner_diners.token_hash)
+ *    1. Hash the raw URL token.
+ *    2. Look up diner_diners by token_hash.
+ *    3. If disabled → show disabled error page.
+ *    4. Issue dk_identity cookie (HMAC-SHA256, 1-year).
+ *    5. Redirect to /diner/portal.
+ *
+ * B) Legacy one-time invitation token (diner_invitations.token_hash)
+ *    1. Hash the raw URL token.
+ *    2. Look up diner_invitations by token_hash (fallback when no diner found).
+ *    3. Validate: exists / not expired / not already submitted.
+ *    4. If 'pending': create submission row, mark invitation 'active'.
+ *       If 'active':  retrieve existing in-progress submission.
+ *       Race (23505): fall back to fetching the winning row.
+ *    5. Issue dk_session cookie scoped to (invitationId, submissionId).
+ *    6. Redirect to /diner/form.
  *
  * Security:
  *   - No Supabase anon credentials used; all DB access is service_role.
- *   - Cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/ (sent to /api/diner/* too).
- *   - Expired / submitted / unknown tokens receive an HTML error page — not a redirect
- *     into the Kockpit application.
- *   - timingSafeEqual used in verifyDinerSession; no branch on secret length.
+ *   - Cookies are HttpOnly, Secure in production, SameSite=Lax, Path=/.
+ *   - Unknown / invalid / disabled tokens receive an HTML error page.
+ *   - timingSafeEqual used in all cookie signing/verification.
  */
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { hashInviteToken } from '@/lib/diner/token'
 import { signDinerSession, DINER_COOKIE_NAME } from '@/lib/diner/session'
+import { signDinerIdentity, DINER_IDENTITY_COOKIE_NAME, DINER_IDENTITY_MAX_AGE } from '@/lib/diner/identity'
 
 // ─── Minimal error page (no Kockpit chrome) ──────────────────────────────────
 
@@ -62,12 +69,53 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params
-  if (!token) return errorPage('Invalid invitation link.', 400)
+  if (!token) return errorPage('Invalid link.', 400)
 
   const tokenHash = hashInviteToken(token)
   const db        = createServiceClient()
 
-  // ── 1. Look up invitation ─────────────────────────────────────────────────
+  // ── A. Check diner_diners first (reusable identity token) ─────────────────
+  const { data: diner, error: dinerErr } = await db
+    .from('diner_diners')
+    .select('id, status')
+    .eq('token_hash', tokenHash)
+    .maybeSingle()
+
+  if (dinerErr) {
+    console.error('[diner/token] diner_diners lookup error:', dinerErr.message)
+    return errorPage('Something went wrong. Please try again.', 500)
+  }
+
+  if (diner) {
+    // Reusable identity token found
+    if ((diner.status as string) === 'disabled') {
+      return errorPage(
+        'Your Mystery Diner access has been disabled. Please contact Killer Kebab.',
+        403,
+      )
+    }
+
+    let cookieValue: string
+    try {
+      cookieValue = signDinerIdentity({ dinerId: diner.id as string })
+    } catch (err) {
+      console.error('[diner/token] Failed to sign identity:', err)
+      return errorPage('Server configuration error. Please contact support.', 500)
+    }
+
+    const portalUrl  = new URL('/diner/portal', request.url)
+    const response   = NextResponse.redirect(portalUrl)
+    response.cookies.set(DINER_IDENTITY_COOKIE_NAME, cookieValue, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path:     '/',
+      maxAge:   DINER_IDENTITY_MAX_AGE,
+    })
+    return response
+  }
+
+  // ── B. Fall back to one-time invitation token ──────────────────────────────
   const { data: invitation, error: invErr } = await db
     .from('diner_invitations')
     .select('id, status, expires_at')
@@ -79,7 +127,7 @@ export async function GET(
     return errorPage('Something went wrong. Please try again.', 500)
   }
   if (!invitation) {
-    return errorPage('This invitation link is not valid.', 404)
+    return errorPage('This link is not valid.', 404)
   }
 
   // ── 2. Validate state ─────────────────────────────────────────────────────
