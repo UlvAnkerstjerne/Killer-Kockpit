@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,33 @@ function EntityPill({ type }: { type: string }) {
   )
 }
 
-// ─── Source card ──────────────────────────────────────────────────────────────
+// ─── Profile source card ──────────────────────────────────────────────────────
+
+function ProfileSourceCard({ source }: { source: BrainProfileSource }) {
+  return (
+    <div className="border border-kk-line rounded-xl p-4 bg-white">
+      <div className="flex items-center gap-2 mb-3">
+        <EntityPill type={source.entity_type} />
+        <Link href={source.href} className="text-sm font-semibold text-kk-ink hover:underline">
+          {source.display_name}
+        </Link>
+        <span className="text-[10px] text-kk-muted ml-auto shrink-0">Kockpit Record</span>
+      </div>
+      {source.fields.length > 0 && (
+        <dl className="space-y-1">
+          {source.fields.map(f => (
+            <div key={f.label} className="flex gap-2 text-xs">
+              <dt className="text-kk-muted w-24 shrink-0">{f.label}</dt>
+              <dd className="text-kk-ink font-medium">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+// ─── Update source card ───────────────────────────────────────────────────────
 
 function SourceCard({ source }: { source: BrainSource }) {
   const date = fmtDate(source.occurred_on, source.created_at)
@@ -233,12 +259,15 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {result.sources.length > 0 && (
+          {(result.profileSources.length > 0 || result.sources.length > 0) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.sources.length})
+                Sources ({result.profileSources.length + result.sources.length})
               </h2>
               <div className="space-y-2">
+                {result.profileSources.map(s => (
+                  <ProfileSourceCard key={`${s.entity_type}-${s.entity_id}`} source={s} />
+                ))}
                 {result.sources.map(s => (
                   <SourceCard key={s.updateId} source={s} />
                 ))}
