@@ -36,10 +36,15 @@
 import { getCurrentUser }          from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
 import { createClient }            from '@/lib/supabase/server'
+import { createServiceClient }     from '@/lib/supabase/server'
 import { queryBrain }              from '@/lib/ai/brain-query'
+import { getGoogleOAuth2Client }   from '@/lib/google/auth'
+import { hasGmailScope }           from '@/lib/google/auth'
+import { searchGmailForBrain, buildGmailSearchQuery } from '@/lib/google/gmail-search'
 import type { ActionResult, KkUpdateEntityType } from '@/lib/types'
 import type {
   BrainContextUpdate,
+  BrainEmailContext,
   BrainEntityProfile,
   EmployeeProfile,
   LocationProfile,
@@ -85,11 +90,24 @@ export interface BrainOperationalSource {
   personName: string
 }
 
+/** A card shown in the sources panel for a Gmail message found by Brain. */
+export interface BrainEmailSource {
+  threadId:     string
+  messageId:    string
+  subject:      string
+  from:         string
+  dateIso:      string
+  excerpt:      string
+  href:         string
+  accountEmail: string | null
+}
+
 export interface BrainAnswer {
   answer:             string
   profileSources:     BrainProfileSource[]
   operationalSources: BrainOperationalSource[]
   sources:            BrainSource[]
+  emailSources:       BrainEmailSource[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -729,11 +747,95 @@ export async function askBrain(
     }
   })
 
-  // ── 10. Call AI ───────────────────────────────────────────────────────────
-  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts)
+  // ── 10. Gmail multi-account search ────────────────────────────────────────
+  //
+  // Search all connected Gmail accounts (those with gmail.readonly scope).
+  // Results are deduplicated by threadId and capped at 5.
+  // Email bodies are UNTRUSTED source material — they are passed to the AI
+  // as data and never treated as instructions (enforced in system prompt).
+  const emailContexts: BrainEmailContext[] = []
+  const emailSources:  BrainEmailSource[]  = []
+
+  try {
+    const serviceClient = createServiceClient()
+    const { data: tokenRows } = await serviceClient
+      .from('google_oauth_tokens')
+      .select('user_id, google_account_email, scopes')
+
+    const gmailUsers = (tokenRows ?? []).filter(row =>
+      hasGmailScope((row.scopes as string[] | null) ?? [])
+    )
+
+    if (gmailUsers.length > 0) {
+      const mentionedNames = [
+        ...mentionedLocations.map(l => l.name),
+        ...mentionedEmployees.map(e => e.name),
+        ...mentionedProjects.map(p => p.title),
+      ]
+      const keywords = extractKeywords(q)
+      const gmailQuery = buildGmailSearchQuery(mentionedNames, keywords)
+
+      if (gmailQuery) {
+        const searchResults = await Promise.allSettled(
+          gmailUsers.map(async row => {
+            const oauthClient = await getGoogleOAuth2Client(row.user_id as string)
+            if (!oauthClient) return []
+            return searchGmailForBrain(
+              oauthClient,
+              (row.google_account_email as string | null) ?? null,
+              gmailQuery,
+              8,
+            )
+          })
+        )
+
+        // Collect results, deduplicate by threadId, cap at 5
+        const seenThreadIds = new Set<string>()
+        for (const outcome of searchResults) {
+          if (outcome.status !== 'fulfilled') continue
+          for (const msg of outcome.value) {
+            if (seenThreadIds.has(msg.threadId)) continue
+            seenThreadIds.add(msg.threadId)
+
+            emailContexts.push({
+              threadId:     msg.threadId,
+              subject:      msg.subject,
+              from:         msg.from,
+              dateIso:      msg.dateIso,
+              body:         msg.body,
+              accountEmail: msg.accountEmail,
+            })
+            emailSources.push({
+              threadId:     msg.threadId,
+              messageId:    msg.messageId,
+              subject:      msg.subject,
+              from:         msg.from,
+              dateIso:      msg.dateIso,
+              excerpt:      msg.excerpt,
+              href:         msg.href,
+              accountEmail: msg.accountEmail,
+            })
+
+            if (emailContexts.length >= 5) break
+          }
+          if (emailContexts.length >= 5) break
+        }
+
+        // Sort email contexts by date descending (most recent first)
+        emailContexts.sort((a, b) => b.dateIso.localeCompare(a.dateIso))
+        emailSources.sort((a, b) => b.dateIso.localeCompare(a.dateIso))
+      }
+    }
+  } catch (gmailErr) {
+    // Gmail search failure is non-fatal — log and continue without email context
+    console.error('[brain] Gmail search failed:', (gmailErr as Error).message)
+  }
+
+  // ── 11. Call AI ───────────────────────────────────────────────────────────
+  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts, emailContexts)
   if (!aiResult.ok) return { error: aiResult.error }
 
-  // ── 11. Build Update sources for UI display ───────────────────────────────
+  // ── 12. Build Update sources for UI display ───────────────────────────────
   const sources: BrainSource[] = contextUpdates.map(u => ({
     updateId:    u.id,
     body:        u.body,
@@ -748,5 +850,5 @@ export async function askBrain(
     })),
   }))
 
-  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources } }
+  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources, emailSources } }
 }

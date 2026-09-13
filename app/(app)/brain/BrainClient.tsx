@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,6 +96,47 @@ function OperationalSourceCard({ source }: { source: BrainOperationalSource }) {
         {source.meta && <><span>·</span><span>{source.meta}</span></>}
       </div>
     </div>
+  )
+}
+
+// ─── Email source card ────────────────────────────────────────────────────────
+
+function fmtEmailDate(dateIso: string): string {
+  const [y, m, d] = dateIso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
+function extractSenderName(from: string): string {
+  // "Name <email>" → "Name"; "email@domain" → "email@domain"
+  const match = from.match(/^([^<]+)</)
+  return match ? match[1].trim() : from
+}
+
+function EmailSourceCard({ source }: { source: BrainEmailSource }) {
+  return (
+    <a
+      href={source.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-cyan-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-cyan-50 text-cyan-700">
+          Email
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.subject}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted mb-2">
+        <span>{extractSenderName(source.from)}</span>
+        <span>·</span>
+        <span>{fmtEmailDate(source.dateIso)}</span>
+      </div>
+      {source.excerpt && (
+        <p className="text-xs text-kk-ink/70 leading-relaxed line-clamp-2">{source.excerpt}</p>
+      )}
+    </a>
   )
 }
 
@@ -297,10 +338,10 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0) && (
+          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length})
+                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length})
               </h2>
               <div className="space-y-2">
                 {result.profileSources.map(s => (
@@ -311,6 +352,9 @@ export default function BrainClient() {
                 ))}
                 {result.sources.map(s => (
                   <SourceCard key={s.updateId} source={s} />
+                ))}
+                {result.emailSources.map(s => (
+                  <EmailSourceCard key={s.threadId} source={s} />
                 ))}
               </div>
             </div>
