@@ -412,6 +412,7 @@ export async function askBrain(
     const { data: textRows } = await supabase
       .from('kk_updates')
       .select('id, body, occurred_on, created_at, created_by_user_id, supersedes_update_id')
+      .eq('brain_excluded', false)
       .or(ilikeFilter)
       .order('occurred_on', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
@@ -427,6 +428,7 @@ export async function askBrain(
     const { data: recentRows } = await supabase
       .from('kk_updates')
       .select('id, body, occurred_on, created_at, created_by_user_id, supersedes_update_id')
+      .eq('brain_excluded', false)
       .order('occurred_on', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(10)
