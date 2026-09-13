@@ -159,18 +159,41 @@ function norm(s: string): string {
 
 /**
  * Returns true when `name` (or `altName`) is mentioned in the normalised
- * question string.  Requires at least a 4-char token overlap to reduce false
- * positives.
+ * question string.  Uses three strategies in order:
+ *
+ * 1. Full name exact substring match (catches "ulv ankerstjerne").
+ * 2. Any name token ≥4 chars appears as a substring in the question
+ *    (catches last names and compound names).
+ * 3. First name word-boundary match — handles short names like "Ulv" (3 chars)
+ *    that would fail the ≥4-char threshold.  Requires the token to appear as a
+ *    distinct word, not embedded inside another word, to avoid false positives.
  */
 function mentionedInQuestion(name: string, altName: string | null, q: string): boolean {
   const n = norm(name)
   const a = altName ? norm(altName) : null
+
+  // 1. Full name exact substring
   if (q.includes(n)) return true
-  // Partial token match — any token ≥4 chars from the name appears in q
-  if (n.split(' ').some(t => t.length >= 4 && q.includes(t))) return true
+
+  const tokens = n.split(/\s+/)
+
+  // 2. Any token ≥4 chars as substring
+  if (tokens.some(t => t.length >= 4 && q.includes(t))) return true
+
+  // 3. First name word-boundary match (handles short names ≥2 chars).
+  //    Both q and n are already lowercased.  The lookbehind/lookahead [a-zæøå]
+  //    prevents "ulv" from matching inside words like "pulverise".
+  const firstName = tokens[0]
+  if (firstName && firstName.length >= 2) {
+    const esc = firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`(?<![a-zæøå])${esc}(?![a-zæøå])`).test(q)) return true
+  }
+
+  // altName checks (used for location short names)
   if (!a) return false
   if (q.includes(a)) return true
-  if (a.split(' ').some(t => t.length >= 3 && q.includes(t))) return true
+  if (a.split(/\s+/).some(t => t.length >= 3 && q.includes(t))) return true
+
   return false
 }
 
@@ -205,7 +228,7 @@ export async function askBrain(
   // ── 3. Load entity names (for matching + display enrichment) ─────────────
   const [locResult, empResult, projResult] = await Promise.all([
     supabase.from('locations').select('id, name, short_name').eq('active', true).order('name'),
-    supabase.from('employees').select('id, name').order('name'),
+    supabase.from('employees').select('id, name, employment_status').order('name'),
     supabase
       .from('projects')
       .select('id, title')
@@ -223,9 +246,15 @@ export async function askBrain(
   const mentionedLocations = locations.filter(l =>
     mentionedInQuestion(l.name, (l as { short_name?: string | null }).short_name ?? null, qLower)
   )
-  const mentionedEmployees = employees.filter(e =>
-    mentionedInQuestion(e.name, null, qLower)
-  )
+
+  // Employee matching: prefer Active people.
+  // If any active employee matches, use only those (avoids Former people shadowing active ones).
+  // Fall through to Former employees only when no active person matches and a Former person
+  // is explicitly named (historical lookup).
+  const allMatchedEmployees = employees.filter(e => mentionedInQuestion(e.name, null, qLower))
+  const activeMatchedEmployees = allMatchedEmployees.filter(e => e.employment_status === 'active')
+  const mentionedEmployees = activeMatchedEmployees.length > 0 ? activeMatchedEmployees : allMatchedEmployees
+
   const mentionedProjects = projects.filter(p =>
     mentionedInQuestion(p.title, null, qLower)
   )
