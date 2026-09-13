@@ -1,0 +1,252 @@
+'use client'
+
+import { useState, useRef } from 'react'
+import Link from 'next/link'
+import { askBrain } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource } from '@/lib/actions/brain'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtDate(occurred_on: string | null, created_at: string): string {
+  const raw = occurred_on ?? created_at.slice(0, 10)
+  return new Date(raw).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
+// ─── Entity type pill ─────────────────────────────────────────────────────────
+
+function EntityPill({ type }: { type: string }) {
+  const styles: Record<string, string> = {
+    location: 'bg-blue-50 text-blue-600',
+    employee: 'bg-emerald-50 text-emerald-700',
+    project:  'bg-violet-50 text-violet-700',
+  }
+  const labels: Record<string, string> = {
+    location: 'Location',
+    employee: 'Person',
+    project:  'Project',
+  }
+  const cls = styles[type] ?? 'bg-kk-soft text-kk-ink'
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${cls}`}>
+      {labels[type] ?? type}
+    </span>
+  )
+}
+
+// ─── Source card ──────────────────────────────────────────────────────────────
+
+function SourceCard({ source }: { source: BrainSource }) {
+  const date = fmtDate(source.occurred_on, source.created_at)
+  return (
+    <div className="border border-kk-line rounded-xl p-4 bg-white">
+      <div className="flex items-center gap-2 mb-2.5 flex-wrap text-xs text-kk-muted">
+        <span>{date}</span>
+        {source.authorName && <><span>·</span><span>{source.authorName}</span></>}
+        {source.entities.length > 0 && (
+          <>
+            <span>·</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {source.entities.map(e => (
+                <Link
+                  key={`${e.entity_type}-${e.entity_id}`}
+                  href={e.href}
+                  className="flex items-center gap-1 hover:underline"
+                >
+                  <EntityPill type={e.entity_type} />
+                  <span className="text-kk-ink font-medium">{e.display_name}</span>
+                </Link>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <p className="text-sm text-kk-ink leading-relaxed">{source.body}</p>
+    </div>
+  )
+}
+
+// ─── Answer renderer ──────────────────────────────────────────────────────────
+
+function AnswerText({ text }: { text: string }) {
+  const lines = text.split('\n')
+  return (
+    <div className="space-y-1.5">
+      {lines.map((line, i) => {
+        if (!line.trim()) return <div key={i} className="h-1" />
+        const isBullet = /^[•\-\*]\s/.test(line.trim())
+        if (isBullet) {
+          return (
+            <div key={i} className="flex gap-2">
+              <span className="text-kk-muted shrink-0 mt-0.5">•</span>
+              <span className="text-sm text-kk-ink leading-relaxed">
+                {line.trim().replace(/^[•\-\*]\s*/, '')}
+              </span>
+            </div>
+          )
+        }
+        return (
+          <p key={i} className="text-sm text-kk-ink leading-relaxed">
+            {line}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Suggested questions ──────────────────────────────────────────────────────
+
+const SUGGESTIONS = [
+  'What are the current issues at any location?',
+  'What do we know about recent hirings?',
+  'What projects are active right now?',
+  'What changed recently?',
+]
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function BrainClient() {
+  const [question, setQuestion]               = useState('')
+  const [isLoading, setIsLoading]             = useState(false)
+  const [error, setError]                     = useState<string | null>(null)
+  const [result, setResult]                   = useState<BrainAnswer | null>(null)
+  const [answeredQuestion, setAnsweredQuestion] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  async function submit(q: string) {
+    const trimmed = q.trim()
+    if (!trimmed || isLoading) return
+
+    setIsLoading(true)
+    setError(null)
+    setResult(null)
+    setAnsweredQuestion(null)
+    setQuestion(trimmed)
+
+    const res = await askBrain(trimmed)
+    setIsLoading(false)
+
+    if ('error' in res) {
+      setError(res.error ?? 'Something went wrong.')
+    } else {
+      setResult(res.data!)
+      setAnsweredQuestion(trimmed)
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      submit(question)
+    }
+  }
+
+  function handleSuggestion(s: string) {
+    setQuestion(s)
+    submit(s)
+  }
+
+  const isEmpty = !result && !isLoading && !error
+
+  return (
+    <div className="max-w-2xl mx-auto py-8 px-4">
+
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-kk-ink tracking-tight">Kockpit Brain</h1>
+        <p className="text-sm text-kk-muted mt-1">
+          Ask anything. Answers come only from what Kockpit actually knows.
+        </p>
+      </div>
+
+      {/* Input */}
+      <div>
+        <textarea
+          ref={textareaRef}
+          value={question}
+          onChange={e => setQuestion(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="What's going on with Frederiksberg? What do we know about Peter?"
+          rows={3}
+          disabled={isLoading}
+          className="w-full border border-kk-line rounded-xl px-4 py-3 text-sm text-kk-ink placeholder:text-kk-muted/70 resize-none focus:outline-none focus:ring-2 focus:ring-kk-ink/15 focus:border-kk-ink/40 bg-white"
+        />
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-kk-muted">Enter to ask · Shift+Enter for new line</p>
+          <button
+            onClick={() => submit(question)}
+            disabled={!question.trim() || isLoading}
+            className="px-4 py-2 bg-kk-ink text-white text-sm rounded-lg font-medium hover:bg-kk-ink/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {isLoading ? 'Thinking…' : 'Ask'}
+          </button>
+        </div>
+      </div>
+
+      {/* Suggestions (shown when idle) */}
+      {isEmpty && (
+        <div className="mt-6">
+          <p className="text-xs text-kk-muted mb-2 font-medium uppercase tracking-wide">Try asking</p>
+          <div className="flex flex-wrap gap-2">
+            {SUGGESTIONS.map(s => (
+              <button
+                key={s}
+                onClick={() => handleSuggestion(s)}
+                className="text-xs px-3 py-1.5 rounded-full border border-kk-line bg-white text-kk-ink/70 hover:text-kk-ink hover:border-kk-ink/30 transition-colors"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && (
+        <div className="mt-8 flex items-center gap-2.5 text-sm text-kk-muted">
+          <span className="w-4 h-4 border-2 border-kk-ink/20 border-t-kk-ink rounded-full animate-spin shrink-0" />
+          Searching Kockpit memory…
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Answer + sources */}
+      {result && (
+        <div className="mt-8">
+          {answeredQuestion && (
+            <p className="text-xs text-kk-muted mb-3">
+              Answering: <em className="not-italic text-kk-ink/60">{answeredQuestion}</em>
+            </p>
+          )}
+
+          {/* Answer */}
+          <div className="mb-6">
+            <AnswerText text={result.answer} />
+          </div>
+
+          {/* Sources */}
+          {result.sources.length > 0 && (
+            <div>
+              <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
+                Sources ({result.sources.length})
+              </h2>
+              <div className="space-y-2">
+                {result.sources.map(s => (
+                  <SourceCard key={s.updateId} source={s} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

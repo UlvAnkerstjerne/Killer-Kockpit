@@ -109,6 +109,16 @@ function IconKnowledge() {
     </svg>
   )
 }
+function IconBrain() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <circle cx="8" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      <circle cx="3" cy="11" r="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      <circle cx="13" cy="11" r="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M8 4.5L3 9.5M8 4.5L13 9.5M3 12.5L8 15M13 12.5L8 15" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  )
+}
 function IconSettings() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
@@ -161,6 +171,7 @@ const ICON_MAP: Record<string, React.FC> = {
   '/kkc/ssp-cph':      IconQuality,
   '/kkc/audit':        IconAudit,
   '/kkc/diner':        IconDiner,
+  '/brain':            IconBrain,
 }
 
 // ─── Nav groups ───────────────────────────────────────────────────────────────
@@ -197,6 +208,7 @@ export default function AppShell({
     { href: '/inbox',     label: 'Inbox',     active: false },
     ...(canManagePeople(user.role)    ? [{ href: '/people',    label: 'People',    active: true }] : []),
     ...(canManageLocations(user.role) ? [{ href: '/locations', label: 'Locations', active: true }] : []),
+    ...(managementAllowed             ? [{ href: '/brain',     label: 'Brain',     active: true  }] : []),
     { href: '/knowledge', label: 'Knowledge', active: false },
     { href: '/settings',  label: 'Settings',  active: true  },
   ]
