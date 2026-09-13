@@ -91,8 +91,7 @@ export default async function NewPersonPage() {
               className="w-full text-sm px-3 py-2 bg-kk-soft border border-kk-line rounded-xl focus:outline-none focus:ring-2 focus:ring-kk-ink/20"
             >
               <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="left">Left</option>
+              <option value="left">Former</option>
             </select>
           </div>
 

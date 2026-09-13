@@ -14,15 +14,13 @@ import EmployeeLocationsSection from '@/components/people/EmployeeLocationsSecti
 export const dynamic = 'force-dynamic'
 
 const STATUS_LABEL: Record<string, string> = {
-  active:   'Active',
-  inactive: 'Inactive',
-  left:     'Left',
+  active: 'Active',
+  left:   'Former',
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  active:   'bg-kk-good-bg text-kk-good',
-  inactive: 'bg-kk-soft text-kk-muted',
-  left:     'bg-kk-soft text-kk-muted',
+  active: 'bg-kk-good-bg text-kk-good',
+  left:   'bg-amber-50 text-amber-700',
 }
 
 export default async function PersonDetailPage({
@@ -189,8 +187,7 @@ export default async function PersonDetailPage({
               className="w-full text-sm px-3 py-2 bg-kk-soft border border-kk-line rounded-xl focus:outline-none focus:ring-2 focus:ring-kk-ink/20"
             >
               <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="left">Left</option>
+              <option value="left">Former</option>
             </select>
           </div>
 
