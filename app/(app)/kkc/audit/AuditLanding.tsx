@@ -6,6 +6,7 @@ import type { AuditSubmissionRow, AuditHealthStatus, ActiveLocation } from '@/li
 import type { MatrixCheckpoint, MatrixColumn, StoreAuditMatrixResult } from '@/lib/actions/audit'
 import { fetchStoreAuditMatrix } from '@/lib/actions/audit'
 import StartAuditModal from './StartAuditModal'
+import SendOverviewButton from '@/components/kkc/SendOverviewButton'
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
 
@@ -767,12 +768,15 @@ export default function AuditLanding({ submissions, locations }: Props) {
           <h1 className="text-xl font-bold text-kk-ink">Audit</h1>
           <p className="text-sm text-kk-muted mt-0.5">{subtitle}</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-kk-ink text-white text-sm font-semibold rounded-xl hover:opacity-80 transition-opacity"
-        >
-          + Start new audit
-        </button>
+        <div className="flex items-center gap-2">
+          <SendOverviewButton system="audit" locations={locations.map(l => ({ id: l.id, name: l.name }))} />
+          <button
+            onClick={() => setShowModal(true)}
+            className="px-4 py-2 bg-kk-ink text-white text-sm font-semibold rounded-xl hover:opacity-80 transition-opacity"
+          >
+            + Start new audit
+          </button>
+        </div>
       </div>
 
       {/* List */}

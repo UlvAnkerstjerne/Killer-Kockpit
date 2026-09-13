@@ -1,6 +1,7 @@
 // Server component — read-only Mystery Diner result detail view
 
 import Link from 'next/link'
+import SendReportButton from '@/components/kkc/SendReportButton'
 import { dinerScoreColor, DINER_STATUS_CLS, DINER_STATUS_LABEL } from '@/lib/diner/scoring'
 import type { DinerDetailSubmission, DinerDetailCheckpoint, DinerDetailResponse } from './page'
 
@@ -243,11 +244,14 @@ export default function DinerResultDetail({ submission, checkpoints, responses }
                 </p>
                 <p className="text-xl font-bold">{DINER_STATUS_LABEL[final_status]}</p>
               </div>
-              <div className="text-right shrink-0">
-                <p className="text-xs opacity-60">{fmtDate(submission.submitted_at)}</p>
-                {submission.location_name && (
-                  <p className="text-xs font-semibold mt-0.5">{submission.location_name}</p>
-                )}
+              <div className="flex items-center gap-3 shrink-0">
+                <SendReportButton system="diner" submissionId={submission.id} />
+                <div className="text-right">
+                  <p className="text-xs opacity-60">{fmtDate(submission.submitted_at)}</p>
+                  {submission.location_name && (
+                    <p className="text-xs font-semibold mt-0.5">{submission.location_name}</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

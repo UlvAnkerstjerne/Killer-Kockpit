@@ -8,6 +8,7 @@ import AuditTopActions from './AuditTopActions'
 import AuditFinalFields from './AuditFinalFields'
 import AuditResultBanner from './AuditResultBanner'
 import AuditSubmitBar from './AuditSubmitBar'
+import SendReportButton from '@/components/kkc/SendReportButton'
 import type { Checkpoint, SavedResponse } from './AuditQuestionnaire'
 import type { SavedTopAction } from './AuditTopActions'
 
@@ -107,14 +108,19 @@ export default async function AuditSubmissionPage({ params }: Props) {
 
       {/* Result banner — shown after submission */}
       {submission.status === 'submitted' && (
-        <AuditResultBanner
-          auditStatus={submission.audit_status as string | null}
-          scorePct={submission.score_pct as number | null}
-          coreScorePct={submission.core_score_pct as number | null}
-          redFlagCount={submission.red_flag_count as number | null}
-          managerWarningRequired={submission.manager_warning_required ?? false}
-          submittedAt={submission.submitted_at as string | null}
-        />
+        <>
+          <AuditResultBanner
+            auditStatus={submission.audit_status as string | null}
+            scorePct={submission.score_pct as number | null}
+            coreScorePct={submission.core_score_pct as number | null}
+            redFlagCount={submission.red_flag_count as number | null}
+            managerWarningRequired={submission.manager_warning_required ?? false}
+            submittedAt={submission.submitted_at as string | null}
+          />
+          <div className="flex justify-end">
+            <SendReportButton system="audit" submissionId={id} />
+          </div>
+        </>
       )}
 
       <AuditQuestionnaire

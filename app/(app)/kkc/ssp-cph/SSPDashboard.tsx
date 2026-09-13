@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import type { KKCSspCphData, KKCScoreRow, KKCSubmissionDetail } from '@/lib/kkc/ssp-cph'
 import { buildSubmissionDetail } from '@/lib/kkc/detail'
 import KualityMatrix from './KualityMatrix'
+import SendReportButton from '@/components/kkc/SendReportButton'
+import SendOverviewButton from '@/components/kkc/SendOverviewButton'
 
 const KKC_FORM_URL =
   'https://docs.google.com/forms/d/e/1FAIpQLSckp6OU3C_gRZnTxxdRLh3p2GfisyXXRclDwrkKgNgrGO6Y0A/viewform'
@@ -144,7 +146,7 @@ const SECTION_ORDER = [
 
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
-function DetailPanel({ detail, onClose }: { detail: KKCSubmissionDetail; onClose: () => void }) {
+function DetailPanel({ detail, submissionId, onClose }: { detail: KKCSubmissionDetail; submissionId: string; onClose: () => void }) {
   const sectionMap = new Map<string, typeof detail.checkpoints>()
   for (const cp of detail.checkpoints) {
     if (cp.result === null) continue
@@ -181,15 +183,18 @@ function DetailPanel({ detail, onClose }: { detail: KKCSubmissionDetail; onClose
               <div className="text-sm text-kk-muted mt-0.5">{detail.mysteryDiner}</div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="text-kk-muted hover:text-kk-ink transition-colors mt-0.5 shrink-0"
-            aria-label="Close"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2 mt-0.5 shrink-0">
+            <SendReportButton system="ssp_cph" submissionId={submissionId} />
+            <button
+              onClick={onClose}
+              className="text-kk-muted hover:text-kk-ink transition-colors"
+              aria-label="Close"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="px-5 py-4 space-y-5">
@@ -492,8 +497,8 @@ export default function SSPDashboard({
 
   return (
     <>
-      {selectedDetail && (
-        <DetailPanel detail={selectedDetail} onClose={() => setSelectedTimestamp(null)} />
+      {selectedDetail && selectedTimestamp && (
+        <DetailPanel detail={selectedDetail} submissionId={selectedTimestamp} onClose={() => setSelectedTimestamp(null)} />
       )}
 
       {/* ── Page header ── */}
@@ -505,6 +510,7 @@ export default function SSPDashboard({
           <h1 className="text-2xl font-black tracking-tight text-kk-ink">SSP / CPH Airport</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0 pt-0.5">
+          <SendOverviewButton system="ssp_cph" />
           <div className="flex flex-col items-end gap-0.5">
             <button
               onClick={handleRefresh}

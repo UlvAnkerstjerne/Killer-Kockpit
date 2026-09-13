@@ -7,6 +7,7 @@ import { createDinerAccess, resendDinerAccessEmail, disableDiner, enableDiner } 
 import { fetchDinerStoreMatrix } from '@/lib/actions/diner-results'
 import type { DinerMatrixCheckpoint, DinerMatrixColumn, DinerStoreMatrixResult } from '@/lib/actions/diner-results'
 import { computeDinerStatus, dinerScoreColor, DINER_STATUS_CLS, DINER_STATUS_LABEL } from '@/lib/diner/scoring'
+import SendOverviewButton from '@/components/kkc/SendOverviewButton'
 import type { DinerStatus } from '@/lib/diner/scoring'
 import type { DinerRosterRow, DinerResultRow, DinerEmailStatus } from './page'
 
@@ -784,12 +785,17 @@ export default function DinerLanding({ roster, results }: Props) {
             </button>
           </div>
         </div>
-        {tab === 'diners' && (
-          <button onClick={() => setShowAdd(true)}
-            className="px-4 py-2 bg-kk-ink text-white text-sm font-semibold rounded-xl hover:opacity-80 transition-opacity">
-            Add Mystery Diner
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {tab === 'results' && (
+            <SendOverviewButton system="diner" locations={LOCATIONS} />
+          )}
+          {tab === 'diners' && (
+            <button onClick={() => setShowAdd(true)}
+              className="px-4 py-2 bg-kk-ink text-white text-sm font-semibold rounded-xl hover:opacity-80 transition-opacity">
+              Add Mystery Diner
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Results tab ── */}
