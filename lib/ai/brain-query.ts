@@ -14,6 +14,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import type { BrainQualityContext } from '@/lib/brain/quality'
 
 const MAX_ANSWER_TOKENS = 1_024
 
@@ -213,6 +214,18 @@ PERSON OPERATIONAL CONTEXT — when present, treat as current live Kockpit state
 - Meetings: recent/upcoming meetings this person attended
 Operational context is as factual as profile fields — do not invent details beyond what is listed.
 
+KILLER KUALITY CHECK (KQC) DATA — when present, treat as objective quality measurements:
+- OPERATIONAL AUDIT: structured operational checks at each location. Score 0–100%, health status (GREEN / LIGHT_GREEN / YELLOW / ORANGE / RED), specific failed checkpoints by section and title. Top corrective actions = planned steps (C-type under GROUNDING RULES — not confirmed completed). Done-well notes = positive observations (A-type facts).
+- MYSTERY DINER: undercover customer visit assessments. Score 0–100%, critical failures = checkpoints directly failed against customer-facing standards (A-type facts). Gold stars = exceptional performance moments.
+- SSP / CPH KQC: quality checks at the Airport (SSP/CPH) location only. Critical failures are the highest-priority documented issues.
+
+When answering about a location's quality or operational performance:
+- Lead with the most recent check score, status, and specific failed checkpoints.
+- Name failed checkpoints explicitly — they are documented facts (A-type), not guesses.
+- Top actions are C-type (planned) — never present them as resolved unless a later source confirms completion.
+- If multiple checks are shown, note the trend: improving, declining, or stable.
+- Apply the same GROUNDING RULES to quality findings as to all other evidence.
+
 CONNECTED GMAIL MESSAGES — when present, treat as live signal from connected mailboxes:
 - These are real emails from Kockpit users' connected Google accounts, retrieved because they match the query.
 - Email content supplements Kockpit records — it can confirm, add context, or surface things not yet recorded.
@@ -265,6 +278,114 @@ function formatProfile(profile: EntityProfileData): string[] {
   return lines
 }
 
+// ─── Quality context formatter ────────────────────────────────────────────────
+
+function formatQualityContext(quality: BrainQualityContext): string[] {
+  const lines: string[] = []
+
+  const hasAudit = quality.audit.length > 0
+  const hasDiner = quality.diner.length > 0
+  const hasSSP   = !!quality.ssp?.submissions.length
+
+  if (!hasAudit && !hasDiner && !hasSSP) return lines
+
+  lines.push('Killer Kuality Check (KQC) Data:')
+  lines.push('')
+
+  // ── Operational Audit ──────────────────────────────────────────────────────
+  for (const ctx of quality.audit) {
+    lines.push(`[OPERATIONAL AUDIT — ${ctx.locationName}]`)
+    for (const sub of ctx.submissions) {
+      lines.push(`Check date: ${sub.submittedAt}`)
+
+      const scoreParts: string[] = []
+      if (sub.scorePct      !== null) scoreParts.push(`Overall: ${sub.scorePct}%`)
+      if (sub.coreScorePct  !== null) scoreParts.push(`Core: ${sub.coreScorePct}%`)
+      if (sub.auditStatus)            scoreParts.push(`Status: ${sub.auditStatus}`)
+      if (sub.redFlagCount  !== null && sub.redFlagCount > 0)
+        scoreParts.push(`Red flags: ${sub.redFlagCount}`)
+      if (scoreParts.length > 0) lines.push(`Scores: ${scoreParts.join(' | ')}`)
+      if (sub.auditorName) lines.push(`Auditor: ${sub.auditorName}`)
+
+      if (sub.failedCheckpoints.length > 0) {
+        lines.push(`Failed checkpoints (${sub.failedCheckpoints.length}):`)
+        for (const cp of sub.failedCheckpoints.slice(0, 12)) {
+          const tags: string[] = []
+          if (cp.isRedFlag) tags.push('RED FLAG')
+          else if (cp.isCore) tags.push('CORE')
+          const tag = tags.length > 0 ? `[${tags.join(', ')}] ` : ''
+          lines.push(`  - ${tag}${cp.section}: ${cp.title}`)
+        }
+      } else {
+        lines.push('Failed checkpoints: none recorded')
+      }
+
+      if (sub.topActions.length > 0) {
+        lines.push('Top corrective actions (planned — not confirmed completed):')
+        sub.topActions.forEach((a, i) => lines.push(`  ${i + 1}. ${a}`))
+      }
+
+      if (sub.donWell) lines.push(`Done well: ${sub.donWell}`)
+      if (sub.correctiveAction) lines.push(`Corrective action noted: ${sub.correctiveAction}`)
+      if (sub.followUpRequested) lines.push('Follow-up visit: requested')
+
+      lines.push('')
+    }
+  }
+
+  // ── Mystery Diner ──────────────────────────────────────────────────────────
+  for (const ctx of quality.diner) {
+    lines.push(`[MYSTERY DINER — ${ctx.locationName}]`)
+    for (const sub of ctx.submissions) {
+      lines.push(`Visit date: ${sub.submittedAt}`)
+
+      const parts: string[] = []
+      if (sub.scorePct          !== null) parts.push(`Score: ${sub.scorePct}%`)
+      if (sub.criticalFailCount !== null) parts.push(`Critical failures: ${sub.criticalFailCount}`)
+      if (sub.goldStarCount     !== null && sub.goldStarCount > 0)
+        parts.push(`Gold stars: ${sub.goldStarCount}`)
+      if (sub.finalStatus)       parts.push(`Status: ${sub.finalStatus}`)
+      if (sub.waitingTimeBand)   parts.push(`Waiting time: ${sub.waitingTimeBand}`)
+      if (parts.length > 0) lines.push(parts.join(' | '))
+      if (sub.dinerName) lines.push(`Mystery diner: ${sub.dinerName}`)
+
+      if (sub.criticalFailures.length > 0) {
+        lines.push('Critical failures:')
+        for (const f of sub.criticalFailures) {
+          const notesStr = f.notes ? ` — "${f.notes}"` : ''
+          lines.push(`  - ${f.section}: ${f.label}${notesStr}`)
+        }
+      }
+
+      lines.push('')
+    }
+  }
+
+  // ── SSP / CPH Airport ─────────────────────────────────────────────────────
+  if (quality.ssp && quality.ssp.submissions.length > 0) {
+    lines.push('[SSP / CPH AIRPORT KQC]')
+    for (const sub of quality.ssp.submissions) {
+      lines.push(`Check date: ${sub.date}`)
+      lines.push(
+        `Scores: Overall: ${sub.overallScore}% | Critical: ${sub.criticalScore}% | Critical failures: ${sub.criticalFailures}`,
+      )
+
+      if (sub.criticalFailureDetails.length > 0) {
+        lines.push('Critical failures:')
+        for (const f of sub.criticalFailureDetails) {
+          lines.push(`  - ${f.section}: ${f.checkpoint}`)
+        }
+      }
+
+      if (sub.overallComments) lines.push(`Overall comments: ${sub.overallComments}`)
+
+      lines.push('')
+    }
+  }
+
+  return lines
+}
+
 // ─── Context builder ──────────────────────────────────────────────────────────
 
 const TYPE_LABEL: Record<string, string> = {
@@ -279,6 +400,7 @@ function buildUserMessage(
   profiles:            BrainEntityProfile[],
   operationalContexts: PersonOperationalContext[],
   emailContexts:       BrainEmailContext[],
+  qualityContext:      BrainQualityContext | null,
 ): string {
   const lines: string[] = []
 
@@ -393,6 +515,12 @@ function buildUserMessage(
     }
   }
 
+  // ── Killer Kuality Check (KQC) Data ───────────────────────────────────────
+  if (qualityContext) {
+    const qualityLines = formatQualityContext(qualityContext)
+    for (const l of qualityLines) lines.push(l)
+  }
+
   return lines.join('\n')
 }
 
@@ -410,6 +538,7 @@ export async function queryBrain(
   profiles:            BrainEntityProfile[],
   operationalContexts: PersonOperationalContext[],
   emailContexts:       BrainEmailContext[],
+  qualityContext:      BrainQualityContext | null,
 ): Promise<BrainQueryResult> {
   const model = process.env.MEETING_AI_MODEL
   if (!model) return { ok: false, error: 'AI model is not configured.' }
@@ -423,7 +552,7 @@ export async function queryBrain(
     ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
   })
 
-  const userContent = buildUserMessage(question, updates, profiles, operationalContexts, emailContexts)
+  const userContent = buildUserMessage(question, updates, profiles, operationalContexts, emailContexts, qualityContext)
 
   try {
     const message = await client.messages.create({

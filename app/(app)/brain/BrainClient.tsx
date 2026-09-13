@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -135,6 +135,141 @@ function EmailSourceCard({ source }: { source: BrainEmailSource }) {
       </div>
       {source.excerpt && (
         <p className="text-xs text-kk-ink/70 leading-relaxed line-clamp-2">{source.excerpt}</p>
+      )}
+    </a>
+  )
+}
+
+// ─── Audit status colour ──────────────────────────────────────────────────────
+
+function auditStatusStyle(status: string | null): { bg: string; text: string; label: string } {
+  const map: Record<string, { bg: string; text: string; label: string }> = {
+    GREEN:       { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Green' },
+    LIGHT_GREEN: { bg: 'bg-green-50',   text: 'text-green-700',   label: 'Light Green' },
+    YELLOW:      { bg: 'bg-yellow-50',  text: 'text-yellow-700',  label: 'Yellow' },
+    ORANGE:      { bg: 'bg-orange-50',  text: 'text-orange-700',  label: 'Orange' },
+    RED:         { bg: 'bg-red-50',     text: 'text-red-700',     label: 'Red' },
+  }
+  return map[status ?? ''] ?? { bg: 'bg-kk-soft', text: 'text-kk-ink', label: status ?? '—' }
+}
+
+// ─── Audit source card ────────────────────────────────────────────────────────
+
+function AuditSourceCard({ source }: { source: BrainAuditSource }) {
+  const { bg, text, label } = auditStatusStyle(source.auditStatus)
+  return (
+    <a
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-orange-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-orange-50 text-orange-700">
+          Audit
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.locationName}</span>
+        {source.auditStatus && (
+          <span className={`ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${bg} ${text}`}>
+            {label}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted mb-2">
+        <span>{fmtEmailDate(source.submittedAt)}</span>
+        {source.scorePct !== null && <><span>·</span><span>{source.scorePct}% overall</span></>}
+        {source.failedCount > 0 && <><span>·</span><span>{source.failedCount} failed</span></>}
+        {source.redFlagCount !== null && source.redFlagCount > 0 && (
+          <><span>·</span><span className="text-red-600 font-medium">{source.redFlagCount} red flag{source.redFlagCount !== 1 ? 's' : ''}</span></>
+        )}
+      </div>
+      {source.topFailures.length > 0 && (
+        <ul className="space-y-0.5">
+          {source.topFailures.map((f, i) => (
+            <li key={i} className="text-xs text-kk-ink/70 leading-snug flex gap-1.5">
+              {f.isRedFlag && <span className="text-red-500 shrink-0">●</span>}
+              {!f.isRedFlag && <span className="text-kk-muted shrink-0">·</span>}
+              <span>{f.section}: {f.title}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </a>
+  )
+}
+
+// ─── Diner source card ────────────────────────────────────────────────────────
+
+function DinerSourceCard({ source }: { source: BrainDinerSource }) {
+  return (
+    <a
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-purple-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-purple-50 text-purple-700">
+          Mystery Diner
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.locationName}</span>
+        {source.finalStatus && (
+          <span className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-kk-soft text-kk-ink">
+            {source.finalStatus}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted mb-2">
+        <span>{fmtEmailDate(source.submittedAt)}</span>
+        {source.scorePct !== null && <><span>·</span><span>{source.scorePct}% score</span></>}
+        {source.criticalFailCount !== null && source.criticalFailCount > 0 && (
+          <><span>·</span><span className="text-red-600 font-medium">{source.criticalFailCount} critical</span></>
+        )}
+        {source.goldStarCount !== null && source.goldStarCount > 0 && (
+          <><span>·</span><span className="text-amber-600 font-medium">★ {source.goldStarCount}</span></>
+        )}
+      </div>
+      {source.topFailures.length > 0 && (
+        <ul className="space-y-0.5">
+          {source.topFailures.map((f, i) => (
+            <li key={i} className="text-xs text-kk-ink/70 leading-snug flex gap-1.5">
+              <span className="text-red-500 shrink-0">●</span>
+              <span>{f.section}: {f.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </a>
+  )
+}
+
+// ─── SSP source card ──────────────────────────────────────────────────────────
+
+function SSPSourceCard({ source }: { source: BrainSSPSource }) {
+  return (
+    <a
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-sky-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-sky-50 text-sky-700">
+          SSP / Airport KQC
+        </span>
+        <span className="text-sm font-semibold text-kk-ink">{source.checkDate}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted mb-2">
+        <span>{source.overallScore}% overall</span>
+        <span>·</span>
+        <span>{source.criticalScore}% critical</span>
+        {source.criticalFailures > 0 && (
+          <><span>·</span><span className="text-red-600 font-medium">{source.criticalFailures} critical failure{source.criticalFailures !== 1 ? 's' : ''}</span></>
+        )}
+      </div>
+      {source.topFailures.length > 0 && (
+        <ul className="space-y-0.5">
+          {source.topFailures.map((f, i) => (
+            <li key={i} className="text-xs text-kk-ink/70 leading-snug flex gap-1.5">
+              <span className="text-red-500 shrink-0">●</span>
+              <span>{f.section}: {f.checkpoint}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </a>
   )
@@ -338,10 +473,10 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0) && (
+          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length})
+                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0)})
               </h2>
               <div className="space-y-2">
                 {result.profileSources.map(s => (
@@ -350,6 +485,15 @@ export default function BrainClient() {
                 {result.operationalSources.map(s => (
                   <OperationalSourceCard key={`${s.kind}-${s.id}`} source={s} />
                 ))}
+                {result.auditSources.map(s => (
+                  <AuditSourceCard key={`audit-${s.locationId}`} source={s} />
+                ))}
+                {result.dinerSources.map(s => (
+                  <DinerSourceCard key={`diner-${s.locationId}`} source={s} />
+                ))}
+                {result.sspSource && (
+                  <SSPSourceCard source={result.sspSource} />
+                )}
                 {result.sources.map(s => (
                   <SourceCard key={s.updateId} source={s} />
                 ))}

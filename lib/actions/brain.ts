@@ -22,8 +22,9 @@
  *    c. Fallback: recent updates when query is very broad.
  * 6. Deduplicate, sort by recency, cap at MAX_CONTEXT_UPDATES.
  * 7. Enrich with entity links + author names.
- * 8. Call queryBrain() AI module with both profiles + updates as context.
- * 9. Return { answer, profileSources, sources } or { error }.
+ * 8. Call queryBrain() AI module with profiles + updates + email + quality context.
+ * 9. Fetch quality context (Audit, Diner, SSP) for mentioned locations.
+ * 10. Return { answer, profileSources, sources, emailSources, auditSources, … } or { error }.
  *
  * Security
  * ────────
@@ -41,6 +42,8 @@ import { queryBrain }              from '@/lib/ai/brain-query'
 import { getGoogleOAuth2Client }   from '@/lib/google/auth'
 import { hasGmailScope }           from '@/lib/google/auth'
 import { searchGmailForBrain, buildGmailSearchQuery } from '@/lib/google/gmail-search'
+import { fetchQualityContext }                       from '@/lib/brain/quality'
+import type { BrainQualityContext }                  from '@/lib/brain/quality'
 import type { ActionResult, KkUpdateEntityType } from '@/lib/types'
 import type {
   BrainContextUpdate,
@@ -90,6 +93,45 @@ export interface BrainOperationalSource {
   personName: string
 }
 
+/** A card shown in the sources panel for an Operational Audit check. */
+export interface BrainAuditSource {
+  kind:         'audit'
+  locationId:   string
+  locationName: string
+  submittedAt:  string         // most recent check date YYYY-MM-DD
+  scorePct:     number | null
+  auditStatus:  string | null  // GREEN | LIGHT_GREEN | YELLOW | ORANGE | RED
+  redFlagCount: number | null
+  failedCount:  number
+  topFailures:  { section: string; title: string; isRedFlag: boolean }[]
+  href:         string
+}
+
+/** A card shown in the sources panel for a Mystery Diner visit. */
+export interface BrainDinerSource {
+  kind:              'diner'
+  locationId:        string
+  locationName:      string
+  submittedAt:       string
+  scorePct:          number | null
+  criticalFailCount: number | null
+  goldStarCount:     number | null
+  finalStatus:       string | null
+  topFailures:       { label: string; section: string }[]
+  href:              string
+}
+
+/** A card shown in the sources panel for SSP/CPH Airport KQC checks. */
+export interface BrainSSPSource {
+  kind:             'ssp'
+  checkDate:        string
+  overallScore:     number
+  criticalScore:    number
+  criticalFailures: number
+  topFailures:      { section: string; checkpoint: string }[]
+  href:             string
+}
+
 /** A card shown in the sources panel for a Gmail message found by Brain. */
 export interface BrainEmailSource {
   threadId:     string
@@ -108,6 +150,9 @@ export interface BrainAnswer {
   operationalSources: BrainOperationalSource[]
   sources:            BrainSource[]
   emailSources:       BrainEmailSource[]
+  auditSources:       BrainAuditSource[]
+  dinerSources:       BrainDinerSource[]
+  sspSource:          BrainSSPSource | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -831,11 +876,127 @@ export async function askBrain(
     console.error('[brain] Gmail search failed:', (gmailErr as Error).message)
   }
 
-  // ── 11. Call AI ───────────────────────────────────────────────────────────
-  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts, emailContexts)
+  // ── 11. Quality retrieval ─────────────────────────────────────────────────
+  //
+  // Fetch KQC quality data when locations are mentioned.
+  // SSP/Airport data is fetched when airport-related keywords appear.
+  //
+  // SSP keyword detection: "airport", "ssp", "cph", "kastrup"
+  const sspKeywords = ['airport', 'ssp', 'cph', 'kastrup']
+  const fetchSSP    = sspKeywords.some(kw => qLower.includes(kw))
+
+  const locationIds   = mentionedLocations.slice(0, 3).map(l => l.id)
+  const locationNames = new Map(mentionedLocations.map(l => [l.id, l.name]))
+
+  // Dedup quality-related email subjects — suppress them when native quality
+  // data is present so the AI doesn't see duplicate signals from two sources.
+  const QUALITY_SUBJECT_PATTERNS = [
+    /killer kuality check/i,
+    /audit report/i,
+    /mystery diner/i,
+    /kkc report/i,
+    /quality check/i,
+  ]
+
+  let qualityContext: BrainQualityContext | null = null
+  const auditSources: BrainAuditSource[] = []
+  const dinerSources: BrainDinerSource[] = []
+  let   sspSource:    BrainSSPSource | null = null
+
+  if (locationIds.length > 0 || fetchSSP) {
+    try {
+      qualityContext = await fetchQualityContext({
+        locationIds,
+        locationNames,
+        fetchSSP,
+      })
+
+      // Build audit source cards (one per location, most recent submission)
+      for (const ctx of qualityContext.audit) {
+        const latest = ctx.submissions[0]
+        if (!latest) continue
+        auditSources.push({
+          kind:         'audit',
+          locationId:   ctx.locationId,
+          locationName: ctx.locationName,
+          submittedAt:  latest.submittedAt,
+          scorePct:     latest.scorePct,
+          auditStatus:  latest.auditStatus,
+          redFlagCount: latest.redFlagCount,
+          failedCount:  latest.failedCheckpoints.length,
+          topFailures:  latest.failedCheckpoints.slice(0, 3).map(cp => ({
+            section:   cp.section,
+            title:     cp.title,
+            isRedFlag: cp.isRedFlag,
+          })),
+          href: '/kkc/audit',
+        })
+      }
+
+      // Build diner source cards (one per location, most recent visit)
+      for (const ctx of qualityContext.diner) {
+        const latest = ctx.submissions[0]
+        if (!latest) continue
+        dinerSources.push({
+          kind:              'diner',
+          locationId:        ctx.locationId,
+          locationName:      ctx.locationName,
+          submittedAt:       latest.submittedAt,
+          scorePct:          latest.scorePct,
+          criticalFailCount: latest.criticalFailCount,
+          goldStarCount:     latest.goldStarCount,
+          finalStatus:       latest.finalStatus,
+          topFailures:       latest.criticalFailures.slice(0, 3).map(f => ({
+            label:   f.label,
+            section: f.section,
+          })),
+          href: '/kkc/diner',
+        })
+      }
+
+      // Build SSP source card (most recent check)
+      if (qualityContext.ssp?.submissions.length) {
+        const latest = qualityContext.ssp.submissions[0]
+        sspSource = {
+          kind:             'ssp',
+          checkDate:        latest.date,
+          overallScore:     latest.overallScore,
+          criticalScore:    latest.criticalScore,
+          criticalFailures: latest.criticalFailures,
+          topFailures:      latest.criticalFailureDetails.slice(0, 3),
+          href:             '/kkc/ssp-cph',
+        }
+      }
+
+      // Dedup quality emails when we have native structured data
+      const hasQualityData =
+        qualityContext.audit.length > 0 ||
+        qualityContext.diner.length > 0 ||
+        !!qualityContext.ssp
+
+      if (hasQualityData) {
+        const filteredContexts = emailContexts.filter(
+          e => !QUALITY_SUBJECT_PATTERNS.some(p => p.test(e.subject)),
+        )
+        const filteredSources = emailSources.filter(
+          e => !QUALITY_SUBJECT_PATTERNS.some(p => p.test(e.subject)),
+        )
+        emailContexts.length = 0
+        for (const e of filteredContexts) emailContexts.push(e)
+        emailSources.length = 0
+        for (const e of filteredSources) emailSources.push(e)
+      }
+    } catch (qualityErr) {
+      // Quality retrieval failure is non-fatal — log and continue
+      console.error('[brain] Quality retrieval failed:', (qualityErr as Error).message)
+    }
+  }
+
+  // ── 12. Call AI ───────────────────────────────────────────────────────────
+  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts, emailContexts, qualityContext)
   if (!aiResult.ok) return { error: aiResult.error }
 
-  // ── 12. Build Update sources for UI display ───────────────────────────────
+  // ── 13. Build Update sources for UI display ───────────────────────────────
   const sources: BrainSource[] = contextUpdates.map(u => ({
     updateId:    u.id,
     body:        u.body,
@@ -850,5 +1011,5 @@ export async function askBrain(
     })),
   }))
 
-  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources, emailSources } }
+  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources, emailSources, auditSources, dinerSources, sspSource } }
 }
