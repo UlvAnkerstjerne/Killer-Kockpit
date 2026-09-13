@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource, BrainProfileSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,44 @@ function ProfileSourceCard({ source }: { source: BrainProfileSource }) {
           ))}
         </dl>
       )}
+    </div>
+  )
+}
+
+// ─── Operational source card ──────────────────────────────────────────────────
+
+const OP_KIND_STYLE: Record<string, string> = {
+  task:       'bg-blue-50 text-blue-600',
+  project:    'bg-violet-50 text-violet-700',
+  waiting_on: 'bg-amber-50 text-amber-700',
+  decision:   'bg-emerald-50 text-emerald-700',
+  meeting:    'bg-indigo-50 text-indigo-700',
+}
+const OP_KIND_LABEL: Record<string, string> = {
+  task:       'Task',
+  project:    'Project',
+  waiting_on: 'Waiting On',
+  decision:   'Decision',
+  meeting:    'Meeting',
+}
+
+function OperationalSourceCard({ source }: { source: BrainOperationalSource }) {
+  const cls   = OP_KIND_STYLE[source.kind] ?? 'bg-kk-soft text-kk-ink'
+  const label = OP_KIND_LABEL[source.kind] ?? source.kind
+  return (
+    <div className="border border-kk-line rounded-xl p-4 bg-white">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${cls}`}>
+          {label}
+        </span>
+        <Link href={source.href} className="text-sm font-semibold text-kk-ink hover:underline truncate">
+          {source.title}
+        </Link>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted">
+        <span>{source.personName}</span>
+        {source.meta && <><span>·</span><span>{source.meta}</span></>}
+      </div>
     </div>
   )
 }
@@ -259,14 +297,17 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {(result.profileSources.length > 0 || result.sources.length > 0) && (
+          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.sources.length})
+                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length})
               </h2>
               <div className="space-y-2">
                 {result.profileSources.map(s => (
                   <ProfileSourceCard key={`${s.entity_type}-${s.entity_id}`} source={s} />
+                ))}
+                {result.operationalSources.map(s => (
+                  <OperationalSourceCard key={`${s.kind}-${s.id}`} source={s} />
                 ))}
                 {result.sources.map(s => (
                   <SourceCard key={s.updateId} source={s} />

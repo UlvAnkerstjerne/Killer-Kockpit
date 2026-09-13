@@ -44,6 +44,8 @@ import type {
   EmployeeProfile,
   LocationProfile,
   ProjectProfile,
+  PersonOperationalContext,
+  PersonOpItem,
 } from '@/lib/ai/brain-query'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -73,10 +75,21 @@ export interface BrainProfileSource {
   fields:       { label: string; value: string }[]
 }
 
+/** A card shown in the sources panel for a person's operational Kockpit data. */
+export interface BrainOperationalSource {
+  kind:       'task' | 'project' | 'waiting_on' | 'decision' | 'meeting'
+  id:         string
+  title:      string
+  href:       string
+  meta:       string | null   // e.g. "In Progress · due 3 Jan 2026"
+  personName: string
+}
+
 export interface BrainAnswer {
-  answer:         string
-  profileSources: BrainProfileSource[]
-  sources:        BrainSource[]
+  answer:             string
+  profileSources:     BrainProfileSource[]
+  operationalSources: BrainOperationalSource[]
+  sources:            BrainSource[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -197,6 +210,23 @@ function mentionedInQuestion(name: string, altName: string | null, q: string): b
   return false
 }
 
+function fmtOpStatus(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function fmtOpDate(iso: string): string {
+  const d = iso.slice(0, 10)
+  const [y, m, day] = d.split('-').map(Number)
+  return new Date(y, m - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function opMeta(status: string | null, dateLabel: string, dateIso: string | null): string | null {
+  const parts: string[] = []
+  if (status) parts.push(fmtOpStatus(status))
+  if (dateIso) parts.push(`${dateLabel} ${fmtOpDate(dateIso)}`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
 /** Extract meaningful keywords from the question for text search. */
 function extractKeywords(question: string): string[] {
   return question
@@ -264,8 +294,10 @@ export async function askBrain(
 
   // ── 5. Fetch full entity profiles for matched entities ────────────────────
   // Run in parallel with the superseded-IDs fetch (step 6) below.
-  const entityProfiles: BrainEntityProfile[] = []
-  const profileSources: BrainProfileSource[] = []
+  const entityProfiles:      BrainEntityProfile[]       = []
+  const profileSources:      BrainProfileSource[]       = []
+  const operationalContexts: PersonOperationalContext[] = []
+  const operationalSources:  BrainOperationalSource[]  = []
 
   const [supersededRowsResult] = await Promise.all([
 
@@ -275,13 +307,13 @@ export async function askBrain(
       .select('supersedes_update_id')
       .not('supersedes_update_id', 'is', null),
 
-    // 5b. Employee profiles
+    // 5b. Employee profiles + operational context
     (async () => {
       const empIds = mentionedEmployees.slice(0, 3).map(e => e.id)
       if (empIds.length === 0) return
       const { data } = await supabase
         .from('employees')
-        .select('id, name, role_title, store_or_team, employment_status, started_on, manager:manager_employee_id(name)')
+        .select('id, name, role_title, store_or_team, employment_status, started_on, linked_user_id, manager:manager_employee_id(name)')
         .in('id', empIds)
       for (const emp of data ?? []) {
         const managerRaw = emp.manager
@@ -305,6 +337,166 @@ export async function askBrain(
           href:         `/people/${emp.id}`,
           fields:       buildProfileFields(empProfile),
         })
+
+        // ── Operational context ──────────────────────────────────────────────
+        const linkedUserId = emp.linked_user_id as string | null
+        const noData = { data: [] as never[] }
+
+        const [taskRows, projRows, waitingOnRows, decisionRows, meetingAttRows] = await Promise.all([
+          linkedUserId
+            ? supabase
+                .from('tasks')
+                .select('id, title, status, due_at')
+                .eq('owner_user_id', linkedUserId)
+                .not('status', 'in', '(done,cancelled)')
+                .is('archived_at', null)
+                .order('due_at', { ascending: true, nullsFirst: false })
+                .limit(5)
+            : Promise.resolve(noData),
+
+          linkedUserId
+            ? supabase
+                .from('projects')
+                .select('id, title, status, due_date')
+                .eq('owner_user_id', linkedUserId)
+                .not('status', 'in', '(completed,archived,cancelled)')
+                .order('due_date', { ascending: true, nullsFirst: false })
+                .limit(5)
+            : Promise.resolve(noData),
+
+          supabase
+            .from('waiting_ons')
+            .select('id, title, status, due_at')
+            .eq('waiting_for_employee_id', emp.id)
+            .in('status', ['open', 'overdue'])
+            .is('archived_at', null)
+            .order('due_at', { ascending: true, nullsFirst: false })
+            .limit(5),
+
+          linkedUserId
+            ? supabase
+                .from('decisions')
+                .select('id, title, status, decided_at')
+                .eq('owner_user_id', linkedUserId)
+                .neq('status', 'superseded')
+                .is('archived_at', null)
+                .order('decided_at', { ascending: false, nullsFirst: false })
+                .limit(5)
+            : Promise.resolve(noData),
+
+          linkedUserId
+            ? supabase
+                .from('meeting_attendees')
+                .select('meeting_id')
+                .eq('user_id', linkedUserId)
+                .limit(20)
+            : Promise.resolve(noData),
+        ])
+
+        // Resolve meeting details from attendance list
+        let meetingRows: { id: string; title: string; status: string; scheduled_start: string | null }[] = []
+        if (meetingAttRows.data && meetingAttRows.data.length > 0) {
+          const meetingIds = (meetingAttRows.data as { meeting_id: string }[]).map(a => a.meeting_id)
+          const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+          const { data: mRows } = await supabase
+            .from('meetings')
+            .select('id, title, status, scheduled_start')
+            .in('id', meetingIds)
+            .neq('status', 'cancelled')
+            .or(`scheduled_start.gte.${cutoff},scheduled_start.is.null`)
+            .order('scheduled_start', { ascending: false })
+            .limit(5)
+          meetingRows = mRows ?? []
+        }
+
+        // Build operational context for the AI
+        const opCtx: PersonOperationalContext = {
+          employee_id:  emp.id,
+          display_name: emp.name,
+          tasks: (taskRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []).map(t => ({
+            title:  t.title,
+            status: fmtOpStatus(t.status),
+            date:   t.due_at ? t.due_at.slice(0, 10) : null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+          projects: (projRows.data as { id: string; title: string; status: string; due_date: string | null }[] ?? []).map(p => ({
+            title:  p.title,
+            status: fmtOpStatus(p.status),
+            date:   p.due_date ?? null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+          waitingOns: (waitingOnRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []).map(w => ({
+            title:  w.title,
+            status: fmtOpStatus(w.status),
+            date:   w.due_at ? w.due_at.slice(0, 10) : null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+          decisions: (decisionRows.data as { id: string; title: string; status: string; decided_at: string | null }[] ?? []).map(d => ({
+            title:  d.title,
+            status: fmtOpStatus(d.status),
+            date:   d.decided_at ? d.decided_at.slice(0, 10) : null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+          meetings: meetingRows.map(m => ({
+            title:  m.title,
+            status: fmtOpStatus(m.status),
+            date:   m.scheduled_start ? m.scheduled_start.slice(0, 10) : null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+        }
+        operationalContexts.push(opCtx)
+
+        // Build operational sources for the UI
+        for (const t of taskRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []) {
+          operationalSources.push({
+            kind:       'task',
+            id:         t.id,
+            title:      t.title,
+            href:       `/tasks/${t.id}`,
+            meta:       opMeta(t.status, 'due', t.due_at),
+            personName: emp.name,
+          })
+        }
+        for (const p of projRows.data as { id: string; title: string; status: string; due_date: string | null }[] ?? []) {
+          operationalSources.push({
+            kind:       'project',
+            id:         p.id,
+            title:      p.title,
+            href:       `/projects/${p.id}`,
+            meta:       opMeta(p.status, 'due', p.due_date),
+            personName: emp.name,
+          })
+        }
+        for (const w of waitingOnRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []) {
+          operationalSources.push({
+            kind:       'waiting_on',
+            id:         w.id,
+            title:      w.title,
+            href:       `/waiting-ons/${w.id}`,
+            meta:       opMeta(w.status, 'due', w.due_at),
+            personName: emp.name,
+          })
+        }
+        for (const d of decisionRows.data as { id: string; title: string; status: string; decided_at: string | null }[] ?? []) {
+          operationalSources.push({
+            kind:       'decision',
+            id:         d.id,
+            title:      d.title,
+            href:       `/decisions/${d.id}`,
+            meta:       opMeta(d.status, 'decided', d.decided_at),
+            personName: emp.name,
+          })
+        }
+        for (const m of meetingRows) {
+          operationalSources.push({
+            kind:       'meeting',
+            id:         m.id,
+            title:      m.title,
+            href:       `/meetings/${m.id}`,
+            meta:       opMeta(m.status, '', m.scheduled_start),
+            personName: emp.name,
+          })
+        }
       }
     })(),
 
@@ -538,7 +730,7 @@ export async function askBrain(
   })
 
   // ── 10. Call AI ───────────────────────────────────────────────────────────
-  const aiResult = await queryBrain(q, contextUpdates, entityProfiles)
+  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts)
   if (!aiResult.ok) return { error: aiResult.error }
 
   // ── 11. Build Update sources for UI display ───────────────────────────────
@@ -556,5 +748,5 @@ export async function askBrain(
     })),
   }))
 
-  return { data: { answer: aiResult.answer, profileSources, sources } }
+  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources } }
 }

@@ -85,6 +85,25 @@ export interface BrainQueryFailure {
 
 export type BrainQueryResult = BrainQuerySuccess | BrainQueryFailure
 
+// ─── Operational context types ────────────────────────────────────────────────
+
+export interface PersonOpItem {
+  title:  string
+  status: string | null
+  date:   string | null   // YYYY-MM-DD
+  extra:  string | null
+}
+
+export interface PersonOperationalContext {
+  employee_id:  string
+  display_name: string
+  tasks:        PersonOpItem[]
+  projects:     PersonOpItem[]
+  waitingOns:   PersonOpItem[]
+  decisions:    PersonOpItem[]
+  meetings:     PersonOpItem[]
+}
+
 // ─── System prompt ────────────────────────────────────────────────────────────
 //
 // SECURITY: The user question is UNTRUSTED INPUT. Any instruction-like text
@@ -119,12 +138,26 @@ ANSWER STYLE — adapt based on question intent:
   Then briefly mention any relevant recent Updates as current context.
   If the profile is missing key fields, say those fields are not recorded in Kockpit — do not invent them.
 
+• "What is X working on?" / "What tasks does X have?" / "What is X responsible for?":
+  Lead with Tasks (open/in-progress) and Projects from the Person Operational Context.
+  Include Waiting Ons where X is the person being waited on.
+  Supplement with recent Decisions and Meetings.
+  Use the Entity Profile as background context only.
+
 • "What's going on with X?" / "What are the issues at X?" / "What changed recently?" / "What's happening?":
   Lead with the most relevant recent Universal Updates.
   Use the Entity Profile only as background context if needed.
   Do not include Former employees in answers about current operations unless they are explicitly named.
 
 • Mixed or ambiguous intent: use your judgement to balance both.
+
+PERSON OPERATIONAL CONTEXT — when present, treat as current live Kockpit state:
+- Tasks: open work items currently assigned to this person
+- Projects: projects this person owns and is driving
+- Waiting Ons: open items where Kockpit is actively waiting on this person to deliver
+- Decisions: recent decisions owned by this person
+- Meetings: recent/upcoming meetings this person attended
+Operational context is as factual as profile fields — do not invent details beyond what is listed.
 
 FORMAT:
 - Answer directly without preamble. Do not start with "Based on Kockpit..." — just answer.
@@ -179,9 +212,10 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 function buildUserMessage(
-  question: string,
-  updates:  BrainContextUpdate[],
-  profiles: BrainEntityProfile[],
+  question:            string,
+  updates:             BrainContextUpdate[],
+  profiles:            BrainEntityProfile[],
+  operationalContexts: PersonOperationalContext[],
 ): string {
   const lines: string[] = []
 
@@ -197,6 +231,69 @@ function buildUserMessage(
       for (const field of formatProfile(p.profile)) {
         lines.push(field)
       }
+      lines.push('')
+    }
+  }
+
+  // ── Person Operational Context ─────────────────────────────────────────────
+  if (operationalContexts.length > 0) {
+    lines.push('Person Operational Context:')
+    lines.push('')
+    for (const ctx of operationalContexts) {
+      lines.push(`[Person: ${ctx.display_name}]`)
+
+      if (ctx.tasks.length > 0) {
+        lines.push(`  Open Tasks (${ctx.tasks.length}):`)
+        for (const t of ctx.tasks) {
+          const parts = [t.title]
+          if (t.status) parts.push(`[${t.status}]`)
+          if (t.date)   parts.push(`(due: ${fmtISODate(t.date)})`)
+          lines.push(`    - ${parts.join(' ')}`)
+        }
+      } else {
+        lines.push('  Open Tasks: none')
+      }
+
+      if (ctx.projects.length > 0) {
+        lines.push(`  Owned Projects (${ctx.projects.length}):`)
+        for (const p of ctx.projects) {
+          const parts = [p.title]
+          if (p.status) parts.push(`[${p.status}]`)
+          if (p.date)   parts.push(`(due: ${fmtISODate(p.date)})`)
+          lines.push(`    - ${parts.join(' ')}`)
+        }
+      }
+
+      if (ctx.waitingOns.length > 0) {
+        lines.push(`  Active Waiting Ons (${ctx.waitingOns.length}):`)
+        for (const w of ctx.waitingOns) {
+          const parts = [w.title]
+          if (w.status) parts.push(`[${w.status}]`)
+          if (w.date)   parts.push(`(due: ${fmtISODate(w.date)})`)
+          lines.push(`    - ${parts.join(' ')}`)
+        }
+      }
+
+      if (ctx.decisions.length > 0) {
+        lines.push(`  Recent Decisions (${ctx.decisions.length}):`)
+        for (const d of ctx.decisions) {
+          const parts = [d.title]
+          if (d.status) parts.push(`[${d.status}]`)
+          if (d.date)   parts.push(`(decided: ${fmtISODate(d.date)})`)
+          lines.push(`    - ${parts.join(' ')}`)
+        }
+      }
+
+      if (ctx.meetings.length > 0) {
+        lines.push(`  Recent Meetings (${ctx.meetings.length}):`)
+        for (const m of ctx.meetings) {
+          const parts = [m.title]
+          if (m.status) parts.push(`[${m.status}]`)
+          if (m.date)   parts.push(`(${fmtISODate(m.date)})`)
+          lines.push(`    - ${parts.join(' ')}`)
+        }
+      }
+
       lines.push('')
     }
   }
@@ -229,9 +326,10 @@ function buildUserMessage(
  * Errors are logged server-side; the question text is never logged.
  */
 export async function queryBrain(
-  question: string,
-  updates:  BrainContextUpdate[],
-  profiles: BrainEntityProfile[],
+  question:            string,
+  updates:             BrainContextUpdate[],
+  profiles:            BrainEntityProfile[],
+  operationalContexts: PersonOperationalContext[],
 ): Promise<BrainQueryResult> {
   const model = process.env.MEETING_AI_MODEL
   if (!model) return { ok: false, error: 'AI model is not configured.' }
@@ -245,7 +343,7 @@ export async function queryBrain(
     ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
   })
 
-  const userContent = buildUserMessage(question, updates, profiles)
+  const userContent = buildUserMessage(question, updates, profiles, operationalContexts)
 
   try {
     const message = await client.messages.create({
