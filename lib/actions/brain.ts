@@ -7,24 +7,30 @@
  *
  * askBrain(question)
  * ──────────────────
- * 1. Authenticate + management role gate.
- * 2. Load all active entity names (locations, employees, projects) for:
- *    - entity mention detection in the question
- *    - display name resolution for source cards
- * 3. Detect mentioned entities by substring matching (exact/partial).
- * 4. Fetch full entity profiles for matched entities (parallel with update retrieval):
- *    - Person: name, role_title, store_or_team, employment_status, started_on, manager
- *    - Location: name, short_name, active
- *    - Project: title, description, status, owner, start_date, due_date, progress
- * 5. Retrieve current (non-superseded) Updates via two complementary paths:
- *    a. Entity-specific: existing get_current_updates_for_entity RPC (handles NOT EXISTS).
- *    b. Keyword text search: ILIKE over kk_updates.body, superseded rows excluded client-side.
- *    c. Fallback: recent updates when query is very broad.
- * 6. Deduplicate, sort by recency, cap at MAX_CONTEXT_UPDATES.
- * 7. Enrich with entity links + author names.
- * 8. Call queryBrain() AI module with profiles + updates + email + quality context.
- * 9. Fetch quality context (Audit, Diner, SSP) for mentioned locations.
- * 10. Return { answer, profileSources, sources, emailSources, auditSources, … } or { error }.
+ * 1.  Authenticate + management role gate.
+ * 2.  Load all active entity names (locations, employees, projects) for:
+ *     - entity mention detection in the question
+ *     - display name resolution for source cards
+ * 3.  Detect mentioned entities by substring matching (exact/partial).
+ * 4.  Fetch full entity profiles for matched entities (parallel with update retrieval):
+ *     - Person: name, role_title, store_or_team, employment_status, started_on, manager
+ *     - Location: name, short_name, active
+ *     - Project: title, description, status, owner, start_date, due_date, progress
+ * 5.  Retrieve current (non-superseded) Updates via two complementary paths:
+ *     a. Entity-specific: existing get_current_updates_for_entity RPC (handles NOT EXISTS).
+ *     b. Keyword text search: ILIKE over kk_updates.body, superseded rows excluded client-side.
+ *     c. Fallback: recent updates when query is very broad.
+ * 6.  Deduplicate, sort by recency, cap at MAX_CONTEXT_UPDATES.
+ * 7.  Enrich with entity links + author names.
+ * 8.  Call queryBrain() AI module with all context.
+ * 9.  Fetch quality context (Audit, Diner, SSP) for mentioned locations.
+ * 10. Gmail multi-account search.
+ * 11. Meeting knowledge retrieval.
+ * 12. GBP review retrieval (for mentioned locations).
+ * 13. Marketing Morning Brief retrieval (when marketing keywords detected).
+ * 14. Drive file metadata retrieval (for mentioned projects/meetings).
+ * 15. Project operational context (tasks/WOs/decisions/meetings per project).
+ * 16. Return { answer, profileSources, sources, emailSources, … } or { error }.
  *
  * Security
  * ────────
@@ -42,10 +48,16 @@ import { queryBrain }              from '@/lib/ai/brain-query'
 import { getGoogleOAuth2Client }   from '@/lib/google/auth'
 import { hasGmailScope }           from '@/lib/google/auth'
 import { searchGmailForBrain, buildGmailSearchQuery } from '@/lib/google/gmail-search'
-import { fetchQualityContext }                       from '@/lib/brain/quality'
-import type { BrainQualityContext }                  from '@/lib/brain/quality'
-import { fetchBrainMeetingContext }                  from '@/lib/brain/meetings'
-import type { BrainMeetingContext }                  from '@/lib/brain/meetings'
+import { fetchQualityContext }                         from '@/lib/brain/quality'
+import type { BrainQualityContext }                    from '@/lib/brain/quality'
+import { fetchBrainMeetingContext }                    from '@/lib/brain/meetings'
+import type { BrainMeetingContext }                    from '@/lib/brain/meetings'
+import { fetchBrainReviewContext }                     from '@/lib/brain/reviews'
+import type { BrainReviewContext }                     from '@/lib/brain/reviews'
+import { fetchBrainMorningBriefContext }               from '@/lib/brain/morning-brief'
+import type { BrainMorningBriefContext }               from '@/lib/brain/morning-brief'
+import { fetchBrainFileContext }                       from '@/lib/brain/files'
+import type { BrainFileContext }                       from '@/lib/brain/files'
 import type { ActionResult, KkUpdateEntityType } from '@/lib/types'
 import type {
   BrainContextUpdate,
@@ -55,6 +67,7 @@ import type {
   LocationProfile,
   ProjectProfile,
   PersonOperationalContext,
+  ProjectOperationalContext,
   PersonOpItem,
 } from '@/lib/ai/brain-query'
 
@@ -172,6 +185,39 @@ export interface BrainEmailSource {
   accountEmail: string | null
 }
 
+/** A card shown in the sources panel for GBP reviews at a location. */
+export interface BrainReviewSource {
+  kind:              'review'
+  locationName:      string
+  locationShortName: string | null
+  reviewCount:       number
+  avgStarRating:     number | null
+  pendingReplyCount: number
+  href:              string
+}
+
+/** A card shown in the sources panel for a Marketing Morning Brief. */
+export interface BrainBriefSource {
+  kind:          'brief'
+  briefDate:     string
+  overallStatus: string | null   // 'green' | 'amber' | 'red'
+  overallReason: string | null
+  aiSummary:     string | null
+  href:          string
+}
+
+/** A card shown in the sources panel for a Drive file reference. */
+export interface BrainFileSource {
+  kind:        'file'
+  sourceId:    string
+  fileName:    string
+  mimeType:    string
+  webViewLink: string
+  entityType:  'project' | 'meeting' | 'task'
+  entityName:  string
+  href:        string
+}
+
 export interface BrainAnswer {
   answer:             string
   profileSources:     BrainProfileSource[]
@@ -183,6 +229,9 @@ export interface BrainAnswer {
   sspSource:          BrainSSPSource | null
   meetingSources:     BrainMeetingSource[]
   decisionSources:    BrainDecisionSource[]
+  reviewSources:      BrainReviewSource[]
+  briefSources:       BrainBriefSource[]
+  fileSources:        BrainFileSource[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -387,10 +436,11 @@ export async function askBrain(
 
   // ── 5. Fetch full entity profiles for matched entities ────────────────────
   // Run in parallel with the superseded-IDs fetch (step 6) below.
-  const entityProfiles:      BrainEntityProfile[]       = []
-  const profileSources:      BrainProfileSource[]       = []
-  const operationalContexts: PersonOperationalContext[] = []
-  const operationalSources:  BrainOperationalSource[]  = []
+  const entityProfiles:         BrainEntityProfile[]         = []
+  const profileSources:         BrainProfileSource[]         = []
+  const operationalContexts:    PersonOperationalContext[]   = []
+  const operationalSources:     BrainOperationalSource[]     = []
+  const projectOpContexts:      ProjectOperationalContext[]  = []
 
   const [supersededRowsResult] = await Promise.all([
 
@@ -439,7 +489,7 @@ export async function askBrain(
           linkedUserId
             ? supabase
                 .from('tasks')
-                .select('id, title, status, due_at')
+                .select('id, title, status, due_at, description')
                 .eq('owner_user_id', linkedUserId)
                 .not('status', 'in', '(done,cancelled)')
                 .is('archived_at', null)
@@ -459,7 +509,7 @@ export async function askBrain(
 
           supabase
             .from('waiting_ons')
-            .select('id, title, status, due_at')
+            .select('id, title, status, due_at, notes, waiting_for_name')
             .eq('waiting_for_employee_id', emp.id)
             .in('status', ['open', 'overdue'])
             .is('archived_at', null)
@@ -502,29 +552,34 @@ export async function askBrain(
           meetingRows = mRows ?? []
         }
 
+        type TaskRow      = { id: string; title: string; status: string; due_at: string | null; description: string | null }
+        type ProjRow      = { id: string; title: string; status: string; due_date: string | null }
+        type WoRow        = { id: string; title: string; status: string; due_at: string | null; notes: string | null; waiting_for_name: string | null }
+        type DecisionRow  = { id: string; title: string; status: string; decided_at: string | null; decision_text: string | null }
+
         // Build operational context for the AI
         const opCtx: PersonOperationalContext = {
           employee_id:  emp.id,
           display_name: emp.name,
-          tasks: (taskRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []).map(t => ({
+          tasks: (taskRows.data as TaskRow[] ?? []).map(t => ({
             title:  t.title,
             status: fmtOpStatus(t.status),
             date:   t.due_at ? t.due_at.slice(0, 10) : null,
-            extra:  null,
+            extra:  t.description ? t.description.slice(0, 150) : null,
           } satisfies PersonOpItem)),
-          projects: (projRows.data as { id: string; title: string; status: string; due_date: string | null }[] ?? []).map(p => ({
+          projects: (projRows.data as ProjRow[] ?? []).map(p => ({
             title:  p.title,
             status: fmtOpStatus(p.status),
             date:   p.due_date ?? null,
             extra:  null,
           } satisfies PersonOpItem)),
-          waitingOns: (waitingOnRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []).map(w => ({
-            title:  w.title,
+          waitingOns: (waitingOnRows.data as WoRow[] ?? []).map(w => ({
+            title:  `${w.title}${w.waiting_for_name ? ` (waiting on: ${w.waiting_for_name})` : ''}`,
             status: fmtOpStatus(w.status),
             date:   w.due_at ? w.due_at.slice(0, 10) : null,
-            extra:  null,
+            extra:  w.notes ? w.notes.slice(0, 150) : null,
           } satisfies PersonOpItem)),
-          decisions: (decisionRows.data as { id: string; title: string; status: string; decided_at: string | null; decision_text: string | null }[] ?? []).map(d => ({
+          decisions: (decisionRows.data as DecisionRow[] ?? []).map(d => ({
             title:  d.title,
             status: fmtOpStatus(d.status),
             date:   d.decided_at ? d.decided_at.slice(0, 10) : null,
@@ -540,7 +595,7 @@ export async function askBrain(
         operationalContexts.push(opCtx)
 
         // Build operational sources for the UI
-        for (const t of taskRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []) {
+        for (const t of taskRows.data as TaskRow[] ?? []) {
           operationalSources.push({
             kind:       'task',
             id:         t.id,
@@ -550,7 +605,7 @@ export async function askBrain(
             personName: emp.name,
           })
         }
-        for (const p of projRows.data as { id: string; title: string; status: string; due_date: string | null }[] ?? []) {
+        for (const p of projRows.data as ProjRow[] ?? []) {
           operationalSources.push({
             kind:       'project',
             id:         p.id,
@@ -560,7 +615,7 @@ export async function askBrain(
             personName: emp.name,
           })
         }
-        for (const w of waitingOnRows.data as { id: string; title: string; status: string; due_at: string | null }[] ?? []) {
+        for (const w of waitingOnRows.data as WoRow[] ?? []) {
           operationalSources.push({
             kind:       'waiting_on',
             id:         w.id,
@@ -570,7 +625,7 @@ export async function askBrain(
             personName: emp.name,
           })
         }
-        for (const d of decisionRows.data as { id: string; title: string; status: string; decided_at: string | null; decision_text: string | null }[] ?? []) {
+        for (const d of decisionRows.data as DecisionRow[] ?? []) {
           operationalSources.push({
             kind:       'decision',
             id:         d.id,
@@ -619,7 +674,7 @@ export async function askBrain(
       }
     })(),
 
-    // 5d. Project profiles
+    // 5d. Project profiles + project operational context
     (async () => {
       const projIds = mentionedProjects.slice(0, 3).map(p => p.id)
       if (projIds.length === 0) return
@@ -650,6 +705,95 @@ export async function askBrain(
           href:         `/projects/${proj.id}`,
           fields:       buildProfileFields(projProfile),
         })
+
+        // ── Project operational context (tasks / WOs / decisions / meetings) ─
+        const noData = { data: [] as never[] }
+        const [projTasks, projWOs, projDecisions, projMeetings] = await Promise.all([
+          supabase
+            .from('tasks')
+            .select('id, title, status, due_at, owner:owner_user_id(display_name)')
+            .eq('project_id', proj.id)
+            .not('status', 'in', '(done,cancelled)')
+            .is('archived_at', null)
+            .order('due_at', { ascending: true, nullsFirst: false })
+            .limit(8),
+
+          supabase
+            .from('waiting_ons')
+            .select('id, title, status, due_at, waiting_for_name')
+            .eq('project_id', proj.id)
+            .in('status', ['open', 'overdue'])
+            .is('archived_at', null)
+            .order('due_at', { ascending: true, nullsFirst: false })
+            .limit(8),
+
+          supabase
+            .from('decisions')
+            .select('id, title, status, decided_at, decision_text')
+            .eq('project_id', proj.id)
+            .neq('status', 'superseded')
+            .is('archived_at', null)
+            .order('decided_at', { ascending: false, nullsFirst: false })
+            .limit(5),
+
+          supabase
+            .from('meetings')
+            .select('id, title, status, scheduled_start')
+            .eq('project_id', proj.id)
+            .neq('status', 'cancelled')
+            .order('scheduled_start', { ascending: false })
+            .limit(5),
+        ])
+
+        type ProjTaskRow     = { id: string; title: string; status: string; due_at: string | null; owner: { display_name: string } | { display_name: string }[] | null }
+        type ProjWoRow       = { id: string; title: string; status: string; due_at: string | null; waiting_for_name: string | null }
+        type ProjDecisionRow = { id: string; title: string; status: string; decided_at: string | null; decision_text: string | null }
+        type ProjMeetingRow  = { id: string; title: string; status: string; scheduled_start: string | null }
+
+        const projOpCtx: ProjectOperationalContext = {
+          project_id:   proj.id,
+          display_name: proj.title,
+          tasks: (projTasks.data as ProjTaskRow[] ?? []).map(t => {
+            const ownerR = Array.isArray(t.owner) ? t.owner[0] : t.owner
+            const ownerDisplay = (ownerR as { display_name: string } | null)?.display_name ?? null
+            return {
+              title:  `${t.title}${ownerDisplay ? ` [owner: ${ownerDisplay}]` : ''}`,
+              status: fmtOpStatus(t.status),
+              date:   t.due_at ? t.due_at.slice(0, 10) : null,
+              extra:  null,
+            } satisfies PersonOpItem
+          }),
+          waitingOns: (projWOs.data as ProjWoRow[] ?? []).map(w => ({
+            title:  `${w.title}${w.waiting_for_name ? ` (waiting on: ${w.waiting_for_name})` : ''}`,
+            status: fmtOpStatus(w.status),
+            date:   w.due_at ? w.due_at.slice(0, 10) : null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+          decisions: (projDecisions.data as ProjDecisionRow[] ?? []).map(d => ({
+            title:  d.title,
+            status: fmtOpStatus(d.status),
+            date:   d.decided_at ? d.decided_at.slice(0, 10) : null,
+            extra:  d.decision_text ? d.decision_text.slice(0, 200) : null,
+          } satisfies PersonOpItem)),
+          meetings: (projMeetings.data as ProjMeetingRow[] ?? []).map(m => ({
+            title:  m.title,
+            status: fmtOpStatus(m.status),
+            date:   m.scheduled_start ? m.scheduled_start.slice(0, 10) : null,
+            extra:  null,
+          } satisfies PersonOpItem)),
+        }
+
+        // Only add project op context if there's actually something to show
+        const hasProjectOpData =
+          projOpCtx.tasks.length > 0 ||
+          projOpCtx.waitingOns.length > 0 ||
+          projOpCtx.decisions.length > 0 ||
+          projOpCtx.meetings.length > 0
+        if (hasProjectOpData) {
+          projectOpContexts.push(projOpCtx)
+        }
+
+        void noData
       }
     })(),
   ])
@@ -847,8 +991,8 @@ export async function askBrain(
         ...mentionedEmployees.map(e => e.name),
         ...mentionedProjects.map(p => p.title),
       ]
-      const keywords = extractKeywords(q)
-      const gmailQuery = buildGmailSearchQuery(mentionedNames, keywords)
+      const gmailKws = extractKeywords(q)
+      const gmailQuery = buildGmailSearchQuery(mentionedNames, gmailKws)
 
       if (gmailQuery) {
         const searchResults = await Promise.allSettled(
@@ -1045,7 +1189,7 @@ export async function askBrain(
     /invitation:/i,
   ]
 
-  const hasMeetingKeyword = MEETING_TRIGGER_WORDS.some(w => qLower.includes(w))
+  const hasMeetingKeyword  = MEETING_TRIGGER_WORDS.some(w => qLower.includes(w))
   const hasDecisionKeyword = ['decision', 'decisions', 'decided', 'decide', 'resolved', 'agreed'].some(w => qLower.includes(w))
 
   let meetingContext: BrainMeetingContext | null = null
@@ -1137,11 +1281,126 @@ export async function askBrain(
     }
   }
 
-  // ── 13. Call AI ───────────────────────────────────────────────────────────
-  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts, emailContexts, qualityContext, meetingContext)
+  // ── 13. GBP review retrieval ──────────────────────────────────────────────
+  //
+  // Fetch when: locations are mentioned OR review-related keywords appear.
+  // Reviews are UNTRUSTED external customer text — explicitly labelled in AI context.
+  const REVIEW_TRIGGER_WORDS = ['review', 'reviews', 'google review', 'rating', 'ratings', 'gbp', 'customer']
+  const hasReviewKeyword = REVIEW_TRIGGER_WORDS.some(w => qLower.includes(w))
+
+  let reviewContext: BrainReviewContext | null = null
+  const reviewSources: BrainReviewSource[] = []
+
+  if (mentionedLocations.length > 0 || hasReviewKeyword) {
+    try {
+      // Use location names from the question, or all locations if broad query
+      const reviewLocationNames = mentionedLocations.length > 0
+        ? mentionedLocations.slice(0, 3).map(l => l.name)
+        : (hasReviewKeyword ? locations.slice(0, 5).map(l => l.name) : [])
+
+      if (reviewLocationNames.length > 0) {
+        reviewContext = await fetchBrainReviewContext({ locationNames: reviewLocationNames })
+
+        for (const loc of reviewContext.locations) {
+          reviewSources.push({
+            kind:              'review',
+            locationName:      loc.locationName,
+            locationShortName: loc.locationShortName,
+            reviewCount:       loc.reviews.length,
+            avgStarRating:     loc.avgStarRating,
+            pendingReplyCount: loc.pendingReplyCount,
+            href:              '/marketing/reviews',
+          })
+        }
+      }
+    } catch (reviewErr) {
+      console.error('[brain] Review retrieval failed:', (reviewErr as Error).message)
+    }
+  }
+
+  // ── 14. Marketing Morning Brief retrieval ─────────────────────────────────
+  //
+  // Fetch when marketing-related keywords appear in the question.
+  const MARKETING_TRIGGER_WORDS = [
+    'marketing', 'morning brief', 'brief', 'paid', 'meta ads', 'instagram',
+    'facebook', 'campaign', 'campaigns', 'ads', 'organic', 'reach', 'engagement',
+    'social media', 'followers', 'spend', 'impressions',
+  ]
+  const hasMarketingKeyword = MARKETING_TRIGGER_WORDS.some(w => qLower.includes(w))
+
+  let morningBriefContext: BrainMorningBriefContext | null = null
+  const briefSources: BrainBriefSource[] = []
+
+  if (hasMarketingKeyword) {
+    try {
+      morningBriefContext = await fetchBrainMorningBriefContext()
+
+      for (const b of morningBriefContext.briefs) {
+        briefSources.push({
+          kind:          'brief',
+          briefDate:     b.briefDate,
+          overallStatus: b.overallStatus,
+          overallReason: b.overallReason,
+          aiSummary:     b.aiSummary,
+          href:          '/marketing',
+        })
+      }
+    } catch (briefErr) {
+      console.error('[brain] Morning brief retrieval failed:', (briefErr as Error).message)
+    }
+  }
+
+  // ── 15. Drive file metadata retrieval ─────────────────────────────────────
+  //
+  // Fetch Drive file references for mentioned projects and meetings.
+  // IMPORTANT: only metadata — never claim file content was read.
+  let fileContext: BrainFileContext | null = null
+  const fileSources: BrainFileSource[] = []
+
+  const fileEntityRefs: { entityType: 'project' | 'meeting' | 'task'; entityId: string; entityName: string }[] = [
+    ...mentionedProjects.slice(0, 3).map(p => ({ entityType: 'project' as const, entityId: p.id, entityName: p.title })),
+    // Meetings: add those surfaced in meeting context
+    ...(meetingContext?.meetings.slice(0, 3).map(m => ({ entityType: 'meeting' as const, entityId: m.id, entityName: m.title })) ?? []),
+  ]
+
+  if (fileEntityRefs.length > 0) {
+    try {
+      fileContext = await fetchBrainFileContext({ entityRefs: fileEntityRefs })
+
+      for (const f of fileContext.files) {
+        fileSources.push({
+          kind:        'file',
+          sourceId:    f.sourceId,
+          fileName:    f.fileName,
+          mimeType:    f.mimeType,
+          webViewLink: f.webViewLink,
+          entityType:  f.entityType,
+          entityName:  f.entityName,
+          href:        f.webViewLink,
+        })
+      }
+    } catch (fileErr) {
+      console.error('[brain] File retrieval failed:', (fileErr as Error).message)
+    }
+  }
+
+  // ── 16. Call AI ───────────────────────────────────────────────────────────
+  const aiResult = await queryBrain(
+    q,
+    contextUpdates,
+    entityProfiles,
+    operationalContexts,
+    projectOpContexts,
+    emailContexts,
+    qualityContext,
+    meetingContext,
+    reviewContext,
+    morningBriefContext,
+    fileContext,
+  )
   if (!aiResult.ok) return { error: aiResult.error }
 
-  // ── 14. Build Update sources for UI display ───────────────────────────────
+  // ── 17. Build Update sources for UI display ───────────────────────────────
   const sources: BrainSource[] = contextUpdates.map(u => ({
     updateId:    u.id,
     body:        u.body,
@@ -1156,5 +1415,21 @@ export async function askBrain(
     })),
   }))
 
-  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources, emailSources, auditSources, dinerSources, sspSource, meetingSources, decisionSources } }
+  return {
+    data: {
+      answer:             aiResult.answer,
+      profileSources,
+      operationalSources,
+      sources,
+      emailSources,
+      auditSources,
+      dinerSources,
+      sspSource,
+      meetingSources,
+      decisionSources,
+      reviewSources,
+      briefSources,
+      fileSources,
+    },
+  }
 }

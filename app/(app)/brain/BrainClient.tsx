@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource, BrainReviewSource, BrainBriefSource, BrainFileSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -340,6 +340,114 @@ function DecisionSourceCard({ source }: { source: BrainDecisionSource }) {
   )
 }
 
+// ─── Review source card ───────────────────────────────────────────────────────
+
+function starBar(avg: number | null): string {
+  if (avg === null) return ''
+  const full = Math.round(avg)
+  return '★'.repeat(full) + '☆'.repeat(5 - full)
+}
+
+function ReviewSourceCard({ source }: { source: BrainReviewSource }) {
+  return (
+    <a
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-amber-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-amber-50 text-amber-700">
+          GBP Reviews
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">
+          {source.locationShortName ?? source.locationName}
+        </span>
+        {source.avgStarRating !== null && (
+          <span className="ml-auto shrink-0 text-amber-500 text-xs font-medium">
+            {starBar(source.avgStarRating)} {source.avgStarRating}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted">
+        <span>{source.reviewCount} review{source.reviewCount !== 1 ? 's' : ''}</span>
+        {source.pendingReplyCount > 0 && (
+          <><span>·</span><span className="text-amber-600 font-medium">{source.pendingReplyCount} pending reply</span></>
+        )}
+      </div>
+    </a>
+  )
+}
+
+// ─── Morning Brief source card ────────────────────────────────────────────────
+
+function briefStatusStyle(status: string | null): { bg: string; text: string } {
+  const map: Record<string, { bg: string; text: string }> = {
+    green: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    amber: { bg: 'bg-amber-50',   text: 'text-amber-700'   },
+    red:   { bg: 'bg-red-50',     text: 'text-red-700'     },
+  }
+  return map[status ?? ''] ?? { bg: 'bg-kk-soft', text: 'text-kk-muted' }
+}
+
+function MorningBriefSourceCard({ source }: { source: BrainBriefSource }) {
+  const { bg, text } = briefStatusStyle(source.overallStatus)
+  return (
+    <a
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-sky-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-sky-50 text-sky-700">
+          Morning Brief
+        </span>
+        <span className="text-sm font-semibold text-kk-ink">{source.briefDate}</span>
+        {source.overallStatus && (
+          <span className={`ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${bg} ${text}`}>
+            {source.overallStatus}
+          </span>
+        )}
+      </div>
+      {source.overallReason && (
+        <p className="text-xs text-kk-muted mb-1.5 leading-snug">{source.overallReason}</p>
+      )}
+      {source.aiSummary && (
+        <p className="text-xs text-kk-ink/80 leading-relaxed line-clamp-2">{source.aiSummary}</p>
+      )}
+    </a>
+  )
+}
+
+// ─── File source card ─────────────────────────────────────────────────────────
+
+function mimeTypeLabel(mimeType: string): string {
+  if (mimeType.includes('document'))    return 'Doc'
+  if (mimeType.includes('spreadsheet')) return 'Sheet'
+  if (mimeType.includes('presentation')) return 'Slides'
+  if (mimeType.includes('pdf'))         return 'PDF'
+  if (mimeType.includes('folder'))      return 'Folder'
+  return 'File'
+}
+
+function FileSourceCard({ source }: { source: BrainFileSource }) {
+  return (
+    <a
+      href={source.webViewLink}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-violet-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-violet-50 text-violet-700">
+          {mimeTypeLabel(source.mimeType)}
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.fileName}</span>
+      </div>
+      <div className="text-xs text-kk-muted">
+        Linked to: <span className="text-kk-ink font-medium">{source.entityName}</span>
+      </div>
+    </a>
+  )
+}
+
 // ─── Update source card ───────────────────────────────────────────────────────
 
 function SourceCard({ source }: { source: BrainSource }) {
@@ -538,10 +646,10 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0) && (
+          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0 || result.reviewSources.length > 0 || result.briefSources.length > 0 || result.fileSources.length > 0) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length})
+                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length + result.reviewSources.length + result.briefSources.length + result.fileSources.length})
               </h2>
               <div className="space-y-2">
                 {result.profileSources.map(s => (
@@ -565,6 +673,15 @@ export default function BrainClient() {
                 {result.sspSource && (
                   <SSPSourceCard source={result.sspSource} />
                 )}
+                {result.reviewSources.map(s => (
+                  <ReviewSourceCard key={`review-${s.locationName}`} source={s} />
+                ))}
+                {result.briefSources.map(s => (
+                  <MorningBriefSourceCard key={`brief-${s.briefDate}`} source={s} />
+                ))}
+                {result.fileSources.map(s => (
+                  <FileSourceCard key={`file-${s.sourceId}`} source={s} />
+                ))}
                 {result.sources.map(s => (
                   <SourceCard key={s.updateId} source={s} />
                 ))}
