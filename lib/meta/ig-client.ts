@@ -127,37 +127,21 @@ export async function fetchIgMedia(
 // We request the full current set and handle missing keys gracefully.
 // `impressions` not requested — deprecated in v26 for some media types.
 
-// v26: `plays` is no longer a valid metric name. `views` is the replacement
-// for video/reel play counts. We request `views` and map it to the `plays`
-// DB column in the sync layer.
+// v26: `plays` is not a valid metric. `views` is the replacement for play counts,
+// but it is only available for REEL (not legacy VIDEO posts). We fetch it
+// separately so its failure does not abort the main metrics request.
+// All non-video metrics work for IMAGE, CAROUSEL_ALBUM, VIDEO, and REEL.
+const BASE_IG_MEDIA_METRICS = 'reach,saved,likes,comments,shares,total_interactions'
+
 const STRUCTURED_IG_MEDIA_METRICS = new Set([
   'reach', 'views', 'saved', 'likes', 'comments', 'shares', 'total_interactions',
 ])
 
-export async function fetchIgMediaInsights(
-  mediaId: string,
-  mediaType: string,
-): Promise<IgMediaInsights | null> {
-  // views (video play count) only available for video/reel types
-  const isVideo = mediaType === 'VIDEO' || mediaType === 'REEL'
-  const requestMetrics = isVideo
-    ? 'reach,views,saved,likes,comments,shares,total_interactions'
-    : 'reach,saved,likes,comments,shares,total_interactions'
-
-  let body: unknown
-  try {
-    body = await igFetch(`${mediaId}/insights`, { metric: requestMetrics })
-  } catch (err) {
-    if (err instanceof MetaRateLimitError) throw err
-    // Media may be too old (>2 years) or insights unavailable — return null, not crash
-    console.warn(`[ig-client] Media insights unavailable for ${mediaId}:`, (err as Error).message)
-    return null
-  }
-
-  const data = (body as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data ?? []
-  const structured: IgMediaInsights = {}
-  const other: Record<string, number> = {}
-
+function parseInsightsData(
+  data: Array<{ name: string; values: Array<{ value: number }> }>,
+  structured: IgMediaInsights,
+  other: Record<string, number>,
+) {
   for (const item of data) {
     const val = item.values?.[0]?.value ?? null
     if (val === null) continue
@@ -167,8 +151,44 @@ export async function fetchIgMediaInsights(
       other[item.name] = val
     }
   }
+}
+
+export async function fetchIgMediaInsights(
+  mediaId: string,
+  mediaType: string,
+): Promise<IgMediaInsights | null> {
+  // Fetch base metrics (valid for all media types)
+  let body: unknown
+  try {
+    body = await igFetch(`${mediaId}/insights`, { metric: BASE_IG_MEDIA_METRICS })
+  } catch (err) {
+    if (err instanceof MetaRateLimitError) throw err
+    // Media may be too old (>2 years) or insights unavailable — return null, not crash
+    console.warn(`[ig-client] Media insights unavailable for ${mediaId}:`, (err as Error).message)
+    return null
+  }
+
+  const structured: IgMediaInsights = {}
+  const other: Record<string, number> = {}
+  const data = (body as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data ?? []
+  parseInsightsData(data, structured, other)
+
+  // `views` (play count) only valid for REEL in v26 — fetch separately so
+  // failure does not affect the base metrics already retrieved above.
+  if (mediaType === 'REEL') {
+    try {
+      const viewsBody = await igFetch(`${mediaId}/insights`, { metric: 'views' })
+      const viewsData = (viewsBody as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data ?? []
+      parseInsightsData(viewsData, structured, other)
+    } catch {
+      // views unavailable for this media — non-fatal
+    }
+  }
 
   if (Object.keys(other).length > 0) structured.other_metrics_json = other
+
+  // Return null only if we got no data at all
+  if (Object.keys(structured).length === 0) return null
   return structured
 }
 
