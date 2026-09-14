@@ -45,8 +45,8 @@ function fmtDKK(n: number, decimals = 0): string {
   })
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+function fmtDateShort(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
 function objectiveLabel(obj: string | null): string {
@@ -57,44 +57,39 @@ function objectiveLabel(obj: string | null): string {
 }
 
 function statusLabel(s: string): string {
-  return ({ ACTIVE: 'Active', PAUSED: 'Paused', ARCHIVED: 'Archived', DELETED: 'Deleted' } as Record<string, string>)[s] ?? s.charAt(0) + s.slice(1).toLowerCase()
+  return ({ ACTIVE: 'Active', PAUSED: 'Paused', ARCHIVED: 'Archived', DELETED: 'Deleted' } as Record<string, string>)[s]
+    ?? s.charAt(0) + s.slice(1).toLowerCase()
 }
+
+// ─── Primary metric ───────────────────────────────────────────────────────────
 
 function getPrimary(objective: string | null, t: CampaignTotals) {
   const cpm = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : null
 
+  // Awareness: Impressions is the headline (Reach is a cumulative daily sum, not a true unique count)
   if (objective === 'OUTCOME_AWARENESS') {
-    return {
-      label: 'Reach', formatted: fmt(t.reach),
-      costLabel: 'CPM', costFormatted: cpm !== null ? fmtDKK(cpm, 2) : null,
-      note: 'Cumulative sum of daily reach',
-    }
+    return { label: 'Impressions', formatted: fmt(t.impressions), efficiency: cpm !== null ? { label: 'CPM', value: fmtDKK(cpm, 2) } : null }
   }
   if (objective === 'OUTCOME_TRAFFIC') {
     const lpvShare = t.linkClicks > 0 ? t.landingPageViews / t.linkClicks : 0
     if (lpvShare > 0.1 && t.landingPageViews > 0) {
-      return {
-        label: 'Landing Page Views', formatted: fmt(t.landingPageViews),
-        costLabel: 'Cost / LPV', costFormatted: fmtDKK(t.spend / t.landingPageViews, 2), note: null,
-      }
+      const costPerLPV = t.spend / t.landingPageViews
+      return { label: 'LPVs', formatted: fmt(t.landingPageViews), efficiency: { label: 'Cost / LPV', value: fmtDKK(costPerLPV, 2) } }
     }
+    const costPerClick = t.linkClicks > 0 ? t.spend / t.linkClicks : null
     return {
       label: 'Link Clicks', formatted: fmt(t.linkClicks),
-      costLabel: 'Cost / Click', costFormatted: t.linkClicks > 0 ? fmtDKK(t.spend / t.linkClicks, 2) : null,
-      note: `LPV not meaningfully tracked (${fmt(t.landingPageViews)} recorded)`,
+      efficiency: costPerClick !== null ? { label: 'Cost / Click', value: fmtDKK(costPerClick, 2) } : null,
     }
   }
   if (objective === 'OUTCOME_ENGAGEMENT') {
+    const costPer = t.postEngagement > 0 ? t.spend / t.postEngagement : null
     return {
       label: 'Post Engagements', formatted: fmt(t.postEngagement),
-      costLabel: 'Cost / Engagement', costFormatted: t.postEngagement > 0 ? fmtDKK(t.spend / t.postEngagement, 2) : null,
-      note: null,
+      efficiency: costPer !== null ? { label: 'Cost / Eng', value: fmtDKK(costPer, 2) } : null,
     }
   }
-  return {
-    label: 'Impressions', formatted: fmt(t.impressions),
-    costLabel: 'CPM', costFormatted: cpm !== null ? fmtDKK(cpm, 2) : null, note: null,
-  }
+  return { label: 'Impressions', formatted: fmt(t.impressions), efficiency: cpm !== null ? { label: 'CPM', value: fmtDKK(cpm, 2) } : null }
 }
 
 // ─── Filter config ─────────────────────────────────────────────────────────────
@@ -109,7 +104,6 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
   const router = useRouter()
   const pathname = usePathname()
 
-  // Read selected statuses from URL; fall back to default
   const rawSelected = searchParams.getAll('s')
   const selected = rawSelected.length > 0 ? rawSelected : DEFAULT_STATUSES
 
@@ -117,21 +111,16 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
     const next = selected.includes(status)
       ? selected.filter(s => s !== status)
       : [...selected, status]
-
-    // At least one must remain selected
     if (next.length === 0) return
-
     const params = new URLSearchParams()
     next.forEach(s => params.append('s', s))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [selected, router, pathname])
 
-  // Filter + split
-  const visible = campaigns.filter(c => selected.includes(c.status))
+  const visible  = campaigns.filter(c => selected.includes(c.status))
   const withData = visible.filter(c => c.totals !== null)
   const noData   = visible.filter(c => c.totals === null)
 
-  // Only show statuses that exist in data
   const presentStatuses = new Set(campaigns.map(c => c.status))
 
   return (
@@ -155,7 +144,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
         })}
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {withData.map(({ id, name, status, objective, totals }) => {
           const t = totals!
           const primary = getPrimary(objective, t)
@@ -168,57 +157,64 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
 
           return (
             <div key={id} className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-              <div className="px-5 py-4 flex items-start gap-3">
+
+              {/* ── Header: name + meta + spend ── */}
+              <div className="px-4 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="text-sm font-semibold text-kk-ink truncate">{name}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     <span className={[
-                      'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold shrink-0',
+                      'inline-flex items-center px-1.5 py-px rounded-full text-xs font-semibold shrink-0',
                       isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
                     ].join(' ')}>
                       {statusLabel(status)}
                     </span>
-                    <span className="text-sm font-semibold text-kk-ink truncate">{name}</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-kk-muted flex-wrap">
-                    <span>{objectiveLabel(objective)}</span>
-                    <span>·</span>
-                    <span>{t.days} days</span>
-                    <span>·</span>
-                    <span>{fmtDate(t.firstDate)} – {fmtDate(t.lastDate)}</span>
+                    <span className="text-xs text-kk-muted">
+                      {objectiveLabel(objective)} · {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
+                    </span>
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-sm font-semibold text-kk-ink">{fmtDKK(t.spend)}</div>
-                  <div className="text-xs text-kk-muted mt-0.5">spend</div>
+                  <div className="text-xs text-kk-muted">{fmtDKK(t.spend)}</div>
+                  <div className="text-xs text-kk-muted opacity-60">spend</div>
                 </div>
               </div>
 
-              <div className="px-5 pb-4 flex items-end gap-6 flex-wrap">
+              {/* ── Metrics: primary → efficiency → secondary ── */}
+              <div className="px-4 py-2.5 border-t border-kk-line flex items-center gap-5 flex-wrap">
+                {/* Primary — slightly larger */}
                 <div>
-                  <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">{primary.label}</div>
-                  <div className="text-3xl font-black text-kk-ink leading-none">{primary.formatted}</div>
-                  {primary.note && <div className="text-xs text-kk-muted mt-1 italic">{primary.note}</div>}
+                  <div className="text-xs text-kk-muted">{primary.label}</div>
+                  <div className="text-xl font-black text-kk-ink leading-none">{primary.formatted}</div>
                 </div>
-                {primary.costFormatted && (
-                  <div className="pb-0.5">
-                    <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">{primary.costLabel}</div>
-                    <div className="text-lg font-bold text-kk-ink">{primary.costFormatted}</div>
-                  </div>
-                )}
-              </div>
 
-              <div className="border-t border-kk-line px-5 py-3 flex items-center gap-5 flex-wrap">
-                <Stat label="Impressions" value={fmt(t.impressions)} />
-                <Stat label="Reach"       value={fmt(t.reach)} />
-                {avgFreq !== null && <Stat label="Avg Frequency" value={avgFreq.toFixed(2)} />}
-                {cpm !== null     && <Stat label="CPM"           value={fmtDKK(cpm, 2)} />}
-                {isAwareness && t.videoViews > 0     && <Stat label="Video Views"     value={fmt(t.videoViews)} />}
-                {isAwareness && t.postEngagement > 0  && <Stat label="Post Engagement" value={fmt(t.postEngagement)} />}
+                {/* Efficiency */}
+                {primary.efficiency && <Stat label={primary.efficiency.label} value={primary.efficiency.value} />}
+
+                {/* Objective-specific secondary */}
+                {isAwareness && (
+                  <>
+                    {t.videoViews > 0    && <Stat label="Video Views"     value={fmt(t.videoViews)} />}
+                    {t.postEngagement > 0 && <Stat label="Post Engagement" value={fmt(t.postEngagement)} />}
+                    {avgFreq !== null     && <Stat label="Frequency"       value={avgFreq.toFixed(2)} />}
+                    <Stat label="Reach ↻" value={fmt(t.reach)} />
+                  </>
+                )}
+
                 {isTraffic && (
                   <>
-                    <Stat label="Link Clicks" value={fmt(t.linkClicks)} />
-                    {ctr !== null && <Stat label="CTR" value={ctr.toFixed(2) + '%'} />}
+                    {cpm !== null  && <Stat label="CPM"         value={fmtDKK(cpm, 2)} />}
+                    {ctr !== null  && <Stat label="CTR"         value={ctr.toFixed(2) + '%'} />}
                     {t.landingPageViews > 0 && <Stat label="LPV" value={fmt(t.landingPageViews)} />}
+                    <Stat label="Impressions" value={fmt(t.impressions)} />
+                  </>
+                )}
+
+                {!isAwareness && !isTraffic && (
+                  <>
+                    {cpm !== null  && <Stat label="CPM"         value={fmtDKK(cpm, 2)} />}
+                    <Stat label="Impressions" value={fmt(t.impressions)} />
+                    {avgFreq !== null && <Stat label="Frequency"  value={avgFreq.toFixed(2)} />}
                   </>
                 )}
               </div>
@@ -228,16 +224,16 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
 
         {noData.length > 0 && (
           <div className="bg-kk-panel border border-kk-line rounded-2xl">
-            <div className="px-5 py-4 border-b border-kk-line">
+            <div className="px-4 py-3 border-b border-kk-line">
               <h2 className="text-sm font-semibold text-kk-ink">
                 No data synced <span className="font-normal text-kk-muted">· {noData.length}</span>
               </h2>
             </div>
             <div className="divide-y divide-kk-line">
               {noData.map(c => (
-                <div key={c.id} className="flex items-center gap-3 px-5 py-3">
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                   <span className={[
-                    'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold shrink-0',
+                    'inline-flex items-center px-1.5 py-px rounded-full text-xs font-semibold shrink-0',
                     c.status === 'ACTIVE' ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
                   ].join(' ')}>
                     {statusLabel(c.status)}
@@ -251,7 +247,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
         )}
 
         {visible.length === 0 && (
-          <div className="bg-kk-panel border border-kk-line rounded-2xl px-5 py-8 text-center">
+          <div className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-6 text-center">
             <p className="text-sm text-kk-muted">No campaigns match the selected statuses.</p>
           </div>
         )}
