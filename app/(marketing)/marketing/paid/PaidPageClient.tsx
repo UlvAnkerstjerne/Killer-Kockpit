@@ -61,42 +61,29 @@ function statusLabel(s: string): string {
     ?? s.charAt(0) + s.slice(1).toLowerCase()
 }
 
-// ─── Card metrics ─────────────────────────────────────────────────────────────
-// Fixed 4-zone structure so every card is identical regardless of objective.
-// primary: one dominant result
-// kpis: always exactly 3 equal-width cells
-// footer: quiet metadata (always includes Spend)
+// ─── Metric cells ─────────────────────────────────────────────────────────────
+// Always returns exactly 6 cells so every card has identical column positions.
 
-type KpiCell = { label: string; value: string }
+type MetricCell = { label: string; value: string }
 
-type CardMetrics = {
-  primary: { label: string; formatted: string }
-  kpis: [KpiCell, KpiCell, KpiCell]
-  footer: KpiCell[]
-}
-
-function getCardMetrics(objective: string | null, t: CampaignTotals): CardMetrics {
+function getMetricCells(objective: string | null, t: CampaignTotals): [MetricCell, MetricCell, MetricCell, MetricCell, MetricCell, MetricCell] {
   const cpm     = t.impressions > 0 ? (t.spend / t.impressions) * 1000 : null
   const ctr     = t.impressions > 0 ? (t.clicks / t.impressions) * 100  : null
   const avgFreq = t.reach > 0       ? t.impressions / t.reach            : null
 
-  // ── Awareness ──────────────────────────────────────────────────────────────
+  // ── Awareness ─────────────────────────────────────────────────────────────
   if (objective === 'OUTCOME_AWARENESS') {
-    return {
-      primary: { label: 'Impressions', formatted: fmt(t.impressions) },
-      kpis: [
-        { label: 'CPM',         value: cpm !== null ? fmtDKK(cpm, 2) : '—' },
-        { label: 'Video Views', value: t.videoViews > 0    ? fmt(t.videoViews)    : '—' },
-        { label: 'Post Eng',    value: t.postEngagement > 0 ? fmt(t.postEngagement) : '—' },
-      ],
-      footer: [
-        ...(avgFreq !== null ? [{ label: 'Freq', value: avgFreq.toFixed(2) }] : []),
-        { label: 'Spend', value: fmtDKK(t.spend) },
-      ],
-    }
+    return [
+      { label: 'Impressions', value: fmt(t.impressions) },
+      { label: 'CPM',         value: cpm !== null ? fmtDKK(cpm, 2) : '—' },
+      { label: 'Video Views', value: t.videoViews > 0     ? fmt(t.videoViews)     : '—' },
+      { label: 'Post Eng',    value: t.postEngagement > 0 ? fmt(t.postEngagement) : '—' },
+      { label: 'Freq',        value: avgFreq !== null ? avgFreq.toFixed(2) : '—' },
+      { label: 'Spend',       value: fmtDKK(t.spend) },
+    ]
   }
 
-  // ── Traffic — preserve existing primary/efficiency logic ───────────────────
+  // ── Traffic — preserve existing primary/efficiency logic ──────────────────
   if (objective === 'OUTCOME_TRAFFIC') {
     const lpvShare = t.linkClicks > 0 ? t.landingPageViews / t.linkClicks : 0
     const useLPV   = lpvShare > 0.1 && t.landingPageViews > 0
@@ -104,47 +91,38 @@ function getCardMetrics(objective: string | null, t: CampaignTotals): CardMetric
     const effValue = useLPV
       ? (t.landingPageViews > 0 ? fmtDKK(t.spend / t.landingPageViews, 2) : '—')
       : (t.linkClicks > 0       ? fmtDKK(t.spend / t.linkClicks, 2)       : '—')
-    return {
-      primary: {
-        label:     useLPV ? 'LPVs'        : 'Link Clicks',
-        formatted: useLPV ? fmt(t.landingPageViews) : fmt(t.linkClicks),
-      },
-      kpis: [
-        { label: effLabel, value: effValue },
-        { label: 'CPM',    value: cpm !== null ? fmtDKK(cpm, 2)       : '—' },
-        { label: 'CTR',    value: ctr !== null ? ctr.toFixed(2) + '%' : '—' },
-      ],
-      footer: [{ label: 'Spend', value: fmtDKK(t.spend) }],
-    }
+    return [
+      { label: useLPV ? 'LPVs' : 'Link Clicks', value: useLPV ? fmt(t.landingPageViews) : fmt(t.linkClicks) },
+      { label: effLabel,      value: effValue },
+      { label: 'CPM',         value: cpm !== null ? fmtDKK(cpm, 2)       : '—' },
+      { label: 'CTR',         value: ctr !== null ? ctr.toFixed(2) + '%' : '—' },
+      { label: 'Impressions', value: fmt(t.impressions) },
+      { label: 'Spend',       value: fmtDKK(t.spend) },
+    ]
   }
 
-  // ── Engagement — preserve existing logic ────────────────────────────────────
+  // ── Engagement — preserve existing logic ───────────────────────────────────
   if (objective === 'OUTCOME_ENGAGEMENT') {
     const costPer = t.postEngagement > 0 ? t.spend / t.postEngagement : null
-    return {
-      primary: { label: 'Post Engagements', formatted: fmt(t.postEngagement) },
-      kpis: [
-        { label: 'Cost / Eng',  value: costPer !== null ? fmtDKK(costPer, 2) : '—' },
-        { label: 'CPM',         value: cpm !== null ? fmtDKK(cpm, 2) : '—' },
-        { label: 'Impressions', value: fmt(t.impressions) },
-      ],
-      footer: [
-        ...(avgFreq !== null ? [{ label: 'Freq', value: avgFreq.toFixed(2) }] : []),
-        { label: 'Spend', value: fmtDKK(t.spend) },
-      ],
-    }
+    return [
+      { label: 'Post Eng',    value: fmt(t.postEngagement) },
+      { label: 'Cost / Eng',  value: costPer !== null ? fmtDKK(costPer, 2) : '—' },
+      { label: 'CPM',         value: cpm !== null ? fmtDKK(cpm, 2) : '—' },
+      { label: 'Impressions', value: fmt(t.impressions) },
+      { label: 'Freq',        value: avgFreq !== null ? avgFreq.toFixed(2) : '—' },
+      { label: 'Spend',       value: fmtDKK(t.spend) },
+    ]
   }
 
   // ── Default / App ──────────────────────────────────────────────────────────
-  return {
-    primary: { label: 'Impressions', formatted: fmt(t.impressions) },
-    kpis: [
-      { label: 'CPM',  value: cpm     !== null ? fmtDKK(cpm, 2)       : '—' },
-      { label: 'CTR',  value: ctr     !== null ? ctr.toFixed(2) + '%' : '—' },
-      { label: 'Freq', value: avgFreq !== null ? avgFreq.toFixed(2)   : '—' },
-    ],
-    footer: [{ label: 'Spend', value: fmtDKK(t.spend) }],
-  }
+  return [
+    { label: 'Impressions', value: fmt(t.impressions) },
+    { label: 'CPM',         value: cpm !== null ? fmtDKK(cpm, 2)       : '—' },
+    { label: 'CTR',         value: ctr !== null ? ctr.toFixed(2) + '%' : '—' },
+    { label: 'Clicks',      value: fmt(t.clicks) },
+    { label: 'Freq',        value: avgFreq !== null ? avgFreq.toFixed(2) : '—' },
+    { label: 'Spend',       value: fmtDKK(t.spend) },
+  ]
 }
 
 // ─── Filter config ─────────────────────────────────────────────────────────────
@@ -200,99 +178,76 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
         })}
       </div>
 
-      {/* Campaign tiles — 2-column comparison grid */}
-      {withData.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {withData.map(({ id, name, status, objective, totals }) => {
-            const t       = totals!
-            const metrics = getCardMetrics(objective, t)
-            const isActive = status === 'ACTIVE'
+      {/* Full-width campaign cards */}
+      <div className="space-y-2">
+        {withData.map(({ id, name, status, objective, totals }) => {
+          const t      = totals!
+          const cells  = getMetricCells(objective, t)
+          const isActive = status === 'ACTIVE'
 
-            return (
-              <div key={id} className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden flex flex-col">
+          return (
+            <div key={id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
 
-                {/* ── Header ── */}
-                <div className="px-4 pt-4 pb-3">
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <p className="text-sm font-bold text-kk-ink leading-snug">{name}</p>
-                    <span className={[
-                      'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold shrink-0',
-                      isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
-                    ].join(' ')}>
-                      {statusLabel(status)}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-kk-muted">
-                    {objectiveLabel(objective)} · {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
-                  </p>
-                </div>
-
-                {/* ── Primary — dominant result, bottom-anchored so it aligns across cards ── */}
-                <div className="px-4 pt-1 pb-5 flex-1 flex flex-col justify-end">
-                  <p className="text-[11px] text-kk-muted mb-1.5">{metrics.primary.label}</p>
-                  <p className="text-[32px] font-black text-kk-ink leading-none tracking-tight tabular-nums">
-                    {metrics.primary.formatted}
-                  </p>
-                </div>
-
-                {/* ── KPI row — 3 equal cells, always same positions ── */}
-                <div className="border-t border-kk-line grid grid-cols-3 divide-x divide-kk-line">
-                  {metrics.kpis.map((kpi, i) => (
-                    <div key={i} className="px-3 py-3">
-                      <p className="text-[10px] text-kk-muted leading-none mb-1.5">{kpi.label}</p>
-                      <p className="text-sm font-bold text-kk-ink leading-none tabular-nums">{kpi.value}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* ── Footer — quiet metadata ── */}
-                {metrics.footer.length > 0 && (
-                  <div className="border-t border-kk-line px-4 py-2 flex items-center gap-4">
-                    {metrics.footer.map((f, i) => (
-                      <span key={i} className="text-[11px] text-kk-muted">
-                        {f.label}{' '}
-                        <span className="font-medium text-kk-ink/70">{f.value}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* No-data campaigns — compact list below the grid */}
-      {noData.length > 0 && (
-        <div className="bg-kk-panel border border-kk-line rounded-xl">
-          <div className="px-4 py-2.5 border-b border-kk-line">
-            <h2 className="text-sm font-semibold text-kk-ink">
-              No data synced <span className="font-normal text-kk-muted">· {noData.length}</span>
-            </h2>
-          </div>
-          <div className="divide-y divide-kk-line">
-            {noData.map(c => (
-              <div key={c.id} className="flex items-center gap-3 px-4 py-2">
+              {/* ── Top row: name · status · objective · dates · spend ── */}
+              <div className="px-4 py-2.5 flex items-center gap-2.5">
+                <span className="text-sm font-semibold text-kk-ink truncate flex-1 min-w-0">{name}</span>
                 <span className={[
                   'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold shrink-0',
-                  c.status === 'ACTIVE' ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
+                  isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
                 ].join(' ')}>
-                  {statusLabel(c.status)}
+                  {statusLabel(status)}
                 </span>
-                <span className="text-sm text-kk-muted flex-1 truncate">{c.name}</span>
-                <span className="text-[11px] text-kk-muted shrink-0">{objectiveLabel(c.objective)}</span>
+                <span className="text-[11px] text-kk-muted shrink-0">
+                  {objectiveLabel(objective)} · {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
+                </span>
+                <span className="text-[11px] text-kk-muted shrink-0">{fmtDKK(t.spend)}</span>
               </div>
-            ))}
+
+              {/* ── Metrics row: 6 equal columns across the full card width ── */}
+              <div className="border-t border-kk-line grid grid-cols-6 divide-x divide-kk-line">
+                {cells.map((cell, i) => (
+                  <div key={i} className="px-3 py-2.5">
+                    <div className="text-[10px] text-kk-muted leading-none mb-1">{cell.label}</div>
+                    <div className="text-sm font-bold text-kk-ink leading-none tabular-nums">{cell.value}</div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+          )
+        })}
+
+        {/* No-data campaigns */}
+        {noData.length > 0 && (
+          <div className="bg-kk-panel border border-kk-line rounded-xl">
+            <div className="px-4 py-2.5 border-b border-kk-line">
+              <h2 className="text-sm font-semibold text-kk-ink">
+                No data synced <span className="font-normal text-kk-muted">· {noData.length}</span>
+              </h2>
+            </div>
+            <div className="divide-y divide-kk-line">
+              {noData.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2">
+                  <span className={[
+                    'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold shrink-0',
+                    c.status === 'ACTIVE' ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
+                  ].join(' ')}>
+                    {statusLabel(c.status)}
+                  </span>
+                  <span className="text-sm text-kk-muted flex-1 truncate">{c.name}</span>
+                  <span className="text-[11px] text-kk-muted shrink-0">{objectiveLabel(c.objective)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {visible.length === 0 && (
-        <div className="bg-kk-panel border border-kk-line rounded-xl px-4 py-6 text-center">
-          <p className="text-sm text-kk-muted">No campaigns match the selected statuses.</p>
-        </div>
-      )}
-
+        {visible.length === 0 && (
+          <div className="bg-kk-panel border border-kk-line rounded-xl px-4 py-6 text-center">
+            <p className="text-sm text-kk-muted">No campaigns match the selected statuses.</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
