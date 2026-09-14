@@ -237,58 +237,71 @@ export default async function OrganicPage() {
                 const primaryLabel = isVideo ? 'Views' : 'Reach'
                 const primaryValue = isVideo ? post.plays : post.reach
 
-                const cells = [
-                  { label: primaryLabel, value: primaryValue != null ? fmt(primaryValue) : '—' },
-                  { label: 'Likes',    value: post.likes          != null ? fmt(post.likes)          : '—' },
-                  { label: 'Comments', value: post.comments_count  != null ? fmt(post.comments_count)  : '—' },
-                  { label: 'Shares',   value: post.shares          != null ? fmt(post.shares)          : '—' },
-                  { label: 'Saves',    value: post.saved           != null ? fmt(post.saved)           : '—' },
+                // Shared column grid: 75px info/thumb col + 5 equal metric cols
+                const GRID = '75px repeat(5, 1fr)' as const
+                const metricLabels = [primaryLabel, 'Likes', 'Comments', 'Shares', 'Saves']
+                const metricValues = [
+                  primaryValue          != null ? fmt(primaryValue)          : '—',
+                  post.likes            != null ? fmt(post.likes)            : '—',
+                  post.comments_count   != null ? fmt(post.comments_count)   : '—',
+                  post.shares           != null ? fmt(post.shares)           : '—',
+                  post.saved            != null ? fmt(post.saved)            : '—',
                 ]
 
                 return (
                   <div key={post.id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
 
-                    {/* ── Card header: type | date + link ── */}
-                    <div className="px-4 py-2.5 flex items-center justify-between bg-[#DDD9D1]">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-white/60 text-kk-muted">
-                        {mediaTypeLabel(post.media_type)}
-                      </span>
-                      <div className="flex items-center gap-3">
+                    {/* ── Grey header row — same grid as body ── */}
+                    <div
+                      className="bg-[#DDD9D1] divide-x divide-black/10"
+                      style={{ display: 'grid', gridTemplateColumns: GRID }}
+                    >
+                      {/* Col 1: type · date · View ↗ stacked vertically */}
+                      <div className="px-2 py-2 flex flex-col justify-center gap-0.5">
+                        <span className="text-[10px] font-semibold text-kk-ink leading-none">
+                          {mediaTypeLabel(post.media_type)}
+                        </span>
                         {post.published_at && (
-                          <span className="text-xs text-kk-muted">{fmtDateLong(post.published_at)}</span>
+                          <span className="text-[10px] text-kk-muted leading-none">{fmtDate(post.published_at)}</span>
                         )}
                         {post.permalink && (
                           <a
                             href={post.permalink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs font-medium text-kk-ink underline underline-offset-2"
+                            className="text-[10px] font-medium text-kk-ink leading-none"
                           >
                             View ↗
                           </a>
                         )}
                       </div>
+
+                      {/* Cols 2–6: metric labels */}
+                      {metricLabels.map(label => (
+                        <div key={label} className="px-3 py-2 flex items-center">
+                          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
+                            {label}
+                          </span>
+                        </div>
+                      ))}
                     </div>
 
-                    {/* ── Card body: thumbnail + metrics ── */}
-                    <div className="flex min-h-[112px]">
-                      {/* Thumbnail — 112 px wide, fills full height */}
-                      <div className="w-28 shrink-0 border-r border-kk-line overflow-hidden bg-kk-soft">
+                    {/* ── White body row — same grid ── */}
+                    <div
+                      className="divide-x divide-kk-line"
+                      style={{ display: 'grid', gridTemplateColumns: GRID, minHeight: '75px' }}
+                    >
+                      {/* Col 1: thumbnail fills column */}
+                      <div className="overflow-hidden bg-kk-soft">
                         <IgThumbnail src={thumbSrc} />
                       </div>
 
-                      {/* Metrics — 5 equal columns, Paid-style inline label: value */}
-                      <div
-                        className="flex-1 divide-x divide-kk-line"
-                        style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)' }}
-                      >
-                        {cells.map((cell, i) => (
-                          <div key={i} className="px-3 py-4 flex items-center gap-1.5">
-                            <span className="text-base font-medium text-kk-muted whitespace-nowrap">{cell.label}:</span>
-                            <span className="text-base font-bold text-kk-ink tabular-nums">{cell.value}</span>
-                          </div>
-                        ))}
-                      </div>
+                      {/* Cols 2–6: values only — large and bold */}
+                      {metricValues.map((val, i) => (
+                        <div key={i} className="px-3 flex items-center">
+                          <span className="text-xl font-bold text-kk-ink tabular-nums">{val}</span>
+                        </div>
+                      ))}
                     </div>
 
                   </div>
