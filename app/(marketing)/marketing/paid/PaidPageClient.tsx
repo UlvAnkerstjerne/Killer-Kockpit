@@ -188,19 +188,24 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
           return (
             <div key={id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
 
-              {/* ── Top row: name · status · objective · dates · spend ── */}
-              <div className="px-4 py-2.5 flex items-center gap-2.5">
+              {/* ── Top row: name | objective (middle) | status · dates ── */}
+              <div className="px-4 py-2.5 flex items-center gap-3">
+                {/* Left: campaign name */}
                 <span className="text-sm font-semibold text-kk-ink truncate flex-1 min-w-0">{name}</span>
-                <span className={[
-                  'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold shrink-0',
-                  isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
-                ].join(' ')}>
-                  {statusLabel(status)}
-                </span>
-                <span className="text-[11px] text-kk-muted shrink-0">
-                  {objectiveLabel(objective)} · {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
-                </span>
-                <span className="text-[11px] text-kk-muted shrink-0">{fmtDKK(t.spend)}</span>
+                {/* Middle: goal — larger than metadata, quieter than name */}
+                <span className="text-sm font-medium text-kk-muted shrink-0">{objectiveLabel(objective)}</span>
+                {/* Right: status + date */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={[
+                    'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold',
+                    isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
+                  ].join(' ')}>
+                    {statusLabel(status)}
+                  </span>
+                  <span className="text-[11px] text-kk-muted">
+                    {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
+                  </span>
+                </div>
               </div>
 
               {/* ── Metrics row: 6 equal columns across the full card width ── */}
