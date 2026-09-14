@@ -20,8 +20,9 @@ import { canAccessQualityCheck } from '@/lib/permissions'
 import { createServiceClient }   from '@/lib/supabase/server'
 import { Resend }                from 'resend'
 import { generateOverviewPdf, buildOverviewFilename } from '@/lib/reports/generate-overview-pdf'
-import { fetchSSPCphDataDirect }  from '@/lib/kkc/ssp-cph'
-import type { OverviewAuditRow, OverviewDinerRow, OverviewSspRow } from '@/lib/reports/generate-overview-pdf'
+import { generateSspOverviewPdf }                   from '@/lib/reports/generate-ssp-overview-pdf'
+import { fetchSSPCphDataDirect }                    from '@/lib/kkc/ssp-cph'
+import type { OverviewAuditRow, OverviewDinerRow } from '@/lib/reports/generate-overview-pdf'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -165,28 +166,14 @@ async function loadDinerRows(
   return { rows, locationLabel }
 }
 
-async function loadSspRows(
-  count: number,
-): Promise<{ rows: OverviewSspRow[]; locationLabel: string }> {
+async function loadSspData(count: number) {
   let data: Awaited<ReturnType<typeof fetchSSPCphDataDirect>>
   try {
     data = await fetchSSPCphDataDirect()
   } catch (err) {
     throw new Error(`Failed to load SSP/CPH data: ${err instanceof Error ? err.message : String(err)}`)
   }
-
-  const scores = data.scores.slice(-count)
-
-  const rows: OverviewSspRow[] = scores.map(s => ({
-    system:           'ssp_cph' as const,
-    id:               s.timestamp,
-    date:             s.date,
-    overallScore:     s.overallScore,
-    criticalScore:    s.criticalScore,
-    criticalFailures: s.criticalFailures,
-  }))
-
-  return { rows, locationLabel: 'SSP / CPH Airport' }
+  return { data, count: Math.min(count, data.scores.length), locationLabel: 'SSP / CPH Airport' }
 }
 
 // ─── Route handler ─────────────────────────────────────────────────────────────
@@ -219,56 +206,63 @@ export async function POST(request: NextRequest) {
 
   const db = createServiceClient()
 
-  // Load rows
-  let rows: (OverviewDinerRow | OverviewSspRow | { system: 'audit' } & OverviewAuditRow)[] = []
-  let locationLabel = 'All locations'
-
-  try {
-    if (system === 'audit') {
-      const res = await loadAuditRows(db, count, locationId)
-      rows = res.rows
-      locationLabel = res.locationLabel
-    } else if (system === 'diner') {
-      const res = await loadDinerRows(db, count, locationId)
-      rows = res.rows
-      locationLabel = res.locationLabel
-    } else {
-      const res = await loadSspRows(count)
-      rows = res.rows
-      locationLabel = res.locationLabel
-    }
-  } catch (err) {
-    return json({ ok: false, error: err instanceof Error ? err.message : 'Failed to load data' }, 500)
-  }
-
-  if (rows.length === 0) {
-    return json({ ok: false, error: 'No completed reports found matching your selection' }, 404)
-  }
-
-  // Generate overview PDF
+  // Load data and generate PDF
   let pdfBuf: Buffer
-  try {
-    pdfBuf = await generateOverviewPdf({
-      system:        system as 'audit' | 'ssp_cph' | 'diner',
-      locationLabel,
-      count:         rows.length,
-      rows:          rows as any,
-      generatedAt:   new Date().toISOString(),
-    })
-  } catch (err) {
-    return json({ ok: false, error: `PDF error: ${err instanceof Error ? err.message : String(err)}` }, 500)
-  }
+  let locationLabel = 'All locations'
+  let reportCount   = count
 
-  // Build subject and filename
   const systemLabels: Record<string, string> = {
     audit:   'Audit',
     diner:   'Mystery Diner',
     ssp_cph: 'KQC SSP/CPH',
   }
   const systemLabel = systemLabels[system] ?? system
-  const locPart     = locationId ? ` — ${locationLabel}` : ''
-  const subject     = `${systemLabel} overview${locPart} — Last ${rows.length} reports`
-  const filename    = buildOverviewFilename(system, locationLabel, rows.length)
+
+  try {
+    if (system === 'ssp_cph') {
+      // SSP/CPH: use the rich matrix overview
+      const { data, count: actualCount, locationLabel: loc } = await loadSspData(count)
+      locationLabel = loc
+      reportCount   = actualCount
+      if (actualCount === 0) {
+        return json({ ok: false, error: 'No completed reports found matching your selection' }, 404)
+      }
+      pdfBuf = await generateSspOverviewPdf({ data, count: actualCount, generatedAt: new Date().toISOString() })
+
+    } else {
+      // Audit / Diner: use the generic overview
+      let rows: (OverviewDinerRow | { system: 'audit' } & OverviewAuditRow)[] = []
+
+      if (system === 'audit') {
+        const res = await loadAuditRows(db, count, locationId)
+        rows = res.rows
+        locationLabel = res.locationLabel
+      } else {
+        const res = await loadDinerRows(db, count, locationId)
+        rows = res.rows
+        locationLabel = res.locationLabel
+      }
+
+      if (rows.length === 0) {
+        return json({ ok: false, error: 'No completed reports found matching your selection' }, 404)
+      }
+      reportCount = rows.length
+      pdfBuf = await generateOverviewPdf({
+        system:        system as 'audit' | 'diner',
+        locationLabel,
+        count:         rows.length,
+        rows:          rows as any,
+        generatedAt:   new Date().toISOString(),
+      })
+    }
+  } catch (err) {
+    return json({ ok: false, error: err instanceof Error ? err.message : 'Failed to generate PDF' }, 500)
+  }
+
+  // Build subject and filename
+  const locPart = locationId ? ` — ${locationLabel}` : ''
+  const subject = `${systemLabel} overview${locPart} — Last ${reportCount} reports`
+  const filename = buildOverviewFilename(system, locationLabel, reportCount)
 
   const resend = getResend()
   if (!resend) {
@@ -282,8 +276,8 @@ export async function POST(request: NextRequest) {
       from:    getFrom(),
       to:      [email],
       subject,
-      text:    `${systemLabel} overview attached — ${locationLabel} · ${rows.length} reports.\n\nSent by Killer Kockpit · Killer Kebab internal use only`,
-      html:    `<p><strong>${systemLabel} overview attached</strong></p><p>${locationLabel} &middot; ${rows.length} reports</p><p style="color:#6b6760;font-size:12px;">Sent by <strong style="color:#AD3919">Killer Kockpit</strong> &middot; Killer Kebab internal use only</p>`,
+      text:    `${systemLabel} overview attached — ${locationLabel} · ${reportCount} reports.\n\nSent by Killer Kockpit · Killer Kebab internal use only`,
+      html:    `<p><strong>${systemLabel} overview attached</strong></p><p>${locationLabel} &middot; ${reportCount} reports</p><p style="color:#6b6760;font-size:12px;">Sent by <strong style="color:#AD3919">Killer Kockpit</strong> &middot; Killer Kebab internal use only</p>`,
       attachments: [{ filename, content: pdfBuf }],
     })
     if (error) {
