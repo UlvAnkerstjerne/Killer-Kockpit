@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react'
 import { upsertAuditResponse, upsertSectionComment } from '@/lib/actions/audit'
+import { useSaveState } from '@/lib/hooks/useSaveState'
+import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -133,13 +135,17 @@ function SectionCommentBox({
   isReadOnly: boolean
 }) {
   const [value, setValue] = useState(initialValue)
-  const [saving, setSaving] = useState(false)
+  const save = useSaveState()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   async function persist(text: string) {
-    setSaving(true)
-    await upsertSectionComment(submissionId, section, text)
-    setSaving(false)
+    save.start()
+    const result = await upsertSectionComment(submissionId, section, text)
+    if (result?.error) {
+      save.fail(result.error)
+    } else {
+      save.ok()
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -173,9 +179,9 @@ function SectionCommentBox({
     <div className="px-4 pb-4 pt-2">
       <label className="block text-[11px] font-semibold text-kk-muted uppercase tracking-[0.07em] mb-1.5">
         Comments — {section}
-        {saving && (
-          <span className="ml-2 normal-case font-normal text-[10px] text-kk-muted">Saving…</span>
-        )}
+        <span className="ml-2 normal-case font-normal">
+          <SaveStatusIndicator status={save.status} errorMsg={save.errorMsg} />
+        </span>
       </label>
       <textarea
         value={value}

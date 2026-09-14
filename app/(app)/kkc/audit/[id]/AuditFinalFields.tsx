@@ -2,6 +2,8 @@
 
 import { useRef, useState } from 'react'
 import { updateAuditFinalField } from '@/lib/actions/audit'
+import { useSaveState } from '@/lib/hooks/useSaveState'
+import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -41,13 +43,17 @@ function DebouncedTextarea({
   required?:    boolean
 }) {
   const [value, setValue] = useState(initialValue)
-  const [saving, setSaving] = useState(false)
+  const save = useSaveState()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   async function persist(text: string) {
-    setSaving(true)
-    await updateAuditFinalField(submissionId, { field, value: text })
-    setSaving(false)
+    save.start()
+    const result = await updateAuditFinalField(submissionId, { field, value: text })
+    if (result?.error) {
+      save.fail(result.error)
+    } else {
+      save.ok()
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -67,9 +73,9 @@ function DebouncedTextarea({
       <label className="block text-sm font-semibold text-kk-ink mb-1.5">
         {label}
         {required && <span className="ml-1 text-kk-bad text-xs">*</span>}
-        {saving && (
-          <span className="ml-2 font-normal text-[10px] text-kk-muted">Saving…</span>
-        )}
+        <span className="ml-2 font-normal">
+          <SaveStatusIndicator status={save.status} errorMsg={save.errorMsg} />
+        </span>
       </label>
       <textarea
         value={value}
@@ -160,7 +166,7 @@ export default function AuditFinalFields({ submissionId, isReadOnly, initialValu
   const [modInformed, setModInformed]     = useState<boolean | null>(initialValues.finalModInformed)
   const [followUp, setFollowUp]           = useState(initialValues.followUpRequested)
   const [followUpDate, setFollowUpDate]   = useState(initialValues.followUpDate)
-  const [dateSaving, setDateSaving]       = useState(false)
+  const dateSave = useSaveState()
 
   async function handleModInformed(next: boolean) {
     setModInformed(next)
@@ -177,9 +183,13 @@ export default function AuditFinalFields({ submissionId, isReadOnly, initialValu
   async function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
     const date = e.target.value
     setFollowUpDate(date)
-    setDateSaving(true)
-    await updateAuditFinalField(submissionId, { field: 'follow_up_date', value: date || null })
-    setDateSaving(false)
+    dateSave.start()
+    const result = await updateAuditFinalField(submissionId, { field: 'follow_up_date', value: date || null })
+    if (result?.error) {
+      dateSave.fail(result.error)
+    } else {
+      dateSave.ok()
+    }
   }
 
   // ── Read-only view ─────────────────────────────────────────────────────────
@@ -283,9 +293,9 @@ export default function AuditFinalFields({ submissionId, isReadOnly, initialValu
             <div>
               <label className="block text-sm font-semibold text-kk-ink mb-1.5">
                 Requested follow-up date
-                {dateSaving && (
-                  <span className="ml-2 font-normal text-[10px] text-kk-muted">Saving…</span>
-                )}
+                <span className="ml-2 font-normal">
+                  <SaveStatusIndicator status={dateSave.status} errorMsg={dateSave.errorMsg} />
+                </span>
               </label>
               <input
                 type="date"
