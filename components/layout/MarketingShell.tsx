@@ -60,11 +60,14 @@ export default function MarketingShell({
       {/* Sidebar */}
       <aside className="w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex flex-col sticky top-0 h-screen">
         {/* Wordmark */}
-        <div className="px-5 pt-6 pb-4">
-          <div className="font-black tracking-tight text-2xl text-kk-ink leading-none">
-            Killer Kockpit
+        <div className="px-5 pt-5 pb-4">
+          <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
+            KILLER
           </div>
-          <div className="text-xs font-bold tracking-widest uppercase text-kk-muted mt-1">
+          <div className="font-brand text-[26px] font-extrabold text-[#AD3919] leading-tight tracking-[0.1em] uppercase mt-1">
+            KOCKPIT
+          </div>
+          <div className="text-xs font-bold tracking-widest uppercase text-kk-muted mt-2">
             Marketing
           </div>
         </div>
