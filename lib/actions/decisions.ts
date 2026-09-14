@@ -11,6 +11,7 @@ type DecisionInput = {
   decision_text: string
   rationale?: string
   project_id?: string
+  meeting_id?: string
   decided_at?: string
   status?: DecisionStatus
 }
@@ -37,6 +38,7 @@ export async function createDecision(
     p_status:                 input.status || 'proposed',
     p_supersedes_decision_id: input.supersedes_decision_id || null,
     p_actor_user_id:          user.id,
+    p_meeting_id:             input.meeting_id || null,
   })
 
   if (error) {

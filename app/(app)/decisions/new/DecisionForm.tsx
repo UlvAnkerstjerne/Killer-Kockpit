@@ -8,10 +8,11 @@ import type { DecisionStatus } from '@/lib/types'
 type Props = {
   projects: { id: string; title: string }[]
   defaultProjectId?: string
+  defaultMeetingId?: string
   supersedesDecisionId?: string
 }
 
-export default function DecisionForm({ projects, defaultProjectId, supersedesDecisionId }: Props) {
+export default function DecisionForm({ projects, defaultProjectId, defaultMeetingId, supersedesDecisionId }: Props) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [decisionText, setDecisionText] = useState('')
@@ -34,6 +35,7 @@ export default function DecisionForm({ projects, defaultProjectId, supersedesDec
       decision_text: decisionText,
       rationale: rationale || undefined,
       project_id: projectId || undefined,
+      meeting_id: defaultMeetingId || undefined,
       decided_at: decidedAt || undefined,
       status,
       supersedes_decision_id: supersedesDecisionId,

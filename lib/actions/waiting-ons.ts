@@ -12,6 +12,7 @@ type WaitingOnInput = {
   waiting_for_user_id?: string
   waiting_for_name?: string
   project_id?: string
+  meeting_id?: string
   due_at?: string
   notes?: string
   priority?: number
@@ -35,6 +36,7 @@ export async function createWaitingOn(
     p_notes:                 input.notes?.trim() || null,
     p_actor_user_id:         user.id,
     p_priority:              input.priority ?? 2,
+    p_meeting_id:            input.meeting_id || null,
   })
 
   if (error) {

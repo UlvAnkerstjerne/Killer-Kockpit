@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import Link from 'next/link'
+import RecordRecent from '@/components/nav/RecordRecent'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canEditProject, canAccessManagementView } from '@/lib/permissions'
@@ -106,6 +107,7 @@ export default async function ProjectDetailPage({
 
   return (
     <div className="max-w-4xl">
+      <RecordRecent userId={user.id} item={{ id: project.id, type: 'project', title: project.title, href: `/projects/${project.id}` }} />
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -159,10 +161,16 @@ export default async function ProjectDetailPage({
 
           {/* Waiting Ons */}
           <div className="bg-kk-panel border border-kk-line rounded-2xl">
-            <div className="px-5 py-4 border-b border-kk-line">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
               <h2 className="text-sm font-semibold text-kk-ink">
                 Waiting Ons <span className="text-kk-muted font-normal">· {waitingOns?.length || 0}</span>
               </h2>
+              <Link
+                href={`/waiting-ons/new?project_id=${project.id}`}
+                className="text-xs px-3 py-1.5 bg-kk-soft border border-kk-line rounded-lg text-kk-ink hover:bg-kk-line transition-colors"
+              >
+                + Waiting On
+              </Link>
             </div>
             <div className="divide-y divide-kk-line">
               {(waitingOns ?? []).map((wo) => {
@@ -213,10 +221,16 @@ export default async function ProjectDetailPage({
 
           {/* Decisions */}
           <div className="bg-kk-panel border border-kk-line rounded-2xl">
-            <div className="px-5 py-4 border-b border-kk-line">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-kk-line">
               <h2 className="text-sm font-semibold text-kk-ink">
                 Decisions <span className="text-kk-muted font-normal">· {decisions?.length || 0}</span>
               </h2>
+              <Link
+                href={`/decisions/new?project_id=${project.id}`}
+                className="text-xs px-3 py-1.5 bg-kk-soft border border-kk-line rounded-lg text-kk-ink hover:bg-kk-line transition-colors"
+              >
+                + Decision
+              </Link>
             </div>
             <div className="divide-y divide-kk-line">
               {(decisions ?? []).map((d) => {

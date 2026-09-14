@@ -3,9 +3,12 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateProject } from '@/lib/actions/projects'
-import { canEditProject } from '@/lib/permissions'
+import { updateProject, closeProject } from '@/lib/actions/projects'
+import { canEditProject, canArchiveProject } from '@/lib/permissions'
 import { ProjectStatusBadge } from '@/components/ui/StatusBadge'
+import { useSaveState } from '@/lib/hooks/useSaveState'
+import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
+import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import type { AppUser, ProjectStatus } from '@/lib/types'
 
 type UserOption = { id: string; display_name: string; email: string }
@@ -24,18 +27,25 @@ type ProjectRow = {
 // ProjectRow — isolated per-row state for inline field editing
 // ---------------------------------------------------------------------------
 
+const ACTIVE_STATUSES = new Set(['planned', 'active', 'at_risk', 'blocked'])
+
 function ProjectRow({
   project,
   canEdit,
+  canComplete,
   allUsers,
+  saveScroll,
 }: {
   project: ProjectRow
   canEdit: boolean
+  canComplete: boolean
   allUsers: UserOption[]
+  saveScroll: () => void
 }) {
   const router = useRouter()
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const fieldSave = useSaveState()
+  const [confirmingClose, setConfirmingClose] = useState(false)
+  const [closing, setClosing] = useState(false)
 
   const owner = Array.isArray(project.owner) ? project.owner[0] : project.owner
   const isOverdue =
@@ -43,14 +53,25 @@ function ProjectRow({
     new Date(project.due_date) < new Date() &&
     project.status !== 'completed'
 
-  async function handleFieldSave(field: 'owner_user_id' | 'due_date', value: string | null) {
-    setSaving(true)
-    setSaveError(null)
-    const result = await updateProject(project.id, { [field]: value || undefined })
-    setSaving(false)
+  async function handleClose() {
+    setClosing(true)
+    const result = await closeProject(project.id)
+    setClosing(false)
+    setConfirmingClose(false)
     if (result.error) {
-      setSaveError(result.error)
+      fieldSave.fail(result.error)
     } else {
+      router.refresh()
+    }
+  }
+
+  async function handleFieldSave(field: 'owner_user_id' | 'due_date', value: string | null) {
+    fieldSave.start()
+    const result = await updateProject(project.id, { [field]: value || undefined })
+    if (result.error) {
+      fieldSave.fail(result.error)
+    } else {
+      fieldSave.ok()
       router.refresh()
     }
   }
@@ -61,14 +82,14 @@ function ProjectRow({
   return (
     <div
       className="flex items-center gap-4 px-5 py-4 hover:bg-kk-soft transition-colors first:rounded-t-2xl last:rounded-b-2xl group cursor-pointer"
-      onClick={() => router.push(`/projects/${project.id}`)}
+      onClick={() => { saveScroll(); router.push(`/projects/${project.id}`) }}
     >
       <div className="flex-1 min-w-0">
         {/* Title row */}
         <div className="flex items-center gap-2">
           <Link
             href={`/projects/${project.id}`}
-            onClick={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); saveScroll() }}
             className="font-medium text-sm text-kk-ink group-hover:underline truncate"
           >
             {project.title}
@@ -87,7 +108,7 @@ function ProjectRow({
                 await handleFieldSave('owner_user_id', e.target.value || null)
               }}
               onClick={e => e.stopPropagation()}
-              disabled={saving}
+              disabled={fieldSave.status === 'saving'}
               className={`${editCtrlCls} text-kk-muted`}
               title="Change owner"
             >
@@ -112,7 +133,7 @@ function ProjectRow({
                 await handleFieldSave('due_date', e.target.value || null)
               }}
               onClick={e => e.stopPropagation()}
-              disabled={saving}
+              disabled={fieldSave.status === 'saving'}
               className={[
                 editCtrlCls,
                 'font-medium',
@@ -129,14 +150,10 @@ function ProjectRow({
             )
           )}
 
-          {saving && (
-            <span className="text-[10px] text-kk-muted px-1">Saving…</span>
-          )}
+          <span className="px-1">
+            <SaveStatusIndicator status={fieldSave.status} errorMsg={fieldSave.errorMsg} />
+          </span>
         </div>
-
-        {saveError && (
-          <p className="text-[10px] text-kk-bad mt-0.5 px-1.5">{saveError}</p>
-        )}
       </div>
 
       {/* Progress bar */}
@@ -148,6 +165,41 @@ function ProjectRow({
           <div className="progress-bar">
             <div className="progress-bar-fill" style={{ width: `${project.progress}%` }} />
           </div>
+        </div>
+      )}
+
+      {/* Complete button — only for active projects the user can close */}
+      {canComplete && (
+        <div
+          className="shrink-0 flex items-center gap-1.5"
+          onClick={e => e.stopPropagation()}
+        >
+          {confirmingClose ? (
+            <>
+              <span className="text-xs text-kk-muted">Complete?</span>
+              <button
+                onClick={handleClose}
+                disabled={closing}
+                className="text-xs px-2.5 py-1 rounded-lg border border-kk-good text-kk-good hover:bg-emerald-50 transition-colors disabled:opacity-40"
+              >
+                {closing ? '…' : 'Yes'}
+              </button>
+              <button
+                onClick={() => setConfirmingClose(false)}
+                disabled={closing}
+                className="text-xs px-2.5 py-1 rounded-lg border border-kk-line text-kk-muted hover:bg-kk-soft transition-colors disabled:opacity-40"
+              >
+                No
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setConfirmingClose(true)}
+              className="text-xs px-2.5 py-1 rounded-lg border border-kk-line text-kk-muted opacity-0 group-hover:opacity-100 hover:border-kk-good hover:text-kk-good hover:bg-emerald-50 transition-all"
+            >
+              Complete
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -167,18 +219,25 @@ export default function ProjectList({
   currentUser: AppUser
   allUsers: UserOption[]
 }) {
+  const { saveScroll } = useScrollRestoration('projects-list')
+
   if (projects.length === 0) return null
 
   return (
     <div className="divide-y divide-kk-line">
       {projects.map(project => {
         const canEdit = canEditProject(currentUser.role, project.owner_user_id, currentUser.id)
+        const canComplete =
+          ACTIVE_STATUSES.has(project.status) &&
+          canArchiveProject(currentUser.role, project.owner_user_id, currentUser.id)
         return (
           <ProjectRow
             key={project.id}
             project={project}
             canEdit={canEdit}
+            canComplete={canComplete}
             allUsers={allUsers}
+            saveScroll={saveScroll}
           />
         )
       })}

@@ -29,6 +29,7 @@ export default function TaskForm({
   allUsers,
   projects,
   defaultProjectId,
+  defaultMeetingId,
 }: {
   mode: 'create' | 'edit'
   task?: Task
@@ -36,6 +37,7 @@ export default function TaskForm({
   allUsers: UserOption[]
   projects: ProjectOption[]
   defaultProjectId?: string
+  defaultMeetingId?: string
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -65,6 +67,7 @@ export default function TaskForm({
         description: description.trim() || undefined,
         owner_user_id: ownerId,
         project_id: projectId || undefined,
+        meeting_id: mode === 'create' ? defaultMeetingId || undefined : undefined,
         status,
         priority,
         due_at: dueAt || undefined,

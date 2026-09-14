@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -9,6 +9,8 @@ import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 import NotificationBell from './NotificationBell'
+import RecentlyOpened from '@/components/nav/RecentlyOpened'
+import { GlobalSearchTrigger, GlobalSearchModal } from '@/components/search/GlobalSearch'
 
 // ─── Inline nav icons (simple SVG, no external dep) ──────────────────────────
 
@@ -201,6 +203,7 @@ export default function AppShell({
   const qualityCheckAllowed = canAccessQualityCheck(user.role)
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const secondaryNav = [
     { href: '/meetings',  label: 'Meetings',  active: true  },
@@ -212,6 +215,20 @@ export default function AppShell({
     { href: '/knowledge', label: 'Knowledge', active: false },
     { href: '/settings',  label: 'Settings',  active: true  },
   ]
+
+  // Global ⌘K / Ctrl+K hotkey — lives here so it works on all screen sizes
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        const tag = (e.target as HTMLElement).tagName.toLowerCase()
+        if (tag === 'textarea' || tag === 'select') return
+        e.preventDefault()
+        setSearchOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const currentView = (searchParams.get('view') as ViewMode) ??
     (managementAllowed ? 'management' : 'personal')
@@ -268,8 +285,9 @@ export default function AppShell({
 
   // ── NavContent — shared between desktop sidebar and mobile drawer ──────────
   // onNavigate is called when a nav link is tapped (used to close the mobile drawer).
+  // onOpenSearch opens the global search modal (state owned by AppShell).
 
-  function NavContent({ onNavigate }: { onNavigate?: () => void }) {
+  function NavContent({ onNavigate, onOpenSearch }: { onNavigate?: () => void; onOpenSearch?: () => void }) {
     return (
       <nav className="flex-1 px-3 overflow-y-auto">
         {/* Primary group */}
@@ -289,6 +307,16 @@ export default function AppShell({
 
         {/* Divider */}
         <div className="my-2 border-t border-kk-line" />
+
+        {/* Global search trigger */}
+        {onOpenSearch && (
+          <div className="mb-1">
+            <GlobalSearchTrigger onOpen={onOpenSearch} />
+          </div>
+        )}
+
+        {/* Recently opened */}
+        <RecentlyOpened userId={user.id} onNavigate={onNavigate} />
 
         {/* Secondary group */}
         <div className="space-y-0.5">
@@ -393,6 +421,9 @@ export default function AppShell({
   return (
     <div className="flex min-h-screen">
 
+      {/* Global search modal — mounted once at the top level, shared by all nav triggers */}
+      <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+
       {/* ── Desktop sidebar (hidden on mobile) ── */}
       <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen">
         {/* Brand */}
@@ -405,7 +436,7 @@ export default function AppShell({
           </div>
         </div>
 
-        <NavContent />
+        <NavContent onOpenSearch={() => setSearchOpen(true)} />
         <SidebarFooter onSignOut={handleSignOut} />
       </aside>
 
@@ -437,7 +468,10 @@ export default function AppShell({
               </button>
             </div>
 
-            <NavContent onNavigate={() => setMobileMenuOpen(false)} />
+            <NavContent
+              onNavigate={() => setMobileMenuOpen(false)}
+              onOpenSearch={() => { setMobileMenuOpen(false); setSearchOpen(true) }}
+            />
             <SidebarFooter onSignOut={handleSignOut} />
           </div>
         </div>

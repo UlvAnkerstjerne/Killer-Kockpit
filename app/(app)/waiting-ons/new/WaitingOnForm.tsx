@@ -18,9 +18,10 @@ type Props = {
   users: { id: string; display_name: string }[]
   projects: { id: string; title: string }[]
   defaultProjectId?: string
+  defaultMeetingId?: string
 }
 
-export default function WaitingOnForm({ currentUserId, canAssign, users, projects, defaultProjectId }: Props) {
+export default function WaitingOnForm({ currentUserId, canAssign, users, projects, defaultProjectId, defaultMeetingId }: Props) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [waitingForUserId, setWaitingForUserId] = useState('')
@@ -47,6 +48,7 @@ export default function WaitingOnForm({ currentUserId, canAssign, users, project
       waiting_for_user_id: !useExternalName && waitingForUserId ? waitingForUserId : undefined,
       waiting_for_name: useExternalName ? waitingForName : undefined,
       project_id: projectId || undefined,
+      meeting_id: defaultMeetingId || undefined,
       due_at: dueAt || undefined,
       notes: notes || undefined,
       priority,

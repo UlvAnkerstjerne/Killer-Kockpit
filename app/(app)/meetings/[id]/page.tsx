@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import Link from 'next/link'
+import RecordRecent from '@/components/nav/RecordRecent'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canEditMeeting, canAssignToOthers, canManageDriveReferences, canReadTranscript } from '@/lib/permissions'
@@ -151,6 +152,7 @@ export default async function MeetingDetailPage({
 
   return (
     <div className="max-w-4xl">
+      <RecordRecent userId={user.id} item={{ id, type: 'meeting', title: meeting.title, href: `/meetings/${id}` }} />
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -323,6 +325,33 @@ export default async function MeetingDetailPage({
               </div>
             )}
           </div>
+
+          {/* Quick create — inherit meeting + project context */}
+          {isActive && (
+            <div className="bg-kk-panel border border-kk-line rounded-2xl p-4">
+              <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide mb-2">Create from this meeting</div>
+              <div className="flex flex-col gap-1">
+                <Link
+                  href={`/tasks/new?meeting_id=${id}${project ? `&project_id=${project.id}` : ''}`}
+                  className="text-sm px-3 py-2 rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+                >
+                  + Task
+                </Link>
+                <Link
+                  href={`/waiting-ons/new?meeting_id=${id}${project ? `&project_id=${project.id}` : ''}`}
+                  className="text-sm px-3 py-2 rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+                >
+                  + Waiting On
+                </Link>
+                <Link
+                  href={`/decisions/new?meeting_id=${id}${project ? `&project_id=${project.id}` : ''}`}
+                  className="text-sm px-3 py-2 rounded-lg text-kk-ink hover:bg-kk-soft transition-colors"
+                >
+                  + Decision
+                </Link>
+              </div>
+            </div>
+          )}
 
           {/* Edit meeting details */}
           {canEdit && isActive && (

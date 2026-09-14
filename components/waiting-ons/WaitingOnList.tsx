@@ -1,13 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+
 import { useRouter } from 'next/navigation'
 import { updateWaitingOn } from '@/lib/actions/waiting-ons'
 import { canEditWaitingOn } from '@/lib/permissions'
 import { WaitingOnStatusBadge } from '@/components/ui/WaitingOnStatusBadge'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { WaitingOnDoneButton } from '@/app/(app)/waiting-ons/WaitingOnDoneButton'
+import { useSaveState } from '@/lib/hooks/useSaveState'
+import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
+import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import type { AppUser, WaitingStatus } from '@/lib/types'
 
 type UserOption = { id: string; display_name: string; email: string }
@@ -35,16 +38,17 @@ function WaitingOnRow({
   canEdit,
   allUsers,
   isManagementView,
+  saveScroll,
 }: {
   wo: WORow
   now: string
   canEdit: boolean
   allUsers: UserOption[]
   isManagementView: boolean
+  saveScroll: () => void
 }) {
   const router = useRouter()
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const fieldSave = useSaveState()
 
   const owner = Array.isArray(wo.owner) ? wo.owner[0] : wo.owner
   const waitingForUser = Array.isArray(wo.waiting_for_user) ? wo.waiting_for_user[0] : wo.waiting_for_user
@@ -53,13 +57,12 @@ function WaitingOnRow({
   const isActionable = wo.status === 'open' || wo.status === 'overdue'
 
   async function handleFieldSave(field: 'owner_user_id' | 'due_at', value: string | null) {
-    setSaving(true)
-    setSaveError(null)
+    fieldSave.start()
     const result = await updateWaitingOn(wo.id, { [field]: value || undefined })
-    setSaving(false)
     if (result.error) {
-      setSaveError(result.error)
+      fieldSave.fail(result.error)
     } else {
+      fieldSave.ok()
       router.refresh()
     }
   }
@@ -70,7 +73,7 @@ function WaitingOnRow({
   return (
     <div
       className="flex items-center gap-4 px-5 py-3.5 hover:bg-kk-soft transition-colors group cursor-pointer"
-      onClick={() => router.push(`/waiting-ons/${wo.id}`)}
+      onClick={() => { saveScroll(); router.push(`/waiting-ons/${wo.id}`) }}
     >
       <div className="shrink-0" onClick={e => e.stopPropagation()}>
         <PriorityDot priority={wo.priority ?? 2} />
@@ -81,7 +84,7 @@ function WaitingOnRow({
         <div className="flex items-center gap-2 flex-wrap">
           <Link
             href={`/waiting-ons/${wo.id}`}
-            onClick={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); saveScroll() }}
             className="text-sm font-medium text-kk-ink group-hover:underline truncate"
           >
             {wo.title}
@@ -110,7 +113,7 @@ function WaitingOnRow({
                   await handleFieldSave('owner_user_id', e.target.value || null)
                 }}
                 onClick={e => e.stopPropagation()}
-                disabled={saving}
+                disabled={fieldSave.status === 'saving'}
                 className={`${editCtrlCls} text-kk-muted`}
                 title="Change responsible person"
               >
@@ -126,14 +129,10 @@ function WaitingOnRow({
             )
           )}
 
-          {saving && (
-            <span className="text-[10px] text-kk-muted px-1">Saving…</span>
-          )}
+          <span className="px-1">
+            <SaveStatusIndicator status={fieldSave.status} errorMsg={fieldSave.errorMsg} />
+          </span>
         </div>
-
-        {saveError && (
-          <p className="text-[10px] text-kk-bad mt-0.5 px-1.5">{saveError}</p>
-        )}
       </div>
 
       {/* Priority label */}
@@ -151,7 +150,7 @@ function WaitingOnRow({
             await handleFieldSave('due_at', e.target.value || null)
           }}
           onClick={e => e.stopPropagation()}
-          disabled={saving}
+          disabled={fieldSave.status === 'saving'}
           className={[
             editCtrlCls,
             'shrink-0 font-medium',
@@ -194,6 +193,7 @@ export default function WaitingOnList({
   isManagementView: boolean
   statusFilter: string
 }) {
+  const { saveScroll } = useScrollRestoration('waiting-ons-list')
   const now = new Date().toISOString()
 
   if (waitingOns.length === 0) {
@@ -216,6 +216,7 @@ export default function WaitingOnList({
             canEdit={canEdit}
             allUsers={allUsers}
             isManagementView={isManagementView}
+            saveScroll={saveScroll}
           />
         )
       })}

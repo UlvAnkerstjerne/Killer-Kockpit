@@ -8,7 +8,7 @@ import DecisionForm from './DecisionForm'
 export default async function NewDecisionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project_id?: string; supersedes?: string }>
+  searchParams: Promise<{ project_id?: string; meeting_id?: string; supersedes?: string }>
 }) {
   const [user, params] = await Promise.all([getCurrentUser(), searchParams])
   if (!user) return null
@@ -54,6 +54,7 @@ export default async function NewDecisionPage({
         <DecisionForm
           projects={projects ?? []}
           defaultProjectId={params.project_id}
+          defaultMeetingId={params.meeting_id}
           supersedesDecisionId={params.supersedes}
         />
       </div>

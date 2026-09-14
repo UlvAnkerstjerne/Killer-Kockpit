@@ -8,6 +8,8 @@ import { canEditTaskTerms } from '@/lib/permissions'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import { TaskStatusBadge } from '@/components/ui/StatusBadge'
 import { PriorityDot } from '@/components/ui/PriorityDot'
+import { useSaveState } from '@/lib/hooks/useSaveState'
+import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
 import type { AppUser, TaskStatus } from '@/lib/types'
 
 type UserOption = { id: string; display_name: string; email: string }
@@ -86,8 +88,7 @@ function TaskRow({
   saveScroll: () => void
 }) {
   const router = useRouter()
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const fieldSave = useSaveState()
 
   const owner = Array.isArray(task.owner) ? task.owner[0] : task.owner
   const project = Array.isArray(task.project) ? task.project[0] : task.project
@@ -96,13 +97,12 @@ function TaskRow({
   const done = task.status === 'done' || task.status === 'cancelled'
 
   async function handleFieldSave(field: 'owner_user_id' | 'due_at', value: string | null) {
-    setSaving(true)
-    setSaveError(null)
+    fieldSave.start()
     const result = await updateTask(task.id, { [field]: value || undefined })
-    setSaving(false)
     if (result.error) {
-      setSaveError(result.error)
+      fieldSave.fail(result.error)
     } else {
+      fieldSave.ok()
       router.refresh()
     }
   }
@@ -154,7 +154,7 @@ function TaskRow({
                 await handleFieldSave('owner_user_id', e.target.value || null)
               }}
               onClick={e => e.stopPropagation()}
-              disabled={saving}
+              disabled={fieldSave.status === 'saving'}
               className={`${editCtrlCls} text-kk-muted`}
               title="Change owner"
             >
@@ -184,7 +184,7 @@ function TaskRow({
                 await handleFieldSave('due_at', e.target.value || null)
               }}
               onClick={e => e.stopPropagation()}
-              disabled={saving}
+              disabled={fieldSave.status === 'saving'}
               className={`${editCtrlCls} ${deadlineCls} font-medium`}
               title="Change deadline"
             />
@@ -197,14 +197,10 @@ function TaskRow({
             )
           )}
 
-          {saving && (
-            <span className="text-[10px] text-kk-muted px-1">Saving…</span>
-          )}
+          <span className="px-1">
+            <SaveStatusIndicator status={fieldSave.status} errorMsg={fieldSave.errorMsg} />
+          </span>
         </div>
-
-        {saveError && (
-          <p className="text-[10px] text-kk-bad mt-0.5 px-1.5">{saveError}</p>
-        )}
       </div>
     </div>
   )

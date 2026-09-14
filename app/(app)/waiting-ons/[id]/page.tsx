@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
+import RecordRecent from '@/components/nav/RecordRecent'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canEditWaitingOn, canAssignToOthers } from '@/lib/permissions'
@@ -59,6 +60,7 @@ export default async function WaitingOnDetailPage({
 
   return (
     <div className="max-w-2xl">
+      <RecordRecent userId={user.id} item={{ id: wo.id, type: 'waiting_on', title: wo.title, href: `/waiting-ons/${wo.id}` }} />
       <div className="mb-6">
         <div className="flex items-center gap-2 text-sm text-kk-muted mb-1">
           <Link href="/waiting-ons" className="hover:text-kk-ink transition-colors">Waiting On</Link>
@@ -103,6 +105,10 @@ export default async function WaitingOnDetailPage({
               <Link href={`/projects/${project.id}`} className="text-sm text-kk-ink hover:underline">
                 {project.title}
               </Link>
+              <div className="flex gap-2 mt-1.5">
+                <Link href={`/tasks/new?project_id=${project.id}`} className="text-[11px] text-kk-muted hover:text-kk-ink transition-colors">+ Task</Link>
+                <Link href={`/waiting-ons/new?project_id=${project.id}`} className="text-[11px] text-kk-muted hover:text-kk-ink transition-colors">+ Waiting On</Link>
+              </div>
             </div>
           )}
 

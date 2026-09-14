@@ -18,6 +18,7 @@ type TaskInput = {
   description?: string
   owner_user_id?: string
   project_id?: string
+  meeting_id?: string
   status?: TaskStatus
   priority?: TaskPriority
   due_at?: string
@@ -39,6 +40,7 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
     p_due_at: input.due_at || null,
     p_created_by_user_id: user.id,
     p_actor_user_id: user.id,
+    p_meeting_id: input.meeting_id || null,
   })
 
   if (error) {

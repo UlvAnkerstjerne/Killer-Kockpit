@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
 import Link from 'next/link'
+import RecordRecent from '@/components/nav/RecordRecent'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import {
@@ -102,6 +103,7 @@ export default async function TaskDetailPage({
 
   return (
     <div className="max-w-4xl">
+      <RecordRecent userId={user.id} item={{ id: task.id, type: 'task', title: task.title, href: `/tasks/${task.id}` }} />
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-kk-muted mb-4">
         <Link href="/tasks" className="hover:text-kk-ink transition-colors">Tasks</Link>
@@ -249,6 +251,10 @@ export default async function TaskDetailPage({
                 >
                   {project.title}
                 </Link>
+                <div className="flex gap-2 mt-1.5">
+                  <Link href={`/tasks/new?project_id=${project.id}`} className="text-[11px] text-kk-muted hover:text-kk-ink transition-colors">+ Task</Link>
+                  <Link href={`/waiting-ons/new?project_id=${project.id}`} className="text-[11px] text-kk-muted hover:text-kk-ink transition-colors">+ Waiting On</Link>
+                </div>
               </div>
             )}
 

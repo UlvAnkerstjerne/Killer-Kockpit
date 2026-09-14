@@ -7,7 +7,7 @@ import WaitingOnForm from './WaitingOnForm'
 export default async function NewWaitingOnPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project_id?: string }>
+  searchParams: Promise<{ project_id?: string; meeting_id?: string }>
 }) {
   const [user, params] = await Promise.all([getCurrentUser(), searchParams])
   if (!user) return null
@@ -45,6 +45,7 @@ export default async function NewWaitingOnPage({
           users={usersResult.data ?? []}
           projects={projectsResult.data ?? []}
           defaultProjectId={params.project_id}
+          defaultMeetingId={params.meeting_id}
         />
       </div>
     </div>

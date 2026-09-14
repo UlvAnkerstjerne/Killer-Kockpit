@@ -480,6 +480,95 @@ function SourceCard({ source }: { source: BrainSource }) {
   )
 }
 
+// ─── Record deep-links ────────────────────────────────────────────────────────
+// Compact clickable chips shown immediately below the answer for quick navigation
+// to the underlying Kockpit records. Uses existing source metadata — no new data fetching.
+
+type RecordLink = {
+  kind: 'meeting' | 'task' | 'project' | 'decision' | 'waiting_on'
+  id: string
+  title: string
+  date: string | null
+  href: string
+}
+
+const RECORD_LINK_COLOR: Record<RecordLink['kind'], string> = {
+  meeting:    'text-indigo-600',
+  task:       'text-blue-600',
+  project:    'text-violet-600',
+  decision:   'text-emerald-700',
+  waiting_on: 'text-amber-700',
+}
+const RECORD_LINK_LABEL: Record<RecordLink['kind'], string> = {
+  meeting:    'Meeting',
+  task:       'Task',
+  project:    'Project',
+  decision:   'Decision',
+  waiting_on: 'Waiting On',
+}
+
+function fmtChipDate(iso: string | null): string | null {
+  if (!iso) return null
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+function buildRecordLinks(result: BrainAnswer): RecordLink[] {
+  const seen = new Set<string>()
+  const links: RecordLink[] = []
+
+  function add(link: RecordLink) {
+    const key = `${link.kind}-${link.id}`
+    if (seen.has(key)) return
+    seen.add(key)
+    links.push(link)
+  }
+
+  // Meetings from meeting context (have rich date info)
+  for (const s of result.meetingSources) {
+    add({ kind: 'meeting', id: s.id, title: s.title, date: s.scheduledStart, href: s.href })
+  }
+  // Decisions from meeting/standalone context
+  for (const s of result.decisionSources) {
+    add({ kind: 'decision', id: s.id, title: s.title, date: s.decidedAt, href: s.href })
+  }
+  // Operational items: tasks, projects, waiting ons (and meetings/decisions not already added)
+  for (const s of result.operationalSources) {
+    if (s.kind === 'task' || s.kind === 'project' || s.kind === 'waiting_on' || s.kind === 'meeting' || s.kind === 'decision') {
+      add({ kind: s.kind, id: s.id, title: s.title, date: null, href: s.href })
+    }
+  }
+
+  return links.slice(0, 10)
+}
+
+function RecordLinks({ result }: { result: BrainAnswer }) {
+  const links = buildRecordLinks(result)
+  if (links.length === 0) return null
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-1.5">
+      {links.map(link => {
+        const color = RECORD_LINK_COLOR[link.kind]
+        const label = RECORD_LINK_LABEL[link.kind]
+        const date = fmtChipDate(link.date)
+        return (
+          <Link
+            key={`${link.kind}-${link.id}`}
+            href={link.href}
+            className="inline-flex items-center gap-1 text-[11px] rounded-full border border-kk-line bg-white px-2.5 py-0.5 hover:bg-kk-soft transition-colors"
+          >
+            <span className={`font-semibold shrink-0 ${color}`}>{label}</span>
+            <span className="text-kk-muted">·</span>
+            <span className="text-kk-ink truncate max-w-[180px]">{link.title}</span>
+            {date && <span className="text-kk-muted shrink-0">— {date}</span>}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Answer renderer ──────────────────────────────────────────────────────────
 
 function AnswerText({ text }: { text: string }) {
@@ -643,6 +732,7 @@ export default function BrainClient() {
           {/* Answer */}
           <div className="mb-6">
             <AnswerText text={result.answer} />
+            <RecordLinks result={result} />
           </div>
 
           {/* Sources */}

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export default async function NewTaskPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project_id?: string }>
+  searchParams: Promise<{ project_id?: string; meeting_id?: string }>
 }) {
   const [user, allUsers, params] = await Promise.all([
     getCurrentUser(),
@@ -39,6 +39,7 @@ export default async function NewTaskPage({
           allUsers={canAssignToOthers(user.role) ? allUsers : [{ id: user.id, display_name: user.display_name, email: user.email }]}
           projects={projects || []}
           defaultProjectId={params.project_id}
+          defaultMeetingId={params.meeting_id}
         />
       </div>
     </div>
