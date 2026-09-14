@@ -108,7 +108,7 @@ export default async function OrganicPage() {
 
           <div className="px-5 py-4 flex items-start gap-8 flex-wrap border-b border-kk-line">
             <div>
-              <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">Followers</div>
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">Followers</div>
               <div className="text-3xl font-black text-kk-ink leading-none">
                 {igFollowersToday !== null ? fmt(igFollowersToday) : '—'}
               </div>
@@ -119,7 +119,7 @@ export default async function OrganicPage() {
 
             {igGrowth7 !== null && (
               <div className="pb-0.5">
-                <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">7-day growth</div>
+                <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">7-day growth</div>
                 <div className={['text-xl font-bold leading-none', igGrowth7 >= 0 ? 'text-kk-good' : 'text-kk-bad'].join(' ')}>
                   {fmtGrowth(igGrowth7)}
                 </div>
@@ -129,7 +129,7 @@ export default async function OrganicPage() {
 
             {igGrowth14 !== null && (
               <div className="pb-0.5">
-                <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">14-day growth</div>
+                <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">14-day growth</div>
                 <div className={['text-xl font-bold leading-none', igGrowth14 >= 0 ? 'text-kk-good' : 'text-kk-bad'].join(' ')}>
                   {fmtGrowth(igGrowth14)}
                 </div>
@@ -139,7 +139,7 @@ export default async function OrganicPage() {
           </div>
 
           <div className="px-5 py-4">
-            <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-3">
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-3">
               Daily Reach — last 7 days
             </div>
             {igReachTrend.length > 0 ? (
@@ -159,7 +159,7 @@ export default async function OrganicPage() {
 
           <div className="px-5 py-4 flex items-start gap-8 flex-wrap border-b border-kk-line">
             <div>
-              <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">Page Fans</div>
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">Page Fans</div>
               <div className="text-3xl font-black text-kk-ink leading-none">
                 {fbFansToday !== null ? fmt(fbFansToday) : '—'}
               </div>
@@ -170,7 +170,7 @@ export default async function OrganicPage() {
 
             {fbGrowth7 !== null && (
               <div className="pb-0.5">
-                <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">7-day fan growth</div>
+                <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">7-day fan growth</div>
                 <div className={['text-xl font-bold leading-none', fbGrowth7 >= 0 ? 'text-kk-good' : 'text-kk-bad'].join(' ')}>
                   {fmtGrowth(fbGrowth7)}
                 </div>
@@ -180,7 +180,7 @@ export default async function OrganicPage() {
 
             {fbToday?.engaged_users != null && (
               <div className="pb-0.5">
-                <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">Engaged Users</div>
+                <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">Engaged Users</div>
                 <div className="text-xl font-bold text-kk-ink leading-none">{fmt(fbToday.engaged_users)}</div>
                 <div className="text-xs text-kk-muted mt-1">today</div>
               </div>
@@ -188,7 +188,7 @@ export default async function OrganicPage() {
 
             {fbEngRate !== null && (
               <div className="pb-0.5">
-                <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-1">Engagement Rate</div>
+                <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-1">Engagement Rate</div>
                 <div className="text-xl font-bold text-kk-ink leading-none">{fbEngRate.toFixed(2)}%</div>
                 <div className="text-xs text-kk-muted mt-1">engaged / views</div>
               </div>
@@ -197,7 +197,7 @@ export default async function OrganicPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-kk-line">
             <div className="px-5 py-4">
-              <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-3">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-3">
                 Daily Views — last 7 days
               </div>
               {fbViewsTrend.length > 0 ? (
@@ -208,7 +208,7 @@ export default async function OrganicPage() {
             </div>
 
             <div className="px-5 py-4">
-              <div className="text-xs font-medium text-kk-muted uppercase tracking-wider mb-3">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-3">
                 Engaged Users — last 7 days
               </div>
               {fbEngagedTrend.length > 0 ? (

@@ -269,10 +269,10 @@ function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
     <div className="rounded-xl border border-kk-line overflow-hidden">
       {/* header row */}
       <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 bg-kk-soft border-b border-kk-line">
-        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">Campaign</span>
-        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase text-right">Goal</span>
-        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase text-right">Yesterday</span>
-        <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase text-right">7 days</span>
+        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">Campaign</span>
+        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">Goal</span>
+        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">Yesterday</span>
+        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">7 days</span>
       </div>
       {/* data rows */}
       {campaigns.map((c, i) => (
@@ -312,7 +312,7 @@ function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
     <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
       <div className="px-6 pt-5 pb-5">
         <div className="flex items-center gap-1.5 mb-2">
-          <h2 className="text-xl font-semibold text-kk-ink">Paid</h2>
+          <h2 className="text-xl font-bold text-kk-ink">Paid</h2>
           <span className="text-kk-muted"><IconInfo /></span>
         </div>
         <p className="text-[13px] text-kk-muted leading-snug mb-3">{paid.assessment}</p>
@@ -387,9 +387,9 @@ function GbpCard({ gbp }: { gbp: MorningBriefSections['gbp'] }) {
       {/* Per-location new-reviews table */}
       <div className="border-t border-kk-line">
         <div className="grid grid-cols-[1fr_auto_auto] px-5 py-2 bg-kk-soft border-b border-kk-line">
-          <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase">Store</span>
-          <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase w-20 text-right">Yesterday</span>
-          <span className="text-[11px] font-medium text-kk-muted tracking-wide uppercase w-14 text-right">7 days</span>
+          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">Store</span>
+          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted w-20 text-right">Yesterday</span>
+          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted w-14 text-right">7 days</span>
         </div>
         {GBP_LOCATIONS.map((store, i) => (
           <div key={store} className={`grid grid-cols-[1fr_auto_auto] items-center px-5 py-2${i > 0 ? ' border-t border-kk-line' : ''}`}>
@@ -445,7 +445,7 @@ function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] 
     <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden flex flex-col">
       {/* Heading — same treatment as Paid */}
       <div className="flex items-center gap-1.5 px-6 pt-5 pb-4">
-        <h2 className="text-xl font-semibold text-kk-ink">Organic</h2>
+        <h2 className="text-xl font-bold text-kk-ink">Organic</h2>
         <span className="text-kk-muted"><IconInfo /></span>
       </div>
 
