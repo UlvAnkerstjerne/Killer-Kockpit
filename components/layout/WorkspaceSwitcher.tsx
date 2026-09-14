@@ -30,7 +30,7 @@ export default function WorkspaceSwitcher({ currentWorkspace }: Props) {
         className={[
           'flex-1 text-xs text-center py-1.5 px-2 rounded-lg transition-colors',
           currentWorkspace === 'marketing'
-            ? 'bg-kk-ink text-white font-medium'
+            ? 'bg-kk-brand text-white font-medium'
             : 'text-kk-muted hover:text-kk-ink',
         ].join(' ')}
       >

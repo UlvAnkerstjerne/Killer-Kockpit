@@ -169,7 +169,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
               onClick={() => toggle(status)}
               className={[
                 'text-xs px-3 py-1.5 rounded-lg transition-colors',
-                isOn ? 'bg-kk-ink text-white font-medium' : 'text-kk-muted hover:text-kk-ink',
+                isOn ? 'bg-kk-brand text-white font-medium' : 'text-kk-muted hover:text-kk-ink',
               ].join(' ')}
             >
               {statusLabel(status)}
@@ -189,7 +189,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
             <div key={id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
 
               {/* ── Top row: 3-column grid — name | goal | status · date ── */}
-              <div className="px-4 py-3 grid grid-cols-3 items-center gap-4">
+              <div className="px-4 py-3 grid grid-cols-3 items-center gap-4 bg-[#DDD9D1]">
                 {/* Left: campaign name */}
                 <p className="text-sm font-semibold text-kk-ink truncate">{name}</p>
                 {/* Centre: objective/goal */}

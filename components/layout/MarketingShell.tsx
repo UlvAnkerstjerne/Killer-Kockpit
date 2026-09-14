@@ -91,7 +91,7 @@ export default function MarketingShell({
                 className={[
                   'flex items-center w-full px-3 py-2.5 rounded-xl text-sm transition-colors',
                   isActive
-                    ? 'bg-kk-ink text-white font-medium'
+                    ? 'bg-kk-brand text-white font-medium'
                     : 'text-kk-muted hover:bg-kk-line hover:text-kk-ink',
                 ].join(' ')}
               >
