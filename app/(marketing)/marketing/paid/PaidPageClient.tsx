@@ -188,21 +188,21 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
           return (
             <div key={id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
 
-              {/* ── Top row: name | objective (middle) | status · dates ── */}
-              <div className="px-4 py-2.5 flex items-center gap-3">
+              {/* ── Top row: 3-column grid — name | goal | status · date ── */}
+              <div className="px-4 py-3 grid grid-cols-3 items-center gap-4">
                 {/* Left: campaign name */}
-                <span className="text-sm font-semibold text-kk-ink truncate flex-1 min-w-0">{name}</span>
-                {/* Middle: goal — larger than metadata, quieter than name */}
-                <span className="text-sm font-medium text-kk-muted shrink-0">{objectiveLabel(objective)}</span>
+                <p className="text-sm font-semibold text-kk-ink truncate">{name}</p>
+                {/* Centre: objective/goal */}
+                <p className="text-base font-semibold text-kk-ink text-center">{objectiveLabel(objective)}</p>
                 {/* Right: status + date */}
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 justify-end">
                   <span className={[
-                    'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold',
+                    'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold',
                     isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
                   ].join(' ')}>
                     {statusLabel(status)}
                   </span>
-                  <span className="text-[11px] text-kk-muted">
+                  <span className="text-xs text-kk-muted">
                     {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
                   </span>
                 </div>
