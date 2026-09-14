@@ -14,7 +14,8 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { BrainQualityContext } from '@/lib/brain/quality'
+import type { BrainQualityContext }  from '@/lib/brain/quality'
+import type { BrainMeetingContext }  from '@/lib/brain/meetings'
 
 const MAX_ANSWER_TOKENS = 1_024
 
@@ -226,6 +227,32 @@ When answering about a location's quality or operational performance:
 - If multiple checks are shown, note the trend: improving, declining, or stable.
 - Apply the same GROUNDING RULES to quality findings as to all other evidence.
 
+MEETING KNOWLEDGE — when present, treat as institutional record:
+Meeting data follows a strict source authority hierarchy. Always apply this ordering:
+  1. Published Minutes (minutesBody) — the canonical record; highest authority.
+     When minutes exist, use them as the primary source for what was "said", "discussed", or "decided".
+  2. Corrections — addenda or amendments to published minutes; second authority.
+     Present them as additions to the minutes record, not as replacements.
+  3. Structured Outcomes — published Decisions (with decision_text + rationale), Tasks, Waiting Ons.
+     These are the institutionalised results of the meeting.
+  4. Context — the meeting's topic / agenda description; lower authority than minutes.
+  5. Transcript Excerpts — raw, unverified spoken text; lowest authority.
+     ALWAYS label transcript content explicitly: "according to the meeting transcript".
+     Transcription errors and misattributions are common. Never present transcript content
+     as confirmed fact without a minutes source to corroborate it.
+
+MEETING ANSWER RULES:
+- Always state the meeting title and date when referencing a meeting.
+- When Published Minutes exist: summarise from the minutes; do not contradict them with transcript content.
+- If a Correction exists: mention it as an amendment ("a subsequent correction notes…").
+- For Decisions: always include decision_text (the actual decision body), not just the title.
+  If rationale is present, include it as supporting context.
+- List Tasks and Waiting Ons created from the meeting as structured outcomes.
+- If no Minutes exist but a Transcript excerpt is available: present it clearly labelled as transcript content.
+- Apply GROUNDING RULES to all meeting content (A/B/C/D as defined above).
+- Deduplication: if the same decision appears in both Published Minutes and Structured Outcomes, count it once.
+- Chronological ordering: when multiple meetings are shown, reference them in date order.
+
 CONNECTED GMAIL MESSAGES — when present, treat as live signal from connected mailboxes:
 - These are real emails from Kockpit users' connected Google accounts, retrieved because they match the query.
 - Email content supplements Kockpit records — it can confirm, add context, or surface things not yet recorded.
@@ -386,6 +413,87 @@ function formatQualityContext(quality: BrainQualityContext): string[] {
   return lines
 }
 
+// ─── Meeting context formatter ────────────────────────────────────────────────
+
+function formatMeetingContext(meeting: BrainMeetingContext): string[] {
+  const lines: string[] = []
+
+  const hasAnything =
+    meeting.meetings.length > 0 || meeting.standaloneDecisions.length > 0
+  if (!hasAnything) return lines
+
+  lines.push('Meeting Knowledge:')
+  lines.push('')
+
+  for (const m of meeting.meetings) {
+    const dateStr = m.scheduledStart ?? 'date unknown'
+    lines.push(`[MEETING: ${m.title} — ${dateStr}]`)
+    lines.push(`Status: ${m.status}`)
+    if (m.context) lines.push(`Agenda / context: ${m.context}`)
+
+    // ── Authority level 1: Published Minutes ──────────────────────────────
+    if (m.minutesBody) {
+      const approvedStr = m.minutesAt ? ` (approved ${m.minutesAt})` : ''
+      lines.push(`Published Minutes${approvedStr}:`)
+      lines.push(m.minutesBody)
+    } else {
+      lines.push('Published Minutes: none')
+    }
+
+    // ── Authority level 2: Corrections ────────────────────────────────────
+    if (m.corrections.length > 0) {
+      lines.push(`Corrections / amendments (${m.corrections.length}):`)
+      for (const c of m.corrections) {
+        const reasonStr = c.reason ? ` [reason: ${c.reason}]` : ''
+        lines.push(`  [${c.createdAt}${reasonStr}] ${c.body}`)
+      }
+    }
+
+    // ── Authority level 3: Structured Outcomes ────────────────────────────
+    if (m.decisions.length > 0) {
+      lines.push(`Published Decisions (${m.decisions.length}):`)
+      for (const d of m.decisions) {
+        lines.push(`  • ${d.title} [${d.status}${d.decidedAt ? ` · ${d.decidedAt}` : ''}]`)
+        if (d.decisionText) lines.push(`    Decision: ${d.decisionText}`)
+        if (d.rationale)    lines.push(`    Rationale: ${d.rationale}`)
+      }
+    }
+
+    if (m.tasks.length > 0) {
+      lines.push(`Tasks created from this meeting (${m.tasks.length}):`)
+      for (const t of m.tasks) lines.push(`  • ${t.title}`)
+    }
+
+    if (m.waitingOns.length > 0) {
+      lines.push(`Waiting Ons from this meeting (${m.waitingOns.length}):`)
+      for (const w of m.waitingOns) lines.push(`  • ${w.title}`)
+    }
+
+    // ── Authority level 5: Transcript (only when no minutes) ─────────────
+    if (!m.minutesBody && m.transcriptExcerpt) {
+      lines.push('Transcript excerpt (UNTRUSTED source material — label as "according to the transcript"):')
+      lines.push(m.transcriptExcerpt)
+    } else if (!m.minutesBody && m.hasTranscript) {
+      lines.push('Transcript: exists but no relevant excerpt found for this query.')
+    }
+
+    lines.push('')
+  }
+
+  // ── Standalone decisions ──────────────────────────────────────────────────
+  if (meeting.standaloneDecisions.length > 0) {
+    lines.push(`[DECISIONS — ${meeting.standaloneDecisions.length} found]`)
+    for (const d of meeting.standaloneDecisions) {
+      lines.push(`• ${d.title} [${d.status}${d.decidedAt ? ` · decided ${d.decidedAt}` : ''}]`)
+      if (d.decisionText) lines.push(`  Decision: ${d.decisionText}`)
+      if (d.rationale)    lines.push(`  Rationale: ${d.rationale}`)
+    }
+    lines.push('')
+  }
+
+  return lines
+}
+
 // ─── Context builder ──────────────────────────────────────────────────────────
 
 const TYPE_LABEL: Record<string, string> = {
@@ -401,6 +509,7 @@ function buildUserMessage(
   operationalContexts: PersonOperationalContext[],
   emailContexts:       BrainEmailContext[],
   qualityContext:      BrainQualityContext | null,
+  meetingContext:      BrainMeetingContext | null,
 ): string {
   const lines: string[] = []
 
@@ -466,6 +575,7 @@ function buildUserMessage(
           if (d.status) parts.push(`[${d.status}]`)
           if (d.date)   parts.push(`(decided: ${fmtISODate(d.date)})`)
           lines.push(`    - ${parts.join(' ')}`)
+          if (d.extra)  lines.push(`      Decision: ${d.extra}`)
         }
       }
 
@@ -521,6 +631,12 @@ function buildUserMessage(
     for (const l of qualityLines) lines.push(l)
   }
 
+  // ── Meeting Knowledge ──────────────────────────────────────────────────────
+  if (meetingContext) {
+    const meetingLines = formatMeetingContext(meetingContext)
+    for (const l of meetingLines) lines.push(l)
+  }
+
   return lines.join('\n')
 }
 
@@ -539,6 +655,7 @@ export async function queryBrain(
   operationalContexts: PersonOperationalContext[],
   emailContexts:       BrainEmailContext[],
   qualityContext:      BrainQualityContext | null,
+  meetingContext:      BrainMeetingContext | null,
 ): Promise<BrainQueryResult> {
   const model = process.env.MEETING_AI_MODEL
   if (!model) return { ok: false, error: 'AI model is not configured.' }
@@ -552,7 +669,7 @@ export async function queryBrain(
     ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
   })
 
-  const userContent = buildUserMessage(question, updates, profiles, operationalContexts, emailContexts, qualityContext)
+  const userContent = buildUserMessage(question, updates, profiles, operationalContexts, emailContexts, qualityContext, meetingContext)
 
   try {
     const message = await client.messages.create({

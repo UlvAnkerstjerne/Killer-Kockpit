@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -275,6 +275,71 @@ function SSPSourceCard({ source }: { source: BrainSSPSource }) {
   )
 }
 
+// ─── Meeting source card ──────────────────────────────────────────────────────
+
+function MeetingSourceCard({ source }: { source: BrainMeetingSource }) {
+  return (
+    <Link
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-indigo-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-indigo-50 text-indigo-700">
+          Meeting
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.title}</span>
+        {source.hasMinutes && (
+          <span className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-emerald-50 text-emerald-700">
+            Minutes
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted">
+        {source.scheduledStart && <span>{fmtEmailDate(source.scheduledStart)}</span>}
+        {source.decisionCount > 0 && (
+          <><span>·</span><span>{source.decisionCount} decision{source.decisionCount !== 1 ? 's' : ''}</span></>
+        )}
+        {source.taskCount > 0 && (
+          <><span>·</span><span>{source.taskCount} task{source.taskCount !== 1 ? 's' : ''}</span></>
+        )}
+        {source.hasTranscript && !source.hasMinutes && (
+          <><span>·</span><span className="text-kk-muted/70">transcript</span></>
+        )}
+      </div>
+    </Link>
+  )
+}
+
+// ─── Decision source card ─────────────────────────────────────────────────────
+
+function DecisionSourceCard({ source }: { source: BrainDecisionSource }) {
+  return (
+    <Link
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-emerald-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-emerald-50 text-emerald-700">
+          Decision
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.title}</span>
+        <span className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide bg-kk-soft text-kk-muted capitalize">
+          {source.status}
+        </span>
+      </div>
+      {source.decidedAt && (
+        <div className="text-xs text-kk-muted mb-1.5">{fmtEmailDate(source.decidedAt)}</div>
+      )}
+      {source.decisionText && (
+        <p className="text-xs text-kk-ink/80 leading-relaxed line-clamp-2">{source.decisionText}</p>
+      )}
+      {source.rationale && !source.decisionText && (
+        <p className="text-xs text-kk-muted leading-relaxed line-clamp-2">{source.rationale}</p>
+      )}
+    </Link>
+  )
+}
+
 // ─── Update source card ───────────────────────────────────────────────────────
 
 function SourceCard({ source }: { source: BrainSource }) {
@@ -473,10 +538,10 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource) && (
+          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0)})
+                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length})
               </h2>
               <div className="space-y-2">
                 {result.profileSources.map(s => (
@@ -484,6 +549,12 @@ export default function BrainClient() {
                 ))}
                 {result.operationalSources.map(s => (
                   <OperationalSourceCard key={`${s.kind}-${s.id}`} source={s} />
+                ))}
+                {result.meetingSources.map(s => (
+                  <MeetingSourceCard key={`meeting-${s.id}`} source={s} />
+                ))}
+                {result.decisionSources.map(s => (
+                  <DecisionSourceCard key={`decision-${s.id}`} source={s} />
                 ))}
                 {result.auditSources.map(s => (
                   <AuditSourceCard key={`audit-${s.locationId}`} source={s} />

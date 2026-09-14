@@ -44,6 +44,8 @@ import { hasGmailScope }           from '@/lib/google/auth'
 import { searchGmailForBrain, buildGmailSearchQuery } from '@/lib/google/gmail-search'
 import { fetchQualityContext }                       from '@/lib/brain/quality'
 import type { BrainQualityContext }                  from '@/lib/brain/quality'
+import { fetchBrainMeetingContext }                  from '@/lib/brain/meetings'
+import type { BrainMeetingContext }                  from '@/lib/brain/meetings'
 import type { ActionResult, KkUpdateEntityType } from '@/lib/types'
 import type {
   BrainContextUpdate,
@@ -132,6 +134,32 @@ export interface BrainSSPSource {
   href:             string
 }
 
+/** A card shown in the sources panel for a Kockpit meeting. */
+export interface BrainMeetingSource {
+  kind:           'meeting'
+  id:             string
+  title:          string
+  scheduledStart: string | null   // YYYY-MM-DD
+  status:         string
+  hasMinutes:     boolean
+  hasTranscript:  boolean
+  decisionCount:  number
+  taskCount:      number
+  href:           string
+}
+
+/** A card shown in the sources panel for a Kockpit decision (with body). */
+export interface BrainDecisionSource {
+  kind:         'decision'
+  id:           string
+  title:        string
+  decisionText: string | null
+  rationale:    string | null
+  status:       string
+  decidedAt:    string | null   // YYYY-MM-DD
+  href:         string
+}
+
 /** A card shown in the sources panel for a Gmail message found by Brain. */
 export interface BrainEmailSource {
   threadId:     string
@@ -153,6 +181,8 @@ export interface BrainAnswer {
   auditSources:       BrainAuditSource[]
   dinerSources:       BrainDinerSource[]
   sspSource:          BrainSSPSource | null
+  meetingSources:     BrainMeetingSource[]
+  decisionSources:    BrainDecisionSource[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -439,7 +469,7 @@ export async function askBrain(
           linkedUserId
             ? supabase
                 .from('decisions')
-                .select('id, title, status, decided_at')
+                .select('id, title, status, decided_at, decision_text')
                 .eq('owner_user_id', linkedUserId)
                 .neq('status', 'superseded')
                 .is('archived_at', null)
@@ -494,11 +524,11 @@ export async function askBrain(
             date:   w.due_at ? w.due_at.slice(0, 10) : null,
             extra:  null,
           } satisfies PersonOpItem)),
-          decisions: (decisionRows.data as { id: string; title: string; status: string; decided_at: string | null }[] ?? []).map(d => ({
+          decisions: (decisionRows.data as { id: string; title: string; status: string; decided_at: string | null; decision_text: string | null }[] ?? []).map(d => ({
             title:  d.title,
             status: fmtOpStatus(d.status),
             date:   d.decided_at ? d.decided_at.slice(0, 10) : null,
-            extra:  null,
+            extra:  d.decision_text ? d.decision_text.slice(0, 200) : null,
           } satisfies PersonOpItem)),
           meetings: meetingRows.map(m => ({
             title:  m.title,
@@ -540,7 +570,7 @@ export async function askBrain(
             personName: emp.name,
           })
         }
-        for (const d of decisionRows.data as { id: string; title: string; status: string; decided_at: string | null }[] ?? []) {
+        for (const d of decisionRows.data as { id: string; title: string; status: string; decided_at: string | null; decision_text: string | null }[] ?? []) {
           operationalSources.push({
             kind:       'decision',
             id:         d.id,
@@ -992,11 +1022,126 @@ export async function askBrain(
     }
   }
 
-  // ── 12. Call AI ───────────────────────────────────────────────────────────
-  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts, emailContexts, qualityContext)
+  // ── 12. Meeting knowledge retrieval ───────────────────────────────────────
+  //
+  // Fetch meeting data when:
+  //   a. Meeting-related keywords appear in the question, OR
+  //   b. Decision-related keywords appear (for decision body enrichment), OR
+  //   c. An entity is mentioned alongside meeting-related words.
+  //
+  // Email dedup: suppress calendar invite / meeting-notes emails when we have
+  // native structured meeting data so the AI doesn't see duplicate signals.
+  const MEETING_TRIGGER_WORDS = [
+    'meeting', 'meetings', 'discussed', 'discuss', 'decided', 'decision',
+    'decisions', 'minutes', 'agenda', 'outcome', 'outcomes', 'upper management',
+    'board', 'leadership', 'agreed', 'resolved',
+  ]
+  const MEETING_SUBJECT_PATTERNS = [
+    /meeting minutes/i,
+    /mødereferat/i,
+    /meeting notes/i,
+    /meeting agenda/i,
+    /calendar invite/i,
+    /invitation:/i,
+  ]
+
+  const hasMeetingKeyword = MEETING_TRIGGER_WORDS.some(w => qLower.includes(w))
+  const hasDecisionKeyword = ['decision', 'decisions', 'decided', 'decide', 'resolved', 'agreed'].some(w => qLower.includes(w))
+
+  let meetingContext: BrainMeetingContext | null = null
+  const meetingSources:  BrainMeetingSource[]  = []
+  const decisionSources: BrainDecisionSource[] = []
+
+  if (hasMeetingKeyword || hasDecisionKeyword) {
+    try {
+      const mentionedNames = [
+        ...mentionedLocations.map(l => l.name),
+        ...mentionedEmployees.map(e => e.name),
+        ...mentionedProjects.map(p => p.title),
+      ]
+      const kws = extractKeywords(q)
+
+      meetingContext = await fetchBrainMeetingContext({
+        entityNames:      mentionedNames,
+        keywords:         kws,
+        includeDecisions: hasDecisionKeyword,
+      })
+
+      // Build meeting source cards
+      for (const m of meetingContext.meetings) {
+        meetingSources.push({
+          kind:           'meeting',
+          id:             m.id,
+          title:          m.title,
+          scheduledStart: m.scheduledStart,
+          status:         m.status,
+          hasMinutes:     !!m.minutesBody,
+          hasTranscript:  m.hasTranscript,
+          decisionCount:  m.decisions.length,
+          taskCount:      m.tasks.length,
+          href:           `/meetings/${m.id}`,
+        })
+      }
+
+      // Build decision source cards — deduplicated: prefer meeting route
+      const seenDecisionIds = new Set(
+        meetingContext.meetings.flatMap(m => m.decisions.map(d => d.id)),
+      )
+      // Decisions from meetings
+      for (const m of meetingContext.meetings) {
+        for (const d of m.decisions) {
+          if (decisionSources.some(s => s.id === d.id)) continue
+          decisionSources.push({
+            kind:         'decision',
+            id:           d.id,
+            title:        d.title,
+            decisionText: d.decisionText,
+            rationale:    d.rationale,
+            status:       d.status,
+            decidedAt:    d.decidedAt,
+            href:         `/decisions/${d.id}`,
+          })
+        }
+      }
+      // Standalone decisions (not already shown via meeting route)
+      for (const d of meetingContext.standaloneDecisions) {
+        if (seenDecisionIds.has(d.id)) continue
+        decisionSources.push({
+          kind:         'decision',
+          id:           d.id,
+          title:        d.title,
+          decisionText: d.decisionText,
+          rationale:    d.rationale,
+          status:       d.status,
+          decidedAt:    d.decidedAt,
+          href:         `/decisions/${d.id}`,
+        })
+      }
+
+      // Dedup meeting-related emails when we have structured meeting data
+      if (meetingContext.meetings.length > 0) {
+        const filteredEmailContexts = emailContexts.filter(
+          e => !MEETING_SUBJECT_PATTERNS.some(p => p.test(e.subject)),
+        )
+        const filteredEmailSources = emailSources.filter(
+          e => !MEETING_SUBJECT_PATTERNS.some(p => p.test(e.subject)),
+        )
+        emailContexts.length = 0
+        for (const e of filteredEmailContexts) emailContexts.push(e)
+        emailSources.length = 0
+        for (const e of filteredEmailSources) emailSources.push(e)
+      }
+    } catch (meetingErr) {
+      // Meeting retrieval failure is non-fatal — log and continue
+      console.error('[brain] Meeting retrieval failed:', (meetingErr as Error).message)
+    }
+  }
+
+  // ── 13. Call AI ───────────────────────────────────────────────────────────
+  const aiResult = await queryBrain(q, contextUpdates, entityProfiles, operationalContexts, emailContexts, qualityContext, meetingContext)
   if (!aiResult.ok) return { error: aiResult.error }
 
-  // ── 13. Build Update sources for UI display ───────────────────────────────
+  // ── 14. Build Update sources for UI display ───────────────────────────────
   const sources: BrainSource[] = contextUpdates.map(u => ({
     updateId:    u.id,
     body:        u.body,
@@ -1011,5 +1156,5 @@ export async function askBrain(
     })),
   }))
 
-  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources, emailSources, auditSources, dinerSources, sspSource } }
+  return { data: { answer: aiResult.answer, profileSources, operationalSources, sources, emailSources, auditSources, dinerSources, sspSource, meetingSources, decisionSources } }
 }
