@@ -33,7 +33,7 @@ export interface IgMedia {
 
 export interface IgMediaInsights {
   reach?:              number
-  plays?:              number
+  views?:              number   // v26 name for video play count (was `plays`)
   saved?:              number
   likes?:              number
   comments?:           number
@@ -127,18 +127,21 @@ export async function fetchIgMedia(
 // We request the full current set and handle missing keys gracefully.
 // `impressions` not requested — deprecated in v26 for some media types.
 
+// v26: `plays` is no longer a valid metric name. `views` is the replacement
+// for video/reel play counts. We request `views` and map it to the `plays`
+// DB column in the sync layer.
 const STRUCTURED_IG_MEDIA_METRICS = new Set([
-  'reach', 'plays', 'saved', 'likes', 'comments', 'shares', 'total_interactions',
+  'reach', 'views', 'saved', 'likes', 'comments', 'shares', 'total_interactions',
 ])
 
 export async function fetchIgMediaInsights(
   mediaId: string,
   mediaType: string,
 ): Promise<IgMediaInsights | null> {
-  // plays only available for video/reel types
+  // views (video play count) only available for video/reel types
   const isVideo = mediaType === 'VIDEO' || mediaType === 'REEL'
   const requestMetrics = isVideo
-    ? 'reach,plays,saved,likes,comments,shares,total_interactions'
+    ? 'reach,views,saved,likes,comments,shares,total_interactions'
     : 'reach,saved,likes,comments,shares,total_interactions'
 
   let body: unknown

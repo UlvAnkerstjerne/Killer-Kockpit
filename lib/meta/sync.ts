@@ -484,7 +484,7 @@ async function syncIgOrganicDeep(db: Db, igAccountId: string, now: string): Prom
         if (insights) {
           await db.from('meta_ig_media').update({
             reach:               insights.reach               ?? null,
-            plays:               insights.plays               ?? null,
+            plays:               insights.views               ?? null,
             saved:               insights.saved               ?? null,
             likes:               insights.likes               ?? null,
             comments_count:      insights.comments            ?? null,
@@ -516,7 +516,7 @@ async function syncIgOrganicDeep(db: Db, igAccountId: string, now: string): Prom
         if (insights) {
           await db.from('meta_ig_media').update({
             reach:               insights.reach               ?? null,
-            plays:               insights.plays               ?? null,
+            plays:               insights.views               ?? null,
             saved:               insights.saved               ?? null,
             likes:               insights.likes               ?? null,
             comments_count:      insights.comments            ?? null,
