@@ -211,9 +211,9 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
               {/* ── Metrics row: 6 equal columns across the full card width ── */}
               <div className="border-t border-kk-line grid grid-cols-6 divide-x divide-kk-line">
                 {cells.map((cell, i) => (
-                  <div key={i} className="px-3 py-3 flex items-center gap-1.5">
-                    <span className="text-sm font-medium text-kk-muted whitespace-nowrap">{cell.label}:</span>
-                    <span className="text-sm font-bold text-kk-ink tabular-nums">{cell.value}</span>
+                  <div key={i} className="px-2 py-4 flex items-center gap-1">
+                    <span className="text-base font-medium text-kk-muted whitespace-nowrap">{cell.label}:</span>
+                    <span className="text-base font-bold text-kk-ink tabular-nums">{cell.value}</span>
                   </div>
                 ))}
               </div>
