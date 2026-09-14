@@ -76,7 +76,7 @@ export default async function OrganicPage() {
       .from('meta_ig_account_daily')
       .select('date, reach, followers_count')
       .order('date', { ascending: false })
-      .limit(15),
+      .limit(16),
     supabase
       .from('meta_fb_page_insights')
       .select('date, views, engaged_users, fan_count')
@@ -102,8 +102,8 @@ export default async function OrganicPage() {
   // ── IG stats ────────────────────────────────────────────────────────────────
 
   const igToday = igDaily[0] ?? null
-  const ig7 = igDaily[6] ?? null   // index 6 = 7th prior day (descending)
-  const ig14 = igDaily[13] ?? null // index 13 = 14th prior day
+  const ig7 = igDaily[7] ?? null   // index 7 = 7 days ago (descending, 0-based)
+  const ig14 = igDaily[14] ?? null // index 14 = 14 days ago
 
   const igFollowersToday = igToday?.followers_count ?? null
   const igGrowth7 =
@@ -132,8 +132,8 @@ export default async function OrganicPage() {
   const fbEngagedTrend = fbDaily.slice(0, 7).reverse()
 
   const fbEngRate =
-    fbToday?.engaged_users != null && fbFansToday !== null && fbFansToday > 0
-      ? (fbToday.engaged_users / fbFansToday) * 100
+    fbToday?.engaged_users != null && fbToday?.views != null && fbToday.views > 0
+      ? (fbToday.engaged_users / fbToday.views) * 100
       : null
 
   return (
@@ -269,7 +269,7 @@ export default async function OrganicPage() {
                 <div className="text-xl font-bold text-kk-ink leading-none">
                   {fbEngRate.toFixed(2)}%
                 </div>
-                <div className="text-xs text-kk-muted mt-1">engaged / fans</div>
+                <div className="text-xs text-kk-muted mt-1">engaged / views</div>
               </div>
             )}
           </div>
