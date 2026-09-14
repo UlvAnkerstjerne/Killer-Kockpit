@@ -125,7 +125,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
 
   return (
     <div className="space-y-4">
-      {/* Status filter bar */}
+      {/* Status filter bar — unchanged */}
       <div className="flex gap-1 bg-white border border-kk-line rounded-xl p-1 w-fit">
         {STATUSES.filter(s => presentStatuses.has(s)).map(status => {
           const isOn = selected.includes(status)
@@ -144,7 +144,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
         })}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {withData.map(({ id, name, status, objective, totals }) => {
           const t = totals!
           const primary = getPrimary(objective, t)
@@ -156,90 +156,78 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
           const isTraffic = objective === 'OUTCOME_TRAFFIC'
 
           return (
-            <div key={id} className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+            <div key={id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
 
-              {/* ── Header: name + meta + spend ── */}
-              <div className="px-4 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-kk-ink truncate">{name}</div>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span className={[
-                      'inline-flex items-center px-1.5 py-px rounded-full text-xs font-semibold shrink-0',
-                      isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
-                    ].join(' ')}>
-                      {statusLabel(status)}
-                    </span>
-                    <span className="text-xs text-kk-muted">
-                      {objectiveLabel(objective)} · {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xs text-kk-muted">{fmtDKK(t.spend)}</div>
-                  <div className="text-xs text-kk-muted opacity-60">spend</div>
-                </div>
+              {/* ── Row 1: name · status · objective · dates · spend (all inline) ── */}
+              <div className="px-4 py-2 flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold text-kk-ink truncate flex-1 min-w-0">{name}</span>
+                <span className={[
+                  'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold shrink-0',
+                  isActive ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
+                ].join(' ')}>
+                  {statusLabel(status)}
+                </span>
+                <span className="text-[11px] text-kk-muted shrink-0">
+                  {objectiveLabel(objective)} · {fmtDateShort(t.firstDate)}–{fmtDateShort(t.lastDate)}
+                </span>
+                <span className="text-[11px] text-kk-muted shrink-0">{fmtDKK(t.spend)} spend</span>
               </div>
 
-              {/* ── Metrics: primary → efficiency → secondary ── */}
-              <div className="px-4 py-2.5 border-t border-kk-line flex items-center gap-5 flex-wrap">
-                {/* Primary — slightly larger */}
+              {/* ── Row 2: primary → efficiency → supporting → muted metadata ── */}
+              <div className="px-4 py-2 border-t border-kk-line flex items-end gap-4 flex-wrap">
+
+                {/* Primary — strongest */}
                 <div>
-                  <div className="text-xs text-kk-muted">{primary.label}</div>
-                  <div className="text-xl font-black text-kk-ink leading-none">{primary.formatted}</div>
+                  <div className="text-[10px] text-kk-muted leading-none mb-0.5">{primary.label}</div>
+                  <div className="text-base font-bold text-kk-ink leading-none">{primary.formatted}</div>
                 </div>
 
-                {/* Efficiency */}
-                {primary.efficiency && <Stat label={primary.efficiency.label} value={primary.efficiency.value} />}
-
-                {/* Objective-specific secondary */}
-                {isAwareness && (
-                  <>
-                    {t.videoViews > 0    && <Stat label="Video Views"     value={fmt(t.videoViews)} />}
-                    {t.postEngagement > 0 && <Stat label="Post Engagement" value={fmt(t.postEngagement)} />}
-                    {avgFreq !== null     && <Stat label="Frequency"       value={avgFreq.toFixed(2)} />}
-                    <Stat label="Reach ↻" value={fmt(t.reach)} />
-                  </>
+                {/* Efficiency — second strongest */}
+                {primary.efficiency && (
+                  <div>
+                    <div className="text-[10px] text-kk-muted leading-none mb-0.5">{primary.efficiency.label}</div>
+                    <div className="text-sm font-semibold text-kk-ink leading-none">{primary.efficiency.value}</div>
+                  </div>
                 )}
 
-                {isTraffic && (
-                  <>
-                    {cpm !== null  && <Stat label="CPM"         value={fmtDKK(cpm, 2)} />}
-                    {ctr !== null  && <Stat label="CTR"         value={ctr.toFixed(2) + '%'} />}
-                    {t.landingPageViews > 0 && <Stat label="LPV" value={fmt(t.landingPageViews)} />}
-                    <Stat label="Impressions" value={fmt(t.impressions)} />
-                  </>
-                )}
+                {/* Awareness supporting: Video Views, Post Eng — no Reach */}
+                {isAwareness && t.videoViews > 0     && <Stat label="Video Views" value={fmt(t.videoViews)} />}
+                {isAwareness && t.postEngagement > 0  && <Stat label="Post Eng"   value={fmt(t.postEngagement)} />}
+                {isAwareness && avgFreq !== null       && <MutedStat label="Freq"  value={avgFreq.toFixed(2)} />}
 
-                {!isAwareness && !isTraffic && (
-                  <>
-                    {cpm !== null  && <Stat label="CPM"         value={fmtDKK(cpm, 2)} />}
-                    <Stat label="Impressions" value={fmt(t.impressions)} />
-                    {avgFreq !== null && <Stat label="Frequency"  value={avgFreq.toFixed(2)} />}
-                  </>
-                )}
+                {/* Traffic supporting */}
+                {isTraffic && cpm !== null             && <Stat label="CPM"         value={fmtDKK(cpm, 2)} />}
+                {isTraffic && ctr !== null             && <Stat label="CTR"         value={ctr.toFixed(2) + '%'} />}
+                {isTraffic && t.landingPageViews > 0   && <Stat label="LPV"         value={fmt(t.landingPageViews)} />}
+                {isTraffic                              && <Stat label="Impressions" value={fmt(t.impressions)} />}
+
+                {/* Engagement / App / default supporting */}
+                {!isAwareness && !isTraffic && cpm !== null    && <Stat label="CPM"         value={fmtDKK(cpm, 2)} />}
+                {!isAwareness && !isTraffic                     && <Stat label="Impressions" value={fmt(t.impressions)} />}
+                {!isAwareness && !isTraffic && avgFreq !== null && <MutedStat label="Freq"  value={avgFreq.toFixed(2)} />}
               </div>
             </div>
           )
         })}
 
         {noData.length > 0 && (
-          <div className="bg-kk-panel border border-kk-line rounded-2xl">
-            <div className="px-4 py-3 border-b border-kk-line">
+          <div className="bg-kk-panel border border-kk-line rounded-xl">
+            <div className="px-4 py-2 border-b border-kk-line">
               <h2 className="text-sm font-semibold text-kk-ink">
                 No data synced <span className="font-normal text-kk-muted">· {noData.length}</span>
               </h2>
             </div>
             <div className="divide-y divide-kk-line">
               {noData.map(c => (
-                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2">
                   <span className={[
-                    'inline-flex items-center px-1.5 py-px rounded-full text-xs font-semibold shrink-0',
+                    'inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-semibold shrink-0',
                     c.status === 'ACTIVE' ? 'bg-kk-good-bg text-kk-good' : 'bg-kk-soft text-kk-muted',
                   ].join(' ')}>
                     {statusLabel(c.status)}
                   </span>
                   <span className="text-sm text-kk-muted flex-1 truncate">{c.name}</span>
-                  <span className="text-xs text-kk-muted shrink-0">{objectiveLabel(c.objective)}</span>
+                  <span className="text-[11px] text-kk-muted shrink-0">{objectiveLabel(c.objective)}</span>
                 </div>
               ))}
             </div>
@@ -247,7 +235,7 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
         )}
 
         {visible.length === 0 && (
-          <div className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-6 text-center">
+          <div className="bg-kk-panel border border-kk-line rounded-xl px-4 py-6 text-center">
             <p className="text-sm text-kk-muted">No campaigns match the selected statuses.</p>
           </div>
         )}
@@ -256,13 +244,24 @@ export default function PaidPageClient({ campaigns }: { campaigns: CampaignCardD
   )
 }
 
-// ─── Small stat chip ───────────────────────────────────────────────────────────
+// ─── Stat components ──────────────────────────────────────────────────────────
 
+// Supporting stat — normal weight
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
-      <div className="text-xs text-kk-muted">{label}</div>
-      <div className="text-sm font-semibold text-kk-ink">{value}</div>
+    <div>
+      <div className="text-[10px] text-kk-muted leading-none mb-0.5">{label}</div>
+      <div className="text-xs font-medium text-kk-ink leading-none">{value}</div>
+    </div>
+  )
+}
+
+// Muted stat — frequency and other quiet metadata
+function MutedStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] text-kk-muted/70 leading-none mb-0.5">{label}</div>
+      <div className="text-[10px] text-kk-muted leading-none">{value}</div>
     </div>
   )
 }
