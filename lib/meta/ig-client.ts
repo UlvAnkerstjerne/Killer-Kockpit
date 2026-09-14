@@ -59,7 +59,10 @@ async function igFetch(path: string, params: Record<string, string> = {}): Promi
   const url = new URL(`${META_GRAPH_BASE_URL}/${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
 
-  const res = await fetch(url.toString(), { headers })
+  const urlStr = url.toString()
+  // Log URL path + query without token for debugging
+  console.log(`[ig-client] GET ${url.pathname}?${url.searchParams.toString()}`)
+  const res = await fetch(urlStr, { headers })
   const body = await res.json() as Record<string, unknown>
 
   if (!res.ok || body.error) {
