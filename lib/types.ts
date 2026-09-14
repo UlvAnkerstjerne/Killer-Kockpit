@@ -68,6 +68,7 @@ export interface Task {
   returned_by_user_id: string | null
   returned_at: string | null
   latest_review_note: string | null
+  source_todo_id: string | null
   owner?: Pick<AppUser, 'id' | 'display_name' | 'email'>
   project?: Pick<Project, 'id' | 'title'>
   creator?: Pick<AppUser, 'id' | 'display_name'>
@@ -302,6 +303,10 @@ export interface Todo {
   recurrence_rule: string | null
   recurrence_day: number | null
   parent_todo_id: string | null
+  upgraded_to_task_id: string | null
+  upgraded_at: string | null
+  completion_context: string | null
+  completed_by_user_id: string | null
 }
 
 /** Todo enriched with owner display name — used for the Team visibility view. */

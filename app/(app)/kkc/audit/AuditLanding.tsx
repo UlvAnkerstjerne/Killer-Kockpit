@@ -209,7 +209,7 @@ function AuditScoreTrend({ rows }: { rows: AuditSubmissionRow[] }) {
           </span>
           <span className="flex items-center gap-1.5 text-[10px] text-kk-bad font-medium">
             <svg width="16" height="4" viewBox="0 0 16 4">
-              <line x1="0" y1="2" x2="16" y2="2" stroke="#8d3737" strokeWidth="1.5" strokeDasharray="4 2"/>
+              <line x1="0" y1="2" x2="16" y2="2" stroke="var(--color-kk-bad)" strokeWidth="1.5" strokeDasharray="4 2"/>
             </svg>
             Core
           </span>
@@ -233,7 +233,7 @@ function AuditScoreTrend({ rows }: { rows: AuditSubmissionRow[] }) {
         ))}
         <polyline
           points={polyline(rows.map(r => r.core_score_pct))}
-          fill="none" stroke="#8d3737" strokeWidth="1.5"
+          fill="none" stroke="var(--color-kk-bad)" strokeWidth="1.5"
           strokeDasharray="4 2" strokeLinejoin="round"
         />
         <polyline
@@ -243,7 +243,7 @@ function AuditScoreTrend({ rows }: { rows: AuditSubmissionRow[] }) {
         {rows.map((r, i) => (
           <g key={r.id}>
             <circle cx={xPos(i)} cy={yPos(r.score_pct ?? 0)}      r={i === lastIdx ? 4 : 3} fill="#171717" />
-            <circle cx={xPos(i)} cy={yPos(r.core_score_pct ?? 0)} r={i === lastIdx ? 4 : 3} fill="#8d3737" />
+            <circle cx={xPos(i)} cy={yPos(r.core_score_pct ?? 0)} r={i === lastIdx ? 4 : 3} fill="var(--color-kk-bad)" />
           </g>
         ))}
         {dateLabelIdxs.map(i => (
@@ -367,7 +367,7 @@ function parseColDate(iso: string) {
 
 function cellBg(result: 'pass' | 'fail' | 'na' | null | undefined): string {
   if (result === 'pass') return '#c8e6d0'
-  if (result === 'fail') return '#f09090'
+  if (result === 'fail') return 'var(--color-kk-bad-cell)'
   if (result === 'na')   return '#eceae4'
   return 'transparent'
 }
@@ -382,7 +382,7 @@ function MatrixIconCheck() {
 function MatrixIconCross() {
   return (
     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
-      <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="#6e1f1f" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="var(--color-kk-bad)" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   )
 }
@@ -484,7 +484,7 @@ function AuditCheckpointMatrix({ checkpoints, columns }: { checkpoints: MatrixCh
           Acceptable
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
-          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#f09090' }}><MatrixIconCross /></span>
+          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'var(--color-kk-bad-cell)' }}><MatrixIconCross /></span>
           Unacceptable
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">

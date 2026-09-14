@@ -15,6 +15,7 @@ import { useState, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createTodo, completeTodo, completeRecurringTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
 import type { Todo } from '@/lib/types'
+// Completion context box shown before marking a to-do as done
 import Link from 'next/link'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
@@ -45,6 +46,12 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
   const [actionError, setActionError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Completion context box
+  const [completingTodoId,      setCompletingTodoId]      = useState<string | null>(null)
+  const [completionContextText, setCompletionContextText] = useState('')
+  const [completionLoading,     setCompletionLoading]     = useState(false)
+  const [completionError,       setCompletionError]       = useState<string | null>(null)
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim()) return
@@ -67,6 +74,29 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
       setActionError(result.error)
       return
     }
+    startTransition(() => router.refresh())
+  }
+
+  function openCompletionBox(todo: Todo) {
+    setCompletingTodoId(todo.id)
+    setCompletionContextText('')
+    setCompletionError(null)
+  }
+
+  async function handleCompleteConfirm(todoId: string, isRecurring: boolean) {
+    if (!completionContextText.trim() || completionLoading) return
+    setCompletionError(null)
+    setCompletionLoading(true)
+    const result = await (isRecurring
+      ? completeRecurringTodo(todoId, completionContextText)
+      : completeTodo(todoId, completionContextText))
+    if (result.error) {
+      setCompletionError(result.error)
+      setCompletionLoading(false)
+      return
+    }
+    setCompletingTodoId(null)
+    setCompletionLoading(false)
     startTransition(() => router.refresh())
   }
 
@@ -148,47 +178,94 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
           {(maxItems ? openTodos.slice(0, maxItems) : openTodos).map(todo => (
             <div
               key={todo.id}
-              className="flex items-center gap-3 px-4 py-1.5 group"
+              className="px-4 py-1.5 group"
             >
-              {/* Complete button */}
-              <button
-                onClick={() => handleAction(() =>
-                  todo.recurrence_rule
-                    ? completeRecurringTodo(todo.id)
-                    : completeTodo(todo.id)
-                )}
-                disabled={isPending}
-                className="w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
-                title="Mark complete"
-                aria-label="Mark complete"
-              />
+              {/* Main row */}
+              <div className="flex items-center gap-3">
+                {/* Complete button — opens context box */}
+                <button
+                  onClick={() => openCompletionBox(todo)}
+                  disabled={isPending || completionLoading}
+                  className="w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
+                  title="Mark complete"
+                  aria-label="Mark complete"
+                />
 
-              {/* Title + recurrence indicator */}
-              <div className="flex-1 flex items-center gap-2 min-w-0">
-                <PriorityDot priority={todo.priority} />
-                <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
-                {todo.recurrence_rule && (
-                  <span className="text-[10px] text-kk-brand/60 shrink-0">
-                    ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
-                  </span>
-                )}
+                {/* Title + recurrence indicator */}
+                <div className="flex-1 flex items-center gap-2 min-w-0">
+                  <PriorityDot priority={todo.priority} />
+                  <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
+                  {todo.recurrence_rule && (
+                    <span className="text-[10px] text-kk-brand/60 shrink-0">
+                      ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Priority label */}
+                <span className="text-[10px] text-kk-muted shrink-0">
+                  {PRIORITY_CONFIG[todo.priority]?.label}
+                </span>
+
+                {/* Cancel button — visible on hover */}
+                <button
+                  onClick={() => handleAction(() => cancelTodo(todo.id))}
+                  disabled={isPending}
+                  className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
+                  title="Cancel"
+                  aria-label="Cancel"
+                >
+                  ×
+                </button>
               </div>
 
-              {/* Priority label */}
-              <span className="text-[10px] text-kk-muted shrink-0">
-                {PRIORITY_CONFIG[todo.priority]?.label}
-              </span>
-
-              {/* Cancel button — visible on hover */}
-              <button
-                onClick={() => handleAction(() => cancelTodo(todo.id))}
-                disabled={isPending}
-                className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
-                title="Cancel"
-                aria-label="Cancel"
-              >
-                ×
-              </button>
+              {/* Completion context box */}
+              {completingTodoId === todo.id && (
+                <div className="mt-2 pt-2 border-t border-kk-line/60 space-y-1.5">
+                  <div>
+                    <p className="text-xs font-semibold text-kk-ink">Add context</p>
+                    <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
+                  </div>
+                  <textarea
+                    value={completionContextText}
+                    onChange={e => setCompletionContextText(e.target.value)}
+                    rows={2}
+                    placeholder="e.g. Confirmed with the team, all done."
+                    className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-1.5 outline-none resize-none placeholder:text-kk-muted"
+                    disabled={completionLoading}
+                    // eslint-disable-next-line jsx-a11y/no-autofocus
+                    autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault()
+                        handleCompleteConfirm(todo.id, !!todo.recurrence_rule)
+                      }
+                      if (e.key === 'Escape') setCompletingTodoId(null)
+                    }}
+                  />
+                  {completionError && (
+                    <p className="text-xs text-kk-bad">{completionError}</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
+                      disabled={!completionContextText.trim() || completionLoading}
+                      className="text-xs px-3 py-1 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
+                    >
+                      {completionLoading ? 'Saving…' : 'Done'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCompletingTodoId(null)}
+                      disabled={completionLoading}
+                      className="text-xs px-3 py-1 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 
@@ -207,7 +284,12 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
                       <path d="M1.5 5L4 7.5L8.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-kk-good" />
                     </svg>
                   </div>
-                  <span className="flex-1 text-sm text-kk-muted line-through truncate">{todo.title}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm text-kk-muted line-through truncate block">{todo.title}</span>
+                    {todo.completion_context && (
+                      <p className="text-[10px] text-kk-good/80 truncate mt-0.5">✓ {todo.completion_context}</p>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleAction(() => reopenTodo(todo.id))}
                     disabled={isPending}

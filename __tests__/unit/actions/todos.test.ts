@@ -6,7 +6,7 @@
  *   - createTodo validates title and priority before hitting the DB.
  *   - All mutations pass .eq('user_id', user.id) — belt-and-suspenders over RLS.
  *   - No caller-supplied user_id is accepted; ownership is always server-derived.
- *   - completeRecurringTodo calls the SECURITY DEFINER RPC via service client.
+ *   - completeRecurringTodo calls the SECURITY DEFINER RPC with all 4 params (atomic context).
  *
  * Test matrix (32 cases):
  *   [1-9]   createTodo — validation, success, DB error, revalidation, recurrence
@@ -44,7 +44,7 @@ const mocks = vi.hoisted(() => {
   })
   const mockClient = { from: mockFrom }
 
-  // Service client mock — used by completeRecurringTodo
+  // Service client mock — used by completeRecurringTodo (RPC only; no follow-up update)
   const mockRpc = vi.fn()
   const mockServiceClient = { rpc: mockRpc }
 
@@ -136,7 +136,7 @@ beforeEach(() => {
   mocks.mockUpdate.mockReturnValue({ eq: mocks.mockEq })
   // mockEq base: returns { eq: mockEq } for chaining; overridden per-test
   mocks.mockEq.mockReturnValue({ eq: mocks.mockEq })
-  // Service client RPC: base no-op
+  // Service client: RPC for completeRecurringTodo (context is now atomic inside RPC)
   mocks.mockRpc.mockResolvedValue({ data: 'new-todo-uuid', error: null })
 })
 
@@ -220,21 +220,28 @@ describe('createTodo', () => {
 describe('completeTodo', () => {
   it('[10] returns error when user is not authenticated', async () => {
     setupAuth(null)
-    const result = await completeTodo(TODO_ID)
+    const result = await completeTodo(TODO_ID, 'done')
     expect(result.error).toBeTruthy()
   })
 
-  it('[11] succeeds for an authenticated user', async () => {
+  it('[10b] returns error for blank completion context', async () => {
+    setupAuth()
+    const result = await completeTodo(TODO_ID, '   ')
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('[11] succeeds for an authenticated user with context', async () => {
     setupAuth()
     setupUpdateSuccess()
-    const result = await completeTodo(TODO_ID)
+    const result = await completeTodo(TODO_ID, 'All done.')
     expect(result.error).toBeUndefined()
   })
 
   it('[12] passes .eq("user_id", user.id) to scope the update', async () => {
     setupAuth()
     setupUpdateSuccess()
-    await completeTodo(TODO_ID)
+    await completeTodo(TODO_ID, 'All done.')
     const eqCols = mocks.mockEq.mock.calls.map((args: unknown[]) => args[0])
     expect(eqCols).toContain('user_id')
   })
@@ -242,7 +249,7 @@ describe('completeTodo', () => {
   it('[13] returns error when DB update fails', async () => {
     setupAuth()
     setupUpdateError()
-    const result = await completeTodo(TODO_ID)
+    const result = await completeTodo(TODO_ID, 'All done.')
     expect(result.error).toBeTruthy()
   })
 })
@@ -315,24 +322,33 @@ describe('reopenTodo', () => {
 describe('completeRecurringTodo', () => {
   it('[21] returns error when user is not authenticated', async () => {
     setupAuth(null)
-    const result = await completeRecurringTodo(TODO_ID)
+    const result = await completeRecurringTodo(TODO_ID, 'done')
     expect(result.error).toBeTruthy()
     expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 
-  it('[22] calls the complete_recurring_todo RPC with todo id and actor id', async () => {
+  it('[21b] returns error for blank completion context', async () => {
     setupAuth()
-    await completeRecurringTodo(TODO_ID)
+    const result = await completeRecurringTodo(TODO_ID, '   ')
+    expect(result.error).toBeTruthy()
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('[22] calls the complete_recurring_todo RPC with all four params atomically', async () => {
+    setupAuth()
+    await completeRecurringTodo(TODO_ID, 'All done.')
     expect(mocks.mockRpc).toHaveBeenCalledWith('complete_recurring_todo', {
-      p_todo_id:  TODO_ID,
-      p_actor_id: USER.id,
+      p_todo_id:              TODO_ID,
+      p_actor_id:             USER.id,
+      p_completion_context:   'All done.',
+      p_completed_by_user_id: USER.id,
     })
   })
 
   it('[23] returns the next occurrence id on success', async () => {
     setupAuth()
     mocks.mockRpc.mockResolvedValue({ data: 'next-todo-uuid', error: null })
-    const result = await completeRecurringTodo(TODO_ID)
+    const result = await completeRecurringTodo(TODO_ID, 'All done.')
     expect(result.error).toBeUndefined()
     expect(result.data?.nextId).toBe('next-todo-uuid')
   })
@@ -340,7 +356,7 @@ describe('completeRecurringTodo', () => {
   it('[24] returns error when RPC fails', async () => {
     setupAuth()
     mocks.mockRpc.mockResolvedValue({ data: null, error: { message: 'RPC error' } })
-    const result = await completeRecurringTodo(TODO_ID)
+    const result = await completeRecurringTodo(TODO_ID, 'All done.')
     expect(result.error).toBeTruthy()
   })
 })

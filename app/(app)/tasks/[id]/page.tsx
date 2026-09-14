@@ -44,7 +44,8 @@ export default async function TaskDetailPage({
       creator:created_by_user_id (id, display_name),
       returned_by:returned_by_user_id (id, display_name),
       project:project_id (id, title),
-      meeting:meeting_id (id, title)
+      meeting:meeting_id (id, title),
+      source_todo:source_todo_id (id, title)
     `)
     .eq('id', id)
     .single()
@@ -89,6 +90,7 @@ export default async function TaskDetailPage({
   const returnedBy  = Array.isArray(task.returned_by) ? task.returned_by[0] : task.returned_by
   const project     = Array.isArray(task.project)     ? task.project[0]     : task.project
   const meeting     = Array.isArray(task.meeting)     ? task.meeting[0]     : task.meeting
+  const sourceTodo  = Array.isArray(task.source_todo) ? task.source_todo[0] : task.source_todo
 
   const now    = new Date()
   const dueAt  = task.due_at ? new Date(task.due_at) : null
@@ -259,6 +261,13 @@ export default async function TaskDetailPage({
                 >
                   {meeting.title}
                 </Link>
+              </div>
+            )}
+
+            {sourceTodo && (
+              <div>
+                <div className="text-xs text-kk-muted mb-0.5">Upgraded from To-Do</div>
+                <div className="text-sm text-kk-ink">{sourceTodo.title}</div>
               </div>
             )}
 

@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
-import { ProjectStatusBadge } from '@/components/ui/StatusBadge'
+import ProjectList from '@/components/projects/ProjectList'
 import EmptyState from '@/components/ui/EmptyState'
 import type { ViewMode } from '@/lib/types'
 
@@ -13,7 +13,7 @@ export default async function ProjectsPage({
 }: {
   searchParams: Promise<{ view?: string; status?: string }>
 }) {
-  const [user, params] = await Promise.all([getCurrentUser(), searchParams])
+  const [user, params, allUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
   const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
@@ -103,49 +103,8 @@ export default async function ProjectsPage({
           />
         </div>
       ) : (
-        <div className="bg-kk-panel border border-kk-line rounded-2xl divide-y divide-kk-line">
-          {projects.map((project) => {
-            const owner = Array.isArray(project.owner) ? project.owner[0] : project.owner
-            const isOverdue = project.due_date && new Date(project.due_date) < new Date() && project.status !== 'completed'
-
-            return (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                className="flex items-center gap-4 px-5 py-4 hover:bg-kk-soft transition-colors first:rounded-t-2xl last:rounded-b-2xl group"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-kk-ink group-hover:underline truncate">
-                      {project.title}
-                    </span>
-                    <ProjectStatusBadge status={project.status} />
-                  </div>
-                  <div className="flex items-center gap-3 mt-1">
-                    {owner && (
-                      <span className="text-xs text-kk-muted">{owner.display_name}</span>
-                    )}
-                    {project.due_date && (
-                      <span className={`text-xs ${isOverdue ? 'text-kk-bad font-medium' : 'text-kk-muted'}`}>
-                        {isOverdue ? 'Overdue · ' : 'Due '}
-                        {new Date(project.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {project.progress !== null && (
-                  <div className="w-24 shrink-0">
-                    <div className="flex justify-end mb-1">
-                      <span className="text-xs text-kk-muted">{project.progress}%</span>
-                    </div>
-                    <div className="progress-bar">
-                      <div className="progress-bar-fill" style={{ width: `${project.progress}%` }} />
-                    </div>
-                  </div>
-                )}
-              </Link>
-            )
-          })}
+        <div className="bg-kk-panel border border-kk-line rounded-2xl">
+          <ProjectList projects={projects} currentUser={user} allUsers={allUsers} />
         </div>
       )}
     </div>

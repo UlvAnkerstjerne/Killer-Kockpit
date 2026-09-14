@@ -54,7 +54,7 @@ function scoreTextCls(n: number): string {
 
 function cellBg(result: KKCResult | null): string {
   if (result === 'Acceptable')   return '#c8e6d0'
-  if (result === 'Unacceptable') return '#f09090'  // higher contrast — jumps out when scanning
+  if (result === 'Unacceptable') return 'var(--color-kk-bad-cell)'  // Killer Red tint for failed checkpoints
   return '#eceae4'
 }
 
@@ -134,7 +134,7 @@ function IconCheck() {
 function IconCross() {
   return (
     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
-      <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="#6e1f1f" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="var(--color-kk-bad)" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   )
 }
@@ -411,7 +411,7 @@ export default function KualityMatrix({ data, onVisitClick }: Props) {
             Acceptable
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
-            <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#f09090' }}>
+            <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'var(--color-kk-bad-cell)' }}>
               <IconCross />
             </span>
             Unacceptable

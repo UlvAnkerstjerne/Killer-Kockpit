@@ -25,16 +25,16 @@ import type { KKCSubmissionDetail, KKCCheckpointResult, KKCSectionComment } from
 // ─── Brand colours ────────────────────────────────────────────────────────────
 
 const C = {
-  red:       '#AD3919',   // Killer Red — branding only
+  red:       '#AD3919',   // Killer Red
   yellow:    '#F5DA93',   // Killer Yellow — critical badge bg
   ink:       '#171717',   // charcoal — body text
   muted:     '#6b6760',   // muted grey — labels, secondary text
   sectionBg: '#DDD9D1',   // warm structural grey — section headers
   good:      '#2f6d4c',   // semantic green — pass / no failures
   goodBg:    '#e7f1eb',
-  bad:       '#8d3737',   // semantic red — fail / critical
-  badBg:     '#f5e7e7',
-  badBorder: '#d98080',
+  bad:       '#AD3919',   // semantic red — fail / critical
+  badBg:     '#f7ebe8',
+  badBorder: '#daa698',
   warn:      '#8a5b16',   // semantic amber — score 75–89%
   border:    '#d9d4cc',   // card borders
   soft:      '#eceae4',   // warm grey — zebra rows, not-assessed bg
@@ -435,7 +435,7 @@ function CheckpointRow({ cp }: { cp: KKCCheckpointResult }) {
 
   return (
     <View
-      style={[s.cpRow, isCritFail ? { backgroundColor: '#fdf3f3' } : {}]}
+      style={[s.cpRow, isCritFail ? { backgroundColor: '#fbf5f4' } : {}]}
       wrap={false}
     >
       {cp.isCritical && <Text style={s.cpCritBadge}>C</Text>}

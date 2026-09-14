@@ -103,7 +103,7 @@ function buildHtmlBody(detail: KKCSubmissionDetail, locationLabel: string): stri
   const INK    = '#171717'
   const MUTED  = '#6b6760'
   const GOOD   = '#2f6d4c'
-  const BAD    = '#8d3737'
+  const BAD    = '#AD3919'
   const BORDER = '#d9d4cc'
   const SOFT   = '#f5f3ee'
   const WHITE  = '#ffffff'
@@ -130,7 +130,7 @@ function buildHtmlBody(detail: KKCSubmissionDetail, locationLabel: string): stri
           <td style="background:${RED};padding:20px 28px">
             <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${YELLOW}">KILLER KEBAB</p>
             <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff">Killer Kuality Check</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#f0cfc4">${locationLabel}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#efd7d1">${locationLabel}</p>
           </td>
         </tr>
 
@@ -182,7 +182,7 @@ function buildHtmlBody(detail: KKCSubmissionDetail, locationLabel: string): stri
         <!-- Critical failures -->
         <tr>
           <td style="padding:0 28px 16px">
-            <div style="background:#f5e7e7;border:1px solid #d98080;border-radius:6px;padding:12px 16px">
+            <div style="background:#f7ebe8;border:1px solid #daa698;border-radius:6px;padding:12px 16px">
               <p style="margin:0 0 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:${BAD}">⚠ Critical Failures (${detail.criticalFailureDetails.length})</p>
               <ul style="margin:0;padding-left:16px">${critItems}</ul>
             </div>

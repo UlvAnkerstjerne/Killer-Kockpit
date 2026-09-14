@@ -110,7 +110,7 @@ function ScoreTrend({ scores }: { scores: KKCScoreRow[] }) {
       ))}
       <polyline
         points={polyline(scores.map(s => s.criticalScore))}
-        fill="none" stroke="#8d3737" strokeWidth="1.5"
+        fill="none" stroke="var(--color-kk-bad)" strokeWidth="1.5"
         strokeDasharray="4 2" strokeLinejoin="round"
       />
       <polyline
@@ -120,7 +120,7 @@ function ScoreTrend({ scores }: { scores: KKCScoreRow[] }) {
       {scores.map((s, i) => (
         <g key={s.timestamp}>
           <circle cx={xPos(i)} cy={yPos(s.overallScore)}  r={i === lastIdx ? 4 : 3} fill="#171717" />
-          <circle cx={xPos(i)} cy={yPos(s.criticalScore)} r={i === lastIdx ? 4 : 3} fill="#8d3737" />
+          <circle cx={xPos(i)} cy={yPos(s.criticalScore)} r={i === lastIdx ? 4 : 3} fill="var(--color-kk-bad)" />
         </g>
       ))}
       {dateLabelIdxs.map(i => (
@@ -622,7 +622,7 @@ export default function SSPDashboard({
                   </span>
                   <span className="flex items-center gap-1.5 text-[10px] text-kk-bad font-medium">
                     <svg width="16" height="4" viewBox="0 0 16 4">
-                      <line x1="0" y1="2" x2="16" y2="2" stroke="#8d3737" strokeWidth="1.5" strokeDasharray="4 2"/>
+                      <line x1="0" y1="2" x2="16" y2="2" stroke="var(--color-kk-bad)" strokeWidth="1.5" strokeDasharray="4 2"/>
                     </svg>
                     Critical
                   </span>

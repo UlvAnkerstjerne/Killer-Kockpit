@@ -54,7 +54,7 @@ const RED    = '#AD3919'
 const YELLOW = '#F5DA93'
 const INK    = '#171717'
 const MUTED  = '#6b6760'
-const BAD    = '#8d3737'
+const BAD    = '#AD3919'
 const BORDER = '#d9d4cc'
 const SOFT   = '#f5f3ee'
 const WHITE  = '#ffffff'
@@ -160,7 +160,7 @@ function buildHtmlBody(input: TaskOverdueEmailInput, taskUrl: string): string {
         <!-- Alert banner -->
         <tr>
           <td style="padding:16px 28px 0">
-            <div style="background:#f5e7e7;border:1px solid #d98080;border-radius:6px;padding:12px 16px">
+            <div style="background:#f7ebe8;border:1px solid #daa698;border-radius:6px;padding:12px 16px">
               <p style="margin:0;font-size:13px;font-weight:600;color:${BAD}">${stageLabel}</p>
               ${finalNotice}
             </div>

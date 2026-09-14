@@ -21,8 +21,9 @@ import {
   updateTodo,
   updateTodoNotes,
   updateTodoRecurrence,
+  upgradeTodoToTask,
 } from '@/lib/actions/todos'
-import type { Todo } from '@/lib/types'
+import type { Todo, TaskPriority } from '@/lib/types'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 
@@ -72,13 +73,16 @@ interface Props {
   openTodos: Todo[]
   completedTodos: Todo[]
   cancelledTodos: Todo[]
+  currentUserId: string
+  allUsers: { id: string; display_name: string; email: string }[]
+  projects: { id: string; title: string }[]
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function TodoPageClient({ openTodos, completedTodos, cancelledTodos }: Props) {
+export default function TodoPageClient({ openTodos, completedTodos, cancelledTodos, currentUserId, allUsers, projects }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -110,6 +114,23 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
   // Inline scheduled date editing (non-recurring todos only)
   const [editingScheduledId,   setEditingScheduledId]   = useState<string | null>(null)
   const [editingScheduledDate, setEditingScheduledDate] = useState('')
+
+  // Completion context box
+  const [completingTodoId,       setCompletingTodoId]       = useState<string | null>(null)
+  const [completionContextText,  setCompletionContextText]  = useState('')
+  const [completionLoading,      setCompletionLoading]      = useState(false)
+  const [completionError,        setCompletionError]        = useState<string | null>(null)
+
+  // Upgrade to Task panel
+  const [upgradingTodoId,   setUpgradingTodoId]   = useState<string | null>(null)
+  const [upgradeTitle,      setUpgradeTitle]       = useState('')
+  const [upgradeDescription, setUpgradeDescription] = useState('')
+  const [upgradeOwnerId,    setUpgradeOwnerId]     = useState('')
+  const [upgradePriority,   setUpgradePriority]    = useState<TaskPriority>(2)
+  const [upgradeDueAt,      setUpgradeDueAt]       = useState('')
+  const [upgradeProjectId,  setUpgradeProjectId]   = useState('')
+  const [upgradeLoading,    setUpgradeLoading]     = useState(false)
+  const [upgradeError,      setUpgradeError]       = useState<string | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -232,6 +253,68 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
     startTransition(() => router.refresh())
   }
 
+  // ── Completion context handlers ────────────────────────────────────────────
+
+  function openCompletionBox(todo: Todo) {
+    setCompletingTodoId(todo.id)
+    setCompletionContextText('')
+    setCompletionError(null)
+    // Close upgrade panel if open for same todo
+    setUpgradingTodoId(null)
+  }
+
+  async function handleCompleteConfirm(todoId: string, isRecurring: boolean) {
+    if (!completionContextText.trim() || completionLoading) return
+    setCompletionError(null)
+    setCompletionLoading(true)
+    const result = await (isRecurring
+      ? completeRecurringTodo(todoId, completionContextText)
+      : completeTodo(todoId, completionContextText))
+    if (result.error) {
+      setCompletionError(result.error)
+      setCompletionLoading(false)
+      return
+    }
+    setCompletingTodoId(null)
+    setCompletionLoading(false)
+    startTransition(() => router.refresh())
+  }
+
+  // ── Upgrade to Task handlers ───────────────────────────────────────────────
+
+  function startUpgrade(todo: Todo) {
+    setUpgradingTodoId(todo.id)
+    setUpgradeTitle(todo.title)
+    setUpgradeDescription(todo.notes ?? '')
+    setUpgradeOwnerId(currentUserId)
+    setUpgradePriority(todo.priority)
+    setUpgradeDueAt('')
+    setUpgradeProjectId('')
+    setUpgradeError(null)
+    // Close completion box if open
+    setCompletingTodoId(null)
+  }
+
+  async function handleUpgrade() {
+    if (!upgradingTodoId || upgradeLoading) return
+    setUpgradeError(null)
+    setUpgradeLoading(true)
+    const result = await upgradeTodoToTask(upgradingTodoId, {
+      title:         upgradeTitle,
+      description:   upgradeDescription || null,
+      owner_user_id: upgradeOwnerId,
+      project_id:    upgradeProjectId || null,
+      priority:      upgradePriority,
+      due_at:        upgradeDueAt || null,
+    })
+    if (result.error) {
+      setUpgradeError(result.error)
+      setUpgradeLoading(false)
+      return
+    }
+    router.push(`/tasks/${result.data!.taskId}`)
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -345,14 +428,10 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
         {openTodos.map(todo => (
           <div key={todo.id} className="px-5 py-3 group">
             <div className="flex items-start gap-3">
-              {/* Complete checkbox */}
+              {/* Complete checkbox — opens context box */}
               <button
-                onClick={() => handleAction(() =>
-                  todo.recurrence_rule
-                    ? completeRecurringTodo(todo.id)
-                    : completeTodo(todo.id)
-                )}
-                disabled={isPending}
+                onClick={() => openCompletionBox(todo)}
+                disabled={isPending || completionLoading}
                 className="mt-0.5 w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
                 title="Mark complete"
                 aria-label="Mark complete"
@@ -517,6 +596,14 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                   {PRIORITY_CONFIG[todo.priority]?.label}
                 </span>
                 <button
+                  onClick={() => startUpgrade(todo)}
+                  disabled={isPending || upgradeLoading}
+                  className="text-[10px] text-kk-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-kk-brand transition-all disabled:opacity-0 shrink-0"
+                  title="Upgrade to Task"
+                >
+                  → Task
+                </button>
+                <button
                   onClick={() => handleAction(() => cancelTodo(todo.id))}
                   disabled={isPending}
                   className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0"
@@ -527,6 +614,167 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                 </button>
               </div>
             </div>
+
+            {/* Completion context box */}
+            {completingTodoId === todo.id && (
+              <div className="mt-3 pt-3 border-t border-kk-line/60 space-y-2">
+                <div>
+                  <p className="text-xs font-semibold text-kk-ink">Add context</p>
+                  <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
+                </div>
+                <textarea
+                  value={completionContextText}
+                  onChange={e => setCompletionContextText(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Sent the report to client, confirmed receipt."
+                  className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-2 outline-none resize-none placeholder:text-kk-muted"
+                  disabled={completionLoading}
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      handleCompleteConfirm(todo.id, !!todo.recurrence_rule)
+                    }
+                    if (e.key === 'Escape') setCompletingTodoId(null)
+                  }}
+                />
+                {completionError && (
+                  <p className="text-xs text-kk-bad">{completionError}</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
+                    disabled={!completionContextText.trim() || completionLoading}
+                    className="text-xs px-3 py-1.5 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
+                  >
+                    {completionLoading ? 'Saving…' : 'Done'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompletingTodoId(null)}
+                    disabled={completionLoading}
+                    className="text-xs px-3 py-1.5 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Upgrade to Task inline panel */}
+            {upgradingTodoId === todo.id && (
+              <div className="mt-3 pt-3 border-t border-kk-line/60 space-y-3">
+                <p className="text-xs font-semibold text-kk-ink">Upgrade to Task</p>
+
+                <div>
+                  <label className="block text-[10px] text-kk-muted mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={upgradeTitle}
+                    onChange={e => setUpgradeTitle(e.target.value)}
+                    maxLength={500}
+                    className="w-full text-sm text-kk-ink bg-kk-soft rounded-lg px-3 py-1.5 outline-none"
+                    disabled={upgradeLoading}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-kk-muted mb-1">Description</label>
+                  <textarea
+                    value={upgradeDescription}
+                    onChange={e => setUpgradeDescription(e.target.value)}
+                    rows={2}
+                    placeholder="Optional context…"
+                    className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-1.5 outline-none resize-none placeholder:text-kk-muted"
+                    disabled={upgradeLoading}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-kk-muted mb-1">Responsible</label>
+                    <select
+                      value={upgradeOwnerId}
+                      onChange={e => setUpgradeOwnerId(e.target.value)}
+                      disabled={upgradeLoading}
+                      className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-2 py-1.5 outline-none cursor-pointer"
+                    >
+                      {allUsers.map(u => (
+                        <option key={u.id} value={u.id}>{u.display_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-kk-muted mb-1">Priority</label>
+                    <select
+                      value={upgradePriority}
+                      onChange={e => setUpgradePriority(Number(e.target.value) as TaskPriority)}
+                      disabled={upgradeLoading}
+                      className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-2 py-1.5 outline-none cursor-pointer"
+                    >
+                      <option value={1}>1 — Critical</option>
+                      <option value={2}>2 — Normal</option>
+                      <option value={3}>3 — Low</option>
+                      <option value={4}>4 — Background</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-kk-muted mb-1">Due date/time</label>
+                    <input
+                      type="datetime-local"
+                      value={upgradeDueAt}
+                      onChange={e => setUpgradeDueAt(e.target.value)}
+                      disabled={upgradeLoading}
+                      className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-2 py-1.5 outline-none"
+                    />
+                  </div>
+                  {projects.length > 0 && (
+                    <div>
+                      <label className="block text-[10px] text-kk-muted mb-1">Project</label>
+                      <select
+                        value={upgradeProjectId}
+                        onChange={e => setUpgradeProjectId(e.target.value)}
+                        disabled={upgradeLoading}
+                        className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-2 py-1.5 outline-none cursor-pointer"
+                      >
+                        <option value="">No project</option>
+                        {projects.map(p => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {upgradeError && (
+                  <p className="text-xs text-kk-bad">{upgradeError}</p>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleUpgrade}
+                    disabled={!upgradeTitle.trim() || upgradeLoading}
+                    className="text-xs px-3 py-1.5 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
+                  >
+                    {upgradeLoading ? 'Creating…' : 'Upgrade to Task'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUpgradingTodoId(null)}
+                    disabled={upgradeLoading}
+                    className="text-xs px-3 py-1.5 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </Section>
@@ -553,6 +801,9 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                   </div>
                   {todo.notes && (
                     <p className="mt-0.5 text-xs text-kk-muted/70 truncate">{todo.notes}</p>
+                  )}
+                  {todo.completion_context && (
+                    <p className="mt-0.5 text-xs text-kk-good/80 truncate">✓ {todo.completion_context}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 mt-0.5">

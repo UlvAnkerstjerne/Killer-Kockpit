@@ -32,6 +32,10 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
     recurrence_rule: null,
     recurrence_day: null,
     parent_todo_id: null,
+    upgraded_to_task_id: null,
+    upgraded_at: null,
+    completion_context: null,
+    completed_by_user_id: null,
     ...overrides,
   }
 }

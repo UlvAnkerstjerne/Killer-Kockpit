@@ -38,9 +38,9 @@ const C = {
   good:       '#2f6d4c',
   goodBg:     '#e7f1eb',
   goodBorder: '#a8cfba',
-  bad:        '#8d3737',
-  badBg:      '#f5e7e7',
-  badBorder:  '#d98080',
+  bad:        '#AD3919',
+  badBg:      '#f7ebe8',
+  badBorder:  '#daa698',
   warn:       '#8a5b16',
   warnBg:     '#fdf5e0',
   warnBorder: '#e0bf80',
@@ -547,7 +547,7 @@ function CheckpointRow({
 
   // Row background tint
   let rowBg: string | undefined
-  if      (isCritFail)  rowBg = '#fdf3f3'
+  if      (isCritFail)  rowBg = '#fbf5f4'
   else if (isGoldPass)  rowBg = '#fdfaed'
 
   // Name style (ternary preserves union type — avoids StyleSheet literal color mismatches)

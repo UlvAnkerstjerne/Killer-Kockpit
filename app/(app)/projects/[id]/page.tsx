@@ -51,7 +51,7 @@ export default async function ProjectDetailPage({
     supabase
       .from('tasks')
       .select(`
-        id, title, status, priority, due_at, completed_at, owner_user_id,
+        id, title, status, priority, due_at, completed_at, owner_user_id, created_by_user_id,
         owner:owner_user_id (id, display_name, email)
       `)
       .eq('project_id', id)
@@ -154,7 +154,7 @@ export default async function ProjectDetailPage({
                 + Task
               </Link>
             </div>
-            <TaskList tasks={tasks || []} currentUser={user} showProject={false} />
+            <TaskList tasks={tasks || []} currentUser={user} allUsers={allUsers} showProject={false} />
           </div>
 
           {/* Waiting Ons */}

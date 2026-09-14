@@ -70,7 +70,7 @@ export async function updateWaitingOn(
   const patch: Record<string, unknown> = {}
   const before: Record<string, unknown> = {}
 
-  const fields = ['title', 'notes', 'waiting_for_user_id', 'waiting_for_name', 'project_id', 'due_at', 'priority'] as const
+  const fields = ['title', 'notes', 'owner_user_id', 'waiting_for_user_id', 'waiting_for_name', 'project_id', 'due_at', 'priority'] as const
   for (const field of fields) {
     if (input[field as keyof typeof input] !== undefined) {
       const newVal = field === 'title' || field === 'notes' || field === 'waiting_for_name'

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
 import TaskList from '@/components/tasks/TaskList'
 import EmptyState from '@/components/ui/EmptyState'
@@ -13,7 +13,7 @@ export default async function TasksPage({
 }: {
   searchParams: Promise<{ view?: string; status?: string }>
 }) {
-  const [user, params] = await Promise.all([getCurrentUser(), searchParams])
+  const [user, params, allUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
   const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
@@ -24,7 +24,7 @@ export default async function TasksPage({
   let query = supabase
     .from('tasks')
     .select(`
-      id, title, status, priority, due_at, completed_at, owner_user_id,
+      id, title, status, priority, due_at, completed_at, owner_user_id, created_by_user_id,
       owner:owner_user_id (id, display_name, email),
       project:project_id (id, title)
     `)
@@ -105,7 +105,7 @@ export default async function TasksPage({
             description={view === 'personal' ? 'Tasks assigned to you appear here.' : 'No tasks match this filter.'}
           />
         ) : (
-          <TaskList tasks={tasks} currentUser={user} showProject={true} />
+          <TaskList tasks={tasks} currentUser={user} allUsers={allUsers} showProject={true} />
         )}
       </div>
     </div>

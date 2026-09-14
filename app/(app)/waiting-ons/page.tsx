@@ -1,10 +1,9 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
-import { WaitingOnStatusBadge } from '@/components/ui/WaitingOnStatusBadge'
-import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
-import type { ViewMode, WaitingStatus } from '@/lib/types'
+import WaitingOnList from '@/components/waiting-ons/WaitingOnList'
+import type { ViewMode } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +20,7 @@ export default async function WaitingOnsPage({
 }: {
   searchParams: Promise<{ view?: string; status?: string }>
 }) {
-  const [user, params] = await Promise.all([getCurrentUser(), searchParams])
+  const [user, params, allUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
   const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
@@ -34,7 +33,7 @@ export default async function WaitingOnsPage({
   let query = supabase
     .from('waiting_ons')
     .select(`
-      id, title, status, priority, due_at, waiting_for_name, notes,
+      id, title, status, priority, due_at, waiting_for_name, owner_user_id,
       owner:owner_user_id (id, display_name, email),
       waiting_for_user:waiting_for_user_id (id, display_name, email),
       project:project_id (id, title)
@@ -93,59 +92,13 @@ export default async function WaitingOnsPage({
       </div>
 
       <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-        <div className="divide-y divide-kk-line">
-          {(waitingOns ?? []).map((wo) => {
-            const owner = Array.isArray(wo.owner) ? wo.owner[0] : wo.owner
-            const waitingForUser = Array.isArray(wo.waiting_for_user) ? wo.waiting_for_user[0] : wo.waiting_for_user
-            const project = Array.isArray(wo.project) ? wo.project[0] : wo.project
-            const isOverdue = wo.status === 'open' && wo.due_at && wo.due_at < now
-
-            return (
-              <Link
-                key={wo.id}
-                href={`/waiting-ons/${wo.id}`}
-                className="flex items-center gap-4 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
-              >
-                <PriorityDot priority={wo.priority ?? 2} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-kk-ink group-hover:underline truncate">
-                      {wo.title}
-                    </span>
-                    <WaitingOnStatusBadge status={(isOverdue ? 'overdue' : wo.status) as WaitingStatus} />
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {(waitingForUser?.display_name || wo.waiting_for_name) && (
-                      <span className="text-xs text-kk-muted">
-                        Waiting on: {waitingForUser?.display_name || wo.waiting_for_name}
-                      </span>
-                    )}
-                    {project && (
-                      <span className="text-xs text-kk-muted">· {project.title}</span>
-                    )}
-                    {canManage && view === 'management' && owner && (
-                      <span className="text-xs text-kk-muted">· {owner.display_name}</span>
-                    )}
-                  </div>
-                </div>
-                <span className="text-[10px] text-kk-muted shrink-0">
-                  {PRIORITY_CONFIG[wo.priority ?? 2]?.label}
-                </span>
-                {wo.due_at && (
-                  <div className={`text-xs shrink-0 ${isOverdue ? 'text-kk-bad font-medium' : 'text-kk-muted'}`}>
-                    {new Date(wo.due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                  </div>
-                )}
-              </Link>
-            )
-          })}
-
-          {(!waitingOns || waitingOns.length === 0) && (
-            <div className="px-5 py-10 text-center text-sm text-kk-muted">
-              {statusFilter === 'open' ? 'Nothing to wait on right now.' : `No ${statusFilter} waiting ons.`}
-            </div>
-          )}
-        </div>
+        <WaitingOnList
+          waitingOns={waitingOns ?? []}
+          currentUser={user}
+          allUsers={allUsers}
+          isManagementView={canManage && view === 'management'}
+          statusFilter={statusFilter}
+        />
       </div>
     </div>
   )

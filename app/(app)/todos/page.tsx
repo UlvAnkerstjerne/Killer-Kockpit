@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser } from '@/lib/auth'
-import { canAccessManagementView, MANAGEMENT_ROLES } from '@/lib/permissions'
+import { getCurrentUser, getActiveUsers } from '@/lib/auth'
+import { canAccessManagementView, canAssignToOthers, MANAGEMENT_ROLES } from '@/lib/permissions'
 import type { Todo, TeamTodo } from '@/lib/types'
 import TodoPageClient from './TodoPageClient'
 import TeamTodosView from './TeamTodosView'
@@ -111,27 +111,40 @@ export default async function TodosPage({
     )
   }
 
-  // ── My To-Dos (existing behaviour, unchanged) ─────────────────────────────
+  // ── My To-Dos ─────────────────────────────────────────────────────────────
 
   // RLS "todos: owner can read own" scopes this to the current user.
   // The .eq('user_id', user.id) is belt-and-suspenders over RLS.
-  const { data } = await supabase
-    .from('todos')
-    .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
-    .eq('user_id', user.id)
-    .order('priority', { ascending: true })
-    .order('created_at', { ascending: false })
-    .limit(200)
+  const [{ data }, allUsersResult, projectsResult] = await Promise.all([
+    supabase
+      .from('todos')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
+      .eq('user_id', user.id)
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(200),
+    canAssignToOthers(user.role) ? getActiveUsers() : Promise.resolve([user]),
+    supabase
+      .from('projects')
+      .select('id, title')
+      .is('archived_at', null)
+      .not('status', 'eq', 'completed')
+      .order('title'),
+  ])
 
   const todos = (data ?? []) as Todo[]
 
-  const openTodos = todos.filter(t => !t.completed_at && !t.cancelled_at)
+  // Upgraded todos are excluded from the active list — they live on as Tasks.
+  const openTodos = todos.filter(t => !t.completed_at && !t.cancelled_at && !t.upgraded_to_task_id)
   const completedTodos = todos
     .filter(t => !!t.completed_at)
     .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime())
   const cancelledTodos = todos
     .filter(t => !!t.cancelled_at && !t.completed_at)
     .sort((a, b) => new Date(b.cancelled_at!).getTime() - new Date(a.cancelled_at!).getTime())
+
+  const allUsers = (allUsersResult as { id: string; display_name: string; email: string }[])
+    .map(u => ({ id: u.id, display_name: u.display_name, email: u.email }))
 
   return (
     <div>
@@ -140,6 +153,9 @@ export default async function TodosPage({
         openTodos={openTodos}
         completedTodos={completedTodos}
         cancelledTodos={cancelledTodos}
+        currentUserId={user.id}
+        allUsers={allUsers}
+        projects={projectsResult.data ?? []}
       />
     </div>
   )

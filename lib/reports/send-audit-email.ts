@@ -55,7 +55,7 @@ const YELLOW = '#F5DA93'
 const INK    = '#171717'
 const MUTED  = '#6b6760'
 const GOOD   = '#2f6d4c'
-const BAD    = '#8d3737'
+const BAD    = '#AD3919'
 const AMBER  = '#8a5b16'
 const BORDER = '#d9d4cc'
 const SOFT   = '#f5f3ee'
@@ -120,7 +120,7 @@ function buildHtmlBody(input: AuditEmailInput, auditUrl: string): string {
           <td style="background:${RED};padding:20px 28px">
             <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${YELLOW}">KILLER KEBAB</p>
             <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff">Audit Result</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#f0cfc4">${locationName}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#efd7d1">${locationName}</p>
           </td>
         </tr>
 

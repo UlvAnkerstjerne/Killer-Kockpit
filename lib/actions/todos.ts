@@ -26,7 +26,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { computeFirstOccurrence } from '@/lib/todos/recurrence'
 import type { RecurrenceRule } from '@/lib/todos/recurrence'
-import type { ActionResult } from '@/lib/types'
+import type { ActionResult, TaskPriority } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
 // createTodo
@@ -100,22 +100,31 @@ export async function createTodo(
 // ---------------------------------------------------------------------------
 
 /**
- * Marks a non-recurring to-do as completed. Clears cancelled_at if previously set.
- * Only the owner may complete their own to-do (enforced by RLS + .eq filter).
+ * Marks a non-recurring to-do as completed.
  *
- * For recurring to-dos, call completeRecurringTodo instead — it uses the
- * SECURITY DEFINER RPC that atomically marks completion and spawns the next
- * occurrence.
+ * A non-blank completion context is required — it is stored alongside
+ * completed_at and completed_by_user_id for history and Brain context.
+ *
+ * For recurring to-dos, call completeRecurringTodo instead.
  */
-export async function completeTodo(id: string): Promise<ActionResult> {
+export async function completeTodo(id: string, context: string): Promise<ActionResult> {
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated.' }
+
+  const trimmedContext = context.trim()
+  if (!trimmedContext) return { error: 'Please add context before marking as done.' }
 
   const now = new Date().toISOString()
   const supabase = await createClient()
   const { error } = await supabase
     .from('todos')
-    .update({ completed_at: now, cancelled_at: null, updated_at: now })
+    .update({
+      completed_at:         now,
+      cancelled_at:         null,
+      updated_at:           now,
+      completion_context:   trimmedContext,
+      completed_by_user_id: user.id,
+    })
     .eq('id', id)
     .eq('user_id', user.id)
 
@@ -136,18 +145,28 @@ export async function completeTodo(id: string): Promise<ActionResult> {
 /**
  * Atomically completes a recurring to-do and spawns the next occurrence.
  *
- * Calls the complete_recurring_todo SECURITY DEFINER RPC via the service-role
- * client. The RPC performs its own SELECT FOR UPDATE lock, ownership check,
- * idempotency guard, and next-occurrence catch-up loop in a single transaction.
+ * A non-blank completion context is required — stored on the completed row
+ * for history and Brain context.
+ *
+ * Calls the complete_recurring_todo SECURITY DEFINER RPC, which performs its
+ * own SELECT FOR UPDATE lock, ownership check, idempotency guard, catch-up
+ * loop, and next-occurrence insert — all in a single transaction. Completion
+ * context and completed_by_user_id are written inside the same transaction,
+ * so either everything succeeds or everything fails together.
  */
-export async function completeRecurringTodo(id: string): Promise<ActionResult<{ nextId: string | null }>> {
+export async function completeRecurringTodo(id: string, context: string): Promise<ActionResult<{ nextId: string | null }>> {
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated.' }
 
+  const trimmedContext = context.trim()
+  if (!trimmedContext) return { error: 'Please add context before marking as done.' }
+
   const serviceClient = createServiceClient()
   const { data, error } = await serviceClient.rpc('complete_recurring_todo', {
-    p_todo_id:  id,
-    p_actor_id: user.id,
+    p_todo_id:              id,
+    p_actor_id:             user.id,
+    p_completion_context:   trimmedContext,
+    p_completed_by_user_id: user.id,
   })
 
   if (error) {
@@ -351,4 +370,108 @@ export async function updateTodoRecurrence(
   revalidatePath('/todos')
   revalidatePath('/today')
   return {}
+}
+
+// ---------------------------------------------------------------------------
+// upgradeTodoToTask
+// ---------------------------------------------------------------------------
+
+/**
+ * Promotes an active to-do into a proper Task.
+ *
+ * Security model
+ * ─────────────
+ * • User identity comes from getCurrentUser() — never from the caller.
+ * • Ownership of the to-do is verified via createClient() (user JWT + RLS)
+ *   before the service client is used for task creation.
+ * • The final todo update is scoped by .eq('user_id', user.id) as belt-and-
+ *   suspenders even though we use the service client.
+ *
+ * Side effects
+ * ───────────
+ * • Creates a task via the audited create_task_and_audit RPC.
+ * • Sets tasks.source_todo_id = todoId (provenance on the task side).
+ * • Sets todos.upgraded_to_task_id = taskId and todos.upgraded_at = now
+ *   (provenance + removal from active list on the to-do side).
+ */
+export async function upgradeTodoToTask(
+  todoId: string,
+  input: {
+    title: string
+    description?: string | null
+    owner_user_id: string
+    project_id?: string | null
+    priority: TaskPriority
+    due_at?: string | null
+  },
+): Promise<ActionResult<{ taskId: string }>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const trimmed = input.title.trim()
+  if (!trimmed) return { error: 'Title is required.' }
+
+  // Verify the todo exists, belongs to this user, and is upgradeable.
+  const supabase = await createClient()
+  const { data: todo, error: fetchError } = await supabase
+    .from('todos')
+    .select('id, user_id, completed_at, cancelled_at, upgraded_to_task_id')
+    .eq('id', todoId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (fetchError || !todo) return { error: 'To-do not found.' }
+  if (todo.completed_at) return { error: 'Completed to-dos cannot be upgraded.' }
+  if (todo.cancelled_at) return { error: 'Cancelled to-dos cannot be upgraded.' }
+  if (todo.upgraded_to_task_id) return { error: 'This to-do has already been upgraded to a task.' }
+
+  const serviceClient = createServiceClient()
+
+  // 1. Create the task via the audited RPC.
+  const { data: taskId, error: createError } = await serviceClient.rpc('create_task_and_audit', {
+    p_title:              trimmed,
+    p_description:        input.description?.trim() || null,
+    p_owner_user_id:      input.owner_user_id || user.id,
+    p_project_id:         input.project_id || null,
+    p_status:             'open',
+    p_priority:           input.priority || 2,
+    p_due_at:             input.due_at || null,
+    p_created_by_user_id: user.id,
+    p_actor_user_id:      user.id,
+  })
+
+  if (createError || !taskId) {
+    console.error('[upgradeTodoToTask:create]', createError)
+    return { error: 'Failed to create task. Please try again.' }
+  }
+
+  // 2. Record source provenance on the task.
+  const { error: taskPatchError } = await serviceClient
+    .from('tasks')
+    .update({ source_todo_id: todoId })
+    .eq('id', taskId as string)
+
+  if (taskPatchError) {
+    console.error('[upgradeTodoToTask:taskPatch]', taskPatchError)
+    // Non-fatal: task was created; provenance missing but data intact.
+  }
+
+  // 3. Mark the to-do as upgraded (removes it from the active list).
+  const now = new Date().toISOString()
+  const { error: todoUpdateError } = await serviceClient
+    .from('todos')
+    .update({ upgraded_to_task_id: taskId, upgraded_at: now, updated_at: now })
+    .eq('id', todoId)
+    .eq('user_id', user.id)
+
+  if (todoUpdateError) {
+    console.error('[upgradeTodoToTask:todoUpdate]', todoUpdateError)
+    return { error: 'Task created but could not update the to-do. Please refresh.' }
+  }
+
+  revalidatePath('/today')
+  revalidatePath('/todos')
+  revalidatePath('/tasks')
+
+  return { data: { taskId: taskId as string } }
 }

@@ -232,12 +232,12 @@ function MatrixIconCheck() {
   return <svg width="9" height="8" viewBox="0 0 9 8" fill="none" aria-hidden="true"><path d="M1.5 4L3.5 6L7.5 1.5" stroke="#2f6d4c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
 }
 function MatrixIconCross() {
-  return <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="#6e1f1f" strokeWidth="1.5" strokeLinecap="round"/></svg>
+  return <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="var(--color-kk-bad)" strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
 function scoredCellBg(result: string | null): string {
   if (result === 'pass') return '#c8e6d0'
-  if (result === 'fail') return '#f09090'
+  if (result === 'fail') return 'var(--color-kk-bad-cell)'
   if (result === 'na')   return '#eceae4'
   return 'transparent'
 }
@@ -356,7 +356,7 @@ function DinerCheckpointMatrix({
           <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#c8e6d0' }}><MatrixIconCheck /></span>Acceptable
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
-          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#f09090' }}><MatrixIconCross /></span>Unacceptable
+          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'var(--color-kk-bad-cell)' }}><MatrixIconCross /></span>Unacceptable
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-kk-muted">
           <span className="inline-block w-5 h-5 rounded border border-kk-line" style={{ backgroundColor: '#eceae4' }} />Not assessed

@@ -1,11 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useTransition } from 'react'
-import { completeTask } from '@/lib/actions/tasks'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { completeTask, updateTask } from '@/lib/actions/tasks'
+import { canEditTaskTerms } from '@/lib/permissions'
+import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import { TaskStatusBadge } from '@/components/ui/StatusBadge'
 import { PriorityDot } from '@/components/ui/PriorityDot'
 import type { AppUser, TaskStatus } from '@/lib/types'
+
+type UserOption = { id: string; display_name: string; email: string }
 
 type TaskRow = {
   id: string
@@ -15,7 +20,8 @@ type TaskRow = {
   due_at: string | null
   completed_at: string | null
   owner_user_id: string | null
-  owner?: { id: string; display_name: string; email: string } | Array<{ id: string; display_name: string; email: string }>
+  created_by_user_id: string | null
+  owner?: UserOption | UserOption[]
   project?: { id: string; title: string } | Array<{ id: string; title: string }>
 }
 
@@ -52,6 +58,7 @@ function TaskCompleteButton({ taskId, status }: { taskId: string; status: string
     <button
       onClick={(e) => {
         e.preventDefault()
+        e.stopPropagation()
         startTransition(async () => { await completeTask(taskId) })
       }}
       disabled={isPending}
@@ -61,14 +68,165 @@ function TaskCompleteButton({ taskId, status }: { taskId: string; status: string
   )
 }
 
+// ---------------------------------------------------------------------------
+// TaskRow — isolated per-row state for inline field editing
+// ---------------------------------------------------------------------------
+
+function TaskRow({
+  task,
+  canEdit,
+  allUsers,
+  showProject,
+  saveScroll,
+}: {
+  task: TaskRow
+  canEdit: boolean
+  allUsers: UserOption[]
+  showProject: boolean
+  saveScroll: () => void
+}) {
+  const router = useRouter()
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const owner = Array.isArray(task.owner) ? task.owner[0] : task.owner
+  const project = Array.isArray(task.project) ? task.project[0] : task.project
+  const overdue = isOverdue(task.due_at, task.status)
+  const dueToday = isDueToday(task.due_at)
+  const done = task.status === 'done' || task.status === 'cancelled'
+
+  async function handleFieldSave(field: 'owner_user_id' | 'due_at', value: string | null) {
+    setSaving(true)
+    setSaveError(null)
+    const result = await updateTask(task.id, { [field]: value || undefined })
+    setSaving(false)
+    if (result.error) {
+      setSaveError(result.error)
+    } else {
+      router.refresh()
+    }
+  }
+
+  const deadlineCls = [
+    'text-xs font-medium',
+    overdue ? 'text-kk-bad' : dueToday ? 'text-kk-warn' : 'text-kk-muted',
+  ].join(' ')
+
+  const editCtrlCls =
+    'text-xs bg-transparent rounded px-1.5 py-0.5 outline-none cursor-pointer border border-transparent hover:border-kk-line hover:bg-kk-soft transition-all disabled:opacity-50 -ml-1.5'
+
+  return (
+    <div
+      className="flex items-start gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group cursor-pointer"
+      onClick={() => { saveScroll(); router.push(`/tasks/${task.id}`) }}
+    >
+      <div className="mt-1.5 shrink-0">
+        <PriorityDot priority={task.priority} />
+      </div>
+
+      <div className="mt-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+        <TaskCompleteButton taskId={task.id} status={task.status} />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-2 flex-wrap">
+          {/* Title — Link for right-click / keyboard nav; row click handles primary nav */}
+          <Link
+            href={`/tasks/${task.id}`}
+            onClick={e => { e.stopPropagation(); saveScroll() }}
+            className={[
+              'text-sm group-hover:underline',
+              done ? 'line-through text-kk-muted' : 'text-kk-ink font-medium',
+            ].join(' ')}
+          >
+            {task.title}
+          </Link>
+          <TaskStatusBadge status={task.status as TaskStatus} />
+        </div>
+
+        <div className="flex items-center gap-1 mt-1 flex-wrap">
+          {/* Owner */}
+          {canEdit ? (
+            <select
+              value={task.owner_user_id ?? ''}
+              onChange={async e => {
+                e.stopPropagation()
+                await handleFieldSave('owner_user_id', e.target.value || null)
+              }}
+              onClick={e => e.stopPropagation()}
+              disabled={saving}
+              className={`${editCtrlCls} text-kk-muted`}
+              title="Change owner"
+            >
+              <option value="">Unassigned</option>
+              {allUsers.map(u => (
+                <option key={u.id} value={u.id}>{u.display_name}</option>
+              ))}
+            </select>
+          ) : (
+            owner && (
+              <span className="text-xs text-kk-muted px-1.5 py-0.5">{owner.display_name}</span>
+            )
+          )}
+
+          {/* Project */}
+          {showProject && project && (
+            <span className="text-xs text-kk-muted px-1.5 py-0.5">{project.title}</span>
+          )}
+
+          {/* Deadline */}
+          {canEdit ? (
+            <input
+              type="date"
+              value={task.due_at ? task.due_at.slice(0, 10) : ''}
+              onChange={async e => {
+                e.stopPropagation()
+                await handleFieldSave('due_at', e.target.value || null)
+              }}
+              onClick={e => e.stopPropagation()}
+              disabled={saving}
+              className={`${editCtrlCls} ${deadlineCls} font-medium`}
+              title="Change deadline"
+            />
+          ) : (
+            task.due_at && (
+              <span className={`${deadlineCls} px-1.5 py-0.5`}>
+                {overdue ? 'Overdue · ' : dueToday ? 'Due today · ' : 'Due '}
+                {new Date(task.due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              </span>
+            )
+          )}
+
+          {saving && (
+            <span className="text-[10px] text-kk-muted px-1">Saving…</span>
+          )}
+        </div>
+
+        {saveError && (
+          <p className="text-[10px] text-kk-bad mt-0.5 px-1.5">{saveError}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// TaskList
+// ---------------------------------------------------------------------------
+
 export default function TaskList({
   tasks,
+  currentUser,
+  allUsers = [],
   showProject = true,
 }: {
   tasks: TaskRow[]
   currentUser?: AppUser
+  allUsers?: UserOption[]
   showProject?: boolean
 }) {
+  const { saveScroll } = useScrollRestoration('tasks-list')
+
   if (tasks.length === 0) {
     return (
       <div className="px-5 py-8 text-center text-sm text-kk-muted">
@@ -80,59 +238,19 @@ export default function TaskList({
   return (
     <div className="divide-y divide-kk-line">
       {tasks.map((task) => {
-        const owner = Array.isArray(task.owner) ? task.owner[0] : task.owner
-        const project = Array.isArray(task.project) ? task.project[0] : task.project
-        const overdue = isOverdue(task.due_at, task.status)
-        const dueToday = isDueToday(task.due_at)
-        const done = task.status === 'done' || task.status === 'cancelled'
+        const canEdit = currentUser
+          ? canEditTaskTerms(currentUser.role, task.created_by_user_id, currentUser.id)
+          : false
 
         return (
-          <Link
+          <TaskRow
             key={task.id}
-            href={`/tasks/${task.id}`}
-            className="flex items-start gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group"
-          >
-            <div className="mt-1.5 shrink-0">
-              <PriorityDot priority={task.priority} />
-            </div>
-
-            <div
-              className="mt-0.5 shrink-0"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <TaskCompleteButton taskId={task.id} status={task.status} />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start gap-2 flex-wrap">
-                <span className={[
-                  'text-sm group-hover:underline',
-                  done ? 'line-through text-kk-muted' : 'text-kk-ink font-medium',
-                ].join(' ')}>
-                  {task.title}
-                </span>
-                <TaskStatusBadge status={task.status as TaskStatus} />
-              </div>
-
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
-                {owner && (
-                  <span className="text-xs text-kk-muted">{owner.display_name}</span>
-                )}
-                {showProject && project && (
-                  <span className="text-xs text-kk-muted">{project.title}</span>
-                )}
-                {task.due_at && (
-                  <span className={[
-                    'text-xs font-medium',
-                    overdue ? 'text-kk-bad' : dueToday ? 'text-kk-warn' : 'text-kk-muted',
-                  ].join(' ')}>
-                    {overdue ? 'Overdue · ' : dueToday ? 'Due today · ' : 'Due '}
-                    {new Date(task.due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                  </span>
-                )}
-              </div>
-            </div>
-          </Link>
+            task={task}
+            canEdit={canEdit}
+            allUsers={allUsers}
+            showProject={showProject}
+            saveScroll={saveScroll}
+          />
         )
       })}
     </div>

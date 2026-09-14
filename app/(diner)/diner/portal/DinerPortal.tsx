@@ -134,7 +134,7 @@ export default function DinerPortal({ dinerId, dinerName, locations, visits }: P
         {/* Error */}
         {error && (
           <div style={{ padding: '12px 24px 0' }}>
-            <p style={{ margin: 0, fontSize: '13px', color: '#8d3737' }}>{error}</p>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-kk-bad)' }}>{error}</p>
           </div>
         )}
 
@@ -178,7 +178,7 @@ export default function DinerPortal({ dinerId, dinerName, locations, visits }: P
                     </span>
                   </div>
                   {v.score_pct != null && (
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: v.score_pct >= 85 ? '#2d6a4f' : v.score_pct >= 65 ? '#8a5b16' : '#8d3737' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: v.score_pct >= 85 ? '#2d6a4f' : v.score_pct >= 65 ? '#8a5b16' : 'var(--color-kk-bad)' }}>
                       {v.score_pct.toFixed(0)}%
                     </span>
                   )}

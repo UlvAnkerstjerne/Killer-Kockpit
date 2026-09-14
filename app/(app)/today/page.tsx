@@ -340,11 +340,13 @@ export default async function TodayPage({
 
     // Open todos (personal only — never aggregated by management view).
     // Recurrence filter: show non-recurring always; recurring only if scheduled_for ≤ today.
+    // Upgraded todos are excluded — they now live as Tasks.
     supabase.from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
       .eq('user_id', user.id)
       .is('completed_at', null)
       .is('cancelled_at', null)
+      .is('upgraded_to_task_id', null)
       .or(`recurrence_rule.is.null,scheduled_for.lte.${todayDateStr}`)
       .order('priority', { ascending: true })
       .order('created_at', { ascending: false })
@@ -352,7 +354,7 @@ export default async function TodayPage({
 
     // Todos completed this week
     supabase.from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
       .eq('user_id', user.id)
       .gte('completed_at', weekStartISO)
       .lt('completed_at', weekEndISO)
@@ -493,7 +495,7 @@ export default async function TodayPage({
       {/* ── Header — warm grey banner ────────────────────────────────────────── */}
       <div className="flex items-start justify-between -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-[#DDD9D1]">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-[#AD3919]">This week</h1>
+          <h1 className="font-brand text-2xl font-normal tracking-tight text-kk-brand">This week</h1>
           <p className="text-sm mt-0.5 text-kk-muted">{weekRangeLabel}</p>
         </div>
         {canManage && (
