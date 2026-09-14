@@ -222,62 +222,92 @@ export default async function OrganicPage() {
         </section>
 
         {/* ── Content ────────────────────────────────────────────────────────── */}
-        <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-kk-line flex items-center gap-2">
-            <span className="text-sm font-semibold text-kk-ink">Content</span>
-            <span className="text-xs text-kk-muted italic">Post-level performance not yet synced</span>
+        <section>
+          {/* Section header */}
+          <div className="mb-3">
+            <h2 className="text-lg font-bold text-kk-ink">Content</h2>
+            <p className="text-sm text-kk-muted mt-0.5">Instagram · Recent posts</p>
           </div>
 
           {igMedia.length > 0 && (
-            <div>
-              <div className="px-5 py-3 border-b border-kk-line bg-kk-soft">
-                <span className="text-xs font-semibold text-kk-muted uppercase tracking-wider">Instagram</span>
-              </div>
-              <div className="divide-y divide-kk-line">
-                {igMedia.map(post => {
-                  const thumbSrc = post.thumbnail_url ?? post.media_url ?? null
-                  return (
-                  <div key={post.id} className="px-5 py-3 flex items-center gap-3">
-                    {/* Thumbnail */}
-                    <IgThumbnail src={thumbSrc} />
-                    {/* Meta */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-kk-soft text-kk-muted shrink-0">
-                          {mediaTypeLabel(post.media_type)}
-                        </span>
+            <div className="space-y-2">
+              {igMedia.map(post => {
+                const thumbSrc = post.thumbnail_url ?? post.media_url ?? null
+                const isVideo = post.media_type === 'VIDEO' || post.media_type === 'REEL'
+                const primaryLabel = isVideo ? 'Views' : 'Reach'
+                const primaryValue = isVideo ? post.plays : post.reach
+
+                const cells = [
+                  { label: primaryLabel, value: primaryValue != null ? fmt(primaryValue) : '—' },
+                  { label: 'Likes',    value: post.likes          != null ? fmt(post.likes)          : '—' },
+                  { label: 'Comments', value: post.comments_count  != null ? fmt(post.comments_count)  : '—' },
+                  { label: 'Shares',   value: post.shares          != null ? fmt(post.shares)          : '—' },
+                  { label: 'Saves',    value: post.saved           != null ? fmt(post.saved)           : '—' },
+                ]
+
+                return (
+                  <div key={post.id} className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
+
+                    {/* ── Card header: type | date + link ── */}
+                    <div className="px-4 py-2.5 flex items-center justify-between bg-[#DDD9D1]">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-white/60 text-kk-muted">
+                        {mediaTypeLabel(post.media_type)}
+                      </span>
+                      <div className="flex items-center gap-3">
                         {post.published_at && (
                           <span className="text-xs text-kk-muted">{fmtDateLong(post.published_at)}</span>
                         )}
+                        {post.permalink && (
+                          <a
+                            href={post.permalink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-medium text-kk-ink underline underline-offset-2"
+                          >
+                            View ↗
+                          </a>
+                        )}
                       </div>
-                      {post.caption && (
-                        <p className="text-sm text-kk-ink line-clamp-2 mt-1">{post.caption}</p>
-                      )}
                     </div>
-                    <div className="shrink-0 flex items-center gap-3">
-                      <span className="text-xs text-kk-muted italic">Unavailable</span>
-                      {post.permalink && (
-                        <a
-                          href={post.permalink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs font-medium text-kk-ink underline underline-offset-2 shrink-0"
-                        >
-                          View ↗
-                        </a>
-                      )}
+
+                    {/* ── Card body: thumbnail + metrics ── */}
+                    <div className="flex min-h-[112px]">
+                      {/* Thumbnail — 112 px wide, fills full height */}
+                      <div className="w-28 shrink-0 border-r border-kk-line overflow-hidden bg-kk-soft">
+                        <IgThumbnail src={thumbSrc} />
+                      </div>
+
+                      {/* Metrics — 5 equal columns, Paid-style inline label: value */}
+                      <div
+                        className="flex-1 divide-x divide-kk-line"
+                        style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)' }}
+                      >
+                        {cells.map((cell, i) => (
+                          <div key={i} className="px-3 py-4 flex items-center gap-1.5">
+                            <span className="text-base font-medium text-kk-muted whitespace-nowrap">{cell.label}:</span>
+                            <span className="text-base font-bold text-kk-ink tabular-nums">{cell.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+
                   </div>
-                  )
-                })}
-              </div>
+                )
+              })}
             </div>
           )}
 
+          {igMedia.length === 0 && (
+            <div className="bg-kk-panel border border-kk-line rounded-xl px-5 py-6 text-sm text-kk-muted">
+              No Instagram posts synced yet.
+            </div>
+          )}
+
+          {/* ── Facebook — compact list, unchanged ── */}
           {fbPosts.length > 0 && (
-            <div className={igMedia.length > 0 ? 'border-t border-kk-line' : ''}>
+            <div className="mt-4 bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
               <div className="px-5 py-3 border-b border-kk-line bg-kk-soft">
-                <span className="text-xs font-semibold text-kk-muted uppercase tracking-wider">Facebook</span>
+                <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">Facebook</span>
               </div>
               <div className="divide-y divide-kk-line">
                 {fbPosts.map(post => (
@@ -310,10 +340,6 @@ export default async function OrganicPage() {
                 ))}
               </div>
             </div>
-          )}
-
-          {igMedia.length === 0 && fbPosts.length === 0 && (
-            <div className="px-5 py-6 text-sm text-kk-muted">No posts synced yet.</div>
           )}
         </section>
 

@@ -131,19 +131,25 @@ export async function fetchIgMedia(
 // Metric availability varies by media type and account age (>2 years → reach/plays unavailable).
 // We request the full current set and handle missing keys gracefully.
 // `impressions` not requested — deprecated in v26 for some media types.
+// v26 change: `plays` renamed to `views` for video/reel — mapped back to the `plays` DB column.
 
 const STRUCTURED_IG_MEDIA_METRICS = new Set([
   'reach', 'plays', 'saved', 'likes', 'comments', 'shares', 'total_interactions',
 ])
 
+// API metric name → DB column name (for v26 renames)
+const IG_METRIC_ALIASES: Record<string, string> = {
+  views: 'plays',  // v26: plays renamed to views for video/reel
+}
+
 export async function fetchIgMediaInsights(
   mediaId: string,
   mediaType: string,
 ): Promise<IgMediaInsights | null> {
-  // plays only available for video/reel types
   const isVideo = mediaType === 'VIDEO' || mediaType === 'REEL'
+  // v26: use `views` instead of `plays` for video/reel
   const requestMetrics = isVideo
-    ? 'reach,plays,saved,likes,comments,shares,total_interactions'
+    ? 'reach,views,saved,likes,comments,shares,total_interactions'
     : 'reach,saved,likes,comments,shares,total_interactions'
 
   let body: unknown
@@ -163,8 +169,9 @@ export async function fetchIgMediaInsights(
   for (const item of data) {
     const val = item.values?.[0]?.value ?? null
     if (val === null) continue
-    if (STRUCTURED_IG_MEDIA_METRICS.has(item.name)) {
-      (structured as Record<string, unknown>)[item.name] = val
+    const fieldName = IG_METRIC_ALIASES[item.name] ?? item.name
+    if (STRUCTURED_IG_MEDIA_METRICS.has(fieldName)) {
+      (structured as Record<string, unknown>)[fieldName] = val
     } else {
       other[item.name] = val
     }

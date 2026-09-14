@@ -1,30 +1,29 @@
 'use client'
 
+import { useState } from 'react'
+
+/**
+ * Fills whatever container wraps it (w-full h-full).
+ * Falls back to a neutral placeholder if src is null or the image fails to load.
+ */
 export default function IgThumbnail({ src }: { src: string | null }) {
-  if (!src) {
+  const [failed, setFailed] = useState(false)
+
+  if (!src || failed) {
     return (
-      <div className="w-14 h-14 rounded-lg bg-kk-soft flex items-center justify-center shrink-0">
-        <span className="text-kk-muted text-[10px] text-center leading-tight px-1">No preview</span>
+      <div className="w-full h-full flex items-center justify-center">
+        <span className="text-[10px] text-center leading-tight px-1 text-kk-muted">No preview</span>
       </div>
     )
   }
 
   return (
-    <div className="w-14 h-14 rounded-lg overflow-hidden bg-kk-soft shrink-0">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt=""
-        width={56}
-        height={56}
-        className="w-full h-full object-cover"
-        onError={(e) => {
-          const wrapper = (e.currentTarget as HTMLImageElement).closest('div')
-          if (wrapper) {
-            wrapper.innerHTML = '<span class="text-[10px] text-center leading-tight px-1 text-gray-400" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%">No preview</span>'
-          }
-        }}
-      />
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="w-full h-full object-cover"
+      onError={() => setFailed(true)}
+    />
   )
 }
