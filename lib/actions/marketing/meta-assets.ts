@@ -21,8 +21,10 @@ import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
 import type {
   MetaCampaignRow,
   MetaCampaignInsightRow,
+  MetaIgAccountDailyRow,
   MetaIgMediaRow,
   MetaFbPageInsightRow,
+  MetaFbPostRow,
   MetaSyncStatusRow,
 } from '@/lib/marketing/types/meta'
 
@@ -59,6 +61,26 @@ export async function getMetaCampaigns(): Promise<MetaCampaignRow[]> {
     .order('name')
 
   return (data ?? []) as MetaCampaignRow[]
+}
+
+// ── getAllCampaignInsights ─────────────────────────────────────────────────────
+// Fetches all campaign insight rows (no campaign or date filter).
+// Used by the Paid overview page to aggregate all-time totals per campaign.
+
+export async function getAllCampaignInsights(): Promise<MetaCampaignInsightRow[]> {
+  const { user, error } = await assertPaidManage()
+  if (error || !user) return []
+
+  const db = createServiceClient()
+  const { data } = await db
+    .from('meta_campaign_insights')
+    .select(`
+      campaign_id, date_start, impressions, reach, clicks, inline_link_clicks,
+      spend, cpm, cpc, ctr, frequency,
+      actions_json, cost_per_action_json, action_values_json
+    `)
+
+  return (data ?? []) as MetaCampaignInsightRow[]
 }
 
 // ── getMetaCampaignInsights ────────────────────────────────────────────────────
@@ -125,6 +147,42 @@ export async function getFbPageInsights(
     .order('date', { ascending: false })
 
   return (data ?? []) as MetaFbPageInsightRow[]
+}
+
+// ── getIgAccountDailyMetrics ───────────────────────────────────────────────────
+// Returns the most recent `limit` rows from meta_ig_account_daily, newest first.
+// Used by the Organic overview page.
+
+export async function getIgAccountDailyMetrics(limit = 16): Promise<MetaIgAccountDailyRow[]> {
+  const { user, error } = await assertPaidManage()
+  if (error || !user) return []
+
+  const db = createServiceClient()
+  const { data } = await db
+    .from('meta_ig_account_daily')
+    .select('ig_account_id, date, reach, followers_count, accounts_engaged, profile_views, other_metrics_json, synced_at')
+    .order('date', { ascending: false })
+    .limit(limit)
+
+  return (data ?? []) as MetaIgAccountDailyRow[]
+}
+
+// ── getFbPosts ─────────────────────────────────────────────────────────────────
+// Returns the most recent `limit` FB posts, newest first.
+// Used by the Organic overview page.
+
+export async function getFbPosts(limit = 10): Promise<MetaFbPostRow[]> {
+  const { user, error } = await assertPaidManage()
+  if (error || !user) return []
+
+  const db = createServiceClient()
+  const { data } = await db
+    .from('meta_fb_posts')
+    .select('id, page_id, post_type, message, permalink, published_at, synced_at')
+    .order('published_at', { ascending: false })
+    .limit(limit)
+
+  return (data ?? []) as MetaFbPostRow[]
 }
 
 // ── getMetaSyncStatus ──────────────────────────────────────────────────────────
