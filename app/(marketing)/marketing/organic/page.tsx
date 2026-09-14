@@ -233,8 +233,27 @@ export default async function OrganicPage() {
                 <span className="text-xs font-semibold text-kk-muted uppercase tracking-wider">Instagram</span>
               </div>
               <div className="divide-y divide-kk-line">
-                {igMedia.map(post => (
-                  <div key={post.id} className="px-5 py-3 flex items-start gap-3">
+                {igMedia.map(post => {
+                  const thumbSrc = post.thumbnail_url ?? post.media_url ?? null
+                  return (
+                  <div key={post.id} className="px-5 py-3 flex items-center gap-3">
+                    {/* Thumbnail */}
+                    <div className="shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-kk-soft flex items-center justify-center">
+                      {thumbSrc ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={thumbSrc}
+                          alt=""
+                          width={56}
+                          height={56}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                        />
+                      ) : (
+                        <span className="text-kk-muted text-[10px] text-center leading-tight px-1">No preview</span>
+                      )}
+                    </div>
+                    {/* Meta */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-0.5">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-kk-soft text-kk-muted shrink-0">
@@ -262,7 +281,8 @@ export default async function OrganicPage() {
                       )}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

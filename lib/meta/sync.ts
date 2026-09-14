@@ -463,13 +463,15 @@ async function syncIgOrganicDeep(db: Db, igAccountId: string, now: string): Prom
       // Upsert media identity row
       await db.from('meta_ig_media').upsert(
         {
-          id:           item.id,
+          id:            item.id,
           ig_account_id: igAccountId,
-          media_type:   item.media_type,
-          caption:      item.caption,
-          permalink:    item.permalink,
-          published_at: publishedAt,
-          synced_at:    now,
+          media_type:    item.media_type,
+          caption:       item.caption,
+          permalink:     item.permalink,
+          published_at:  publishedAt,
+          media_url:     item.media_url,
+          thumbnail_url: item.thumbnail_url,
+          synced_at:     now,
           // Insight columns will be updated below if within lookback window
         },
         { onConflict: 'id' },

@@ -82,6 +82,8 @@ export interface MetaIgMediaRow {
   caption:             string | null
   permalink:           string | null
   published_at:        string | null
+  media_url:           string | null
+  thumbnail_url:       string | null
   reach:               number | null
   plays:               number | null
   saved:               number | null

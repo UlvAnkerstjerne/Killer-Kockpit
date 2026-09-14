@@ -120,6 +120,7 @@ export async function getIgMediaFeed(limit = 50): Promise<MetaIgMediaRow[]> {
     .from('meta_ig_media')
     .select(`
       id, ig_account_id, media_type, caption, permalink, published_at,
+      media_url, thumbnail_url,
       reach, plays, saved, likes, comments_count, shares, total_interactions,
       other_metrics_json, synced_at
     `)

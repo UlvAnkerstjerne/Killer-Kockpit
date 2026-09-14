@@ -24,11 +24,13 @@ import { MetaApiError, MetaRateLimitError } from './client'
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface IgMedia {
-  id:           string
-  media_type:   string   // IMAGE | VIDEO | CAROUSEL_ALBUM | REEL
-  caption:      string | null
-  permalink:    string | null
-  published_at: string | null  // from `timestamp` field
+  id:            string
+  media_type:    string   // IMAGE | VIDEO | CAROUSEL_ALBUM | REEL
+  caption:       string | null
+  permalink:     string | null
+  published_at:  string | null  // from `timestamp` field
+  media_url:     string | null  // image URL (IMAGE / CAROUSEL_ALBUM cover); ~60-day expiry
+  thumbnail_url: string | null  // video/reel poster frame; ~60-day expiry
 }
 
 export interface IgMediaInsights {
@@ -102,7 +104,7 @@ export async function fetchIgMedia(
   since?: number,
 ): Promise<IgMedia[]> {
   const params: Record<string, string> = {
-    fields: 'id,media_type,caption,permalink,timestamp',
+    fields: 'id,media_type,caption,permalink,timestamp,media_url,thumbnail_url',
     limit:  '100',
   }
   if (since !== undefined) params.since = String(since)
@@ -110,14 +112,17 @@ export async function fetchIgMedia(
   const raw = await igFetchAllPages<{
     id: string; media_type: string; caption?: string
     permalink?: string; timestamp?: string
+    media_url?: string; thumbnail_url?: string
   }>(`${igAccountId}/media`, params)
 
   return raw.map((m) => ({
-    id:           m.id,
-    media_type:   m.media_type,
-    caption:      m.caption ?? null,
-    permalink:    m.permalink ?? null,
-    published_at: m.timestamp ?? null,
+    id:            m.id,
+    media_type:    m.media_type,
+    caption:       m.caption ?? null,
+    permalink:     m.permalink ?? null,
+    published_at:  m.timestamp ?? null,
+    media_url:     m.media_url     ?? null,
+    thumbnail_url: m.thumbnail_url ?? null,
   }))
 }
 
