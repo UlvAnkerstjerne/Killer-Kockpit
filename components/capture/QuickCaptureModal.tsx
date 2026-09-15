@@ -38,6 +38,12 @@ import type {
 } from '@/lib/actions/capture'
 import type { KkUpdateEntityType } from '@/lib/types'
 
+type QuickCaptureModalProps = {
+  onClose: () => void
+  title?: string
+  helper?: string
+}
+
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 export interface EntityRefUI {
@@ -525,7 +531,11 @@ function CandidateCard({
 
 type Phase = 'capture' | 'analysing' | 'review' | 'error'
 
-export default function QuickCaptureModal({ onClose }: { onClose: () => void }) {
+export default function QuickCaptureModal({
+  onClose,
+  title = 'Quick Capture',
+  helper,
+}: QuickCaptureModalProps) {
   const router = useRouter()
 
   // Persistent across steps
@@ -700,6 +710,9 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
   const captureStep = (
     <>
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        {helper ? (
+          <p className="text-sm text-kk-muted leading-relaxed">{helper}</p>
+        ) : null}
         <textarea
           ref={textareaRef}
           value={rawText}
@@ -858,7 +871,7 @@ export default function QuickCaptureModal({ onClose }: { onClose: () => void }) 
         {/* Header */}
         <div className="px-6 py-4 border-b border-kk-line flex items-center justify-between shrink-0">
           <h2 className="text-base font-semibold text-kk-ink">
-            {phase === 'review' && candidates.length > 0 ? 'Kockpit will remember' : 'Quick Capture'}
+            {phase === 'review' && candidates.length > 0 ? 'Kockpit will remember' : title}
           </h2>
           {phase !== 'analysing' && !saving && (
             <button

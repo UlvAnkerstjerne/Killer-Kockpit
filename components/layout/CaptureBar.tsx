@@ -40,7 +40,7 @@ export default function CaptureBar({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [canCapture])
 
-  const buttonRow = (
+  const createActions = (
     <>
       <button
         onClick={() => setOpen('task')}
@@ -76,25 +76,46 @@ export default function CaptureBar({
           + Note
         </button>
       )}
-      {canCapture && (
-        <button
-          onClick={() => setCaptureOpen(true)}
-          className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
-          title="Quick Capture (⌘⇧C)"
-        >
-          + Capture
-        </button>
-      )}
     </>
   )
+
+  const defaultCaptureAction = canCapture ? (
+    <button
+      onClick={() => setCaptureOpen(true)}
+      className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
+      title="Quick Capture (⌘⇧C)"
+    >
+      + Capture
+    </button>
+  ) : null
+
+  const todayCaptureAction = canCapture ? (
+    <button
+      onClick={() => setCaptureOpen(true)}
+      className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-2 text-sm px-3.5 py-1.5 bg-[#F5DA93] border border-[#e2c66f] text-kk-brand rounded-lg hover:bg-[#f2d27d] transition-colors font-medium shadow-sm"
+      title="Open Quick Capture (⌘⇧C)"
+    >
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 1.75a4.25 4.25 0 0 0-2.9 7.36v1.14h5.8V9.11A4.25 4.25 0 0 0 8 1.75Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+        <path d="M6.15 12.25h3.7M6.8 14.25h2.4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+      </svg>
+      Got an update?
+    </button>
+  ) : null
 
   return (
     <>
       {inline ? (
-        <div className="flex items-center gap-2">{buttonRow}</div>
+        <div className="flex flex-wrap items-center gap-2 w-full">
+          <div className="flex flex-wrap items-center gap-2">{createActions}</div>
+          {todayCaptureAction}
+        </div>
       ) : (
         <div className="border-b border-kk-line bg-kk-bg overflow-x-auto">
-          <div className="flex items-center gap-2 px-7 py-3 min-w-max">{buttonRow}</div>
+          <div className="flex items-center gap-2 px-7 py-3 min-w-max">
+            {createActions}
+            {defaultCaptureAction}
+          </div>
         </div>
       )}
       {open && (
@@ -105,7 +126,11 @@ export default function CaptureBar({
         />
       )}
       {captureOpen && (
-        <QuickCaptureModal onClose={() => setCaptureOpen(false)} />
+        <QuickCaptureModal
+          onClose={() => setCaptureOpen(false)}
+          title={inline ? 'Got an update?' : undefined}
+          helper={inline ? 'What happened? What changed? What should Kockpit remember?' : undefined}
+        />
       )}
     </>
   )
