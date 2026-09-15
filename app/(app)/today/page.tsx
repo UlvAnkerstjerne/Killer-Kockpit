@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser } from '@/lib/auth'
-import { canAccessManagementView } from '@/lib/permissions'
+import { getCurrentUser, getActiveUsers } from '@/lib/auth'
+import { canAccessManagementView, canAssignToOthers } from '@/lib/permissions'
 import {
   getCopenhagenWeekBounds,
   copenhagenMidnightUTC,
@@ -208,7 +208,7 @@ export default async function TodayPage({
 }: {
   searchParams: Promise<{ view?: string }>
 }) {
-  const [user, params] = await Promise.all([getCurrentUser(), searchParams])
+  const [user, params, allActiveUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
   const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
@@ -241,6 +241,7 @@ export default async function TodayPage({
     completedWeekTodosRes,
     pendingReviewTasksRes,
     returnedTasksRes,
+    activeProjectsRes,
   ] = await Promise.all([
 
     // Unfinished tasks: overdue OR due this week (not done/cancelled, not archived)
@@ -379,6 +380,13 @@ export default async function TodayPage({
       .is('archived_at', null)
       .order('returned_at', { ascending: false })
       .limit(20),
+
+    // Active projects for the upgrade-to-task modal
+    supabase.from('projects')
+      .select('id, title')
+      .is('archived_at', null)
+      .not('status', 'eq', 'completed')
+      .order('title'),
   ])
 
   // ─── Build unified work items list ────────────────────────────────────────
@@ -454,6 +462,13 @@ export default async function TodayPage({
 
   const openTodos        = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
   const completedThisWeek = filterCompletedThisWeek((completedWeekTodosRes.data ?? []) as Todo[], now)
+
+  // ─── Upgrade-to-task modal data (personal view only) ─────────────────────
+
+  const todoAllUsers = canAssignToOthers(user.role)
+    ? allActiveUsers
+    : [{ id: user.id, display_name: user.display_name, email: user.email }]
+  const todoProjects = (activeProjectsRes.data ?? []) as { id: string; title: string }[]
 
   // ─── Handoff review data (personal only) ─────────────────────────────────
 
@@ -580,6 +595,9 @@ export default async function TodayPage({
             maxItems={10}
             showFooter
             accentHeader
+            allUsers={todoAllUsers}
+            projects={todoProjects}
+            currentUserId={user.id}
           />
         </div>
 

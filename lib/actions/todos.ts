@@ -445,7 +445,7 @@ export async function upgradeTodoToTask(
     return { error: 'Failed to create task. Please try again.' }
   }
 
-  // 2. Record source provenance on the task.
+  // 2. Record source provenance on the task (non-fatal).
   const { error: taskPatchError } = await serviceClient
     .from('tasks')
     .update({ source_todo_id: todoId })
@@ -453,19 +453,18 @@ export async function upgradeTodoToTask(
 
   if (taskPatchError) {
     console.error('[upgradeTodoToTask:taskPatch]', taskPatchError)
-    // Non-fatal: task was created; provenance missing but data intact.
   }
 
-  // 3. Mark the to-do as upgraded (removes it from the active list).
-  const now = new Date().toISOString()
-  const { error: todoUpdateError } = await serviceClient
-    .from('todos')
-    .update({ upgraded_to_task_id: taskId, upgraded_at: now, updated_at: now })
-    .eq('id', todoId)
-    .eq('user_id', user.id)
+  // 3. Atomically mark the to-do as upgraded and, if recurring, spawn the
+  //    next occurrence so future recurrences continue.
+  const { error: upgradeError } = await serviceClient.rpc('upgrade_recurring_todo', {
+    p_todo_id:  todoId,
+    p_task_id:  taskId as string,
+    p_actor_id: user.id,
+  })
 
-  if (todoUpdateError) {
-    console.error('[upgradeTodoToTask:todoUpdate]', todoUpdateError)
+  if (upgradeError) {
+    console.error('[upgradeTodoToTask:upgrade]', upgradeError)
     return { error: 'Task created but could not update the to-do. Please refresh.' }
   }
 

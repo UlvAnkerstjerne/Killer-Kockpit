@@ -19,24 +19,35 @@ import type { Todo } from '@/lib/types'
 import Link from 'next/link'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
+import UpgradeToTaskModal from './UpgradeToTaskModal'
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
+type UserOption    = { id: string; display_name: string; email: string }
+type ProjectOption = { id: string; title: string }
+
 interface Props {
   openTodos: Todo[]
   completedThisWeek: Todo[]
-  maxItems?: number     // if set, cap visible open todos (badge still shows full count)
-  showFooter?: boolean  // if true, render a footer link instead of the header "All →" link
+  maxItems?: number        // if set, cap visible open todos (badge still shows full count)
+  showFooter?: boolean     // if true, render a footer link instead of the header "All →" link
   accentHeader?: boolean   // if true, apply warm-grey header (Today page)
+  // Upgrade-to-task: when provided, shows "→ Task" action on each open todo row
+  allUsers?: UserOption[]
+  projects?: ProjectOption[]
+  currentUserId?: string
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function TodoBlock({ openTodos, completedThisWeek, maxItems, showFooter, accentHeader }: Props) {
+export default function TodoBlock({
+  openTodos, completedThisWeek, maxItems, showFooter, accentHeader,
+  allUsers, projects, currentUserId,
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -51,6 +62,10 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
   const [completionContextText, setCompletionContextText] = useState('')
   const [completionLoading,     setCompletionLoading]     = useState(false)
   const [completionError,       setCompletionError]       = useState<string | null>(null)
+
+  // Upgrade to task modal
+  const [upgradingTodo, setUpgradingTodo] = useState<Todo | null>(null)
+  const canUpgrade = !!(allUsers && projects !== undefined && currentUserId)
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -207,6 +222,19 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
                   {PRIORITY_CONFIG[todo.priority]?.label}
                 </span>
 
+                {/* Upgrade to Task — visible on hover */}
+                {canUpgrade && (
+                  <button
+                    onClick={() => setUpgradingTodo(todo)}
+                    disabled={isPending || completionLoading}
+                    className="text-[10px] text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
+                    title="Upgrade to Task"
+                    aria-label="Upgrade to Task"
+                  >
+                    → Task
+                  </button>
+                )}
+
                 {/* Cancel button — visible on hover */}
                 <button
                   onClick={() => handleAction(() => cancelTodo(todo.id))}
@@ -315,6 +343,21 @@ export default function TodoBlock({ openTodos, completedThisWeek, maxItems, show
             View all to-dos →
           </Link>
         </div>
+      )}
+
+      {/* Upgrade-to-Task modal — rendered outside the card scroll context */}
+      {upgradingTodo && canUpgrade && (
+        <UpgradeToTaskModal
+          todo={upgradingTodo}
+          allUsers={allUsers!}
+          projects={projects!}
+          currentUserId={currentUserId!}
+          onClose={() => setUpgradingTodo(null)}
+          onSuccess={() => {
+            setUpgradingTodo(null)
+            startTransition(() => router.refresh())
+          }}
+        />
       )}
     </div>
   )
