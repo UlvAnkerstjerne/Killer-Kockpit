@@ -508,13 +508,13 @@ export default async function TodayPage({
     <div>
 
       {/* ── Header — warm grey banner ────────────────────────────────────────── */}
-      <div className="flex items-start justify-between -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-[#DDD9D1]">
-        <div>
-          <h1 className="font-brand text-2xl font-normal tracking-tight text-kk-brand">This week</h1>
-          <p className="text-sm mt-0.5 text-kk-muted">{weekRangeLabel}</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-[#DDD9D1]">
+        <h1 className="font-brand text-2xl font-normal tracking-tight whitespace-nowrap">
+          <span className="text-kk-brand">This week</span>
+          <span className="text-kk-muted"> · {weekRangeLabel}</span>
+        </h1>
         {canManage && (
-          <div className="flex gap-1 text-sm">
+          <div className="flex gap-1 text-sm ml-auto">
             <Link
               href="/today?view=personal"
               className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-white text-kk-ink font-semibold shadow-sm ring-1 ring-kk-line' : 'text-kk-muted hover:bg-kk-line/50 hover:text-kk-ink'}`}

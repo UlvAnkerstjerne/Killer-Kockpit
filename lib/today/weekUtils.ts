@@ -161,14 +161,29 @@ export function sortWorkItems(items: WorkItem[], now: Date): WorkItem[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns e.g. "6 Jan – 12 Jan" for the week header.
- * weekEnd is the exclusive bound (next Mon 00:00), so Sunday = weekEnd − 1 ms.
+ * Returns a compact range for the week header, e.g. "6–12 Jan" or
+ * "28 Sept–4 Oct". weekEnd is the exclusive bound (next Mon 00:00), so
+ * Sunday = weekEnd − 1 ms.
  */
 export function formatCopenhagenWeekRange(weekStart: Date, weekEnd: Date): string {
   const sunday = new Date(weekEnd.getTime() - 1)
-  const fmt = (d: Date) =>
-    d.toLocaleDateString('en-GB', { timeZone: TZ, day: 'numeric', month: 'short' })
-  return `${fmt(weekStart)} – ${fmt(sunday)}`
+  const parts = (d: Date) => {
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      timeZone: TZ,
+      day: 'numeric',
+      month: 'short',
+    }).formatToParts(d)
+    return {
+      day: formatted.find(part => part.type === 'day')!.value,
+      month: formatted.find(part => part.type === 'month')!.value,
+    }
+  }
+  const start = parts(weekStart)
+  const end = parts(sunday)
+
+  return start.month === end.month
+    ? `${start.day}–${end.day} ${end.month}`
+    : `${start.day} ${start.month}–${end.day} ${end.month}`
 }
 
 // ---------------------------------------------------------------------------

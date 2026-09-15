@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest'
 import {
   getCopenhagenWeekBounds,
   getDueState,
+  formatCopenhagenWeekRange,
   sortWorkItems,
 } from '@/lib/today/weekUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
@@ -109,6 +110,22 @@ describe('getCopenhagenWeekBounds', () => {
     const { weekStart: ws2 } = getCopenhagenWeekBounds(MON_JAN_15)
     expect(ws2.getTime()).toBeGreaterThan(ws1.getTime())
     expect(ws2.getTime() - ws1.getTime()).toBe(7 * 24 * 60 * 60 * 1000)
+  })
+})
+
+describe('formatCopenhagenWeekRange', () => {
+  it('uses one month label when the week stays within a month', () => {
+    expect(formatCopenhagenWeekRange(
+      mkCph('2026-09-14T00:00:00'),
+      mkCph('2026-09-21T00:00:00'),
+    )).toBe('14–20 Sept')
+  })
+
+  it('keeps both month labels when the week crosses a month boundary', () => {
+    expect(formatCopenhagenWeekRange(
+      mkCph('2026-09-28T00:00:00'),
+      mkCph('2026-10-05T00:00:00'),
+    )).toBe('28 Sept–4 Oct')
   })
 })
 
