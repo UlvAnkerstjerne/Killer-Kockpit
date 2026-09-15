@@ -227,7 +227,7 @@ export default function TodoBlock({
                   <button
                     onClick={() => setUpgradingTodo(todo)}
                     disabled={isPending || completionLoading}
-                    className="text-[10px] text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
+                    className="text-[10px] text-kk-muted sm:opacity-0 sm:group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
                     title="Upgrade to Task"
                     aria-label="Upgrade to Task"
                   >
