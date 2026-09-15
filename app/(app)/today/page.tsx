@@ -577,7 +577,7 @@ export default async function TodayPage({
           <TodoBlock
             openTodos={openTodos}
             completedThisWeek={[]}
-            maxItems={5}
+            maxItems={10}
             showFooter
             accentHeader
           />
