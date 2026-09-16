@@ -233,19 +233,28 @@ export default function GooglePageClient({
   const scCurCtr         = scCurImpressions > 0 ? (scCurClicks / scCurImpressions) * 100 : 0
   const scPriCtr         = scPriImpressions > 0 ? (scPriClicks / scPriImpressions) * 100 : 0
 
-  const scCurPosRows  = scCur.filter((r) => r.position != null)
-  const scPriPosRows  = scPri.filter((r) => r.position != null)
-  const scCurPosition = scCurPosRows.length > 0
-    ? scCurPosRows.reduce((a, r) => a + r.position!, 0) / scCurPosRows.length : 0
-  const scPriPosition = scPriPosRows.length > 0
-    ? scPriPosRows.reduce((a, r) => a + r.position!, 0) / scPriPosRows.length : 0
+  // Impression-weighted average position (days missing position are excluded, not zeroed)
+  const scCurPosRows = scCur.filter((r) => r.position != null && (r.impressions ?? 0) > 0)
+  const scPriPosRows = scPri.filter((r) => r.position != null && (r.impressions ?? 0) > 0)
+  const scCurPosImps = scCurPosRows.reduce((a, r) => a + r.impressions!, 0)
+  const scPriPosImps = scPriPosRows.reduce((a, r) => a + r.impressions!, 0)
+  const scCurPosition = scCurPosImps > 0
+    ? scCurPosRows.reduce((a, r) => a + r.position! * r.impressions!, 0) / scCurPosImps : 0
+  const scPriPosition = scPriPosImps > 0
+    ? scPriPosRows.reduce((a, r) => a + r.position! * r.impressions!, 0) / scPriPosImps : 0
 
   // ── GA4 aggregations ─────────────────────────────────────────────────────────
 
   const g4CurSessions  = g4Cur.reduce((a, r) => a + (r.sessions ?? 0), 0)
   const g4PriSessions  = g4Pri.reduce((a, r) => a + (r.sessions ?? 0), 0)
-  const g4CurUsers     = g4Cur.reduce((a, r) => a + (r.total_users ?? 0), 0)
-  const g4PriUsers     = g4Pri.reduce((a, r) => a + (r.total_users ?? 0), 0)
+  // Avg. Daily Users — summing daily total_users double-counts returning users,
+  // so we report the average daily unique users across the period instead.
+  const g4CurUsersDays = g4Cur.filter((r) => r.total_users != null).length
+  const g4PriUsersDays = g4Pri.filter((r) => r.total_users != null).length
+  const g4CurUsers     = g4CurUsersDays > 0
+    ? g4Cur.reduce((a, r) => a + (r.total_users ?? 0), 0) / g4CurUsersDays : 0
+  const g4PriUsers     = g4PriUsersDays > 0
+    ? g4Pri.reduce((a, r) => a + (r.total_users ?? 0), 0) / g4PriUsersDays : 0
   const g4CurNewUsers  = g4Cur.reduce((a, r) => a + (r.new_users ?? 0), 0)
   const g4PriNewUsers  = g4Pri.reduce((a, r) => a + (r.new_users ?? 0), 0)
   const g4CurPageViews = g4Cur.reduce((a, r) => a + (r.screen_page_views ?? 0), 0)
@@ -280,13 +289,15 @@ export default function GooglePageClient({
       key: 'ctr', label: 'CTR',
       cur: scCurCtr, pri: scPriCtr, lowerBetter: false,
       fmtVal: (v) => v.toFixed(2) + '%',
-      chartRows: scCur.map((r) => ({ date: r.date, value: (r.ctr ?? 0) * 100 })),
+      // Only rows with actual CTR data — no fake zeros for missing days
+      chartRows: scCur.filter((r) => r.ctr != null).map((r) => ({ date: r.date, value: r.ctr! * 100 })),
     },
     {
       key: 'position', label: 'Avg. Position',
       cur: scCurPosition, pri: scPriPosition, lowerBetter: true,
       fmtVal: (v) => v.toFixed(1),
-      chartRows: scCur.map((r) => ({ date: r.date, value: r.position ?? 0 })),
+      // Only rows with actual position data — no fake zeros for missing days
+      chartRows: scCur.filter((r) => r.position != null).map((r) => ({ date: r.date, value: r.position! })),
     },
   ]
 
@@ -305,10 +316,11 @@ export default function GooglePageClient({
       chartRows: g4Cur.map((r) => ({ date: r.date, value: r.sessions ?? 0 })),
     },
     {
-      key: 'total_users', label: 'Users',
+      key: 'total_users', label: 'Avg. Daily Users',
       cur: g4CurUsers, pri: g4PriUsers,
-      fmtVal: fmt,
-      chartRows: g4Cur.map((r) => ({ date: r.date, value: r.total_users ?? 0 })),
+      fmtVal: (v) => fmt(Math.round(v)),
+      // Chart still shows daily users (correct — one unique count per day)
+      chartRows: g4Cur.filter((r) => r.total_users != null).map((r) => ({ date: r.date, value: r.total_users! })),
     },
     {
       key: 'new_users', label: 'New Users',
