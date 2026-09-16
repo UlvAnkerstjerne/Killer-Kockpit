@@ -145,24 +145,28 @@ export default async function GooglePage() {
         .select('date, query, clicks, impressions, position')
         .eq('site_url', SC_SITE_URL)
         .gte('date', since90)
-        .order('date'),
+        .order('date')
+        .limit(50000),
       db.from('gsc_pages')
         .select('date, page, clicks, impressions, position')
         .eq('site_url', SC_SITE_URL)
         .gte('date', since90)
-        .order('date'),
+        .order('date')
+        .limit(50000),
       // Full traffic-source breakdown (all sources/mediums, not just organic).
       // total_users intentionally omitted — daily summing overcounts returning users.
       db.from('ga4_traffic_sources')
         .select('date, session_source, session_medium, sessions, new_users')
         .eq('property_id', GA4_PROPERTY_ID)
         .gte('date', since90)
-        .order('date'),
+        .order('date')
+        .limit(10000),
       db.from('ga4_landing_pages')
         .select('date, landing_page, sessions, new_users')
         .eq('property_id', GA4_PROPERTY_ID)
         .gte('date', since90)
-        .order('date'),
+        .order('date')
+        .limit(10000),
     ])
 
   if (gscRes.error)     console.error('[google/page] gsc_daily:',           gscRes.error.message)
