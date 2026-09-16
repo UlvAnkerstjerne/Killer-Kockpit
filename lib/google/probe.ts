@@ -43,9 +43,34 @@ export type GA4ProbeResult =
 
 // ── Search Console ─────────────────────────────────────────────────────────────
 
+export type SearchConsoleSite = { siteUrl: string; permissionLevel: string }
+
+/**
+ * Lists all Search Console properties accessible to the OAuth token.
+ * Useful for diagnosing property-URL mismatches (sc-domain: vs https://).
+ */
+export async function listSearchConsoleSites(
+  userId: string,
+): Promise<{ ok: true; sites: SearchConsoleSite[] } | { ok: false; error: string }> {
+  const client = await getGoogleOAuth2Client(userId)
+  if (!client) return { ok: false, error: 'No Google OAuth token stored for this user.' }
+
+  try {
+    const wm = google.webmasters({ version: 'v3', auth: client })
+    const { data } = await wm.sites.list()
+    const sites = (data.siteEntry ?? []).map(s => ({
+      siteUrl:         s.siteUrl         ?? '',
+      permissionLevel: s.permissionLevel ?? '',
+    }))
+    return { ok: true, sites }
+  } catch (err) {
+    return { ok: false, error: String((err as Error).message ?? err) }
+  }
+}
+
 /**
  * Queries Search Console for a small sample of top queries on the given
- * property over the past ~14 days (respecting the 2-3 day data lag).
+ * property over the past ~90 days (respecting the 2-3 day data lag).
  */
 export async function probeSearchConsole(
   userId:   string,
@@ -54,12 +79,14 @@ export async function probeSearchConsole(
   const client = await getGoogleOAuth2Client(userId)
   if (!client) return { ok: false, error: 'No Google OAuth token stored for this user.' }
 
-  // Use a date range with lag headroom: end 3 days ago, 14-day window
+  // Expanded to 90-day window to catch historical data
   const endDate   = offsetDate(new Date(), -3)
-  const startDate = offsetDate(new Date(), -17)
+  const startDate = offsetDate(new Date(), -93)
 
   try {
     const wm = google.webmasters({ version: 'v3', auth: client })
+
+    // Try query dimension first
     const { data } = await wm.searchanalytics.query({
       siteUrl,
       requestBody: {
@@ -77,6 +104,36 @@ export async function probeSearchConsole(
       ctr:         r.ctr         ?? 0,
       position:    r.position    ?? 0,
     }))
+
+    // If query dimension returns nothing, try page dimension as fallback
+    if (rows.length === 0) {
+      const { data: pageData } = await wm.searchanalytics.query({
+        siteUrl,
+        requestBody: {
+          startDate,
+          endDate,
+          dimensions: ['page'],
+          rowLimit:   5,
+        },
+      })
+
+      const pageRows = (pageData.rows ?? []).map(r => ({
+        query:       (r.keys ?? [])[0] ?? '',
+        clicks:      r.clicks      ?? 0,
+        impressions: r.impressions ?? 0,
+        ctr:         r.ctr         ?? 0,
+        position:    r.position    ?? 0,
+      }))
+
+      return {
+        ok:        true,
+        property:  siteUrl,
+        dateRange: { start: startDate, end: endDate },
+        rows:      pageRows,
+        // @ts-ignore — extra diagnostic field
+        dimension: pageRows.length > 0 ? 'page (query dimension returned empty)' : 'none — no data for property in 90-day window',
+      }
+    }
 
     return { ok: true, property: siteUrl, dateRange: { start: startDate, end: endDate }, rows }
   } catch (err) {

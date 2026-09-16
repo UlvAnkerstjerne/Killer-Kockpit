@@ -14,7 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
-import { probeSearchConsole, probeGA4 } from '@/lib/google/probe'
+import { listSearchConsoleSites, probeSearchConsole, probeGA4 } from '@/lib/google/probe'
 
 const SC_PROPERTY    = 'https://killerkebab.com/'
 const GA4_PROPERTY_ID = '333149501'
@@ -27,10 +27,11 @@ export async function GET() {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
   }
 
-  const [searchConsole, ga4] = await Promise.all([
+  const [searchConsoleSites, searchConsole, ga4] = await Promise.all([
+    listSearchConsoleSites(user.id),
     probeSearchConsole(user.id, SC_PROPERTY),
     probeGA4(user.id, GA4_PROPERTY_ID),
   ])
 
-  return NextResponse.json({ userId: user.id, searchConsole, ga4 })
+  return NextResponse.json({ userId: user.id, searchConsoleSites, searchConsole, ga4 })
 }
