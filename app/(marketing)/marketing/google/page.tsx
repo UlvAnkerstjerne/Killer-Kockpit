@@ -56,49 +56,46 @@ function aggregateGsc<T extends {
 }
 
 // ── GA4 breakdown aggregation ──────────────────────────────────────────────────
-// Share of sessions computed from total sessions across all keys in the window.
-// Users = summed total_users per dimension per day (standard GA4 dimension reporting).
+// ga4DailyTotal: authoritative session count from ga4_daily for the same window.
+// Using ga4_daily as the denominator ensures Share matches the Analytics overview
+// total, regardless of whether the breakdown tables cover every session.
+// Users column is omitted: summing daily total_users across 28d/90d double-counts
+// returning users and is not a meaningful period-unique user figure.
 
 type RawSourceRow = {
   date: string
   session_source: string
   session_medium: string
-  sessions:    number | null
-  total_users: number | null
-  new_users:   number | null
+  sessions:  number | null
+  new_users: number | null
 }
 
 type RawLandingPageRow = {
   date: string
   landing_page: string
-  sessions:    number | null
-  total_users: number | null
-  new_users:   number | null
+  sessions:  number | null
+  new_users: number | null
 }
 
 function aggregateGa4Breakdown<T extends {
   date: string
-  sessions:    number | null
-  total_users: number | null
-  new_users:   number | null
+  sessions:  number | null
+  new_users: number | null
 }>(
   rows: T[],
   getKey: (r: T) => string,
   dateStart: string,
-  dateEnd: string
+  dateEnd: string,
+  ga4DailyTotal: number   // from ga4_daily — the authoritative denominator
 ): Ga4BreakdownRow[] {
-  const map = new Map<string, { sessions: number; users: number; newUsers: number }>()
-  let totalSessions = 0
+  const map = new Map<string, { sessions: number; newUsers: number }>()
 
   for (const row of rows) {
     if (row.date < dateStart || row.date > dateEnd) continue
     const k   = getKey(row)
-    const acc = map.get(k) ?? { sessions: 0, users: 0, newUsers: 0 }
-    const s   = row.sessions ?? 0
-    acc.sessions += s
-    acc.users    += row.total_users ?? 0
-    acc.newUsers += row.new_users   ?? 0
-    totalSessions += s
+    const acc = map.get(k) ?? { sessions: 0, newUsers: 0 }
+    acc.sessions += row.sessions  ?? 0
+    acc.newUsers += row.new_users ?? 0
     map.set(k, acc)
   }
 
@@ -106,9 +103,8 @@ function aggregateGa4Breakdown<T extends {
     .map(([key, acc]) => ({
       key,
       sessions:        acc.sessions,
-      users:           acc.users,
       newUsers:        acc.newUsers,
-      shareOfSessions: totalSessions > 0 ? acc.sessions / totalSessions : 0,
+      shareOfSessions: ga4DailyTotal > 0 ? acc.sessions / ga4DailyTotal : 0,
     }))
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10)
@@ -155,14 +151,15 @@ export default async function GooglePage() {
         .eq('site_url', SC_SITE_URL)
         .gte('date', since90)
         .order('date'),
-      // Full traffic-source breakdown (all sources/mediums, not just organic)
+      // Full traffic-source breakdown (all sources/mediums, not just organic).
+      // total_users intentionally omitted — daily summing overcounts returning users.
       db.from('ga4_traffic_sources')
-        .select('date, session_source, session_medium, sessions, total_users, new_users')
+        .select('date, session_source, session_medium, sessions, new_users')
         .eq('property_id', GA4_PROPERTY_ID)
         .gte('date', since90)
         .order('date'),
       db.from('ga4_landing_pages')
-        .select('date, landing_page, sessions, total_users, new_users')
+        .select('date, landing_page, sessions, new_users')
         .eq('property_id', GA4_PROPERTY_ID)
         .gte('date', since90)
         .order('date'),
@@ -194,14 +191,23 @@ export default async function GooglePage() {
   const pages28   = aggregateGsc(pagesData,   (r) => r.page,  cur28Start, curEnd)
   const pages90   = aggregateGsc(pagesData,   (r) => r.page,  cur90Start, curEnd)
 
-  // GA4 breakdowns — pre-aggregated server-side for both periods
-  const sourcesData  = (sourcesRes.data ?? []) as RawSourceRow[]
-  const landingData  = (landingRes.data ?? []) as RawLandingPageRow[]
+  // GA4 breakdowns — pre-aggregated server-side for both periods.
+  // Denominators come from ga4_daily so Share matches the Analytics overview total.
+  const ga4Daily = ga4Res.data ?? []
+  const g4Total28 = ga4Daily
+    .filter((r) => r.date >= cur28Start && r.date <= curEnd)
+    .reduce((a, r) => a + ((r.sessions as number | null) ?? 0), 0)
+  const g4Total90 = ga4Daily
+    .filter((r) => r.date >= cur90Start && r.date <= curEnd)
+    .reduce((a, r) => a + ((r.sessions as number | null) ?? 0), 0)
 
-  const sources28     = aggregateGa4Breakdown(sourcesData, (r) => `${r.session_source} / ${r.session_medium}`, cur28Start, curEnd)
-  const sources90     = aggregateGa4Breakdown(sourcesData, (r) => `${r.session_source} / ${r.session_medium}`, cur90Start, curEnd)
-  const landingPages28 = aggregateGa4Breakdown(landingData, (r) => r.landing_page, cur28Start, curEnd)
-  const landingPages90 = aggregateGa4Breakdown(landingData, (r) => r.landing_page, cur90Start, curEnd)
+  const sourcesData = (sourcesRes.data ?? []) as RawSourceRow[]
+  const landingData = (landingRes.data ?? []) as RawLandingPageRow[]
+
+  const sources28      = aggregateGa4Breakdown(sourcesData, (r) => `${r.session_source} / ${r.session_medium}`, cur28Start, curEnd, g4Total28)
+  const sources90      = aggregateGa4Breakdown(sourcesData, (r) => `${r.session_source} / ${r.session_medium}`, cur90Start, curEnd, g4Total90)
+  const landingPages28 = aggregateGa4Breakdown(landingData, (r) => r.landing_page, cur28Start, curEnd, g4Total28)
+  const landingPages90 = aggregateGa4Breakdown(landingData, (r) => r.landing_page, cur90Start, curEnd, g4Total90)
 
   return (
     <GooglePageClient

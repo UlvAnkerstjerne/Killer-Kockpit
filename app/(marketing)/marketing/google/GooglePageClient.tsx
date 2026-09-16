@@ -36,9 +36,8 @@ export interface GscBreakdownRow {
 export interface Ga4BreakdownRow {
   key:             string   // "source / medium" or landing page path
   sessions:        number
-  users:           number
   newUsers:        number
-  shareOfSessions: number  // fraction 0–1; source sessions / total sessions in period
+  shareOfSessions: number  // fraction 0–1; row sessions / ga4_daily total for the period
 }
 
 type ScMetric  = 'impressions' | 'clicks' | 'ctr' | 'position'
@@ -524,11 +523,10 @@ function Ga4BreakdownTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm table-fixed">
+          <table className="w-full min-w-[440px] text-sm table-fixed">
             <colgroup>
               <col />
               <col className="w-20" />
-              <col className="w-16" />
               <col className="w-20" />
               <col className="w-28" />
             </colgroup>
@@ -539,9 +537,6 @@ function Ga4BreakdownTable({
                 </th>
                 <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
                   Sessions
-                </th>
-                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
-                  Users
                 </th>
                 <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
                   New Users
@@ -598,9 +593,6 @@ function Ga4BreakdownTable({
                     </td>
                     <td className="py-2 px-2 text-right tabular-nums text-kk-ink font-medium">
                       {fmt(row.sessions)}
-                    </td>
-                    <td className="py-2 px-2 text-right tabular-nums text-kk-muted">
-                      {fmt(row.users)}
                     </td>
                     <td className="py-2 px-2 text-right tabular-nums text-kk-muted">
                       {fmt(row.newUsers)}
