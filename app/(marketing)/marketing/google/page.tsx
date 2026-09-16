@@ -21,7 +21,8 @@ export default async function GooglePage() {
       .gte('date', since)
       .order('date'),
     db.from('ga4_daily')
-      .select('date, sessions, total_users, new_users, screen_page_views')
+      // Column is `page_views` (stores screenPageViews metric) — NOT screen_page_views
+      .select('date, sessions, total_users, new_users, page_views')
       .eq('property_id', GA4_PROPERTY_ID)
       .gte('date', since)
       .order('date'),
@@ -32,6 +33,10 @@ export default async function GooglePage() {
       .gte('date', since)
       .order('date'),
   ])
+
+  if (gscRes.error) console.error('[google/page] gsc_daily query error:', gscRes.error.message)
+  if (ga4Res.error) console.error('[google/page] ga4_daily query error:', ga4Res.error.message)
+  if (orgRes.error) console.error('[google/page] ga4_traffic_sources query error:', orgRes.error.message)
 
   // Aggregate organic sessions by date (multiple sources per date with medium=organic)
   const orgMap = new Map<string, number>()

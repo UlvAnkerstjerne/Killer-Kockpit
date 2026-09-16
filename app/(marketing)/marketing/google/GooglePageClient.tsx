@@ -17,7 +17,7 @@ export interface Ga4Row {
   sessions: number | null
   total_users: number | null
   new_users: number | null
-  screen_page_views: number | null
+  page_views: number | null  // stored as page_views (screenPageViews metric)
 }
 
 export interface OrgRow {
@@ -26,7 +26,7 @@ export interface OrgRow {
 }
 
 type ScMetric  = 'impressions' | 'clicks' | 'ctr' | 'position'
-type Ga4Metric = 'sessions' | 'total_users' | 'new_users' | 'screen_page_views' | 'organic_sessions'
+type Ga4Metric = 'sessions' | 'total_users' | 'new_users' | 'page_views' | 'organic_sessions'
 type ChartType = 'line' | 'bar'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -257,8 +257,8 @@ export default function GooglePageClient({
     ? g4Pri.reduce((a, r) => a + (r.total_users ?? 0), 0) / g4PriUsersDays : 0
   const g4CurNewUsers  = g4Cur.reduce((a, r) => a + (r.new_users ?? 0), 0)
   const g4PriNewUsers  = g4Pri.reduce((a, r) => a + (r.new_users ?? 0), 0)
-  const g4CurPageViews = g4Cur.reduce((a, r) => a + (r.screen_page_views ?? 0), 0)
-  const g4PriPageViews = g4Pri.reduce((a, r) => a + (r.screen_page_views ?? 0), 0)
+  const g4CurPageViews = g4Cur.reduce((a, r) => a + (r.page_views ?? 0), 0)
+  const g4PriPageViews = g4Pri.reduce((a, r) => a + (r.page_views ?? 0), 0)
   const ogCurSessions  = ogCur.reduce((a, r) => a + r.sessions, 0)
   const ogPriSessions  = ogPri.reduce((a, r) => a + r.sessions, 0)
 
@@ -329,10 +329,10 @@ export default function GooglePageClient({
       chartRows: g4Cur.map((r) => ({ date: r.date, value: r.new_users ?? 0 })),
     },
     {
-      key: 'screen_page_views', label: 'Page Views',
+      key: 'page_views', label: 'Page Views',
       cur: g4CurPageViews, pri: g4PriPageViews,
       fmtVal: fmt,
-      chartRows: g4Cur.map((r) => ({ date: r.date, value: r.screen_page_views ?? 0 })),
+      chartRows: g4Cur.map((r) => ({ date: r.date, value: r.page_views ?? 0 })),
     },
     {
       key: 'organic_sessions', label: 'Organic Sessions',
