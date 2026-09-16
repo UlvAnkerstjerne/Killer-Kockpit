@@ -20,6 +20,7 @@ const MARKETING_NAV = [
   { href: '/marketing/needs-review',            label: 'Needs Review',           exact: false },
   { href: '/marketing/paid',                    label: 'Paid',                   exact: false },
   { href: '/marketing/organic',                 label: 'Organic',                exact: false },
+  { href: '/marketing/google',                  label: 'Google',                 exact: false },
   { href: '/marketing/google-business-profile', label: 'Google Business Profile', exact: false },
   { href: '/marketing/content',                 label: 'Content',                exact: false },
   { href: '/marketing/creative-studio',         label: 'Creative Studio',        exact: false },
