@@ -92,38 +92,37 @@ function DeltaBadge({
   )
 }
 
-function DateAxis({ rows }: { rows: { date: string }[] }) {
-  if (rows.length < 2) return null
-  const first = rows[0].date
-  const mid   = rows[Math.floor(rows.length / 2)].date
-  const last  = rows[rows.length - 1].date
-  return (
-    <div className="flex justify-between text-[10px] text-kk-muted mt-1 px-0.5 select-none">
-      <span>{fmtDate(first)}</span>
-      <span>{fmtDate(mid)}</span>
-      <span>{fmtDate(last)}</span>
-    </div>
-  )
-}
+// ── MiniChart ──────────────────────────────────────────────────────────────────
+//
+// SVG coordinate system: viewBox="0 0 600 110", preserveAspectRatio="none".
+// Y-axis labels are HTML (avoids text distortion from preserveAspectRatio="none").
+// Hover state is managed by the parent and passed as hoverIdx / onHoverChange.
+// DateAxis is included inside so it stays aligned with the ml-8 chart offset.
+//
+// compact=true: renders at h-20 (~80px). Default h-28 (~112px).
 
-// compact=true renders at h-20 (~20% shorter) instead of h-28.
-// Only affects the SVG container — coordinate system and line weights are unchanged.
 function MiniChart({
   rows,
   type,
   gid,
   compact = false,
+  fmtVal,
+  hoverIdx,
+  onHoverChange,
 }: {
   rows: { date: string; value: number }[]
   type: ChartType
   gid: string
   compact?: boolean
+  fmtVal: (v: number) => string
+  hoverIdx: number | null
+  onHoverChange: (idx: number | null) => void
 }) {
   const h = compact ? 'h-20' : 'h-28'
 
   if (rows.length === 0) {
     return (
-      <div className={`${h} flex items-center justify-center text-sm text-kk-muted`}>
+      <div className={`ml-8 ${h} flex items-center justify-center text-sm text-kk-muted`}>
         No data for this period.
       </div>
     )
@@ -134,41 +133,115 @@ function MiniChart({
   const max = Math.max(...rows.map((r) => r.value), 1)
   const n   = rows.length
 
+  // SVG coordinate helpers
+  const px = (i: number) => (n > 1 ? (i / (n - 1)) * W : W / 2)
+  const py = (v: number) => H - (v / max) * H * 0.93 + H * 0.02
+
+  // Y-axis CSS % positions matching py() in SVG coords
+  // py(max)/H ≈ 9%   py(max/2)/H ≈ 55.5%
+  const Y_TOP_PCT = 9
+  const Y_MID_PCT = 55.5
+
+  // Convert pointer clientX to nearest data-row index
+  function idxFromClientX(clientX: number, svgEl: SVGSVGElement): number {
+    const rect = svgEl.getBoundingClientRect()
+    const svgX = ((clientX - rect.left) / rect.width) * W
+    if (type === 'line') {
+      return Math.max(0, Math.min(n - 1, Math.round((svgX / W) * (n - 1))))
+    }
+    return Math.max(0, Math.min(n - 1, Math.floor((svgX / W) * n)))
+  }
+
+  const mouseHandlers = {
+    onMouseMove: (e: React.MouseEvent<SVGSVGElement>) =>
+      onHoverChange(idxFromClientX(e.clientX, e.currentTarget)),
+    onMouseLeave: () => onHoverChange(null),
+  }
+
+  const touchHandlers = {
+    onTouchStart: (e: React.TouchEvent<SVGSVGElement>) => {
+      const t = e.touches[0]
+      if (t) onHoverChange(idxFromClientX(t.clientX, e.currentTarget))
+    },
+    onTouchMove: (e: React.TouchEvent<SVGSVGElement>) => {
+      const t = e.touches[0]
+      if (t) onHoverChange(idxFromClientX(t.clientX, e.currentTarget))
+    },
+    onTouchEnd: () => onHoverChange(null),
+  }
+
+  // Date axis labels
+  const dFirst = rows[0].date
+  const dMid   = rows[Math.floor(n / 2)].date
+  const dLast  = rows[n - 1].date
+
+  // Bar chart
   if (type === 'bar') {
     const gap = Math.max(1, (W / n) * 0.18)
     const bW  = W / n - gap
+
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} className={`w-full ${h}`} preserveAspectRatio="none">
-        {rows.map((r, i) => {
-          const bH = (r.value / max) * H
-          return (
-            <rect
-              key={r.date}
-              x={(i / n) * W + gap / 2}
-              y={H - bH}
-              width={Math.max(bW, 1)}
-              height={Math.max(bH, 1)}
-              fill="#171717"
-              rx={2}
-            />
-          )
-        })}
-      </svg>
+      <div className="relative">
+        {/* Y-axis labels */}
+        <div className="absolute inset-y-0 left-0 w-8 pointer-events-none select-none" aria-hidden="true">
+          <span
+            className="absolute right-1.5 text-[9px] leading-none text-kk-muted tabular-nums"
+            style={{ top: `${Y_TOP_PCT}%`, transform: 'translateY(-50%)' }}
+          >
+            {fmtVal(max)}
+          </span>
+          <span
+            className="absolute right-1.5 text-[9px] leading-none text-kk-muted tabular-nums"
+            style={{ top: `${Y_MID_PCT}%`, transform: 'translateY(-50%)' }}
+          >
+            {fmtVal(max / 2)}
+          </span>
+          <span className="absolute bottom-[18px] right-1.5 text-[9px] leading-none text-kk-muted">
+            {fmtVal(0)}
+          </span>
+        </div>
+
+        {/* Chart */}
+        <div className="ml-8">
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            className={`w-full ${h} cursor-default`}
+            preserveAspectRatio="none"
+            style={{ touchAction: 'none' }}
+            {...mouseHandlers}
+            {...touchHandlers}
+          >
+            {rows.map((r, i) => {
+              const bH = (r.value / max) * H
+              return (
+                <rect
+                  key={r.date}
+                  x={(i / n) * W + gap / 2}
+                  y={H - bH}
+                  width={Math.max(bW, 1)}
+                  height={Math.max(bH, 1)}
+                  fill="#171717"
+                  fillOpacity={hoverIdx !== null && i !== hoverIdx ? 0.25 : 1}
+                  rx={2}
+                />
+              )
+            })}
+          </svg>
+
+          {/* Date axis */}
+          {n >= 2 && (
+            <div className="flex justify-between text-[10px] text-kk-muted mt-1 px-0.5 select-none">
+              <span>{fmtDate(dFirst)}</span>
+              <span>{fmtDate(dMid)}</span>
+              <span>{fmtDate(dLast)}</span>
+            </div>
+          )}
+        </div>
+      </div>
     )
   }
 
   // Line chart
-  const px = (i: number) => (n > 1 ? (i / (n - 1)) * W : W / 2)
-  const py = (v: number) => H - (v / max) * H * 0.93 + H * 0.02
-
-  if (n === 1) {
-    return (
-      <svg viewBox={`0 0 ${W} ${H}`} className={`w-full ${h}`}>
-        <circle cx={W / 2} cy={py(rows[0].value)} r={5} fill="#171717" />
-      </svg>
-    )
-  }
-
   const pts  = rows.map((r, i) => `${px(i)},${py(r.value)}`).join(' ')
   const area = [
     `M${px(0)},${H}`,
@@ -179,23 +252,84 @@ function MiniChart({
   ].join(' ')
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className={`w-full ${h}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#171717" stopOpacity="0.12" />
-          <stop offset="100%" stopColor="#171717" stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${gid})`} />
-      <polyline
-        points={pts}
-        fill="none"
-        stroke="#171717"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
+    <div className="relative">
+      {/* Y-axis labels */}
+      <div className="absolute inset-y-0 left-0 w-8 pointer-events-none select-none" aria-hidden="true">
+        <span
+          className="absolute right-1.5 text-[9px] leading-none text-kk-muted tabular-nums"
+          style={{ top: `${Y_TOP_PCT}%`, transform: 'translateY(-50%)' }}
+        >
+          {fmtVal(max)}
+        </span>
+        <span
+          className="absolute right-1.5 text-[9px] leading-none text-kk-muted tabular-nums"
+          style={{ top: `${Y_MID_PCT}%`, transform: 'translateY(-50%)' }}
+        >
+          {fmtVal(max / 2)}
+        </span>
+        <span className="absolute bottom-[18px] right-1.5 text-[9px] leading-none text-kk-muted">
+          {fmtVal(0)}
+        </span>
+      </div>
+
+      {/* Chart */}
+      <div className="ml-8">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className={`w-full ${h} cursor-default`}
+          preserveAspectRatio="none"
+          style={{ touchAction: 'none' }}
+          {...(n > 1 ? { ...mouseHandlers, ...touchHandlers } : {})}
+        >
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#171717" stopOpacity="0.12" />
+              <stop offset="100%" stopColor="#171717" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+
+          {n > 1 && <path d={area} fill={`url(#${gid})`} />}
+
+          {n === 1 ? (
+            <circle cx={W / 2} cy={py(rows[0].value)} r={5} fill="#171717" />
+          ) : (
+            <polyline
+              points={pts}
+              fill="none"
+              stroke="#171717"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Hover indicator: vertical guide + dot */}
+          {hoverIdx !== null && n > 1 && (
+            <>
+              <line
+                x1={px(hoverIdx)} y1={H * 0.02}
+                x2={px(hoverIdx)} y2={H}
+                stroke="#171717" strokeWidth="0.8"
+                strokeDasharray="4 3" opacity="0.3"
+              />
+              <circle
+                cx={px(hoverIdx)} cy={py(rows[hoverIdx].value)}
+                r={4} fill="white" stroke="#171717" strokeWidth="2"
+              />
+            </>
+          )}
+        </svg>
+
+        {/* Date axis */}
+        {n >= 2 && (
+          <div className="flex justify-between text-[10px] text-kk-muted mt-1 px-0.5 select-none">
+            <span>{fmtDate(dFirst)}</span>
+            <span>{fmtDate(dMid)}</span>
+            <span>{fmtDate(dLast)}</span>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -216,6 +350,10 @@ export default function GooglePageClient({
   const [ga4Metric, setGa4Metric] = useState<Ga4Metric>('sessions')
   const [ga4Chart,  setGa4Chart]  = useState<ChartType>('line')
 
+  // Hover indices (managed here so the label row can update in-place)
+  const [scHover,  setScHover]  = useState<number | null>(null)
+  const [ga4Hover, setGa4Hover] = useState<number | null>(null)
+
   // Period windows
   const curEnd   = daysAgoStr(1)
   const curStart = daysAgoStr(period)
@@ -231,7 +369,7 @@ export default function GooglePageClient({
   const ogPri = orgRows.filter((r) => r.date >= priStart && r.date <= priEnd)
 
   // Does the 90-day window have any SC data? Used for the empty-state fallback offer.
-  const sc90Start     = daysAgoStr(90)
+  const sc90Start      = daysAgoStr(90)
   const scHas90DayData = period === 28 && gscRows.some((r) => r.date >= sc90Start && r.date <= curEnd)
 
   // ── SC aggregations ──────────────────────────────────────────────────────────
@@ -355,6 +493,10 @@ export default function GooglePageClient({
   const scActive  = scMetrics.find((m) => m.key === scMetric)!
   const ga4Active = ga4Metrics.find((m) => m.key === ga4Metric)!
 
+  // Guard hover indices against out-of-bounds (e.g. when metric changes chart row count)
+  const scHoverRow  = scHover  != null && scHover  < scActive.chartRows.length  ? scActive.chartRows[scHover]   : null
+  const ga4HoverRow = ga4Hover != null && ga4Hover < ga4Active.chartRows.length ? ga4Active.chartRows[ga4Hover] : null
+
   // Is there any SC data in the selected period at all?
   const scHasData = scCur.length > 0
 
@@ -430,18 +572,31 @@ export default function GooglePageClient({
           {/* Chart area — compact empty state when no rows in period */}
           {scHasData ? (
             <div className="px-5 py-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
-                  Daily {scActive.label} — {period} days
-                </span>
+              {/* Label row — updates to hovered value when interacting */}
+              <div className="flex items-center justify-between mb-2 ml-8">
+                {scHoverRow ? (
+                  <span className="text-[11px] font-semibold text-kk-ink tabular-nums">
+                    {fmtDate(scHoverRow.date)} · {scActive.fmtVal(scHoverRow.value)}
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
+                    Daily {scActive.label} — {period} days
+                  </span>
+                )}
                 <DeltaBadge
                   cur={scActive.cur}
                   pri={scActive.pri}
                   lowerBetter={scActive.lowerBetter}
                 />
               </div>
-              <MiniChart rows={scActive.chartRows} type={scChart} gid="sc-grad" />
-              <DateAxis rows={scActive.chartRows} />
+              <MiniChart
+                rows={scActive.chartRows}
+                type={scChart}
+                gid="sc-grad"
+                fmtVal={scActive.fmtVal}
+                hoverIdx={scHover}
+                onHoverChange={setScHover}
+              />
             </div>
           ) : (
             <div className="px-5 py-5 flex items-center gap-4">
@@ -499,14 +654,28 @@ export default function GooglePageClient({
 
           {/* Chart — compact height for GA4 */}
           <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
-                Daily {ga4Active.label} — {period} days
-              </span>
+            {/* Label row — updates to hovered value when interacting */}
+            <div className="flex items-center justify-between mb-2 ml-8">
+              {ga4HoverRow ? (
+                <span className="text-[11px] font-semibold text-kk-ink tabular-nums">
+                  {fmtDate(ga4HoverRow.date)} · {ga4Active.fmtVal(ga4HoverRow.value)}
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
+                  Daily {ga4Active.label} — {period} days
+                </span>
+              )}
               <DeltaBadge cur={ga4Active.cur} pri={ga4Active.pri} />
             </div>
-            <MiniChart rows={ga4Active.chartRows} type={ga4Chart} gid="ga4-grad" compact />
-            <DateAxis rows={ga4Active.chartRows} />
+            <MiniChart
+              rows={ga4Active.chartRows}
+              type={ga4Chart}
+              gid="ga4-grad"
+              compact
+              fmtVal={ga4Active.fmtVal}
+              hoverIdx={ga4Hover}
+              onHoverChange={setGa4Hover}
+            />
           </div>
         </section>
 
