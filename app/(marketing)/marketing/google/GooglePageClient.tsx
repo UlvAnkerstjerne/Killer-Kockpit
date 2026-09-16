@@ -109,6 +109,7 @@ function MiniChart({
   fmtVal,
   hoverIdx,
   onHoverChange,
+  yMin: yMinProp,
 }: {
   rows: { date: string; value: number }[]
   type: ChartType
@@ -117,6 +118,7 @@ function MiniChart({
   fmtVal: (v: number) => string
   hoverIdx: number | null
   onHoverChange: (idx: number | null) => void
+  yMin?: number
 }) {
   const h = compact ? 'h-20' : 'h-28'
 
@@ -128,19 +130,22 @@ function MiniChart({
     )
   }
 
-  const W   = 600
-  const H   = 110
-  const max = Math.max(...rows.map((r) => r.value), 1)
-  const n   = rows.length
+  const W    = 600
+  const H    = 110
+  const max  = Math.max(...rows.map((r) => r.value), 1)
+  const yMin = yMinProp ?? 0
+  const range = Math.max(max - yMin, 0.001)
+  const n    = rows.length
 
   // SVG coordinate helpers
   const px = (i: number) => (n > 1 ? (i / (n - 1)) * W : W / 2)
-  const py = (v: number) => H - (v / max) * H * 0.93 + H * 0.02
+  const py = (v: number) => H - ((v - yMin) / range) * H * 0.93 + H * 0.02
 
   // Y-axis CSS % positions matching py() in SVG coords
-  // py(max)/H ≈ 9%   py(max/2)/H ≈ 55.5%
+  // py(max)/H ≈ 9%   py(yMin + range/2)/H ≈ 55.5%
   const Y_TOP_PCT = 9
   const Y_MID_PCT = 55.5
+  const yMid = yMin + range / 2
 
   // Convert pointer clientX to nearest data-row index
   function idxFromClientX(clientX: number, svgEl: SVGSVGElement): number {
@@ -194,10 +199,10 @@ function MiniChart({
             className="absolute right-1.5 text-[9px] leading-none text-kk-muted tabular-nums"
             style={{ top: `${Y_MID_PCT}%`, transform: 'translateY(-50%)' }}
           >
-            {fmtVal(max / 2)}
+            {fmtVal(yMid)}
           </span>
           <span className="absolute bottom-[18px] right-1.5 text-[9px] leading-none text-kk-muted">
-            {fmtVal(0)}
+            {fmtVal(yMin)}
           </span>
         </div>
 
@@ -207,12 +212,12 @@ function MiniChart({
             viewBox={`0 0 ${W} ${H}`}
             className={`w-full ${h} cursor-default`}
             preserveAspectRatio="none"
-            style={{ touchAction: 'none' }}
+            style={{ touchAction: 'pan-y' }}
             {...mouseHandlers}
             {...touchHandlers}
           >
             {rows.map((r, i) => {
-              const bH = (r.value / max) * H
+              const bH = ((r.value - yMin) / range) * H
               return (
                 <rect
                   key={r.date}
@@ -265,10 +270,10 @@ function MiniChart({
           className="absolute right-1.5 text-[9px] leading-none text-kk-muted tabular-nums"
           style={{ top: `${Y_MID_PCT}%`, transform: 'translateY(-50%)' }}
         >
-          {fmtVal(max / 2)}
+          {fmtVal(yMid)}
         </span>
         <span className="absolute bottom-[18px] right-1.5 text-[9px] leading-none text-kk-muted">
-          {fmtVal(0)}
+          {fmtVal(yMin)}
         </span>
       </div>
 
@@ -278,7 +283,7 @@ function MiniChart({
           viewBox={`0 0 ${W} ${H}`}
           className={`w-full ${h} cursor-default`}
           preserveAspectRatio="none"
-          style={{ touchAction: 'none' }}
+          style={{ touchAction: 'pan-y' }}
           {...(n > 1 ? { ...mouseHandlers, ...touchHandlers } : {})}
         >
           <defs>
@@ -412,6 +417,12 @@ export default function GooglePageClient({
 
   // ── Metric configs ───────────────────────────────────────────────────────────
 
+  // Compute a sensible floor for the position chart so the scale isn't zero-based
+  const posChartRows = scCur.filter((r) => r.position != null).map((r) => ({ date: r.date, value: r.position! }))
+  const posYMin = posChartRows.length > 0
+    ? Math.max(0, Math.floor(Math.min(...posChartRows.map((r) => r.value))) - 1)
+    : 0
+
   const scMetrics: Array<{
     key: ScMetric
     label: string
@@ -420,6 +431,7 @@ export default function GooglePageClient({
     lowerBetter: boolean
     fmtVal: (v: number) => string
     chartRows: { date: string; value: number }[]
+    yMin?: number
   }> = [
     {
       key: 'impressions', label: 'Impressions',
@@ -445,7 +457,8 @@ export default function GooglePageClient({
       cur: scCurPosition, pri: scPriPosition, lowerBetter: true,
       fmtVal: (v) => v.toFixed(1),
       // Only rows with actual position data — no fake zeros for missing days
-      chartRows: scCur.filter((r) => r.position != null).map((r) => ({ date: r.date, value: r.position! })),
+      chartRows: posChartRows,
+      yMin: posYMin,
     },
   ]
 
@@ -596,6 +609,7 @@ export default function GooglePageClient({
                 fmtVal={scActive.fmtVal}
                 hoverIdx={scHover}
                 onHoverChange={setScHover}
+                yMin={scActive.yMin}
               />
             </div>
           ) : (
