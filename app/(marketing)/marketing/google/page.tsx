@@ -113,6 +113,34 @@ function aggregateGa4Breakdown<T extends {
 type RawQueryRow = { date: string; query: string; clicks: number | null; impressions: number | null; position: number | null }
 type RawPageRow  = { date: string; page:  string; clicks: number | null; impressions: number | null; position: number | null }
 
+// ── Pagination helper ──────────────────────────────────────────────────────────
+// PostgREST enforces a server-side max-rows cap that client .limit() cannot
+// override.  Fetching in 1000-row pages with .range() bypasses this cap safely.
+
+const PAGE_SIZE = 1000
+
+type SupabaseResult<T> = { data: T[] | null; error: { message: string } | null }
+
+async function fetchAllPages<T>(
+  fetcher: (from: number, to: number) => PromiseLike<SupabaseResult<T>>,
+  label: string,
+): Promise<T[]> {
+  const all: T[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await fetcher(from, from + PAGE_SIZE - 1)
+    if (error) {
+      console.error(`[google/page] ${label} (page ${from / PAGE_SIZE}):`, error.message)
+      break
+    }
+    const page = data ?? []
+    all.push(...page)
+    if (page.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}
+
 export default async function GooglePage() {
   const db = createServiceClient()
 
@@ -122,60 +150,72 @@ export default async function GooglePage() {
   const cur28Start = daysAgo(28)
   const cur90Start = daysAgo(90)
 
-  const [gscRes, ga4Res, orgRes, queriesRes, pagesRes, sourcesRes, landingRes] =
-    await Promise.all([
-      db.from('gsc_daily')
-        .select('date, clicks, impressions, ctr, position')
-        .eq('site_url', SC_SITE_URL)
-        .gte('date', since)
-        .order('date'),
-      db.from('ga4_daily')
-        // Column is `page_views` (stores screenPageViews metric) — NOT screen_page_views
-        .select('date, sessions, total_users, new_users, page_views')
-        .eq('property_id', GA4_PROPERTY_ID)
-        .gte('date', since)
-        .order('date'),
-      db.from('ga4_traffic_sources')
-        .select('date, sessions')
-        .eq('property_id', GA4_PROPERTY_ID)
-        .eq('session_medium', 'organic')
-        .gte('date', since)
-        .order('date'),
-      db.from('gsc_queries')
+  // Overview tables have small, bounded row counts — single fetch is fine.
+  const [gscRes, ga4Res, orgRes] = await Promise.all([
+    db.from('gsc_daily')
+      .select('date, clicks, impressions, ctr, position')
+      .eq('site_url', SC_SITE_URL)
+      .gte('date', since)
+      .order('date'),
+    db.from('ga4_daily')
+      // Column is `page_views` (stores screenPageViews metric) — NOT screen_page_views
+      .select('date, sessions, total_users, new_users, page_views')
+      .eq('property_id', GA4_PROPERTY_ID)
+      .gte('date', since)
+      .order('date'),
+    db.from('ga4_traffic_sources')
+      .select('date, sessions')
+      .eq('property_id', GA4_PROPERTY_ID)
+      .eq('session_medium', 'organic')
+      .gte('date', since)
+      .order('date'),
+  ])
+
+  if (gscRes.error) console.error('[google/page] gsc_daily:', gscRes.error.message)
+  if (ga4Res.error) console.error('[google/page] ga4_daily:', ga4Res.error.message)
+  if (orgRes.error) console.error('[google/page] ga4_traffic_sources (organic):', orgRes.error.message)
+
+  // Breakdown tables can exceed the PostgREST server-side max-rows cap (1000).
+  // Paginate with .range() to guarantee all rows are fetched regardless of cap.
+  const [queriesData, pagesData, sourcesData, landingData] = await Promise.all([
+    fetchAllPages<RawQueryRow>(
+      (from, to) => db.from('gsc_queries')
         .select('date, query, clicks, impressions, position')
         .eq('site_url', SC_SITE_URL)
         .gte('date', since90)
         .order('date')
-        .limit(50000),
-      db.from('gsc_pages')
+        .range(from, to),
+      'gsc_queries',
+    ),
+    fetchAllPages<RawPageRow>(
+      (from, to) => db.from('gsc_pages')
         .select('date, page, clicks, impressions, position')
         .eq('site_url', SC_SITE_URL)
         .gte('date', since90)
         .order('date')
-        .limit(50000),
-      // Full traffic-source breakdown (all sources/mediums, not just organic).
-      // total_users intentionally omitted — daily summing overcounts returning users.
-      db.from('ga4_traffic_sources')
+        .range(from, to),
+      'gsc_pages',
+    ),
+    // total_users intentionally omitted — daily summing overcounts returning users.
+    fetchAllPages<RawSourceRow>(
+      (from, to) => db.from('ga4_traffic_sources')
         .select('date, session_source, session_medium, sessions, new_users')
         .eq('property_id', GA4_PROPERTY_ID)
         .gte('date', since90)
         .order('date')
-        .limit(10000),
-      db.from('ga4_landing_pages')
+        .range(from, to),
+      'ga4_traffic_sources',
+    ),
+    fetchAllPages<RawLandingPageRow>(
+      (from, to) => db.from('ga4_landing_pages')
         .select('date, landing_page, sessions, new_users')
         .eq('property_id', GA4_PROPERTY_ID)
         .gte('date', since90)
         .order('date')
-        .limit(10000),
-    ])
-
-  if (gscRes.error)     console.error('[google/page] gsc_daily:',           gscRes.error.message)
-  if (ga4Res.error)     console.error('[google/page] ga4_daily:',            ga4Res.error.message)
-  if (orgRes.error)     console.error('[google/page] ga4_traffic_sources (organic):', orgRes.error.message)
-  if (queriesRes.error) console.error('[google/page] gsc_queries:',          queriesRes.error.message)
-  if (pagesRes.error)   console.error('[google/page] gsc_pages:',            pagesRes.error.message)
-  if (sourcesRes.error) console.error('[google/page] ga4_traffic_sources:',  sourcesRes.error.message)
-  if (landingRes.error) console.error('[google/page] ga4_landing_pages:',    landingRes.error.message)
+        .range(from, to),
+      'ga4_landing_pages',
+    ),
+  ])
 
   // Aggregate organic sessions by date (multiple sources per date with medium=organic)
   const orgMap = new Map<string, number>()
@@ -187,9 +227,6 @@ export default async function GooglePage() {
     .map(([date, sessions]) => ({ date, sessions }))
 
   // GSC breakdowns — pre-aggregated server-side for both periods
-  const queriesData = (queriesRes.data ?? []) as RawQueryRow[]
-  const pagesData   = (pagesRes.data ?? []) as RawPageRow[]
-
   const queries28 = aggregateGsc(queriesData, (r) => r.query, cur28Start, curEnd)
   const queries90 = aggregateGsc(queriesData, (r) => r.query, cur90Start, curEnd)
   const pages28   = aggregateGsc(pagesData,   (r) => r.page,  cur28Start, curEnd)
@@ -204,9 +241,6 @@ export default async function GooglePage() {
   const g4Total90 = ga4Daily
     .filter((r) => r.date >= cur90Start && r.date <= curEnd)
     .reduce((a, r) => a + ((r.sessions as number | null) ?? 0), 0)
-
-  const sourcesData = (sourcesRes.data ?? []) as RawSourceRow[]
-  const landingData = (landingRes.data ?? []) as RawLandingPageRow[]
 
   const sources28      = aggregateGa4Breakdown(sourcesData, (r) => `${r.session_source} / ${r.session_medium}`, cur28Start, curEnd, g4Total28)
   const sources90      = aggregateGa4Breakdown(sourcesData, (r) => `${r.session_source} / ${r.session_medium}`, cur90Start, curEnd, g4Total90)
