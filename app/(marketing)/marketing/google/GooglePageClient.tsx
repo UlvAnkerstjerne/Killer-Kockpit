@@ -106,18 +106,24 @@ function DateAxis({ rows }: { rows: { date: string }[] }) {
   )
 }
 
+// compact=true renders at h-20 (~20% shorter) instead of h-28.
+// Only affects the SVG container — coordinate system and line weights are unchanged.
 function MiniChart({
   rows,
   type,
   gid,
+  compact = false,
 }: {
   rows: { date: string; value: number }[]
   type: ChartType
   gid: string
+  compact?: boolean
 }) {
+  const h = compact ? 'h-20' : 'h-28'
+
   if (rows.length === 0) {
     return (
-      <div className="h-28 flex items-center justify-center text-sm text-kk-muted">
+      <div className={`${h} flex items-center justify-center text-sm text-kk-muted`}>
         No data for this period.
       </div>
     )
@@ -132,7 +138,7 @@ function MiniChart({
     const gap = Math.max(1, (W / n) * 0.18)
     const bW  = W / n - gap
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28" preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} className={`w-full ${h}`} preserveAspectRatio="none">
         {rows.map((r, i) => {
           const bH = (r.value / max) * H
           return (
@@ -157,7 +163,7 @@ function MiniChart({
 
   if (n === 1) {
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28">
+      <svg viewBox={`0 0 ${W} ${H}`} className={`w-full ${h}`}>
         <circle cx={W / 2} cy={py(rows[0].value)} r={5} fill="#171717" />
       </svg>
     )
@@ -173,7 +179,7 @@ function MiniChart({
   ].join(' ')
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28" preserveAspectRatio="none">
+    <svg viewBox={`0 0 ${W} ${H}`} className={`w-full ${h}`} preserveAspectRatio="none">
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#171717" stopOpacity="0.12" />
@@ -223,6 +229,10 @@ export default function GooglePageClient({
   const g4Pri = ga4Rows.filter((r) => r.date >= priStart && r.date <= priEnd)
   const ogCur = orgRows.filter((r) => r.date >= curStart && r.date <= curEnd)
   const ogPri = orgRows.filter((r) => r.date >= priStart && r.date <= priEnd)
+
+  // Does the 90-day window have any SC data? Used for the empty-state fallback offer.
+  const sc90Start     = daysAgoStr(90)
+  const scHas90DayData = period === 28 && gscRows.some((r) => r.date >= sc90Start && r.date <= curEnd)
 
   // ── SC aggregations ──────────────────────────────────────────────────────────
 
@@ -345,6 +355,9 @@ export default function GooglePageClient({
   const scActive  = scMetrics.find((m) => m.key === scMetric)!
   const ga4Active = ga4Metrics.find((m) => m.key === ga4Metric)!
 
+  // Is there any SC data in the selected period at all?
+  const scHasData = scCur.length > 0
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -385,7 +398,7 @@ export default function GooglePageClient({
               <span className="text-sm font-semibold text-kk-ink">Search Console</span>
               <span className="text-xs text-kk-muted">killerkebab.com</span>
             </div>
-            <ChartToggle value={scChart} onChange={setScChart} />
+            {scHasData && <ChartToggle value={scChart} onChange={setScChart} />}
           </div>
 
           {/* Metric selector tabs */}
@@ -395,40 +408,56 @@ export default function GooglePageClient({
                 key={m.key}
                 onClick={() => setScMetric(m.key)}
                 className={[
-                  'px-3 py-2 rounded-lg border transition-colors text-left min-w-[90px]',
+                  'px-3 py-2.5 rounded-lg border transition-colors text-left min-w-[90px]',
                   scMetric === m.key
                     ? 'bg-kk-brand text-white border-kk-brand'
                     : 'bg-kk-soft border-kk-line text-kk-ink hover:border-kk-muted',
                 ].join(' ')}
               >
                 <div className={[
-                  'text-[10px] font-bold tracking-[0.07em] uppercase mb-0.5',
+                  'text-[10px] font-bold tracking-[0.07em] uppercase mb-1',
                   scMetric === m.key ? 'opacity-70' : 'text-kk-muted',
                 ].join(' ')}>
                   {m.label}
                 </div>
-                <div className="text-base font-bold leading-none tabular-nums">
+                <div className="text-2xl font-black leading-none tabular-nums">
                   {m.fmtVal(m.cur)}
                 </div>
               </button>
             ))}
           </div>
 
-          {/* Chart */}
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
-                Daily {scActive.label} — {period} days
-              </span>
-              <DeltaBadge
-                cur={scActive.cur}
-                pri={scActive.pri}
-                lowerBetter={scActive.lowerBetter}
-              />
+          {/* Chart area — compact empty state when no rows in period */}
+          {scHasData ? (
+            <div className="px-5 py-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
+                  Daily {scActive.label} — {period} days
+                </span>
+                <DeltaBadge
+                  cur={scActive.cur}
+                  pri={scActive.pri}
+                  lowerBetter={scActive.lowerBetter}
+                />
+              </div>
+              <MiniChart rows={scActive.chartRows} type={scChart} gid="sc-grad" />
+              <DateAxis rows={scActive.chartRows} />
             </div>
-            <MiniChart rows={scActive.chartRows} type={scChart} gid="sc-grad" />
-            <DateAxis rows={scActive.chartRows} />
-          </div>
+          ) : (
+            <div className="px-5 py-5 flex items-center gap-4">
+              <span className="text-sm text-kk-muted">
+                No Search Console data in the last {period} days.
+              </span>
+              {scHas90DayData && (
+                <button
+                  onClick={() => setPeriod(90)}
+                  className="text-sm font-semibold text-kk-ink underline underline-offset-2 hover:text-kk-brand transition-colors shrink-0"
+                >
+                  View 90 days →
+                </button>
+              )}
+            </div>
+          )}
         </section>
 
         {/* ── Google Analytics ─────────────────────────────────────────────── */}
@@ -449,26 +478,26 @@ export default function GooglePageClient({
                 key={m.key}
                 onClick={() => setGa4Metric(m.key)}
                 className={[
-                  'px-3 py-2 rounded-lg border transition-colors text-left min-w-[90px]',
+                  'px-3 py-2.5 rounded-lg border transition-colors text-left min-w-[90px]',
                   ga4Metric === m.key
                     ? 'bg-kk-brand text-white border-kk-brand'
                     : 'bg-kk-soft border-kk-line text-kk-ink hover:border-kk-muted',
                 ].join(' ')}
               >
                 <div className={[
-                  'text-[10px] font-bold tracking-[0.07em] uppercase mb-0.5',
+                  'text-[10px] font-bold tracking-[0.07em] uppercase mb-1',
                   ga4Metric === m.key ? 'opacity-70' : 'text-kk-muted',
                 ].join(' ')}>
                   {m.label}
                 </div>
-                <div className="text-base font-bold leading-none tabular-nums">
+                <div className="text-2xl font-black leading-none tabular-nums">
                   {m.fmtVal(m.cur)}
                 </div>
               </button>
             ))}
           </div>
 
-          {/* Chart */}
+          {/* Chart — compact height for GA4 */}
           <div className="px-5 py-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
@@ -476,7 +505,7 @@ export default function GooglePageClient({
               </span>
               <DeltaBadge cur={ga4Active.cur} pri={ga4Active.pri} />
             </div>
-            <MiniChart rows={ga4Active.chartRows} type={ga4Chart} gid="ga4-grad" />
+            <MiniChart rows={ga4Active.chartRows} type={ga4Chart} gid="ga4-grad" compact />
             <DateAxis rows={ga4Active.chartRows} />
           </div>
         </section>
