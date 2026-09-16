@@ -33,13 +33,15 @@ const TAG_BYTES = 16  // 128-bit auth tag
 
 // ─── Scope helpers ────────────────────────────────────────────────────────
 
-export const CALENDAR_SCOPE       = 'https://www.googleapis.com/auth/calendar.events'
-export const GMAIL_SCOPE          = 'https://www.googleapis.com/auth/gmail.readonly'
-export const DRIVE_SCOPE          = 'https://www.googleapis.com/auth/drive.metadata.readonly'
-export const SHEETS_SCOPE         = 'https://www.googleapis.com/auth/spreadsheets.readonly'
-export const MEET_READONLY_SCOPE  = 'https://www.googleapis.com/auth/meetings.space.readonly'
-export const MEET_SETTINGS_SCOPE  = 'https://www.googleapis.com/auth/meetings.space.settings'
-export const GBP_SCOPE            = 'https://www.googleapis.com/auth/business.manage'
+export const CALENDAR_SCOPE           = 'https://www.googleapis.com/auth/calendar.events'
+export const GMAIL_SCOPE              = 'https://www.googleapis.com/auth/gmail.readonly'
+export const DRIVE_SCOPE              = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+export const SHEETS_SCOPE             = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+export const MEET_READONLY_SCOPE      = 'https://www.googleapis.com/auth/meetings.space.readonly'
+export const MEET_SETTINGS_SCOPE      = 'https://www.googleapis.com/auth/meetings.space.settings'
+export const GBP_SCOPE                = 'https://www.googleapis.com/auth/business.manage'
+export const SEARCH_CONSOLE_SCOPE     = 'https://www.googleapis.com/auth/webmasters.readonly'
+export const GA4_SCOPE                = 'https://www.googleapis.com/auth/analytics.readonly'
 
 export function hasCalendarScope(scopes: string[]): boolean {
   return scopes.some((s) => s.includes('calendar.events'))
@@ -72,6 +74,14 @@ export function hasGbpScope(scopes: string[]): boolean {
 
 export function hasSheetsScope(scopes: string[]): boolean {
   return scopes.some((s) => s.includes('spreadsheets.readonly'))
+}
+
+export function hasSearchConsoleScope(scopes: string[]): boolean {
+  return scopes.some((s) => s.includes('webmasters.readonly'))
+}
+
+export function hasGA4Scope(scopes: string[]): boolean {
+  return scopes.some((s) => s.includes('analytics.readonly'))
 }
 
 // ─── Encryption helpers ───────────────────────────────────────────────────
@@ -281,6 +291,8 @@ export type GoogleConnectionStatus =
       meetEnabled: boolean
       gbpEnabled: boolean
       sheetsEnabled: boolean
+      searchConsoleEnabled: boolean
+      ga4Enabled: boolean
     }
 
 /**
@@ -304,11 +316,13 @@ export async function getGoogleConnectionStatus(userId: string): Promise<GoogleC
     expiresAt:          data.expires_at as string,
     googleAccountEmail: (data.google_account_email as string | null) ?? null,
     healthy:            true, // refresh_token always stored; we can always get a new access token
-    calendarEnabled:    hasCalendarScope(scopes),
-    gmailEnabled:       hasGmailScope(scopes),
-    driveEnabled:       hasDriveScope(scopes),
-    meetEnabled:        hasMeetScope(scopes),
-    gbpEnabled:         hasGbpScope(scopes),
-    sheetsEnabled:      hasSheetsScope(scopes),
+    calendarEnabled:      hasCalendarScope(scopes),
+    gmailEnabled:         hasGmailScope(scopes),
+    driveEnabled:         hasDriveScope(scopes),
+    meetEnabled:          hasMeetScope(scopes),
+    gbpEnabled:           hasGbpScope(scopes),
+    sheetsEnabled:        hasSheetsScope(scopes),
+    searchConsoleEnabled: hasSearchConsoleScope(scopes),
+    ga4Enabled:           hasGA4Scope(scopes),
   }
 }
