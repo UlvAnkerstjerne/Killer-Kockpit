@@ -25,6 +25,14 @@ export interface OrgRow {
   sessions: number
 }
 
+export interface GscBreakdownRow {
+  key:         string          // query text or full page URL
+  clicks:      number
+  impressions: number
+  ctr:         number          // fraction 0–1
+  position:    number | null   // impression-weighted avg, null if no position data
+}
+
 type ScMetric  = 'impressions' | 'clicks' | 'ctr' | 'position'
 type Ga4Metric = 'sessions' | 'total_users' | 'new_users' | 'page_views' | 'organic_sessions'
 type ChartType = 'line' | 'bar'
@@ -49,6 +57,18 @@ function fmtDate(iso: string): string {
 function pctDelta(cur: number, pri: number): number | null {
   if (pri === 0) return null
   return ((cur - pri) / pri) * 100
+}
+
+// Strip scheme + host from a page URL, show just the path (and query string if any).
+// Root path shown as '/'. Trailing slash preserved when meaningful.
+function shortenUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    const path = u.pathname + (u.search || '')
+    return path || '/'
+  } catch {
+    return url
+  }
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -99,6 +119,7 @@ function DeltaBadge({
 // Hover state is managed by the parent and passed as hoverIdx / onHoverChange.
 // DateAxis is included inside so it stays aligned with the ml-8 chart offset.
 //
+// yMin: optional floor for the Y scale (used for Avg. Position to avoid zero-base).
 // compact=true: renders at h-20 (~80px). Default h-28 (~112px).
 
 function MiniChart({
@@ -130,19 +151,19 @@ function MiniChart({
     )
   }
 
-  const W    = 600
-  const H    = 110
-  const max  = Math.max(...rows.map((r) => r.value), 1)
-  const yMin = yMinProp ?? 0
+  const W     = 600
+  const H     = 110
+  const max   = Math.max(...rows.map((r) => r.value), 1)
+  const yMin  = yMinProp ?? 0
   const range = Math.max(max - yMin, 0.001)
-  const n    = rows.length
+  const n     = rows.length
 
   // SVG coordinate helpers
   const px = (i: number) => (n > 1 ? (i / (n - 1)) * W : W / 2)
   const py = (v: number) => H - ((v - yMin) / range) * H * 0.93 + H * 0.02
 
   // Y-axis CSS % positions matching py() in SVG coords
-  // py(max)/H ≈ 9%   py(yMin + range/2)/H ≈ 55.5%
+  // py(max)/H ≈ 9%   py(mid)/H ≈ 55.5%
   const Y_TOP_PCT = 9
   const Y_MID_PCT = 55.5
   const yMid = yMin + range / 2
@@ -158,11 +179,13 @@ function MiniChart({
   }
 
   const mouseHandlers = {
-    onMouseMove: (e: React.MouseEvent<SVGSVGElement>) =>
+    onMouseMove:  (e: React.MouseEvent<SVGSVGElement>) =>
       onHoverChange(idxFromClientX(e.clientX, e.currentTarget)),
     onMouseLeave: () => onHoverChange(null),
   }
 
+  // pan-y: browser owns vertical scroll; we still receive touch events for
+  // horizontal position tracking so chart inspection works on mobile.
   const touchHandlers = {
     onTouchStart: (e: React.TouchEvent<SVGSVGElement>) => {
       const t = e.touches[0]
@@ -338,16 +361,141 @@ function MiniChart({
   )
 }
 
+// ── BreakdownTable ─────────────────────────────────────────────────────────────
+//
+// Compact GSC top-10 table. Used for both Top Queries and Top Pages.
+// isPage=true: displays the path-only label, links to the full URL in a new tab.
+// Empty state mirrors the SC overview sparse-data pattern.
+
+function BreakdownTable({
+  title,
+  rows,
+  isPage = false,
+  period,
+  onViewMore,
+}: {
+  title: string
+  rows: GscBreakdownRow[]
+  isPage?: boolean
+  period: number
+  onViewMore?: () => void
+}) {
+  return (
+    <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+      {/* Section header — matches SC/GA4 header style */}
+      <div className="bg-[#DDD9D1] px-4 py-2.5 border-b border-black/10">
+        <span className="text-sm font-semibold text-kk-ink">{title}</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="px-4 py-4 flex items-center gap-3">
+          <span className="text-sm text-kk-muted">
+            No data in the last {period} days.
+          </span>
+          {onViewMore && (
+            <button
+              onClick={onViewMore}
+              className="text-sm font-semibold text-kk-ink underline underline-offset-2 hover:text-kk-brand transition-colors shrink-0"
+            >
+              View 90 days →
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[380px] text-sm table-fixed">
+            <colgroup>
+              <col />
+              <col className="w-14" />
+              <col className="w-16" />
+              <col className="w-14" />
+              <col className="w-14" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-kk-line">
+                <th className="text-left py-2 px-4 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  {isPage ? 'Page' : 'Query'}
+                </th>
+                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  Clicks
+                </th>
+                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  Impr.
+                </th>
+                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  CTR
+                </th>
+                <th className="text-right py-2 px-2 pr-4 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  Pos.
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => {
+                const label = isPage ? shortenUrl(row.key) : row.key
+                return (
+                  <tr
+                    key={row.key}
+                    className={i < rows.length - 1 ? 'border-b border-kk-line' : ''}
+                  >
+                    <td className="py-2 px-4 text-kk-ink">
+                      {isPage ? (
+                        <a
+                          href={row.key}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={row.key}
+                          className="block truncate hover:text-kk-brand transition-colors"
+                        >
+                          {label}
+                        </a>
+                      ) : (
+                        <span className="block truncate" title={row.key}>
+                          {label}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-kk-ink">
+                      {fmt(row.clicks)}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-kk-ink">
+                      {fmt(row.impressions)}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-kk-muted">
+                      {(row.ctr * 100).toFixed(1)}%
+                    </td>
+                    <td className="py-2 px-2 pr-4 text-right tabular-nums text-kk-muted">
+                      {row.position != null ? row.position.toFixed(1) : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function GooglePageClient({
   gscRows,
   ga4Rows,
   orgRows,
+  queries28,
+  queries90,
+  pages28,
+  pages90,
 }: {
   gscRows: GscRow[]
   ga4Rows: Ga4Row[]
   orgRows: OrgRow[]
+  queries28: GscBreakdownRow[]
+  queries90: GscBreakdownRow[]
+  pages28:   GscBreakdownRow[]
+  pages90:   GscBreakdownRow[]
 }) {
   const [period,    setPeriod]    = useState<28 | 90>(28)
   const [scMetric,  setScMetric]  = useState<ScMetric>('impressions')
@@ -513,6 +661,14 @@ export default function GooglePageClient({
   // Is there any SC data in the selected period at all?
   const scHasData = scCur.length > 0
 
+  // Active breakdown lists for the selected period
+  const activeQueries = period === 28 ? queries28 : queries90
+  const activePages   = period === 28 ? pages28   : pages90
+
+  // Show "View 90 days →" in breakdown empty states only when 90d has data
+  const showQueriesViewMore = period === 28 && activeQueries.length === 0 && queries90.length > 0
+  const showPagesViewMore   = period === 28 && activePages.length === 0   && pages90.length   > 0
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -545,7 +701,7 @@ export default function GooglePageClient({
 
       <div className="space-y-4">
 
-        {/* ── Search Console ───────────────────────────────────────────────── */}
+        {/* ── Search Console overview ───────────────────────────────────────── */}
         <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
 
           <div className="bg-[#DDD9D1] px-5 py-3 flex items-center justify-between border-b border-black/10">
@@ -628,6 +784,23 @@ export default function GooglePageClient({
             </div>
           )}
         </section>
+
+        {/* ── Search Console breakdowns: Top Queries + Top Pages ────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <BreakdownTable
+            title="Top Queries"
+            rows={activeQueries}
+            period={period}
+            onViewMore={showQueriesViewMore ? () => setPeriod(90) : undefined}
+          />
+          <BreakdownTable
+            title="Top Pages"
+            rows={activePages}
+            isPage
+            period={period}
+            onViewMore={showPagesViewMore ? () => setPeriod(90) : undefined}
+          />
+        </div>
 
         {/* ── Google Analytics ─────────────────────────────────────────────── */}
         <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
