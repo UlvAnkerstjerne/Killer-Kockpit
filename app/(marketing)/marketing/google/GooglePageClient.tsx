@@ -33,6 +33,14 @@ export interface GscBreakdownRow {
   position:    number | null   // impression-weighted avg, null if no position data
 }
 
+export interface Ga4BreakdownRow {
+  key:             string   // "source / medium" or landing page path
+  sessions:        number
+  users:           number
+  newUsers:        number
+  shareOfSessions: number  // fraction 0–1; source sessions / total sessions in period
+}
+
 type ScMetric  = 'impressions' | 'clicks' | 'ctr' | 'position'
 type Ga4Metric = 'sessions' | 'total_users' | 'new_users' | 'page_views' | 'organic_sessions'
 type ChartType = 'line' | 'bar'
@@ -478,6 +486,149 @@ function BreakdownTable({
   )
 }
 
+// ── Ga4BreakdownTable ──────────────────────────────────────────────────────────
+//
+// Full-width table for Traffic Sources and Landing Pages GA4 breakdowns.
+// isPage=true: displays key as a path, links to killerkebab.com + path in new tab.
+// Share of Sessions shown as percentage + thin inline bar for quick scanning.
+
+const KK_BASE = 'https://killerkebab.com'
+
+// A path is linkable if it starts with '/' and is not obviously a GA4 garbled entry
+function isLinkablePath(path: string): boolean {
+  return path.startsWith('/') && !path.startsWith('/v/_/')
+}
+
+function Ga4BreakdownTable({
+  title,
+  rows,
+  isPage = false,
+  period,
+  dimensionLabel,
+}: {
+  title: string
+  rows: Ga4BreakdownRow[]
+  isPage?: boolean
+  period: number
+  dimensionLabel: string
+}) {
+  return (
+    <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+      <div className="bg-[#DDD9D1] px-5 py-2.5 border-b border-black/10">
+        <span className="text-sm font-semibold text-kk-ink">{title}</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="px-5 py-4">
+          <span className="text-sm text-kk-muted">No data in the last {period} days.</span>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-sm table-fixed">
+            <colgroup>
+              <col />
+              <col className="w-20" />
+              <col className="w-16" />
+              <col className="w-20" />
+              <col className="w-28" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-kk-line">
+                <th className="text-left py-2 px-5 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  {dimensionLabel}
+                </th>
+                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  Sessions
+                </th>
+                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  Users
+                </th>
+                <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  New Users
+                </th>
+                <th className="text-right py-2 px-5 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">
+                  Share
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => {
+                const isLast = i === rows.length - 1
+                const sharePct = Math.min(100, row.shareOfSessions * 100)
+
+                // For sources: dim the medium part, bold the source
+                const sourceParts = !isPage ? row.key.split(' / ') : null
+                const sourceMain  = sourceParts?.[0] ?? ''
+                const sourceSub   = sourceParts ? sourceParts.slice(1).join(' / ') : ''
+
+                // For pages: linkable paths open on the live site
+                const linkable = isPage && isLinkablePath(row.key)
+                const href     = linkable ? `${KK_BASE}${row.key}` : undefined
+
+                return (
+                  <tr
+                    key={row.key}
+                    className={!isLast ? 'border-b border-kk-line' : ''}
+                  >
+                    <td className="py-2 px-5 text-kk-ink">
+                      {isPage ? (
+                        href ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={row.key}
+                            className="block truncate hover:text-kk-brand transition-colors"
+                          >
+                            {row.key}
+                          </a>
+                        ) : (
+                          <span className="block truncate text-kk-muted" title={row.key}>
+                            {row.key}
+                          </span>
+                        )
+                      ) : (
+                        <span className="block truncate" title={row.key}>
+                          <span className="font-medium">{sourceMain}</span>
+                          {sourceSub && (
+                            <span className="text-kk-muted font-normal"> / {sourceSub}</span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-kk-ink font-medium">
+                      {fmt(row.sessions)}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-kk-muted">
+                      {fmt(row.users)}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-kk-muted">
+                      {fmt(row.newUsers)}
+                    </td>
+                    <td className="py-2 px-5">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-12 h-1 bg-kk-line rounded-full overflow-hidden shrink-0">
+                          <div
+                            className="h-full bg-kk-ink/50 rounded-full"
+                            style={{ width: `${sharePct}%` }}
+                          />
+                        </div>
+                        <span className="tabular-nums text-kk-muted w-9 text-right">
+                          {sharePct.toFixed(1)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function GooglePageClient({
@@ -488,6 +639,10 @@ export default function GooglePageClient({
   queries90,
   pages28,
   pages90,
+  sources28,
+  sources90,
+  landingPages28,
+  landingPages90,
 }: {
   gscRows: GscRow[]
   ga4Rows: Ga4Row[]
@@ -496,6 +651,10 @@ export default function GooglePageClient({
   queries90: GscBreakdownRow[]
   pages28:   GscBreakdownRow[]
   pages90:   GscBreakdownRow[]
+  sources28:      Ga4BreakdownRow[]
+  sources90:      Ga4BreakdownRow[]
+  landingPages28: Ga4BreakdownRow[]
+  landingPages90: Ga4BreakdownRow[]
 }) {
   const [period,    setPeriod]    = useState<28 | 90>(28)
   const [scMetric,  setScMetric]  = useState<ScMetric>('impressions')
@@ -662,8 +821,10 @@ export default function GooglePageClient({
   const scHasData = scCur.length > 0
 
   // Active breakdown lists for the selected period
-  const activeQueries = period === 28 ? queries28 : queries90
-  const activePages   = period === 28 ? pages28   : pages90
+  const activeQueries     = period === 28 ? queries28     : queries90
+  const activePages       = period === 28 ? pages28       : pages90
+  const activeSources     = period === 28 ? sources28     : sources90
+  const activeLandingPages = period === 28 ? landingPages28 : landingPages90
 
   // Show "View 90 days →" in breakdown empty states only when 90d has data
   const showQueriesViewMore = period === 28 && activeQueries.length === 0 && queries90.length > 0
@@ -865,6 +1026,23 @@ export default function GooglePageClient({
             />
           </div>
         </section>
+
+        {/* ── GA4 Traffic Sources ───────────────────────────────────────── */}
+        <Ga4BreakdownTable
+          title="Traffic Sources"
+          rows={activeSources}
+          period={period}
+          dimensionLabel="Source / Medium"
+        />
+
+        {/* ── GA4 Landing Pages ─────────────────────────────────────────── */}
+        <Ga4BreakdownTable
+          title="Landing Pages"
+          rows={activeLandingPages}
+          isPage
+          period={period}
+          dimensionLabel="Landing Page"
+        />
 
       </div>
     </div>
