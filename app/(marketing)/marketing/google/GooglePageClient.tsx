@@ -401,14 +401,14 @@ export default function GooglePageClient({
             {scHasData && <ChartToggle value={scChart} onChange={setScChart} />}
           </div>
 
-          {/* Metric selector tabs */}
-          <div className="px-5 pt-4 pb-3 flex gap-2 flex-wrap border-b border-kk-line">
+          {/* Metric selector tabs — flex-1 fills full width evenly */}
+          <div className="px-5 pt-4 pb-3 flex gap-2 border-b border-kk-line">
             {scMetrics.map((m) => (
               <button
                 key={m.key}
                 onClick={() => setScMetric(m.key)}
                 className={[
-                  'px-3 py-2.5 rounded-lg border transition-colors text-left min-w-[90px]',
+                  'flex-1 px-3 py-2.5 rounded-lg border transition-colors text-left',
                   scMetric === m.key
                     ? 'bg-kk-brand text-white border-kk-brand'
                     : 'bg-kk-soft border-kk-line text-kk-ink hover:border-kk-muted',
@@ -471,14 +471,14 @@ export default function GooglePageClient({
             <ChartToggle value={ga4Chart} onChange={setGa4Chart} />
           </div>
 
-          {/* Metric selector tabs */}
-          <div className="px-5 pt-4 pb-3 flex gap-2 flex-wrap border-b border-kk-line">
+          {/* Metric selector tabs — flex-1 fills full width evenly */}
+          <div className="px-5 pt-4 pb-3 flex gap-2 border-b border-kk-line">
             {ga4Metrics.map((m) => (
               <button
                 key={m.key}
                 onClick={() => setGa4Metric(m.key)}
                 className={[
-                  'px-3 py-2.5 rounded-lg border transition-colors text-left min-w-[90px]',
+                  'flex-1 px-3 py-2.5 rounded-lg border transition-colors text-left',
                   ga4Metric === m.key
                     ? 'bg-kk-brand text-white border-kk-brand'
                     : 'bg-kk-soft border-kk-line text-kk-ink hover:border-kk-muted',
