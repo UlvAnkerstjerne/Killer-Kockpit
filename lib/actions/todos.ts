@@ -24,8 +24,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { computeFirstOccurrence } from '@/lib/todos/recurrence'
-import type { RecurrenceRule } from '@/lib/todos/recurrence'
+import { insertTodoForActor, normalizeTodoCreateInput } from '@/lib/domain/todo-creation'
+import { computeFirstOccurrence, type RecurrenceRule } from '@/lib/todos/recurrence'
 import type { ActionResult, TaskPriority } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
@@ -49,50 +49,26 @@ export async function createTodo(
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated.' }
 
-  const trimmed = title.trim()
-  if (!trimmed) return { error: 'Title is required.' }
-  if (!Number.isInteger(priority) || priority < 1 || priority > 4) {
-    return { error: 'Priority must be 1, 2, 3, or 4.' }
-  }
-
-  const payload: Record<string, unknown> = {
-    user_id: user.id,
-    title:   trimmed,
+  const normalized = normalizeTodoCreateInput({
+    title,
     priority,
-  }
-
-  // Normalise notes: whitespace-only → null
-  const normalizedNotes = notes?.trim() || null
-  if (normalizedNotes) payload.notes = normalizedNotes
-
-  // Recurrence
-  if (recurrenceRule) {
-    payload.recurrence_rule = recurrenceRule
-    // recurrence_day is only meaningful for 'monthly'
-    payload.recurrence_day = recurrenceRule === 'monthly' ? (recurrenceDay ?? null) : null
-    // Compute first occurrence anchor in Copenhagen time
-    payload.scheduled_for = computeFirstOccurrence(
-      recurrenceRule as RecurrenceRule,
-      recurrenceRule === 'monthly' ? (recurrenceDay ?? null) : null,
-      new Date(),
-    )
-  }
+    notes,
+    recurrence_rule: recurrenceRule,
+    recurrence_day: recurrenceDay,
+  })
+  if (!normalized.ok) return { error: normalized.error }
 
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('todos')
-    .insert(payload)
-    .select('id')
-    .single()
+  const { id, error } = await insertTodoForActor(supabase, user.id, normalized.data)
 
-  if (error || !data) {
+  if (error || !id) {
     console.error('[createTodo]', error)
     return { error: 'Failed to create to-do. Please try again.' }
   }
 
   revalidatePath('/today')
   revalidatePath('/todos')
-  return { data: { id: data.id as string } }
+  return { data: { id } }
 }
 
 // ---------------------------------------------------------------------------

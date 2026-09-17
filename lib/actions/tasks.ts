@@ -11,37 +11,24 @@ import {
   canSendTaskBack,
   isAdminOverride,
 } from '@/lib/permissions'
-import type { TaskStatus, TaskPriority, ActionResult } from '@/lib/types'
+import type { ActionResult } from '@/lib/types'
+import {
+  insertTaskWithAudit,
+  normalizeTaskCreateInput,
+  type TaskCreateInput,
+} from '@/lib/domain/task-creation'
 
-type TaskInput = {
-  title: string
-  description?: string
-  owner_user_id?: string
-  project_id?: string
-  meeting_id?: string
-  status?: TaskStatus
-  priority?: TaskPriority
-  due_at?: string
-}
+type TaskInput = TaskCreateInput
 
 export async function createTask(input: TaskInput): Promise<ActionResult<{ id: string }>> {
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const serviceClient = createServiceClient()
+  const normalized = normalizeTaskCreateInput(input, user.id)
+  if (!normalized.ok) return { error: normalized.error }
 
-  const { data: taskId, error } = await serviceClient.rpc('create_task_and_audit', {
-    p_title: input.title.trim(),
-    p_description: input.description?.trim() || null,
-    p_owner_user_id: input.owner_user_id || user.id,
-    p_project_id: input.project_id || null,
-    p_status: input.status || 'open',
-    p_priority: input.priority || 2,
-    p_due_at: input.due_at || null,
-    p_created_by_user_id: user.id,
-    p_actor_user_id: user.id,
-    p_meeting_id: input.meeting_id || null,
-  })
+  const serviceClient = createServiceClient()
+  const { id: taskId, error } = await insertTaskWithAudit(serviceClient, user.id, normalized.data)
 
   if (error) {
     console.error('[createTask]', error)
@@ -50,7 +37,7 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
 
   revalidatePath('/tasks')
   revalidatePath('/today')
-  if (input.project_id) revalidatePath(`/projects/${input.project_id}`)
+  if (normalized.data.project_id) revalidatePath(`/projects/${normalized.data.project_id}`)
   return { data: { id: taskId as string } }
 }
 
