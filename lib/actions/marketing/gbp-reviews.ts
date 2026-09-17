@@ -447,6 +447,8 @@ export async function triggerGbpSync(): Promise<ActionResult<{ summary: string }
   }
 
   const result = await runGbpSync(syncUserId)
+  if (result.skipped) return { data: { summary: 'GBP sync is already running.' } }
+  if (!result.ok) return { error: [...result.errors, ...result.locations.flatMap(location => location.errors)].join('; ') || 'GBP sync did not complete.' }
   return {
     data: {
       summary: `Sync complete: ${result.totalOk} location(s) succeeded, ${result.totalFail} failed.`,

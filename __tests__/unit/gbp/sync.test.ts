@@ -1,422 +1,121 @@
-/**
- * Tests for lib/gbp/sync.ts
- *
- * All DB interactions and external API calls are mocked.
- * Tests verify: first-run vs incremental branching, activation window logic,
- * error isolation per location, metrics upsert, retryDraftForReview.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-
-// ── Hoisted mocks ──────────────────────────────────────────────────────────────
-
-const mocks = vi.hoisted(() => {
-  const mockGetGoogleOAuth2Client = vi.fn().mockResolvedValue({})
-  const mockFetchAllGbpReviews    = vi.fn().mockResolvedValue([])
-  const mockFetchGbpReviewsPage   = vi.fn().mockResolvedValue({ reviews: [], nextPageToken: undefined })
-  const mockFetchLocationMetrics  = vi.fn().mockResolvedValue([])
-  const mockNormaliseStarRating   = vi.fn().mockImplementation((r: string) =>
-    ({ ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 }[r] ?? 0)
-  )
-  const mockGbpReviewsSyncKey = vi.fn().mockImplementation((a: string, l: string) => `gbp_reviews:${a}:${l}`)
-  const mockGbpMetricsSyncKey = vi.fn().mockImplementation((a: string, l: string) => `gbp_metrics:${a}:${l}`)
-  const mockDraftReviewReply  = vi.fn()
-  const mockFrom              = vi.fn()
-  const mockServiceClient     = { from: mockFrom }
-
-  return {
-    mockGetGoogleOAuth2Client,
-    mockFetchAllGbpReviews, mockFetchGbpReviewsPage, mockFetchLocationMetrics,
-    mockNormaliseStarRating, mockGbpReviewsSyncKey, mockGbpMetricsSyncKey,
-    mockDraftReviewReply,
-    mockFrom, mockServiceClient,
-  }
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { gbpDb } from '../../helpers/gbp-db'
+const mocks = vi.hoisted(() => ({ client: vi.fn(), accounts: vi.fn(), locations: vi.fn(), metrics: vi.fn(), keywords: vi.fn(), reviews: vi.fn() }))
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/supabase/server', () => ({ createServiceClient: () => mocks.client() }))
+vi.mock('@/lib/google/auth', () => ({ getGoogleOAuth2Client: vi.fn().mockResolvedValue({}), hasGbpScope: (scopes: string[]) => scopes.includes('business.manage') }))
+vi.mock('@/lib/google/gbp-client', () => ({ fetchGbpAccounts: mocks.accounts, fetchGbpLocations: mocks.locations, fetchLocationMetrics: mocks.metrics, fetchGbpSearchKeywords: mocks.keywords, safeGbpError: () => 'Safe Google API failure' }))
+vi.mock('@/lib/gbp/reviews-sync', () => ({ syncLocationReviews: mocks.reviews, retryDraftForReview: vi.fn() }))
+import { runGbpSync } from '@/lib/gbp/sync'
+let db: ReturnType<typeof gbpDb>
+const now = new Date('2026-09-17T10:00:00Z')
+const location = { id: 'gbp-1', google_account_id: '1', google_location_id: '2', store_name: 'Internal name', store_short_name: 'Store', active: true, location_id: 'canonical-1', activation_date: '2026-09-01' }
+const state = (name: string) => db.tables.integration_sync_state.find(row => row.integration === name)!
+beforeEach(() => {
+  vi.clearAllMocks(); db = gbpDb(); mocks.client.mockReturnValue(db)
+  db.tables.google_oauth_tokens = [{ user_id: 'admin', scopes: ['business.manage'] }]
+  db.tables.app_users = [{ id: 'admin', role: 'SUPER_ADMIN', active: true }]
+  db.tables.gbp_locations = [{ ...location }]
+  mocks.accounts.mockResolvedValue([{ name: 'accounts/1' }])
+  mocks.locations.mockResolvedValue([{ name: 'locations/2', title: 'External Google name', websiteUri: 'https://killerkebab.com' }])
+  mocks.metrics.mockImplementation(async (_client, _account, _location, start) => {
+    const [year, month, day] = start.split('-').map(Number)
+    return [{ dailyMetric: 'WEBSITE_CLICKS', timeSeries: { datedValues: [{ date: { year, month, day }, value: '7' }] } }]
+  })
+  mocks.keywords.mockResolvedValue([{ searchKeyword: 'kebab', insightsValue: { value: '100' } }])
+  mocks.reviews.mockResolvedValue({ reviewsUpserted: 3, draftsGenerated: 0 })
 })
-
-vi.mock('@/lib/supabase/server',   () => ({ createServiceClient: vi.fn().mockReturnValue(mocks.mockServiceClient) }))
-vi.mock('@/lib/google/auth',       () => ({ getGoogleOAuth2Client: mocks.mockGetGoogleOAuth2Client }))
-vi.mock('@/lib/google/gbp-client', () => ({
-  fetchAllGbpReviews:   mocks.mockFetchAllGbpReviews,
-  fetchGbpReviewsPage:  mocks.mockFetchGbpReviewsPage,
-  fetchLocationMetrics: mocks.mockFetchLocationMetrics,
-  normaliseStarRating:  mocks.mockNormaliseStarRating,
-  gbpReviewsSyncKey:    mocks.mockGbpReviewsSyncKey,
-  gbpMetricsSyncKey:    mocks.mockGbpMetricsSyncKey,
-}))
-vi.mock('@/lib/ai/draft-review-reply', () => ({ draftReviewReply: mocks.mockDraftReviewReply }))
-vi.mock('@/lib/marketing/gbp/brand-context', () => ({ KILLER_KEBAB_REVIEW_REPLY_CONTEXT: 'Be warm.' }))
-
-// ── DB mock helpers ────────────────────────────────────────────────────────────
-//
-// `mkChain(resp)` produces a Promise-based chain that also supports:
-//   .eq()     → returns itself (chainable + directly awaitable as `{data, error}`)
-//   .single() → resolves to `resp`
-//   .order()  → resolves to `resp`
-//
-// This mirrors the Supabase PostgrestFilterBuilder which is itself a PromiseLike.
-
-type Chain = Promise<unknown> & {
-  single: ReturnType<typeof vi.fn>
-  eq:     ReturnType<typeof vi.fn>
-  order:  ReturnType<typeof vi.fn>
-  like:   ReturnType<typeof vi.fn>
-}
-
-function mkChain(resp: { data: unknown; error: unknown }): Chain {
-  // Attach chainable methods to a real Promise so `await chain` resolves to resp
-  // and chain.eq().order() etc. also work.
-  const p = Object.assign(Promise.resolve(resp), {
-    single: vi.fn().mockResolvedValue(resp),
-    eq:     vi.fn(),
-    order:  vi.fn().mockResolvedValue(resp),
-    like:   vi.fn(),
-  }) as Chain
-  // Self-referential: eq() returns the same chain (supports double-eq chains)
-  p.eq.mockReturnValue(p)
-  p.like.mockReturnValue({ order: vi.fn().mockResolvedValue(resp) })
-  return p
-}
-
-function mkFrom(resp: { data: unknown; error: unknown }) {
-  return {
-    select: vi.fn().mockReturnValue(mkChain(resp)),
-    upsert: vi.fn().mockResolvedValue({ error: null }),
-    update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-    insert: vi.fn().mockResolvedValue({ error: null }),
-  }
-}
-
-// Enqueue a sequence of responses. Each call to `from()` gets the next one.
-function setupFromQueue(responses: Array<{ data: unknown; error: unknown }>) {
-  const queue = [...responses]
-  mocks.mockFrom.mockImplementation(() => {
-    const resp = queue.shift() ?? { data: null, error: null }
-    return mkFrom(resp)
+describe('institutional GBP orchestrator', () => {
+  it('backfills all stages with institutional checkpoints and preserves canonical mapping', async () => {
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(true); expect(result.locationsFound).toBe(1); expect(result.locationsMapped).toBe(1)
+    expect(result.profilesRefreshed).toBe(1); expect(result.performanceRowsUpserted).toBeGreaterThan(500); expect(result.keywordRowsUpserted).toBe(18)
+    expect(db.tables.gbp_locations[0]).toMatchObject({ store_name: 'Internal name', location_id: 'canonical-1', profile_title: 'External Google name', active: true })
+    expect(db.tables.integration_sync_state.every(row => row.user_id === null)).toBe(true)
+    expect(JSON.parse(state('gbp_metrics:1:2').cursor).backfillComplete).toBe(true)
+    expect(mocks.reviews.mock.calls[0][3]).toBeNull()
   })
-}
-
-// ── Fixtures ───────────────────────────────────────────────────────────────────
-
-const DB_LOCATION = {
-  id:                  'loc-uuid',
-  google_account_id:   '123',
-  google_location_id:  '999',
-  store_name:          'Killer Kebab CPH',
-  store_short_name:    'CPH',
-  activation_date:     '2024-01-01',
-}
-
-function makeReview(overrides: Partial<{
-  name: string; comment: string | null; starRating: string;
-  createTime: string; updateTime: string
-  reviewer: { displayName: string }; reviewReply: unknown
-}> = {}) {
-  return {
-    name:        'accounts/123/locations/999/reviews/RevA',
-    reviewer:    { displayName: 'Alice' },
-    starRating:  'FIVE' as const,
-    createTime:  '2024-06-01T10:00:00Z',
-    updateTime:  '2024-06-01T10:00:00Z',
-    comment:     'Great food!',
-    reviewReply: null,
-    ...overrides,
-  }
-}
-
-// Standard response set for "first-run, no reviews" — just enough for runGbpSync to complete
-function noReviewsFirstRunQueue() {
-  return [
-    { data: [DB_LOCATION], error: null },   // gbp_locations select
-    { data: null, error: null },              // integration_sync_state upsert (reviews syncing)
-    { data: null, error: null },              // integration_sync_state upsert (metrics syncing)
-    { data: null, error: null },              // getSyncState reviews → not_started
-    { data: null, error: null },              // integration_sync_state upsert (reviews synced)
-    { data: null, error: null },              // getSyncState metrics → not_started
-    { data: null, error: null },              // integration_sync_state upsert (metrics synced)
-  ]
-}
-
-// ── No locations ───────────────────────────────────────────────────────────────
-
-describe('runGbpSync — no locations', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('returns empty result when no active locations exist', async () => {
-    setupFromQueue([{ data: [], error: null }])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    const result = await runGbpSync('sync-user-id')
-
-    expect(result.locations).toEqual([])
-    expect(result.totalOk).toBe(0)
-    expect(result.totalFail).toBe(0)
-    expect(mocks.mockGetGoogleOAuth2Client).not.toHaveBeenCalled()
+  it('reruns idempotently using 14 recent days and two completed months', async () => {
+    await runGbpSync(undefined, now)
+    const dailyCount = db.tables.gbp_location_metrics.length
+    mocks.metrics.mockClear(); mocks.keywords.mockClear()
+    const second = await runGbpSync(undefined, now)
+    expect(second.ok).toBe(true); expect(second.performanceRowsUpserted).toBe(14); expect(second.keywordRowsUpserted).toBe(2)
+    expect(db.tables.gbp_location_metrics).toHaveLength(dailyCount); expect(db.tables.gbp_search_keywords_monthly).toHaveLength(18)
+    expect(mocks.metrics.mock.calls[0].slice(3)).toEqual(['2026-09-03', '2026-09-16'])
+    expect(mocks.reviews.mock.calls[1][3]).toBe(now.toISOString())
   })
-
-  it('returns empty result when locations query returns null', async () => {
-    setupFromQueue([{ data: null, error: null }])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    const result = await runGbpSync('sync-user-id')
-
-    expect(result.locations).toHaveLength(0)
+  it('never marks a failed performance backfill complete; keyword/review success survives', async () => {
+    mocks.metrics.mockRejectedValueOnce(new Error('secret-token'))
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(false); expect(result.keywordRowsUpserted).toBe(18); expect(result.reviewsRefreshed).toBe(3)
+    expect(state('gbp_metrics:1:2').status).toBe('failed'); expect(state('gbp_metrics:1:2').last_success_at).toBeUndefined()
+    expect(state('gbp_keywords:1:2').status).toBe('synced'); expect(JSON.stringify(result)).not.toContain('secret-token')
+    mocks.metrics.mockClear(); await runGbpSync(undefined, now)
+    expect(mocks.metrics.mock.calls[0][3]).toBe('2025-03-17')
   })
-})
-
-// ── First-run vs incremental ───────────────────────────────────────────────────
-
-describe('first-run vs incremental sync', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.mockDraftReviewReply.mockResolvedValue({ ok: false, error: 'no key' })
-    mocks.mockFetchAllGbpReviews.mockResolvedValue([])
-    mocks.mockFetchGbpReviewsPage.mockResolvedValue({ reviews: [] })
-    mocks.mockFetchLocationMetrics.mockResolvedValue([])
+  it('resumes a partial backfill at the last committed chunk', async () => {
+    const impl = mocks.metrics.getMockImplementation()!
+    mocks.metrics.mockImplementationOnce(impl).mockRejectedValueOnce(new Error('network'))
+    await runGbpSync(undefined, now)
+    expect(JSON.parse(state('gbp_metrics:1:2').cursor)).toMatchObject({ through: '2025-04-16' })
+    mocks.metrics.mockClear(); await runGbpSync(undefined, now)
+    expect(mocks.metrics.mock.calls[0][3]).toBe('2025-04-17')
   })
-
-  it('calls fetchAllGbpReviews on first run (sync state not_started)', async () => {
-    setupFromQueue(noReviewsFirstRunQueue())
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    await runGbpSync('sync-user-id')
-
-    expect(mocks.mockFetchAllGbpReviews).toHaveBeenCalledOnce()
-    expect(mocks.mockFetchGbpReviewsPage).not.toHaveBeenCalled()
+  it('does not replace a keyword month until every API page succeeded', async () => {
+    await runGbpSync(undefined, now)
+    const previous = structuredClone(db.tables.gbp_search_keywords_monthly)
+    mocks.keywords.mockRejectedValueOnce(new Error('second page failed'))
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(false); expect(db.tables.gbp_search_keywords_monthly).toEqual(previous)
+    expect(state('gbp_keywords:1:2').status).toBe('failed'); expect(state('gbp_metrics:1:2').status).toBe('synced')
   })
-
-  it('calls fetchGbpReviewsPage on incremental run (sync state synced)', async () => {
-    const syncedState = { status: 'synced', cursor: '2024-01-02', last_success_at: '2024-01-02' }
-    setupFromQueue([
-      { data: [DB_LOCATION], error: null },      // gbp_locations
-      { data: null, error: null },                // upsert syncing (reviews)
-      { data: null, error: null },                // upsert syncing (metrics)
-      { data: syncedState, error: null },          // getSyncState reviews → synced
-      { data: null, error: null },                // upsert synced (reviews)
-      { data: null, error: null },                // getSyncState metrics → not_started
-      { data: null, error: null },                // upsert synced (metrics)
-    ])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    await runGbpSync('sync-user-id')
-
-    expect(mocks.mockFetchGbpReviewsPage).toHaveBeenCalledOnce()
-    expect(mocks.mockFetchAllGbpReviews).not.toHaveBeenCalled()
+  it('does not advance checkpoints on a database error', async () => {
+    db.failures['gbp_location_metrics:upsert'] = 1
+    db.failures.rpc = 1
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(false); expect(state('gbp_metrics:1:2').cursor).toBeUndefined()
+    expect(state('gbp_keywords:1:2').cursor).toBeUndefined(); expect(JSON.stringify(result)).not.toContain('secret-provider-error')
   })
-})
-
-// ── Activation window ──────────────────────────────────────────────────────────
-
-describe('activation window logic', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.mockFetchLocationMetrics.mockResolvedValue([])
+  it('discovers unmapped profiles without syncing their performance/reviews or inferring identity', async () => {
+    db.tables.gbp_locations = []
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(false); expect(result.unmappedLocations).toEqual([{ accountId: '1', locationId: '2', title: 'External Google name' }])
+    expect(db.tables.gbp_locations[0]).toMatchObject({ location_id: null, active: false })
+    expect(mocks.metrics).not.toHaveBeenCalled(); expect(mocks.reviews).not.toHaveBeenCalled()
   })
-
-  it('generates a draft for reviews within the activation window (< 7 days before activation_date)', async () => {
-    const review = makeReview({ createTime: '2023-12-28T10:00:00Z' }) // 4 days before 2024-01-01
-    const location = { ...DB_LOCATION, activation_date: '2024-01-01' }
-
-    mocks.mockFetchAllGbpReviews.mockResolvedValueOnce([review])
-    mocks.mockDraftReviewReply.mockResolvedValueOnce({ ok: true, draft: 'Thanks!', model: 'claude-sonnet-4-6', promptVersion: 'v1' })
-
-    setupFromQueue([
-      { data: [location], error: null },              // gbp_locations
-      { data: null, error: null },                    // upsert syncing (reviews)
-      { data: null, error: null },                    // upsert syncing (metrics)
-      { data: null, error: null },                    // getSyncState reviews → not_started
-      { data: null, error: null },                    // gbp_reviews existing check → null (new)
-      { data: null, error: null },                    // gbp_reviews upsert
-      { data: { id: 'rev-uuid' }, error: null },      // gbp_reviews select for draft
-      { data: null, error: null },                    // gbp_review_replies upsert
-      { data: null, error: null },                    // upsert synced (reviews)
-      { data: null, error: null },                    // getSyncState metrics → not_started
-      { data: null, error: null },                    // upsert synced (metrics)
-    ])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    const result = await runGbpSync('sync-user-id')
-
-    expect(mocks.mockDraftReviewReply).toHaveBeenCalledOnce()
-    expect(result.totalOk).toBe(1)
-    expect(result.locations[0].draftsGenerated).toBe(1)
+  it('excludes ambiguous persistent mappings and keeps unambiguous locations running', async () => {
+    db.tables.gbp_locations.push({ ...location, id: 'gbp-2', google_location_id: '3' })
+    const result = await runGbpSync(undefined, now)
+    expect(result.ambiguousLocations).toEqual(['2', '3']); expect(result.ok).toBe(false); expect(mocks.reviews).not.toHaveBeenCalled()
   })
-
-  it('does NOT generate a draft for reviews outside the activation window (> 7 days)', async () => {
-    const review = makeReview({ createTime: '2023-12-20T10:00:00Z' }) // 12 days before 2024-01-01
-    const location = { ...DB_LOCATION, activation_date: '2024-01-01' }
-
-    mocks.mockFetchAllGbpReviews.mockResolvedValueOnce([review])
-
-    setupFromQueue([
-      { data: [location], error: null },          // gbp_locations
-      { data: null, error: null },                // upsert syncing (reviews)
-      { data: null, error: null },                // upsert syncing (metrics)
-      { data: null, error: null },                // getSyncState reviews → not_started
-      { data: null, error: null },                // gbp_reviews existing check → null (new)
-      { data: null, error: null },                // gbp_reviews upsert
-      // No draft generation — no gbp_reviews select or gbp_review_replies upsert
-      { data: null, error: null },                // upsert synced (reviews)
-      { data: null, error: null },                // getSyncState metrics → not_started
-      { data: null, error: null },                // upsert synced (metrics)
-    ])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    const result = await runGbpSync('sync-user-id')
-
-    expect(mocks.mockDraftReviewReply).not.toHaveBeenCalled()
-    expect(result.locations[0].draftsGenerated).toBe(0)
+  it('excludes profiles Google explicitly marks as duplicates', async () => {
+    mocks.locations.mockResolvedValue([{ name: 'locations/2', title: 'Killer', metadata: { duplicateLocation: 'locations/99' } }])
+    const result = await runGbpSync(undefined, now)
+    expect(result.ambiguousLocations).toEqual(['2']); expect(mocks.reviews).not.toHaveBeenCalled()
   })
-
-  it('does NOT generate a draft for reviews that already have an existing reply', async () => {
-    const review = makeReview({
-      createTime:  '2024-06-01T10:00:00Z',
-      reviewReply: { comment: 'Thanks!', updateTime: '2024-06-02T10:00:00Z' },
-    })
-
-    mocks.mockFetchAllGbpReviews.mockResolvedValueOnce([review])
-
-    setupFromQueue([
-      { data: [DB_LOCATION], error: null },       // gbp_locations
-      { data: null, error: null },                // upsert syncing (reviews)
-      { data: null, error: null },                // upsert syncing (metrics)
-      { data: null, error: null },                // getSyncState → not_started
-      { data: null, error: null },                // gbp_reviews existing check → null (new)
-      { data: null, error: null },                // gbp_reviews upsert
-      { data: null, error: null },                // detectExternalReplies: gbp_reviews select
-      { data: null, error: null },                // detectExternalReplies: gbp_review_replies select → not found
-      { data: null, error: null },                // upsert synced (reviews)
-      { data: null, error: null },                // getSyncState metrics
-      { data: null, error: null },                // upsert synced (metrics)
-    ])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    await runGbpSync('sync-user-id')
-
-    expect(mocks.mockDraftReviewReply).not.toHaveBeenCalled()
+  it('continues existing mapped location stages after profile discovery fails', async () => {
+    mocks.locations.mockRejectedValueOnce(new Error('private-header'))
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(false); expect(result.profilesRefreshed).toBe(0); expect(result.reviewsRefreshed).toBe(3)
+    expect(state('gbp_profiles').status).toBe('failed'); expect(JSON.stringify(result)).not.toContain('private-header')
   })
-})
-
-// ── Error isolation ────────────────────────────────────────────────────────────
-
-describe('runGbpSync — per-location error isolation', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('captures error in LocationSyncResult without throwing', async () => {
-    mocks.mockFetchAllGbpReviews.mockRejectedValueOnce(new Error('GBP API down'))
-    mocks.mockFetchLocationMetrics.mockResolvedValue([])
-
-    setupFromQueue([
-      { data: [DB_LOCATION], error: null },   // gbp_locations
-      { data: null, error: null },             // upsert syncing (reviews)
-      { data: null, error: null },             // upsert syncing (metrics)
-      { data: null, error: null },             // getSyncState reviews → not_started
-      // fetchAllGbpReviews throws — triggers catch
-      { data: null, error: null },             // upsert failed (reviews)
-      { data: null, error: null },             // upsert failed (metrics)
-    ])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    const result = await runGbpSync('sync-user-id')
-
-    expect(result.totalFail).toBe(1)
-    expect(result.totalOk).toBe(0)
-    expect(result.locations[0].ok).toBe(false)
-    expect(result.locations[0].error).toContain('GBP API down')
+  it('does not call Google without a scope and active administrator', async () => {
+    db.tables.google_oauth_tokens[0].scopes = []
+    expect((await runGbpSync(undefined, now)).errors[0]).toContain('GBP_SCOPE_MISSING')
+    expect(mocks.accounts).not.toHaveBeenCalled()
+    db.tables.google_oauth_tokens[0].scopes = ['business.manage']; db.tables.app_users[0].active = false
+    expect((await runGbpSync(undefined, now)).errors[0]).toContain('No active SUPER_ADMIN')
   })
-})
-
-// ── Draft generation failure ───────────────────────────────────────────────────
-
-describe('draft generation failure', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('review is still counted as upserted when draft AI call fails', async () => {
-    const review = makeReview({ createTime: '2024-06-01T10:00:00Z' })
-    mocks.mockFetchAllGbpReviews.mockResolvedValueOnce([review])
-    mocks.mockFetchLocationMetrics.mockResolvedValue([])
-    mocks.mockDraftReviewReply.mockResolvedValueOnce({ ok: false, error: 'API key missing' })
-
-    setupFromQueue([
-      { data: [DB_LOCATION], error: null },
-      { data: null, error: null },              // upsert syncing reviews
-      { data: null, error: null },              // upsert syncing metrics
-      { data: null, error: null },              // getSyncState reviews → not_started
-      { data: null, error: null },              // gbp_reviews existing check → new
-      { data: null, error: null },              // gbp_reviews upsert
-      { data: { id: 'rev-uuid' }, error: null }, // gbp_reviews select for draft
-      { data: null, error: null },              // gbp_review_replies upsert (status=new)
-      { data: null, error: null },              // upsert synced reviews
-      { data: null, error: null },              // getSyncState metrics
-      { data: null, error: null },              // upsert synced metrics
-    ])
-
-    const { runGbpSync } = await import('@/lib/gbp/sync')
-    const result = await runGbpSync('sync-user-id')
-
-    expect(result.totalOk).toBe(1)
-    expect(result.locations[0].reviewsUpserted).toBe(1)
-    expect(result.locations[0].draftsGenerated).toBe(0)
+  it('skips overlapping runs while the lease is held', async () => {
+    db.tables.integration_sync_state = [{ id: 'lease', integration: 'gbp_foundation', user_id: null, status: 'syncing', last_attempt_at: now.toISOString() }]
+    expect(await runGbpSync(undefined, now)).toMatchObject({ ok: true, skipped: true })
+    expect(mocks.accounts).not.toHaveBeenCalled()
   })
-})
-
-// ── retryDraftForReview ────────────────────────────────────────────────────────
-
-describe('retryDraftForReview', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('returns ok: false when review not found', async () => {
-    setupFromQueue([{ data: null, error: null }])
-
-    const { retryDraftForReview } = await import('@/lib/gbp/sync')
-    const result = await retryDraftForReview('nonexistent-id')
-
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain('not found')
-  })
-
-  it('returns ok: true on successful draft generation', async () => {
-    mocks.mockDraftReviewReply.mockResolvedValueOnce({
-      ok: true, draft: 'Thank you!', model: 'claude-sonnet-4-6', promptVersion: 'v1',
-    })
-
-    setupFromQueue([
-      { data: { id: 'rev-1', google_review_id: 'grev', reviewer_name: 'Bob', star_rating: 5, review_text: 'Great', location_id: 'loc-1' }, error: null },
-      { data: { store_name: 'Killer Kebab CPH' }, error: null },
-      { data: null, error: null }, // gbp_review_replies upsert
-    ])
-
-    const { retryDraftForReview } = await import('@/lib/gbp/sync')
-    const result = await retryDraftForReview('rev-1')
-
-    expect(result.ok).toBe(true)
-    expect(mocks.mockDraftReviewReply).toHaveBeenCalledOnce()
-  })
-
-  it('returns ok: false when location not found', async () => {
-    setupFromQueue([
-      { data: { id: 'rev-1', google_review_id: 'grev', reviewer_name: 'Bob', star_rating: 5, review_text: 'Great', location_id: 'loc-1' }, error: null },
-      { data: null, error: null }, // location not found
-    ])
-
-    const { retryDraftForReview } = await import('@/lib/gbp/sync')
-    const result = await retryDraftForReview('rev-1')
-
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain('Location not found')
-  })
-
-  it('returns ok: false when AI draft fails', async () => {
-    mocks.mockDraftReviewReply.mockResolvedValueOnce({ ok: false, error: 'network error' })
-
-    setupFromQueue([
-      { data: { id: 'rev-1', google_review_id: 'grev', reviewer_name: 'Bob', star_rating: 5, review_text: 'Great', location_id: 'loc-1' }, error: null },
-      { data: { store_name: 'Killer Kebab CPH' }, error: null },
-    ])
-
-    const { retryDraftForReview } = await import('@/lib/gbp/sync')
-    const result = await retryDraftForReview('rev-1')
-
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain('network error')
+  it('isolates review failure without reverting performance or keyword successes', async () => {
+    mocks.reviews.mockRejectedValueOnce(new Error('private-token'))
+    const result = await runGbpSync(undefined, now)
+    expect(result.ok).toBe(false); expect(state('gbp_metrics:1:2').status).toBe('synced'); expect(state('gbp_keywords:1:2').status).toBe('synced')
+    expect(state('gbp_reviews:1:2').status).toBe('failed'); expect(JSON.stringify(result)).not.toContain('private-token')
   })
 })

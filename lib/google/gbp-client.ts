@@ -31,6 +31,7 @@
  */
 
 import type { Auth } from 'googleapis'
+import { GBP_DAILY_METRICS } from '@/lib/gbp/metrics'
 
 // ── Base URLs ──────────────────────────────────────────────────────────────────
 
@@ -76,11 +77,25 @@ export interface GbpAccount {
 export interface GbpLocation {
   name: string         // "locations/{locationId}" (Business Info API format)
   title: string
-  storefrontAddress?: {
-    locality?: string
-    administrativeArea?: string
-  }
+  languageCode?: string
+  storeCode?: string
+  categories?: { primaryCategory?: GbpCategory; additionalCategories?: GbpCategory[] }
+  websiteUri?: string
+  phoneNumbers?: { primaryPhone?: string; additionalPhones?: string[] }
+  storefrontAddress?: { regionCode?: string; postalCode?: string; locality?: string; administrativeArea?: string; addressLines?: string[] }
+  regularHours?: Record<string, unknown>
+  specialHours?: Record<string, unknown>
+  moreHours?: Array<Record<string, unknown>>
+  openInfo?: { status?: string; canReopen?: boolean; openingDate?: Record<string, number> }
+  metadata?: Record<string, unknown>
+  profile?: Record<string, unknown>
+  serviceArea?: Record<string, unknown>
+  latlng?: { latitude?: number; longitude?: number }
+  relationshipData?: Record<string, unknown>
+  labels?: string[]
 }
+
+export interface GbpCategory { name: string; displayName?: string }
 
 export type GbpStarRating = 'ONE' | 'TWO' | 'THREE' | 'FOUR' | 'FIVE'
 
@@ -122,7 +137,7 @@ export interface GbpDailyMetricTimeSeries {
   dailyMetric: string
   dailySubEntityType?: Record<string, unknown>
   timeSeries: {
-    datedValues: Array<{
+    datedValues?: Array<{
       date: { year: number; month: number; day: number }
       value?: string
     }>
@@ -130,7 +145,7 @@ export interface GbpDailyMetricTimeSeries {
 }
 
 export interface GbpMetricsResponse {
-  multiDailyMetricTimeSeries: GbpDailyMetricTimeSeries[]
+  multiDailyMetricTimeSeries?: Array<{ dailyMetricTimeSeries?: GbpDailyMetricTimeSeries[] }>
 }
 
 // ── Star rating normalisation ──────────────────────────────────────────────────
@@ -150,41 +165,59 @@ async function gbpFetch<T>(
   url: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const { token } = await oauthClient.getAccessToken()
-  if (!token) throw new Error('[gbp-client] No access token available.')
-
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
-  })
-
+  let token: string | null | undefined
+  try { token = (await oauthClient.getAccessToken()).token }
+  catch { throw new GbpApiError(401, 'OAUTH_REFRESH_FAILED', url) }
+  if (!token) throw new GbpApiError(401, 'No access token available', url)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      ...options, cache: 'no-store', signal: AbortSignal.timeout(30_000),
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+    })
+  } catch { throw new GbpApiError(0, 'NETWORK_OR_TIMEOUT', url) }
   if (!response.ok) {
-    let errorDetail = ''
+    // Only Google's bounded machine-readable reason is safe to return/log.
+    let reason = 'API_REQUEST_FAILED'
     try {
-      const body = await response.json() as { error?: { message?: string; code?: number } }
-      errorDetail = body?.error?.message ?? ''
-    } catch {
-      // body not JSON
-    }
-    throw new GbpApiError(response.status, errorDetail || response.statusText, url)
+      const body = await response.json() as { error?: { status?: string; details?: Array<{ reason?: string }> } }
+      const candidate = body.error?.details?.find(d => d.reason)?.reason ?? body.error?.status
+      if (candidate && /^[A-Z][A-Z0-9_]{0,100}$/.test(candidate)) reason = candidate
+    } catch { /* retain safe fallback */ }
+    throw new GbpApiError(response.status, reason, url)
   }
-
-  return response.json() as Promise<T>
+  try { return await response.json() as T }
+  catch { throw new GbpApiError(response.status, 'INVALID_JSON_RESPONSE', url) }
 }
 
 export class GbpApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly url: string,
-  ) {
-    super(`GBP API error ${status}: ${message} (${url})`)
+  constructor(public readonly status: number, reason: string, public readonly url: string) {
+    super(`GBP API ${status}: ${reason} (${new URL(url).hostname}${new URL(url).pathname})`)
     this.name = 'GbpApiError'
   }
+}
+
+export function safeGbpError(error: unknown): string {
+  return error instanceof GbpApiError ? error.message : 'GBP sync operation failed. No credentials were logged.'
+}
+
+/** All list APIs must exhaust pagination; never accept a repeated token as success. */
+async function fetchPages<T>(client: Auth.OAuth2Client, baseUrl: string, key: string): Promise<T[]> {
+  const rows: T[] = []
+  const seen = new Set<string>()
+  let token: string | undefined
+  do {
+    const url = new URL(baseUrl)
+    if (token) url.searchParams.set('pageToken', token)
+    const page = await gbpFetch<Record<string, unknown>>(client, url.toString())
+    const items = page[key]
+    if (items !== undefined && !Array.isArray(items)) throw new GbpApiError(200, 'INVALID_LIST_RESPONSE', baseUrl)
+    rows.push(...((items ?? []) as T[]))
+    token = page.nextPageToken as string | undefined
+    if (token && (seen.has(token) || seen.size >= 1000)) throw new GbpApiError(200, 'PAGINATION_INCOMPLETE', baseUrl)
+    if (token) seen.add(token)
+  } while (token)
+  return rows
 }
 
 // ── API functions ──────────────────────────────────────────────────────────────
@@ -196,11 +229,7 @@ export class GbpApiError extends Error {
 export async function fetchGbpAccounts(
   oauthClient: Auth.OAuth2Client,
 ): Promise<GbpAccount[]> {
-  const data = await gbpFetch<{ accounts?: GbpAccount[] }>(
-    oauthClient,
-    `${ACCOUNT_MGMT_BASE}/accounts`,
-  )
-  return data.accounts ?? []
+  return fetchPages<GbpAccount>(oauthClient, `${ACCOUNT_MGMT_BASE}/accounts?pageSize=20`, 'accounts')
 }
 
 /**
@@ -212,10 +241,9 @@ export async function fetchGbpLocations(
   oauthClient: Auth.OAuth2Client,
   accountId: string,
 ): Promise<GbpLocation[]> {
-  const readMask = 'name,title,storefrontAddress'
-  const url = `${BIZ_INFO_BASE}/${accountPath(accountId)}/locations?readMask=${encodeURIComponent(readMask)}`
-  const data = await gbpFetch<{ locations?: GbpLocation[] }>(oauthClient, url)
-  return data.locations ?? []
+  const readMask = 'name,title,languageCode,storeCode,categories,websiteUri,phoneNumbers,storefrontAddress,regularHours,specialHours,moreHours,openInfo,metadata,profile,serviceArea,latlng,relationshipData,labels'
+  const url = `${BIZ_INFO_BASE}/${accountPath(accountId)}/locations?pageSize=100&readMask=${encodeURIComponent(readMask)}`
+  return fetchPages<GbpLocation>(oauthClient, url, 'locations')
 }
 
 /**
@@ -236,7 +264,9 @@ export async function fetchGbpReviewsPage(
   const params = new URLSearchParams({ pageSize: '50', orderBy: 'updateTime desc' })
   if (pageToken) params.set('pageToken', pageToken)
   const url = `${REVIEWS_V4_BASE}/${parent}/reviews?${params.toString()}`
-  return gbpFetch<GbpReviewsPage>(oauthClient, url)
+  const page = await gbpFetch<GbpReviewsPage>(oauthClient, url)
+  if (page.reviews !== undefined && !Array.isArray(page.reviews)) throw new GbpApiError(200, 'INVALID_REVIEWS_RESPONSE', url)
+  return { ...page, reviews: page.reviews ?? [] }
 }
 
 /**
@@ -250,11 +280,14 @@ export async function fetchAllGbpReviews(
 ): Promise<GbpReview[]> {
   const all: GbpReview[] = []
   let pageToken: string | undefined
+  const seen = new Set<string>()
 
   do {
     const page = await fetchGbpReviewsPage(oauthClient, accountId, locationId, pageToken)
     all.push(...page.reviews)
     pageToken = page.nextPageToken
+    if (pageToken && (seen.has(pageToken) || seen.size >= 1000)) throw new GbpApiError(200, 'PAGINATION_INCOMPLETE', `${REVIEWS_V4_BASE}/${reviewsParentPath(accountId, locationId)}/reviews`)
+    if (pageToken) seen.add(pageToken)
   } while (pageToken)
 
   return all
@@ -282,9 +315,7 @@ export async function publishGbpReviewReply(
     )
     return { ok: true }
   } catch (err) {
-    const message = err instanceof GbpApiError
-      ? err.message
-      : (err instanceof Error ? err.message : 'Unknown error')
+    const message = safeGbpError(err)
     console.error('[gbp-client] publishGbpReviewReply failed:', message)
     return { ok: false, error: message }
   }
@@ -294,7 +325,7 @@ export async function publishGbpReviewReply(
  * Fetches daily performance metrics for a location over a date range.
  *
  * Requested metrics cover all available interaction types.
- * The Business Profile Performance API supports up to 18 months of history.
+ * Kockpit requests an 18-month backfill; actual available history is reported separately.
  *
  * startDate / endDate: ISO date strings "YYYY-MM-DD"
  */
@@ -305,20 +336,12 @@ export async function fetchLocationMetrics(
   startDate: string,
   endDate: string,
 ): Promise<GbpDailyMetricTimeSeries[]> {
-  const location = `${accountPath(accountId)}/${locationInfoPath(locationId)}`
+  const location = locationInfoPath(locationId)
+  void accountId // Preserve the existing client signature; Performance is location-scoped.
   const [startYear, startMonth, startDay] = startDate.split('-').map(Number)
   const [endYear, endMonth, endDay]       = endDate.split('-').map(Number)
 
   const params = new URLSearchParams({
-    'dailyMetrics':               [
-      'BUSINESS_IMPRESSIONS_DESKTOP_MAPS',
-      'BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
-      'BUSINESS_IMPRESSIONS_MOBILE_MAPS',
-      'BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
-      'WEBSITE_CLICKS',
-      'CALL_CLICKS',
-      'BUSINESS_DIRECTION_REQUESTS',
-    ].join(','),
     'dailyRange.start_date.year':  String(startYear),
     'dailyRange.start_date.month': String(startMonth),
     'dailyRange.start_date.day':   String(startDay),
@@ -327,7 +350,27 @@ export async function fetchLocationMetrics(
     'dailyRange.end_date.day':     String(endDay),
   })
 
+  for (const metric of GBP_DAILY_METRICS) params.append('dailyMetrics', metric)
   const url = `${PERF_BASE}/${location}:fetchMultiDailyMetricsTimeSeries?${params.toString()}`
   const data = await gbpFetch<GbpMetricsResponse>(oauthClient, url)
-  return data.multiDailyMetricTimeSeries ?? []
+  if (!Array.isArray(data.multiDailyMetricTimeSeries)) throw new GbpApiError(200, 'MISSING_METRIC_SERIES', url)
+  return data.multiDailyMetricTimeSeries.flatMap(group => {
+    if (!Array.isArray(group.dailyMetricTimeSeries)) throw new GbpApiError(200, 'INVALID_METRIC_SERIES', url)
+    return group.dailyMetricTimeSeries
+  })
+}
+
+export interface GbpSearchKeyword {
+  searchKeyword: string
+  insightsValue?: { value?: string; threshold?: string }
+}
+
+/** One calendar month per call: Google aggregates the entire requested range. */
+export async function fetchGbpSearchKeywords(client: Auth.OAuth2Client, locationId: string, month: string): Promise<GbpSearchKeyword[]> {
+  const [year, monthNumber] = month.split('-')
+  const params = new URLSearchParams({ pageSize: '100',
+    'monthlyRange.start_month.year': year, 'monthlyRange.start_month.month': String(Number(monthNumber)),
+    'monthlyRange.end_month.year': year, 'monthlyRange.end_month.month': String(Number(monthNumber)),
+  })
+  return fetchPages<GbpSearchKeyword>(client, `${PERF_BASE}/${locationInfoPath(locationId)}/searchkeywords/impressions/monthly?${params}`, 'searchKeywordsCounts')
 }

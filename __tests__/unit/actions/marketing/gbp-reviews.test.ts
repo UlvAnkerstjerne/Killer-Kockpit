@@ -542,7 +542,7 @@ describe('triggerGbpSync', () => {
   it('calls runGbpSync and returns summary on success', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
     mocks.mockHasGbpScope.mockReturnValue(true)
-    mocks.mockRunGbpSync.mockResolvedValue({ totalOk: 2, totalFail: 0, locations: [] })
+    mocks.mockRunGbpSync.mockResolvedValue({ ok: true, totalOk: 2, totalFail: 0, locations: [], errors: [] })
 
     mocks.mockFrom.mockImplementationOnce(() => ({
       select: vi.fn().mockResolvedValue({

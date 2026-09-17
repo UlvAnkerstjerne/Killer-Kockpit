@@ -237,3 +237,59 @@ describe('publishGbpReviewReply', () => {
     expect((result as { ok: false; error: string }).error).toContain('404')
   })
 })
+
+// Current Performance API contracts and error safety.
+describe('GBP data foundation API contracts', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockFetch.mockReset() })
+  it('uses the location-only path, repeated metric parameters and nested response envelope', async () => {
+    const { fetchLocationMetrics } = await import('@/lib/google/gbp-client')
+    const series = { dailyMetric: 'WEBSITE_CLICKS', timeSeries: { datedValues: [] } }
+    mockOk({ multiDailyMetricTimeSeries: [{ dailyMetricTimeSeries: [series] }] })
+    expect(await fetchLocationMetrics(mocks.mockOAuthClient as never, '1', '2', '2026-09-01', '2026-09-02')).toEqual([series])
+    const url = new URL(mockFetch.mock.calls[0][0])
+    expect(url.pathname).toBe('/v1/locations/2:fetchMultiDailyMetricsTimeSeries')
+    expect(url.searchParams.getAll('dailyMetrics')).toHaveLength(11)
+    expect(url.searchParams.getAll('dailyMetrics')).toContain('BUSINESS_FOOD_MENU_CLICKS')
+    expect(url.searchParams.get('dailyRange.end_date.day')).toBe('2')
+  })
+  it('fails visibly on a malformed performance envelope', async () => {
+    const { fetchLocationMetrics } = await import('@/lib/google/gbp-client')
+    mockOk({}); await expect(fetchLocationMetrics(mocks.mockOAuthClient as never, '1', '2', '2026-09-01', '2026-09-02')).rejects.toThrow('MISSING_METRIC_SERIES')
+  })
+  it('paginates account and profile discovery and requests profile/status fields', async () => {
+    const { fetchGbpAccounts, fetchGbpLocations } = await import('@/lib/google/gbp-client')
+    mockOk({ accounts: [{ name: 'accounts/1' }], nextPageToken: 'two' }); mockOk({ accounts: [{ name: 'accounts/2' }] })
+    expect(await fetchGbpAccounts(mocks.mockOAuthClient as never)).toHaveLength(2)
+    mockOk({ locations: [{ name: 'locations/1' }], nextPageToken: 'next' }); mockOk({ locations: [{ name: 'locations/2' }] })
+    expect(await fetchGbpLocations(mocks.mockOAuthClient as never, '1')).toHaveLength(2)
+    const url = new URL(mockFetch.mock.calls[2][0]); expect(url.searchParams.get('readMask')).toContain('regularHours,specialHours'); expect(url.searchParams.get('readMask')).toContain('openInfo,metadata')
+  })
+  it('fetches monthly keywords one month at a time and exhausts pagination', async () => {
+    const { fetchGbpSearchKeywords } = await import('@/lib/google/gbp-client')
+    mockOk({ searchKeywordsCounts: [{ searchKeyword: 'kebab', insightsValue: { threshold: '15' } }], nextPageToken: 'two' })
+    mockOk({ searchKeywordsCounts: [{ searchKeyword: 'killer', insightsValue: { value: '120' } }] })
+    const rows = await fetchGbpSearchKeywords(mocks.mockOAuthClient as never, '2', '2026-08-01')
+    expect(rows).toHaveLength(2); expect(rows[0].insightsValue).toEqual({ threshold: '15' })
+    const url = new URL(mockFetch.mock.calls[0][0]); expect(url.pathname).toBe('/v1/locations/2/searchkeywords/impressions/monthly')
+    expect(url.searchParams.get('monthlyRange.start_month.month')).toBe('8'); expect(url.searchParams.get('monthlyRange.end_month.month')).toBe('8')
+  })
+  it('rejects repeated page tokens and errors after a successful first page', async () => {
+    const { fetchGbpSearchKeywords } = await import('@/lib/google/gbp-client')
+    mockOk({ nextPageToken: 'same' }); mockOk({ nextPageToken: 'same' })
+    await expect(fetchGbpSearchKeywords(mocks.mockOAuthClient as never, '2', '2026-08-01')).rejects.toThrow('PAGINATION_INCOMPLETE')
+    mockOk({ searchKeywordsCounts: [{ searchKeyword: 'x' }], nextPageToken: 'two' }); mockError(403, 'private-provider-message')
+    await expect(fetchGbpSearchKeywords(mocks.mockOAuthClient as never, '2', '2026-08-01')).rejects.toThrow('GBP API 403')
+  })
+  it('never returns OAuth error strings, Google messages, query tokens or credentials', async () => {
+    const { fetchGbpAccounts, fetchGbpReviewsPage } = await import('@/lib/google/gbp-client')
+    mocks.mockGetAccessToken.mockRejectedValueOnce(new Error('refresh_token=private-oauth-token'))
+    await expect(fetchGbpAccounts(mocks.mockOAuthClient as never)).rejects.toThrow('OAUTH_REFRESH_FAILED')
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ error: { message: 'Bearer private-token', status: 'PERMISSION_DENIED', details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] } }) })
+    const error = await fetchGbpReviewsPage(mocks.mockOAuthClient as never, '1', '2', 'private-page-token').catch(e => e)
+    expect(error.message).toContain('ACCESS_TOKEN_SCOPE_INSUFFICIENT'); expect(error.message).not.toContain('private'); expect(error.message).not.toContain('Bearer')
+  })
+  it('handles Google omitting the empty reviews collection without changing reply calls', async () => {
+    const { fetchGbpReviewsPage } = await import('@/lib/google/gbp-client')
+    mockOk({ totalReviewCount: 0 }); expect((await fetchGbpReviewsPage(mocks.mockOAuthClient as never, '1', '2')).reviews).toEqual([])
+  })
+})
