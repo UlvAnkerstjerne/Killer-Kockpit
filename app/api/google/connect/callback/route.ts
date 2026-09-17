@@ -7,6 +7,8 @@ import {
   buildOAuth2Client,
   storeGoogleTokens,
   patchGoogleTokensPreservingRefresh,
+  getGoogleConnectionStatus,
+  hasGoogleAdsScope,
 } from '@/lib/google/auth'
 import { getAppOrigin } from '@/lib/app-url'
 
@@ -59,6 +61,7 @@ export async function GET(request: NextRequest) {
   if (!storedState || storedState !== state) {
     return NextResponse.redirect(`${redirectBase}?google_error=state_mismatch`)
   }
+  const isAdsFlow = storedState.startsWith('ads:')
 
   // Verify KK session
   const supabase = await createClient()
@@ -71,13 +74,16 @@ export async function GET(request: NextRequest) {
   const serviceClient = createServiceClient()
   const { data: appUser } = await serviceClient
     .from('app_users')
-    .select('id')
+    .select('id, role')
     .eq('auth_user_id', authUser.id)
     .eq('active', true)
     .single()
 
   if (!appUser) {
     return NextResponse.redirect(`${redirectBase}?google_error=user_not_found`)
+  }
+  if (isAdsFlow && appUser.role !== 'SUPER_ADMIN') {
+    return NextResponse.redirect(`${redirectBase}?google_error=ads_admin_required`)
   }
 
   // Exchange code for tokens
@@ -100,6 +106,21 @@ export async function GET(request: NextRequest) {
     googleEmail = userInfo.email ?? undefined
   } catch {
     // Non-fatal — email is used for UX (deep links) only, not for auth
+  }
+
+  // An Ads grant must not replace an existing Google account or drop its grants.
+  // Check the actual token response, not the scope requested in the consent URL.
+  if (isAdsFlow) {
+    const existing = await getGoogleConnectionStatus(appUser.id)
+    const granted = credentials.scope?.split(' ').filter(Boolean) ?? []
+    if (!googleEmail || (existing.connected && existing.googleAccountEmail &&
+        googleEmail.toLowerCase() !== existing.googleAccountEmail.toLowerCase())) {
+      return NextResponse.redirect(`${redirectBase}?google_error=ads_account_mismatch`)
+    }
+    if (!hasGoogleAdsScope(granted) ||
+        (existing.connected && !existing.scopes.every(scope => granted.includes(scope)))) {
+      return NextResponse.redirect(`${redirectBase}?google_error=ads_permissions_missing`)
+    }
   }
 
   // Store tokens — hardened: preserve existing refresh_token for incremental auth

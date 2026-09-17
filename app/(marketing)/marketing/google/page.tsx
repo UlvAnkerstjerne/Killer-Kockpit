@@ -1,4 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/auth'
+import { getGoogleConnectionStatus } from '@/lib/google/auth'
+import GoogleAdsConnection from '@/components/google/GoogleAdsConnection'
 import GooglePageClient, {
   type GscBreakdownRow,
   type Ga4BreakdownRow,
@@ -142,6 +145,8 @@ async function fetchAllPages<T>(
 }
 
 export default async function GooglePage() {
+  const user = await getCurrentUser()
+  const googleStatus = user?.role === 'SUPER_ADMIN' ? await getGoogleConnectionStatus(user.id) : null
   const db = createServiceClient()
 
   const since      = daysAgo(185) // overview: 90d current + 90d prior + buffer
@@ -248,6 +253,12 @@ export default async function GooglePage() {
   const landingPages90 = aggregateGa4Breakdown(landingData, (r) => r.landing_page, cur90Start, curEnd, g4Total90)
 
   return (
+    <>
+    {googleStatus && (
+      <div className="mb-5">
+        <GoogleAdsConnection enabled={googleStatus.connected && googleStatus.googleAdsEnabled} />
+      </div>
+    )}
     <GooglePageClient
       gscRows={gscRes.data ?? []}
       ga4Rows={ga4Res.data ?? []}
@@ -261,5 +272,6 @@ export default async function GooglePage() {
       landingPages28={landingPages28}
       landingPages90={landingPages90}
     />
+    </>
   )
 }

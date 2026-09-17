@@ -42,6 +42,11 @@ export const MEET_SETTINGS_SCOPE      = 'https://www.googleapis.com/auth/meeting
 export const GBP_SCOPE                = 'https://www.googleapis.com/auth/business.manage'
 export const SEARCH_CONSOLE_SCOPE     = 'https://www.googleapis.com/auth/webmasters.readonly'
 export const GA4_SCOPE                = 'https://www.googleapis.com/auth/analytics.readonly'
+export const GOOGLE_ADS_SCOPE         = 'https://www.googleapis.com/auth/adwords'
+
+export function hasGoogleAdsScope(scopes: string[]): boolean {
+  return scopes.includes(GOOGLE_ADS_SCOPE)
+}
 
 export function hasCalendarScope(scopes: string[]): boolean {
   return scopes.some((s) => s.includes('calendar.events'))
@@ -293,6 +298,7 @@ export type GoogleConnectionStatus =
       sheetsEnabled: boolean
       searchConsoleEnabled: boolean
       ga4Enabled: boolean
+      googleAdsEnabled: boolean
     }
 
 /**
@@ -324,5 +330,6 @@ export async function getGoogleConnectionStatus(userId: string): Promise<GoogleC
     sheetsEnabled:        hasSheetsScope(scopes),
     searchConsoleEnabled: hasSearchConsoleScope(scopes),
     ga4Enabled:           hasGA4Scope(scopes),
+    googleAdsEnabled:     hasGoogleAdsScope(scopes),
   }
 }

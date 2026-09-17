@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { disconnectGoogleCalendar } from '@/lib/actions/google'
 import type { GoogleConnectionStatus } from '@/lib/google/auth'
 import type { KKRole } from '@/lib/types'
+import GoogleAdsConnection from '@/components/google/GoogleAdsConnection'
 
 /**
  * Unified Google Workspace connection card.
@@ -44,6 +45,9 @@ export default function GoogleConnectionCard({
         'Google did not return a refresh token. Disconnect and reconnect to fix this.',
       storage_failed: 'Failed to store credentials — please try again.',
       user_not_found: 'KK user not found.',
+      ads_admin_required: 'Administrator access is required to connect Google Ads.',
+      ads_account_mismatch: 'Choose the Google account already connected to Kockpit. Your existing connection was preserved.',
+      ads_permissions_missing: 'Google Ads or an existing permission was not granted. Try enabling Google Ads again and allow the requested permissions. Your existing connection was preserved.',
     }
     return map[code] ?? `Google error: ${code}`
   }
@@ -170,6 +174,8 @@ export default function GoogleConnectionCard({
                 </div>
               )}
             </div>
+
+            {userRole === 'SUPER_ADMIN' && <GoogleAdsConnection enabled={status.googleAdsEnabled} />}
 
             <div className="text-xs text-kk-muted">
               Token expires:{' '}
