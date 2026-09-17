@@ -42,6 +42,7 @@ export default function MarketingShell({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const isPaid = pathname === '/marketing/paid'
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -57,9 +58,25 @@ export default function MarketingShell({
     .slice(0, 2)
 
   return (
-    <div className="flex min-h-screen">
+    <div className={isPaid ? 'flex min-h-screen flex-col md:flex-row' : 'flex min-h-screen'}>
+      {isPaid ? (
+        <header className="border-b border-kk-line bg-kk-sidebar px-4 py-3 md:hidden">
+          <div className="flex items-center justify-between gap-4">
+            <Link href="/marketing" className="font-brand text-lg text-kk-brand">KILLER KOCKPIT</Link>
+            <details className="relative">
+              <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium">Marketing menu</summary>
+              <nav aria-label="Mobile Marketing" className="absolute right-0 z-30 mt-2 w-64 rounded-xl border border-kk-line bg-kk-panel p-2 shadow-lg">
+                {MARKETING_NAV.map(item => <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined}
+                  className={`block rounded-lg px-3 py-2.5 text-sm ${pathname === item.href ? 'bg-[#F5DA93] font-semibold' : 'hover:bg-kk-soft'}`}>{item.label}</Link>)}
+                <Link href="/today" className="block border-t border-kk-line px-3 py-2.5 text-sm">Management</Link>
+                <button onClick={handleSignOut} className="w-full px-3 py-2.5 text-left text-sm text-kk-muted">Sign out</button>
+              </nav>
+            </details>
+          </div>
+        </header>
+      ) : null}
       {/* Sidebar */}
-      <aside className="w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex flex-col sticky top-0 h-screen">
+      <aside className={`w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen ${isPaid ? 'hidden md:flex' : 'flex'}`}>
         {/* Wordmark */}
         <div className="px-5 pt-5 pb-4">
           <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
@@ -126,7 +143,7 @@ export default function MarketingShell({
       </aside>
 
       {/* Main area — no CaptureBar in Marketing M0 */}
-      <main className="flex-1 p-7 max-w-7xl w-full mx-auto">
+      <main className={isPaid ? 'min-w-0 flex-1 p-4 sm:p-6 lg:p-7 max-w-7xl w-full mx-auto' : 'flex-1 p-7 max-w-7xl w-full mx-auto'}>
         {children}
       </main>
     </div>
