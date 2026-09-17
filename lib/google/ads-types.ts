@@ -1,3 +1,10 @@
 export type GoogleAdsProbeResult =
   | { ok: true; customerIds: string[]; checkedAt: string }
-  | { ok: false; error: string; code?: string; requestId?: string }
+  | {
+      ok: false
+      error: string
+      code?: string
+      requestId?: string
+      cloudProjectNumber?: string
+      reconnectRequired?: boolean
+    }

@@ -61,7 +61,15 @@ export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
             <p>{result.error}</p>
             {result.code && <p className="mt-1">Error: {result.code}</p>}
             {result.requestId && <p className="mt-1 break-all">Reference: {result.requestId}</p>}
-            <a href="/api/google/connect/ads" className="mt-2 inline-block underline">Reconnect Google Ads</a>
+            {result.code === 'SERVICE_DISABLED' && result.cloudProjectNumber && (
+              <a href={`https://console.cloud.google.com/apis/library/googleads.googleapis.com?project=${result.cloudProjectNumber}`}
+                target="_blank" rel="noopener noreferrer" className="mt-2 inline-block underline">
+                Open Google Ads API setup
+              </a>
+            )}
+            {result.reconnectRequired && (
+              <a href="/api/google/connect/ads" className="mt-2 inline-block underline">Reconnect Google Ads</a>
+            )}
           </div>
         ))}
       </div>
