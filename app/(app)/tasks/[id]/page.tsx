@@ -27,10 +27,16 @@ export const dynamic = 'force-dynamic'
 
 export default async function TaskDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ returnTo?: string | string[] }>
 }) {
   const { id } = await params
+  const query = await searchParams
+  const rawReturnTo = Array.isArray(query.returnTo) ? query.returnTo[0] : query.returnTo
+  const allowedReturnTos = new Set(['/today', '/tasks', '/store'])
+  const returnTo = rawReturnTo && allowedReturnTos.has(rawReturnTo) ? rawReturnTo : '/tasks'
   const [user, allUsers] = await Promise.all([getCurrentUser(), getActiveUsers()])
   if (!user) return null
 
@@ -160,6 +166,7 @@ export default async function TaskDetailPage({
                   userIsResponsible={userIsResponsible}
                   userIsRequester={userIsRequester}
                   isSuperAdmin={isSuperAdmin}
+                  returnTo={returnTo}
                 />
               </div>
             )}

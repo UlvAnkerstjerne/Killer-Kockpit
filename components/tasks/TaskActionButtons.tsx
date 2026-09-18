@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   completeTask,
   cancelTask,
@@ -41,6 +42,7 @@ export default function TaskActionButtons({
   userIsResponsible,
   userIsRequester,
   isSuperAdmin,
+  returnTo,
 }: {
   taskId: string
   currentStatus: string
@@ -48,7 +50,9 @@ export default function TaskActionButtons({
   userIsResponsible: boolean
   userIsRequester: boolean
   isSuperAdmin: boolean
+  returnTo?: string
 }) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [showSendBack, setShowSendBack] = useState(false)
@@ -110,6 +114,7 @@ export default function TaskActionButtons({
                   startTransition(async () => {
                     const result = await approveTask(taskId)
                     if (result.error) setError(result.error)
+                    else router.replace(returnTo ?? '/tasks')
                   })
                 }}
                 disabled={isPending}
@@ -297,6 +302,7 @@ export default function TaskActionButtons({
               startTransition(async () => {
                 const result = await completeTask(taskId)
                 if (result.error) setError(result.error)
+                else router.replace(returnTo ?? '/tasks')
               })
             }}
             disabled={isPending}
@@ -322,6 +328,7 @@ export default function TaskActionButtons({
               startTransition(async () => {
                 const result = await submitTaskForReview(taskId)
                 if (result.error) setError(result.error)
+                else router.replace(returnTo ?? '/tasks')
               })
             }}
             disabled={isPending}

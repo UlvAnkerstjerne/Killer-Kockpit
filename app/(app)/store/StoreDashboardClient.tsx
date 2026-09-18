@@ -566,7 +566,7 @@ function MyTasks({ tasks }: Pick<StoreDashboardProps, 'tasks'>) {
         return (
           <Link
             key={task.id}
-            href={`/tasks/${task.id}`}
+            href={`/tasks/${task.id}?returnTo=/store`}
             className="flex items-center gap-3 border-2 border-[#171717] px-4 py-3 bg-[#D2C3A7] hover:bg-[#C8B89A] transition-colors group"
           >
             <div className="flex-1 min-w-0">

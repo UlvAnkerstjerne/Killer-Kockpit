@@ -118,7 +118,7 @@ function TaskRow({
   return (
     <div
       className="flex items-start gap-3 px-5 py-3.5 hover:bg-kk-soft transition-colors group cursor-pointer"
-      onClick={() => { saveScroll(); router.push(`/tasks/${task.id}`) }}
+      onClick={() => { saveScroll(); router.push(`/tasks/${task.id}?returnTo=/tasks`) }}
     >
       <div className="mt-1.5 shrink-0">
         <PriorityDot priority={task.priority} />
@@ -132,7 +132,7 @@ function TaskRow({
         <div className="flex items-start gap-2 flex-wrap">
           {/* Title — Link for right-click / keyboard nav; row click handles primary nav */}
           <Link
-            href={`/tasks/${task.id}`}
+            href={`/tasks/${task.id}?returnTo=/tasks`}
             onClick={e => { e.stopPropagation(); saveScroll() }}
             className={[
               'text-sm group-hover:underline',

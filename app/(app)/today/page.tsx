@@ -408,7 +408,7 @@ export default async function TodayPage({
       id: t.id, kind: 'task' as const,
       title: t.title, priority: t.priority,
       due_at: t.due_at, done_at: null,
-      href: `/tasks/${t.id}`,
+      href: `/tasks/${t.id}?returnTo=/today`,
       ownerName: isManagementView ? ownerName(t) : undefined,
     })),
     ...wosForWork.map(w => ({
@@ -422,7 +422,7 @@ export default async function TodayPage({
       id: t.id, kind: 'task' as const,
       title: t.title, priority: t.priority,
       due_at: t.due_at, done_at: t.completed_at,
-      href: `/tasks/${t.id}`,
+      href: `/tasks/${t.id}?returnTo=/today`,
       ownerName: isManagementView ? ownerName(t) : undefined,
     })),
     ...fulfilledWOs.map(w => ({
@@ -839,7 +839,7 @@ export default async function TodayPage({
                   return (
                     <Link
                       key={t.id}
-                      href={`/tasks/${t.id}`}
+                      href={`/tasks/${t.id}?returnTo=/today`}
                       className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                     >
                       <PriorityDot priority={t.priority} />
@@ -878,7 +878,7 @@ export default async function TodayPage({
                   return (
                     <Link
                       key={t.id}
-                      href={`/tasks/${t.id}`}
+                      href={`/tasks/${t.id}?returnTo=/today`}
                       className="flex items-center gap-3 px-4 py-1.5 hover:bg-kk-soft transition-colors group"
                     >
                       <PriorityDot priority={t.priority} />
