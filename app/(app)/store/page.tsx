@@ -246,27 +246,62 @@ async function fetchLatestDiner(
   }
 }
 
+// ─── Fallback UI (no-store / multiple-stores) ─────────────────────────────────
+//
+// Rendered server-side when location resolution yields 0 or 2+ locations.
+// No store-specific queries (audit, diner, todos, tasks, revenue, GBP, routines)
+// are executed in this path — the page is safe to render for any auth'd user.
+
+function StoreFallback({ state }: { state: 'no_store' | 'multiple_stores' }) {
+  const isNoStore = state === 'no_store'
+  return (
+    <div className="-m-4 min-h-[calc(100vh-0px)]" style={{ background: '#C8B89A' }}>
+      <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
+        <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
+          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
+            Killer Kockpit
+          </div>
+          <div className="text-xl font-black text-[#8D795F] leading-tight tracking-tight">
+            {isNoStore ? 'No store assigned' : 'Multiple stores assigned'}
+          </div>
+          <div className="text-[11px] text-[#171717] mt-1">Store Manager Dashboard</div>
+        </header>
+        <div className="flex-1 px-5 pt-8">
+          <p className="text-sm text-[#171717] leading-relaxed">
+            {isNoStore
+              ? 'Ask your manager to assign your store in Kockpit.'
+              : 'This dashboard currently supports one assigned store. Ask your manager to update your store assignment.'}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function StorePage() {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
 
-  const supabase = await createClient()
-
-  // Resolve canonical store location, then fetch everything in parallel
+  // Resolve canonical store location first.
+  // No store-specific queries run until exactly one location is confirmed.
   const storeResolution = await resolveStoreLocation(user.id)
-  const locationId = storeResolution.state === 'resolved' ? storeResolution.location.id : null
+
+  if (storeResolution.state !== 'resolved') {
+    return <StoreFallback state={storeResolution.state} />
+  }
+
+  // ── Exactly one location resolved — safe to fetch store data ──────────────
+  const { location } = storeResolution
+  const supabase = await createClient()
 
   const [todos, tasks, latestAudit, latestDiner] = await Promise.all([
     fetchTodos(supabase, user.id),
     fetchTasks(supabase, user.id),
-    fetchLatestAudit(locationId),
-    fetchLatestDiner(locationId),
+    fetchLatestAudit(location.id),
+    fetchLatestDiner(location.id),
   ])
-
-  const storeName     = storeResolution.state === 'resolved' ? storeResolution.location.short_name : null
-  const storeState    = storeResolution.state
 
   // Adapter data (unwired — all from lib/store/adapter.ts)
   const revenueToday  = getRevenueDemoData('today')
@@ -284,8 +319,7 @@ export default async function StorePage() {
 
   return (
     <StoreDashboardClient
-      storeName={storeName}
-      storeState={storeState}
+      storeName={location.short_name}
       managerName={user.display_name}
       revenueToday={revenueToday}
       revenueWeek={revenueWeek}
