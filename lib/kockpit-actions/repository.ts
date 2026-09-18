@@ -5,9 +5,11 @@ import { insertTodoForActor, type NormalizedTodoCreateInput } from '@/lib/domain
 import type { KKRole } from '@/lib/types'
 
 export type KockpitActionsActor = { id: string; email: string; role: KKRole }
+export type KockpitActionSource = 'external_api' | 'chatgpt_mcp'
 
 export type ActionRequestRow = {
   id: string
+  source: KockpitActionSource
   external_request_id: string
   request_hash: string
   action_type: 'create_task' | 'create_todo'
@@ -27,7 +29,7 @@ export type ClaimResult =
 
 export interface KockpitActionsRepository {
   resolveActor(email: string): Promise<KockpitActionsActor | null>
-  claim(requestId: string, requestHash: string, action: ActionRequestRow['action_type'], actorId: string): Promise<ClaimResult>
+  claim(source: KockpitActionSource, requestId: string, requestHash: string, action: ActionRequestRow['action_type'], actorId: string): Promise<ClaimResult>
   ownerExists(userId: string): Promise<boolean>
   projectExists(projectId: string): Promise<boolean>
   createTask(actorId: string, input: NormalizedTaskCreateInput): Promise<{ id?: string; error?: unknown }>
@@ -51,10 +53,11 @@ export function createKockpitActionsRepository(
       return data as KockpitActionsActor
     },
 
-    async claim(requestId, requestHash, action, actorId) {
+    async claim(source, requestId, requestHash, action, actorId) {
       const { data, error } = await client
         .from('kockpit_action_requests')
         .insert({
+          source,
           external_request_id: requestId,
           request_hash: requestHash,
           action_type: action,
@@ -70,6 +73,7 @@ export function createKockpitActionsRepository(
       const { data: existing, error: existingError } = await client
         .from('kockpit_action_requests')
         .select('*')
+        .eq('source', source)
         .eq('external_request_id', requestId)
         .maybeSingle()
       if (existingError || !existing) return { kind: 'error' }

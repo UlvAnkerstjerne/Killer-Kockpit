@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { executeKockpitAction } from '@/lib/kockpit-actions/service'
+import { executeKockpitAction, executeKockpitActionForActor } from '@/lib/kockpit-actions/service'
 import type {
   ActionRequestRow,
   KockpitActionsRepository,
@@ -13,11 +13,13 @@ function makeRepository() {
 
   const repository: KockpitActionsRepository = {
     resolveActor: vi.fn().mockResolvedValue(ACTOR),
-    claim: vi.fn(async (requestId, requestHash, action, actorId) => {
-      const existing = requests.get(requestId)
+    claim: vi.fn(async (source, requestId, requestHash, action, actorId) => {
+      const key = `${source}:${requestId}`
+      const existing = requests.get(key)
       if (existing) return { kind: 'existing' as const, row: existing }
       const row: ActionRequestRow = {
         id: `request-${++sequence}`,
+        source,
         external_request_id: requestId,
         request_hash: requestHash,
         action_type: action,
@@ -29,7 +31,7 @@ function makeRepository() {
         error_message: null,
         error_status: null,
       }
-      requests.set(requestId, row)
+      requests.set(key, row)
       return { kind: 'claimed' as const, row }
     }),
     ownerExists: vi.fn().mockResolvedValue(true),
@@ -92,6 +94,32 @@ describe('executeKockpitAction', () => {
       ACTOR.id,
       expect.objectContaining({ title: 'Call landlord', scheduled_for: '2026-09-20' }),
     )
+    expect(repository.claim).toHaveBeenCalledWith(
+      'external_api', 'todo-request-1', expect.any(String), 'create_todo', ACTOR.id,
+    )
+  })
+
+  it('uses the authenticated MCP actor and separate provenance namespace', async () => {
+    const result = await executeKockpitActionForActor('mcp-request-1', {
+      action: 'create_todo',
+      title: 'From ChatGPT',
+    }, ACTOR, 'chatgpt_mcp', repository)
+
+    expect(result.status).toBe(200)
+    expect(repository.resolveActor).not.toHaveBeenCalled()
+    expect(repository.claim).toHaveBeenCalledWith(
+      'chatgpt_mcp', 'mcp-request-1', expect.any(String), 'create_todo', ACTOR.id,
+    )
+    expect(repository.createTodo).toHaveBeenCalledWith(ACTOR.id, expect.any(Object))
+  })
+
+  it('does not collide when different trusted sources reuse the same request ID', async () => {
+    await executeKockpitAction('shared-id', { action: 'create_todo', title: 'External' }, repository)
+    await executeKockpitActionForActor(
+      'shared-id', { action: 'create_todo', title: 'MCP' }, ACTOR, 'chatgpt_mcp', repository,
+    )
+
+    expect(repository.createTodo).toHaveBeenCalledTimes(2)
   })
 
   it('rejects attempts to choose another To-Do owner', async () => {

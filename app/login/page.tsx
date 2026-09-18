@@ -1,19 +1,20 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import LoginForm from './LoginForm'
+import { safeRelativePath } from '@/lib/safe-redirect'
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string }>
+  searchParams: Promise<{ error?: string; message?: string; next?: string }>
 }) {
+  const params = await searchParams
+  const next = safeRelativePath(params.next)
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   // Already authenticated — redirect to app
-  if (user) redirect('/')
-
-  const params = await searchParams
+  if (user) redirect(next)
 
   return (
     <div className="min-h-screen bg-kk-bg flex items-center justify-center p-6">
@@ -50,7 +51,7 @@ export default async function LoginPage({
             </div>
           )}
 
-          <LoginForm />
+          <LoginForm next={next} />
         </div>
 
         <p className="text-xs text-kk-muted text-center mt-6">

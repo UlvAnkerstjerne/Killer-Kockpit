@@ -272,6 +272,28 @@ describe('GET /auth/callback', () => {
     const response = await GET(makeRequest('/auth/callback?code=abc&next=/projects'))
     expect(getRedirectLocation(response)).toContain('/projects')
   })
+
+  it('rejects external ?next redirects', async () => {
+    mocks.mockExchangeCodeForSession.mockResolvedValue({
+      data: {
+        user: {
+          id: 'auth-uuid',
+          email: 'admin@killerkebab.com',
+          user_metadata: { sub: '100000000001', full_name: 'Admin' },
+        },
+      },
+      error: null,
+    })
+    mocks.mockLookupSingle.mockResolvedValue({
+      data: { id: 'app-user-uuid', active: true, display_name: 'Admin', google_subject_id: '100000000001' },
+      error: null,
+    })
+    mocks.mockUpdateEq.mockResolvedValue({ data: null, error: null })
+
+    const { GET } = await import('@/app/auth/callback/route')
+    const response = await GET(makeRequest('/auth/callback?code=abc&next=https://evil.example/steal'))
+    expect(getRedirectLocation(response)).toBe('http://localhost:3000/')
+  })
 })
 
 // ── Railway reverse-proxy origin regression ────────────────────────────────

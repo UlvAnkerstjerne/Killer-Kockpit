@@ -4,6 +4,8 @@ import { parseKockpitAction } from './validation'
 import {
   createKockpitActionsRepository,
   type ActionRequestRow,
+  type KockpitActionsActor,
+  type KockpitActionSource,
   type KockpitActionsRepository,
 } from './repository'
 
@@ -33,12 +35,26 @@ export async function executeKockpitAction(
   const actor = await repository.resolveActor(KOCKPIT_ACTIONS_ACTOR_EMAIL)
   if (!actor) return failure(500, 'actor_unavailable', 'Kockpit Actions actor is unavailable.')
 
+  return executeKockpitActionForActor(requestId, payload, actor, 'external_api', repository)
+}
+
+export async function executeKockpitActionForActor(
+  requestId: string,
+  payload: unknown,
+  actor: KockpitActionsActor,
+  source: KockpitActionSource,
+  repository: KockpitActionsRepository = createKockpitActionsRepository(),
+): Promise<KockpitActionResult> {
+  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(requestId)) {
+    return failure(400, 'invalid_request_id', 'A valid idempotency key is required.')
+  }
+
   const parsed = parseKockpitAction(payload, actor.id)
   if (parsed.error) return failure(parsed.error.status, parsed.error.code, parsed.error.message)
   const action = parsed.data!
   const requestHash = hashAction(action)
 
-  const claim = await repository.claim(requestId, requestHash, action.action, actor.id)
+  const claim = await repository.claim(source, requestId, requestHash, action.action, actor.id)
   if (claim.kind === 'error') {
     return failure(500, 'idempotency_unavailable', 'Could not reserve the request ID.')
   }
