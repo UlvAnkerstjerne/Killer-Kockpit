@@ -46,7 +46,7 @@ export interface DashboardDiner {
 }
 
 export interface StoreDashboardProps {
-  storeName: string
+  storeName: string | null
   managerName: string
   revenueToday: RevenueMetrics
   revenueWeek: RevenueMetrics
@@ -255,63 +255,44 @@ function StorePerformance({
 
 // ─── Customer Feedback ────────────────────────────────────────────────────────
 
-function CustomerFeedback({
-  gbp,
-  latestDiner,
-}: Pick<StoreDashboardProps, 'gbp' | 'latestDiner'>) {
+function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
   return (
     <div className="border-2 border-[#171717] flex">
       {/* Google rating */}
       <div className="flex-1 p-4 border-r-2 border-[#171717]">
         <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
-          Google
+          Google Rating
         </div>
         {gbp.rating != null ? (
           <>
-            <div className="font-brand text-3xl font-black text-[#171717] leading-none">
+            <div className="text-3xl font-black text-[#171717] leading-none">
               {gbp.rating.toFixed(1)}
             </div>
             <div className="text-[10px] text-[#8D795F] mt-1">
               ★ {gbp.reviewCount ?? '—'} reviews
             </div>
-            {gbp.newReviews30d != null && (
-              <div className="text-[10px] text-[#171717] mt-0.5">
-                +{gbp.newReviews30d} this month
-              </div>
-            )}
           </>
         ) : (
           <div className="text-xs text-[#8D795F]">Not connected</div>
         )}
       </div>
 
-      {/* Mystery Diner */}
+      {/* Reviews this week */}
       <div className="flex-1 p-4">
         <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
-          Mystery Diner
+          Reviews This Week
         </div>
-        {latestDiner ? (
+        {gbp.reviewsThisWeek != null ? (
           <>
-            <div className="font-brand text-3xl font-black text-[#171717] leading-none">
-              {latestDiner.score_pct != null
-                ? `${Math.round(latestDiner.score_pct)}%`
-                : '—'}
+            <div className="text-3xl font-black text-[#171717] leading-none">
+              {gbp.reviewsThisWeek}
             </div>
-            <div className={[
-              'text-[10px] font-bold mt-1 uppercase tracking-wide',
-              latestDiner.status === 'GREEN'  ? 'text-[#2f6d4c]' :
-              latestDiner.status === 'YELLOW' ? 'text-[#8a5b16]' :
-              latestDiner.status === 'RED'    ? 'text-[#AD3919]' :
-              'text-[#8D795F]',
-            ].join(' ')}>
-              {latestDiner.status ?? 'Pending'}
-            </div>
-            <div className="text-[10px] text-[#8D795F] mt-0.5">
-              {formatRelDate(latestDiner.submitted_at)}
+            <div className="text-[10px] text-[#8D795F] mt-1">
+              new reviews
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">No visit yet</div>
+          <div className="text-xs text-[#8D795F]">Not connected</div>
         )}
       </div>
     </div>
@@ -320,7 +301,10 @@ function CustomerFeedback({
 
 // ─── Latest Checks ────────────────────────────────────────────────────────────
 
-function LatestChecks({ latestAudit }: Pick<StoreDashboardProps, 'latestAudit'>) {
+function LatestChecks({
+  latestAudit,
+  latestDiner,
+}: Pick<StoreDashboardProps, 'latestAudit' | 'latestDiner'>) {
   const AUDIT_STATUS_COLOR: Record<string, string> = {
     GREEN:       'text-[#2f6d4c]',
     LIGHT_GREEN: 'text-[#2f6d4c]',
@@ -341,7 +325,7 @@ function LatestChecks({ latestAudit }: Pick<StoreDashboardProps, 'latestAudit'>)
         </div>
         {latestAudit ? (
           <>
-            <div className="font-brand text-3xl font-black text-[#171717] leading-none">
+            <div className="text-3xl font-black text-[#171717] leading-none">
               {latestAudit.score_pct != null
                 ? `${Math.round(latestAudit.score_pct)}%`
                 : '—'}
@@ -363,13 +347,38 @@ function LatestChecks({ latestAudit }: Pick<StoreDashboardProps, 'latestAudit'>)
         )}
       </Link>
 
-      {/* Placeholder right panel — reserved for future check type */}
-      <div className="flex-1 p-4 flex flex-col justify-between">
+      {/* Mystery Diner */}
+      <Link
+        href={latestDiner ? `/diner/${latestDiner.id}` : '/diner'}
+        className="flex-1 p-4 group"
+      >
         <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
-          Hygiene
+          Mystery Diner
         </div>
-        <div className="text-xs text-[#8D795F]">Not connected</div>
-      </div>
+        {latestDiner ? (
+          <>
+            <div className="text-3xl font-black text-[#171717] leading-none">
+              {latestDiner.score_pct != null
+                ? `${Math.round(latestDiner.score_pct)}%`
+                : '—'}
+            </div>
+            <div className={[
+              'text-[10px] font-bold mt-1 uppercase tracking-wide',
+              latestDiner.status === 'GREEN'  ? 'text-[#2f6d4c]' :
+              latestDiner.status === 'YELLOW' ? 'text-[#8a5b16]' :
+              latestDiner.status === 'RED'    ? 'text-[#AD3919]' :
+              'text-[#8D795F]',
+            ].join(' ')}>
+              {latestDiner.status ?? 'Pending'}
+            </div>
+            <div className="text-[10px] text-[#8D795F] mt-0.5">
+              {formatRelDate(latestDiner.submitted_at)}
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-[#8D795F]">No visit yet</div>
+        )}
+      </Link>
     </div>
   )
 }
@@ -548,7 +557,6 @@ function StoreRoutines({
 export default function StoreDashboardClient(props: StoreDashboardProps) {
   const {
     storeName,
-    managerName,
     revenueToday, revenueWeek, revenueMonth,
     labourToday, labourWeek, labourMonth,
     kitchenToday, kitchenWeek, kitchenMonth,
@@ -571,18 +579,21 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
 
         {/* ── Header ───────────────────────────────────────────────────── */}
-        <header
-          className="px-5 pt-6 pb-5 border-b-2 border-[#171717]"
-          style={{ background: '#171717' }}
-        >
-          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#B7A486] mb-1">
-            Store Manager
+        <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
+          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
+            Killer Kockpit
           </div>
           <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight">
-            {storeName}
+            {storeName ?? '—'}
           </div>
-          <div className="text-xs text-[#B7A486] mt-1">
-            {managerName}
+          <div className="text-[11px] text-[#171717] mt-1">
+            Store Manager Dashboard
+          </div>
+          <div className="text-[11px] text-[#171717] mt-0.5">
+            {new Date().toLocaleDateString('en-GB', {
+              timeZone: 'Europe/Copenhagen',
+              day: 'numeric', month: 'short', year: 'numeric',
+            })}
           </div>
         </header>
 
@@ -608,13 +619,13 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           {/* Customer Feedback */}
           <section>
             <SectionHeading>Customer Feedback</SectionHeading>
-            <CustomerFeedback gbp={gbp} latestDiner={latestDiner} />
+            <CustomerFeedback gbp={gbp} />
           </section>
 
           {/* Latest Checks */}
           <section>
             <SectionHeading>Latest Checks</SectionHeading>
-            <LatestChecks latestAudit={latestAudit} />
+            <LatestChecks latestAudit={latestAudit} latestDiner={latestDiner} />
           </section>
 
           {/* My To-Dos */}

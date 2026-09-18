@@ -16,23 +16,23 @@ export const dynamic = 'force-dynamic'
 
 // ─── Location resolution ──────────────────────────────────────────────────────
 //
-// The current data architecture does not have a canonical user→location mapping
-// on app_users.  As a temporary boundary, we fetch the first active location
-// (alphabetically) and use it as the store context.
+// No safe user→location resolution is available for MEMBER role users.
 //
-// TODO: when a user_location_id or canonical_location_id column is added to
-// app_users, replace this fallback with a direct lookup.
-
-async function resolveStoreName(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
-  const { data } = await supabase
-    .from('locations')
-    .select('name')
-    .eq('active', true)
-    .order('name')
-    .limit(1)
-    .single()
-  return (data as { name: string } | null)?.name ?? 'Killer Kebab'
-}
+// The structural chain is: app_users → employees.linked_user_id →
+// employee_locations → locations, but the RLS SELECT policy on
+// employee_locations only permits SUPER_ADMIN and UM roles. A store manager
+// (MEMBER) cannot query their own location assignment.
+//
+// app_users and employees have no direct canonical_location_id column.
+//
+// Until one of the following is implemented, storeName is null:
+//   Option A — Add canonical_location_id to app_users (or employees) with a
+//              MEMBER-readable RLS policy, then resolve here with a direct join.
+//   Option B — Add a MEMBER-readable SELECT policy on employee_locations
+//              restricted to rows where linked_user_id = auth.uid().
+//
+// DO NOT fall back to "first alphabetical active location" — that silently
+// shows the wrong store to every manager and must not ship.
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
@@ -182,13 +182,16 @@ export default async function StorePage() {
 
   const supabase = await createClient()
 
-  const [storeName, todos, tasks, latestAudit, latestDiner] = await Promise.all([
-    resolveStoreName(supabase),
+  const [todos, tasks, latestAudit, latestDiner] = await Promise.all([
     fetchTodos(supabase, user.id),
     fetchTasks(supabase, user.id),
     fetchLatestAudit(supabase),
     fetchLatestDiner(supabase),
   ])
+
+  // storeName is null until a canonical user→location relationship is available.
+  // See the "Location resolution" comment above for what must be implemented first.
+  const storeName = null
 
   // Adapter data (unwired — all from lib/store/adapter.ts)
   const revenueToday  = getRevenueDemoData('today')

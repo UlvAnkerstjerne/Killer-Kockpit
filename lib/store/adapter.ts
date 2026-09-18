@@ -81,13 +81,13 @@ export function getKitchenDemoData(period: 'today' | 'week' | 'month'): KitchenM
 export interface GbpMetrics {
   rating: number | null
   reviewCount: number | null
-  /** Change in reviews since last 30 days */
-  newReviews30d: number | null
+  /** New reviews in the current calendar week */
+  reviewsThisWeek: number | null
 }
 
-/** @unwired — returns demo data until GBP adwords scope is granted and synced */
+/** @unwired — returns demo data until GBP API quota approval is granted and synced */
 export function getGbpDemoData(): GbpMetrics {
-  return { rating: 4.3, reviewCount: 412, newReviews30d: 7 }
+  return { rating: 4.6, reviewCount: 412, reviewsThisWeek: 8 }
 }
 
 // ─── Stock Take ───────────────────────────────────────────────────────────────
