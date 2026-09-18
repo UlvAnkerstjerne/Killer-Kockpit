@@ -10,6 +10,11 @@ import {
   getStockTakeDemoData,
   getMeatUseDemoData,
 } from '@/lib/store/adapter'
+import {
+  loadSelectedStoreData,
+  selectAssignedStore,
+  type AssignedStore,
+} from '@/lib/store/dashboard-selection'
 import StoreDashboardClient from './StoreDashboardClient'
 import type { DashboardTodo, DashboardTask, DashboardAudit, DashboardDiner } from './StoreDashboardClient'
 
@@ -28,14 +33,7 @@ export const dynamic = 'force-dynamic'
 // which is derived from the authenticated session (not caller-supplied).
 // We only ever read data belonging to that specific user.
 
-type StoreLocation = { id: string; name: string; short_name: string }
-
-type StoreResolution =
-  | { state: 'resolved'; location: StoreLocation }
-  | { state: 'no_store' }
-  | { state: 'multiple_stores'; count: number }
-
-async function resolveStoreLocation(userId: string): Promise<StoreResolution> {
+async function resolveAssignedStoreLocations(userId: string): Promise<AssignedStore[]> {
   const service = createServiceClient()
 
   // 1. Find the active employee record linked to this authenticated user
@@ -47,7 +45,7 @@ async function resolveStoreLocation(userId: string): Promise<StoreResolution> {
     .limit(1)
     .single()
 
-  if (!emp) return { state: 'no_store' }
+  if (!emp) return []
   const employeeId = (emp as { id: string }).id
 
   // 2. Find active location assignments for this employee
@@ -58,7 +56,7 @@ async function resolveStoreLocation(userId: string): Promise<StoreResolution> {
     .eq('active', true)
 
   const locationIds = ((locRows ?? []) as { location_id: string }[]).map(r => r.location_id)
-  if (locationIds.length === 0) return { state: 'no_store' }
+  if (locationIds.length === 0) return []
 
   // 3. Resolve to active canonical locations
   const { data: locs } = await service
@@ -66,11 +64,9 @@ async function resolveStoreLocation(userId: string): Promise<StoreResolution> {
     .select('id, name, short_name')
     .in('id', locationIds)
     .eq('active', true)
+    .order('name')
 
-  const active = (locs ?? []) as StoreLocation[]
-  if (active.length === 0) return { state: 'no_store' }
-  if (active.length > 1)   return { state: 'multiple_stores', count: active.length }
-  return { state: 'resolved', location: active[0] }
+  return (locs ?? []) as AssignedStore[]
 }
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
@@ -125,11 +121,11 @@ async function fetchTasks(
 }
 
 async function fetchLatestAudit(
-  locationId: string | null,
+  locationId: string,
 ): Promise<DashboardAudit | null> {
   // Uses service client: MEMBER role cannot read audit_submissions for audits
   // they didn't personally submit, but the dashboard needs the latest store audit
-  // regardless of auditor. locationId comes from the authorised resolveStoreLocation().
+  // regardless of auditor. locationId comes from the authorised selection gate.
   const service = createServiceClient()
 
   const { data: template } = await service
@@ -149,17 +145,12 @@ async function fetchLatestAudit(
     locations: { name: string } | Array<{ name: string }> | null
   }
 
-  let query = service
+  const { data } = await service
     .from('audit_submissions')
     .select('id, score_pct, audit_status, submitted_at, locations!location_id (name)')
     .eq('template_id', (template as { id: string }).id)
     .eq('status', 'submitted')
-
-  if (locationId) {
-    query = query.eq('location_id', locationId)
-  }
-
-  const { data } = await query
+    .eq('location_id', locationId)
     .order('submitted_at', { ascending: false })
     .limit(1)
     .single()
@@ -178,24 +169,19 @@ async function fetchLatestAudit(
 }
 
 async function fetchLatestDiner(
-  locationId: string | null,
+  locationId: string,
 ): Promise<DashboardDiner | null> {
   // diner_submissions has no authenticated SELECT RLS policies — service client
-  // is required unconditionally. locationId comes from resolveStoreLocation().
+  // is required unconditionally. locationId comes from the authorised selection gate.
   const service = createServiceClient()
 
-  // When a location is known, pre-filter by invitation IDs for that location
-  // to scope results to this store only.
-  let invitationIds: string[] | null = null
-  if (locationId) {
-    const { data: invs } = await service
-      .from('diner_invitations')
-      .select('id')
-      .eq('location_id', locationId)
+  const { data: invs } = await service
+    .from('diner_invitations')
+    .select('id')
+    .eq('location_id', locationId)
 
-    invitationIds = ((invs ?? []) as { id: string }[]).map(i => i.id)
-    if (invitationIds.length === 0) return null
-  }
+  const invitationIds = ((invs ?? []) as { id: string }[]).map(i => i.id)
+  if (invitationIds.length === 0) return null
 
   type RawDiner = {
     id: string
@@ -211,7 +197,7 @@ async function fetchLatestDiner(
     }> | null
   }
 
-  let query = service
+  const { data } = await service
     .from('diner_submissions')
     .select(`
       id, score_pct, diner_status, submitted_at,
@@ -221,12 +207,7 @@ async function fetchLatestDiner(
       )
     `)
     .eq('status', 'submitted')
-
-  if (invitationIds) {
-    query = query.in('invitation_id', invitationIds)
-  }
-
-  const { data } = await query
+    .in('invitation_id', invitationIds)
     .order('submitted_at', { ascending: false })
     .limit(1)
     .single()
@@ -246,14 +227,12 @@ async function fetchLatestDiner(
   }
 }
 
-// ─── Fallback UI (no-store / multiple-stores) ─────────────────────────────────
+// ─── Safe pre-dashboard states ────────────────────────────────────────────────
 //
-// Rendered server-side when location resolution yields 0 or 2+ locations.
-// No store-specific queries (audit, diner, todos, tasks, revenue, GBP, routines)
-// are executed in this path — the page is safe to render for any auth'd user.
+// Rendered server-side before a location has been authorised and selected.
+// No dashboard queries or adapter reads are executed in either path.
 
-function StoreFallback({ state }: { state: 'no_store' | 'multiple_stores' }) {
-  const isNoStore = state === 'no_store'
+function StoreFallback() {
   return (
     <div className="-m-4 min-h-[calc(100vh-0px)]" style={{ background: '#C8B89A' }}>
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
@@ -262,16 +241,64 @@ function StoreFallback({ state }: { state: 'no_store' | 'multiple_stores' }) {
             Killer Kockpit
           </div>
           <div className="text-xl font-black text-[#8D795F] leading-tight tracking-tight">
-            {isNoStore ? 'No store assigned' : 'Multiple stores assigned'}
+            No store assigned
           </div>
           <div className="text-[11px] text-[#171717] mt-1">Store Manager Dashboard</div>
         </header>
         <div className="flex-1 px-5 pt-8">
           <p className="text-sm text-[#171717] leading-relaxed">
-            {isNoStore
-              ? 'Ask your manager to assign your store in Kockpit.'
-              : 'This dashboard currently supports one assigned store. Ask your manager to update your store assignment.'}
+            Ask your manager to assign your store in Kockpit.
           </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StoreSelectionPrompt({
+  locations,
+  invalidRequest,
+}: {
+  locations: AssignedStore[]
+  invalidRequest: boolean
+}) {
+  return (
+    <div className="-m-4 min-h-[calc(100vh-0px)]" style={{ background: '#C8B89A' }}>
+      <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
+        <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
+          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
+            Killer Kockpit
+          </div>
+          <div className="text-xl font-black text-[#8D795F] leading-tight tracking-tight">
+            Choose a store
+          </div>
+          <div className="text-[11px] text-[#171717] mt-1">Store Manager Dashboard</div>
+        </header>
+        <div className="flex-1 px-5 pt-8 pb-10">
+          <p className="text-sm text-[#171717] leading-relaxed mb-5">
+            {invalidRequest
+              ? 'That store is not assigned to you. Choose one of your assigned stores.'
+              : 'Choose the store you want to open.'}
+          </p>
+          <div className="flex flex-col gap-2">
+            {locations.map(location => (
+              <a
+                key={location.id}
+                href={`/store?location=${encodeURIComponent(location.id)}`}
+                className="flex items-center gap-3 border-2 border-[#171717] px-4 py-4 bg-[#D2C3A7] hover:bg-[#C8B89A] transition-colors"
+              >
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-black text-[#171717] leading-tight">
+                    {location.short_name}
+                  </span>
+                  <span className="block text-[10px] text-[#8D795F] mt-1">
+                    {location.name}
+                  </span>
+                </span>
+                <span aria-hidden="true" className="text-lg font-black text-[#171717]">›</span>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -280,28 +307,49 @@ function StoreFallback({ state }: { state: 'no_store' | 'multiple_stores' }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function StorePage() {
+export default async function StorePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ location?: string | string[] }>
+}) {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
 
-  // Resolve canonical store location first.
-  // No store-specific queries run until exactly one location is confirmed.
-  const storeResolution = await resolveStoreLocation(user.id)
+  const assignedLocations = await resolveAssignedStoreLocations(user.id)
+  const locationParam = (await searchParams).location
+  const requestedLocationId = locationParam === undefined
+    ? null
+    : typeof locationParam === 'string' && locationParam.length > 0
+      ? locationParam
+      : '__invalid_location_request__'
+  const storeSelection = selectAssignedStore(assignedLocations, requestedLocationId)
 
-  if (storeResolution.state !== 'resolved') {
-    return <StoreFallback state={storeResolution.state} />
+  if (storeSelection.state === 'no_store') {
+    return <StoreFallback />
   }
 
-  // ── Exactly one location resolved — safe to fetch store data ──────────────
-  const { location } = storeResolution
+  if (storeSelection.state === 'selection_required') {
+    return (
+      <StoreSelectionPrompt
+        locations={storeSelection.locations}
+        invalidRequest={storeSelection.invalidRequest}
+      />
+    )
+  }
+
+  // The selected location has now been checked against this user's assignments.
+  const { location } = storeSelection
   const supabase = await createClient()
 
-  const [todos, tasks, latestAudit, latestDiner] = await Promise.all([
-    fetchTodos(supabase, user.id),
-    fetchTasks(supabase, user.id),
-    fetchLatestAudit(location.id),
-    fetchLatestDiner(location.id),
-  ])
+  const dashboardData = await loadSelectedStoreData(storeSelection, user.id, {
+    fetchTodos: userId => fetchTodos(supabase, userId),
+    fetchTasks: userId => fetchTasks(supabase, userId),
+    fetchLatestAudit,
+    fetchLatestDiner,
+  })
+
+  if (!dashboardData) return null
+  const { todos, tasks, latestAudit, latestDiner } = dashboardData
 
   // Adapter data (unwired — all from lib/store/adapter.ts)
   const revenueToday  = getRevenueDemoData('today')
@@ -320,6 +368,7 @@ export default async function StorePage() {
   return (
     <StoreDashboardClient
       storeName={location.short_name}
+      storeOptions={storeSelection.locations}
       managerName={user.display_name}
       revenueToday={revenueToday}
       revenueWeek={revenueWeek}

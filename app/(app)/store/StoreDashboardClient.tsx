@@ -47,6 +47,7 @@ export interface DashboardDiner {
 
 export interface StoreDashboardProps {
   storeName: string
+  storeOptions: Array<{ id: string; short_name: string }>
   managerName: string
   revenueToday: RevenueMetrics
   revenueWeek: RevenueMetrics
@@ -557,6 +558,7 @@ function StoreRoutines({
 export default function StoreDashboardClient(props: StoreDashboardProps) {
   const {
     storeName,
+    storeOptions,
     revenueToday, revenueWeek, revenueMonth,
     labourToday, labourWeek, labourMonth,
     kitchenToday, kitchenWeek, kitchenMonth,
@@ -583,8 +585,29 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
             Killer Kockpit
           </div>
-          <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight">
-            {storeName}
+          <div className="flex items-start gap-3">
+            <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight flex-1 min-w-0">
+              {storeName}
+            </div>
+            {storeOptions.length > 1 ? (
+              <details className="relative shrink-0">
+                <summary className="list-none cursor-pointer text-[10px] font-black tracking-[0.1em] uppercase text-[#171717] border-b border-[#171717] pt-1">
+                  Change store <span aria-hidden="true">⌄</span>
+                </summary>
+                <div className="absolute right-0 z-10 mt-2 w-48 border-2 border-[#171717] bg-[#D2C3A7] shadow-[3px_3px_0_#171717]">
+                  {storeOptions.map(store => (
+                    <a
+                      key={store.id}
+                      href={`/store?location=${encodeURIComponent(store.id)}`}
+                      aria-current={store.short_name === storeName ? 'page' : undefined}
+                      className="block px-3 py-2.5 text-xs font-bold text-[#171717] border-b-2 border-[#171717] last:border-b-0 hover:bg-[#C8B89A] aria-[current=page]:text-[#AD3919]"
+                    >
+                      {store.short_name}
+                    </a>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </div>
           <div className="text-[11px] text-[#171717] mt-1">
             Store Manager Dashboard
