@@ -349,6 +349,52 @@ export async function updateTodoRecurrence(
 }
 
 // ---------------------------------------------------------------------------
+// reorderTodos
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists the user's manual sort order for their active to-dos.
+ *
+ * Accepts an ordered array of todo IDs. Each ID receives a sort_order value
+ * of (index + 1) * 1000, giving generous gaps for future insertions.
+ *
+ * Security model
+ * ─────────────
+ * • User identity comes from getCurrentUser() — never from the caller.
+ * • Each update is scoped by .eq('user_id', user.id) in addition to RLS.
+ *   Passing an ID belonging to another user results in a no-op for that row.
+ * • Updates run in parallel (Promise.all) — acceptable for typical list sizes.
+ *
+ * Does NOT call revalidatePath — the client updates optimistically and the
+ * new DB values will be returned on the next router.refresh().
+ */
+export async function reorderTodos(orderedIds: string[]): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) return {}
+
+  const supabase = await createClient()
+
+  const updates = orderedIds.map((id, index) =>
+    supabase
+      .from('todos')
+      .update({ sort_order: (index + 1) * 1000 })
+      .eq('id', id)
+      .eq('user_id', user.id),
+  )
+
+  const results = await Promise.all(updates)
+  const firstError = results.find(r => r.error)
+  if (firstError?.error) {
+    console.error('[reorderTodos]', firstError.error)
+    return { error: 'Failed to save order.' }
+  }
+
+  return {}
+}
+
+// ---------------------------------------------------------------------------
 // upgradeTodoToTask
 // ---------------------------------------------------------------------------
 

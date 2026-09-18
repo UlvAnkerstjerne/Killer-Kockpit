@@ -11,15 +11,47 @@
  * identity from getCurrentUser() — no user_id is ever passed from this client.
  */
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { createTodo, completeTodo, completeRecurringTodo, cancelTodo, reopenTodo } from '@/lib/actions/todos'
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SmartMouseSensor, SmartTouchSensor } from '@/lib/dnd/sensors'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers'
+import { CSS } from '@dnd-kit/utilities'
+import { createTodo, completeTodo, completeRecurringTodo, cancelTodo, reopenTodo, reorderTodos } from '@/lib/actions/todos'
 import type { Todo } from '@/lib/types'
-// Completion context box shown before marking a to-do as done
 import Link from 'next/link'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 import UpgradeToTaskModal from './UpgradeToTaskModal'
+
+// ---------------------------------------------------------------------------
+// Drag handle icon
+// ---------------------------------------------------------------------------
+
+function GripIcon() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+      <circle cx="3" cy="2.5" r="1.2"/>
+      <circle cx="7" cy="2.5" r="1.2"/>
+      <circle cx="3" cy="7" r="1.2"/>
+      <circle cx="7" cy="7" r="1.2"/>
+      <circle cx="3" cy="11.5" r="1.2"/>
+      <circle cx="7" cy="11.5" r="1.2"/>
+    </svg>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -38,6 +70,175 @@ interface Props {
   allUsers?: UserOption[]
   projects?: ProjectOption[]
   currentUserId?: string
+}
+
+// ---------------------------------------------------------------------------
+// SortableOpenTodo — one draggable open todo row
+// ---------------------------------------------------------------------------
+
+interface SortableOpenTodoProps {
+  todo: Todo
+  isPending: boolean
+  completionLoading: boolean
+  completingTodoId: string | null
+  completionContextText: string
+  completionError: string | null
+  canUpgrade: boolean
+  onComplete: () => void
+  onCancel: () => void
+  onUpgrade: () => void
+  onContextChange: (text: string) => void
+  onContextConfirm: () => void
+  onContextCancel: () => void
+}
+
+function SortableOpenTodo({
+  todo,
+  isPending,
+  completionLoading,
+  completingTodoId,
+  completionContextText,
+  completionError,
+  canUpgrade,
+  onComplete,
+  onCancel,
+  onUpgrade,
+  onContextChange,
+  onContextConfirm,
+  onContextCancel,
+}: SortableOpenTodoProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: todo.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      className={`group${isDragging ? ' opacity-50 relative z-10 bg-kk-panel shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-kk-ink/10' : ''}`}
+    >
+      <div className="flex items-stretch">
+        {/* ── Drag affordance (decorative only — whole row is draggable) ── */}
+        <div
+          aria-hidden="true"
+          className="flex items-center justify-center w-5 shrink-0
+                     opacity-20 sm:opacity-0 sm:group-hover:opacity-30
+                     text-kk-muted pointer-events-none"
+        >
+          <GripIcon />
+        </div>
+
+        {/* ── Row content ───────────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0 pr-4 py-1.5">
+          <div className="flex items-center gap-3">
+            {/* Complete button */}
+            <button
+              onClick={onComplete}
+              disabled={isPending || completionLoading}
+              className="w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
+              title="Mark complete"
+              aria-label="Mark complete"
+            />
+
+            {/* Title + recurrence indicator */}
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <PriorityDot priority={todo.priority} />
+              <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
+              {todo.recurrence_rule && (
+                <span className="text-[10px] text-kk-brand/60 shrink-0">
+                  ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                </span>
+              )}
+            </div>
+
+            {/* Priority label */}
+            <span className="text-[10px] text-kk-muted shrink-0">
+              {PRIORITY_CONFIG[todo.priority]?.label}
+            </span>
+
+            {/* Upgrade to Task — visible on hover */}
+            {canUpgrade && (
+              <button
+                onClick={onUpgrade}
+                disabled={isPending || completionLoading}
+                className="text-[10px] text-kk-muted sm:opacity-0 sm:group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
+                title="Upgrade to Task"
+                aria-label="Upgrade to Task"
+              >
+                → Task
+              </button>
+            )}
+
+            {/* Cancel button — visible on hover */}
+            <button
+              onClick={onCancel}
+              disabled={isPending}
+              className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
+              title="Cancel"
+              aria-label="Cancel"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Completion context box */}
+          {completingTodoId === todo.id && (
+            <div className="mt-2 pt-2 border-t border-kk-line/60 space-y-1.5">
+              <div>
+                <p className="text-xs font-semibold text-kk-ink">Add context</p>
+                <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
+              </div>
+              <textarea
+                value={completionContextText}
+                onChange={e => onContextChange(e.target.value)}
+                rows={2}
+                placeholder="e.g. Confirmed with the team, all done."
+                className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-1.5 outline-none resize-none placeholder:text-kk-muted"
+                disabled={completionLoading}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    onContextConfirm()
+                  }
+                  if (e.key === 'Escape') onContextCancel()
+                }}
+              />
+              {completionError && (
+                <p className="text-xs text-kk-bad">{completionError}</p>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onContextConfirm}
+                  disabled={!completionContextText.trim() || completionLoading}
+                  className="text-xs px-3 py-1 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
+                >
+                  {completionLoading ? 'Saving…' : 'Done'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onContextCancel}
+                  disabled={completionLoading}
+                  className="text-xs px-3 py-1 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +267,34 @@ export default function TodoBlock({
   // Upgrade to task modal
   const [upgradingTodo, setUpgradingTodo] = useState<Todo | null>(null)
   const canUpgrade = !!(allUsers && projects !== undefined && currentUserId)
+
+  // ── Drag-and-drop ordering ─────────────────────────────────────────────
+  // localOpenTodos mirrors openTodos prop and supports optimistic DnD reorder.
+  const [localOpenTodos, setLocalOpenTodos] = useState<Todo[]>(openTodos)
+  // Sync with server when props change (after router.refresh())
+  useEffect(() => { setLocalOpenTodos(openTodos) }, [openTodos])
+
+  const sensors = useSensors(
+    useSensor(SmartMouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(SmartTouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  )
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = localOpenTodos.findIndex(t => t.id === active.id)
+    const newIndex = localOpenTodos.findIndex(t => t.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = arrayMove(localOpenTodos, oldIndex, newIndex)
+    setLocalOpenTodos(reordered)
+
+    // Persist asynchronously — no await, fire-and-forget from UI perspective
+    startTransition(async () => {
+      await reorderTodos(reordered.map(t => t.id))
+    })
+  }, [localOpenTodos, startTransition])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -184,118 +413,43 @@ export default function TodoBlock({
       )}
 
       {/* Open todos */}
-      {openTodos.length === 0 && completedThisWeek.length === 0 ? (
+      {localOpenTodos.length === 0 && completedThisWeek.length === 0 ? (
         <div className="px-5 py-8 text-center text-sm text-kk-muted">
           No to-dos. Add one above.
         </div>
       ) : (
         <div className="divide-y divide-kk-line">
-          {(maxItems ? openTodos.slice(0, maxItems) : openTodos).map(todo => (
-            <div
-              key={todo.id}
-              className="px-4 py-1.5 group"
+          {/* ── Sortable open todos ─────────────────────────────────────────── */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          >
+            <SortableContext
+              items={(maxItems ? localOpenTodos.slice(0, maxItems) : localOpenTodos).map(t => t.id)}
+              strategy={verticalListSortingStrategy}
             >
-              {/* Main row */}
-              <div className="flex items-center gap-3">
-                {/* Complete button — opens context box */}
-                <button
-                  onClick={() => openCompletionBox(todo)}
-                  disabled={isPending || completionLoading}
-                  className="w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
-                  title="Mark complete"
-                  aria-label="Mark complete"
+              {(maxItems ? localOpenTodos.slice(0, maxItems) : localOpenTodos).map(todo => (
+                <SortableOpenTodo
+                  key={todo.id}
+                  todo={todo}
+                  isPending={isPending}
+                  completionLoading={completionLoading}
+                  completingTodoId={completingTodoId}
+                  completionContextText={completionContextText}
+                  completionError={completionError}
+                  canUpgrade={canUpgrade}
+                  onComplete={() => openCompletionBox(todo)}
+                  onCancel={() => handleAction(() => cancelTodo(todo.id))}
+                  onUpgrade={() => setUpgradingTodo(todo)}
+                  onContextChange={setCompletionContextText}
+                  onContextConfirm={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
+                  onContextCancel={() => setCompletingTodoId(null)}
                 />
-
-                {/* Title + recurrence indicator */}
-                <div className="flex-1 flex items-center gap-2 min-w-0">
-                  <PriorityDot priority={todo.priority} />
-                  <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
-                  {todo.recurrence_rule && (
-                    <span className="text-[10px] text-kk-brand/60 shrink-0">
-                      ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Priority label */}
-                <span className="text-[10px] text-kk-muted shrink-0">
-                  {PRIORITY_CONFIG[todo.priority]?.label}
-                </span>
-
-                {/* Upgrade to Task — visible on hover */}
-                {canUpgrade && (
-                  <button
-                    onClick={() => setUpgradingTodo(todo)}
-                    disabled={isPending || completionLoading}
-                    className="text-[10px] text-kk-muted sm:opacity-0 sm:group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
-                    title="Upgrade to Task"
-                    aria-label="Upgrade to Task"
-                  >
-                    → Task
-                  </button>
-                )}
-
-                {/* Cancel button — visible on hover */}
-                <button
-                  onClick={() => handleAction(() => cancelTodo(todo.id))}
-                  disabled={isPending}
-                  className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
-                  title="Cancel"
-                  aria-label="Cancel"
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* Completion context box */}
-              {completingTodoId === todo.id && (
-                <div className="mt-2 pt-2 border-t border-kk-line/60 space-y-1.5">
-                  <div>
-                    <p className="text-xs font-semibold text-kk-ink">Add context</p>
-                    <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
-                  </div>
-                  <textarea
-                    value={completionContextText}
-                    onChange={e => setCompletionContextText(e.target.value)}
-                    rows={2}
-                    placeholder="e.g. Confirmed with the team, all done."
-                    className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-1.5 outline-none resize-none placeholder:text-kk-muted"
-                    disabled={completionLoading}
-                    // eslint-disable-next-line jsx-a11y/no-autofocus
-                    autoFocus
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault()
-                        handleCompleteConfirm(todo.id, !!todo.recurrence_rule)
-                      }
-                      if (e.key === 'Escape') setCompletingTodoId(null)
-                    }}
-                  />
-                  {completionError && (
-                    <p className="text-xs text-kk-bad">{completionError}</p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
-                      disabled={!completionContextText.trim() || completionLoading}
-                      className="text-xs px-3 py-1 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
-                    >
-                      {completionLoading ? 'Saving…' : 'Done'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCompletingTodoId(null)}
-                      disabled={completionLoading}
-                      className="text-xs px-3 py-1 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+              ))}
+            </SortableContext>
+          </DndContext>
 
           {/* Completed this week */}
           {completedThisWeek.length > 0 && (

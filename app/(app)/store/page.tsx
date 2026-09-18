@@ -77,10 +77,10 @@ async function fetchTodos(
 ): Promise<DashboardTodo[]> {
   const { data } = await supabase
     .from('todos')
-    .select('id, title, completed_at, priority')
+    .select('id, title, completed_at, priority, sort_order')
     .eq('user_id', userId)
     .is('cancelled_at', null)
-    .order('priority', { ascending: true })
+    .order('sort_order', { ascending: true, nullsFirst: true })
     .order('created_at', { ascending: false })
     .limit(30)
   return (data ?? []) as DashboardTodo[]

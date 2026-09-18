@@ -118,9 +118,9 @@ export default async function TodosPage({
   const [{ data }, allUsersResult, projectsResult] = await Promise.all([
     supabase
       .from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id, sort_order')
       .eq('user_id', user.id)
-      .order('priority', { ascending: true })
+      .order('sort_order', { ascending: true, nullsFirst: true })
       .order('created_at', { ascending: false })
       .limit(200),
     canAssignToOthers(user.role) ? getActiveUsers() : Promise.resolve([user]),

@@ -36,6 +36,7 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
     upgraded_at: null,
     completion_context: null,
     completed_by_user_id: null,
+    sort_order: null,
     ...overrides,
   }
 }
@@ -45,15 +46,12 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
 // ---------------------------------------------------------------------------
 
 describe('sortOpenTodos', () => {
-  it('[1] sorts by priority ascending (1 before 4)', () => {
-    const todos = [
-      makeTodo({ priority: 4 }),
-      makeTodo({ priority: 1 }),
-      makeTodo({ priority: 3 }),
-      makeTodo({ priority: 2 }),
-    ]
-    const result = sortOpenTodos(todos)
-    expect(result.map(t => t.priority)).toEqual([1, 2, 3, 4])
+  it('[1] null sort_order: sorts by created_at descending (newest first, priority irrelevant)', () => {
+    const oldest   = makeTodo({ priority: 1, created_at: '2024-01-01T00:00:00.000Z' }) // critical but oldest
+    const middle   = makeTodo({ priority: 2, created_at: '2024-01-05T00:00:00.000Z' })
+    const newest   = makeTodo({ priority: 4, created_at: '2024-01-10T00:00:00.000Z' }) // background but newest
+    const result = sortOpenTodos([oldest, newest, middle])
+    expect(result.map(t => t.id)).toEqual([newest.id, middle.id, oldest.id])
   })
 
   it('[2] within the same priority, sorts by created_at descending (newest first)', () => {
@@ -64,11 +62,13 @@ describe('sortOpenTodos', () => {
     expect(result[1].id).toBe(older.id)
   })
 
-  it('[3] priority trumps created_at (older critical before newer normal)', () => {
+  it('[3] created_at trumps priority: newer todo appears first regardless of priority', () => {
     const oldCritical = makeTodo({ priority: 1, created_at: '2024-01-01T00:00:00.000Z' })
     const newNormal   = makeTodo({ priority: 2, created_at: '2024-01-10T00:00:00.000Z' })
     const result = sortOpenTodos([newNormal, oldCritical])
-    expect(result[0].priority).toBe(1)
+    // Newest created_at wins — priority must not move a newly created todo down
+    expect(result[0].id).toBe(newNormal.id)
+    expect(result[1].id).toBe(oldCritical.id)
   })
 
   it('[4] does not mutate the input array', () => {

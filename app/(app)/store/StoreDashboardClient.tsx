@@ -1,7 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SmartMouseSensor, SmartTouchSensor } from '@/lib/dnd/sensors'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers'
+import { CSS } from '@dnd-kit/utilities'
+import { reorderTodos } from '@/lib/actions/todos'
 import type {
   RevenueMetrics,
   LabourMetrics,
@@ -19,6 +36,8 @@ export interface DashboardTodo {
   title: string
   completed_at: string | null
   priority: number
+  /** Manual display order — mirrors todos.sort_order. NULL = new/unsorted (appears first). */
+  sort_order: number | null
 }
 
 export interface DashboardTask {
@@ -47,7 +66,7 @@ export interface DashboardDiner {
 
 export interface StoreDashboardProps {
   storeName: string
-  storeOptions: Array<{ id: string; short_name: string }>
+  storeOptions?: Array<{ id: string; short_name: string }>
   managerName: string
   revenueToday: RevenueMetrics
   revenueWeek: RevenueMetrics
@@ -386,44 +405,122 @@ function LatestChecks({
 
 // ─── My To-Dos ────────────────────────────────────────────────────────────────
 
+// Sortable open-todo row for the Store Manager Dashboard.
+// Whole-row dragging: SmartMouseSensor/SmartTouchSensor skip native interactive
+// elements, so the visual-only checkbox and title area are freely draggable.
+function SortableStoreTodoRow({ todo }: { todo: DashboardTodo }) {
+  const {
+    attributes, listeners,
+    setNodeRef,
+    transform, transition, isDragging,
+  } = useSortable({ id: todo.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      className={[
+        'flex items-stretch border-b-2 border-[#171717]',
+        isDragging ? 'opacity-50 z-10 relative shadow-[0_4px_12px_rgba(0,0,0,0.15)]' : '',
+        'bg-[#D2C3A7]',
+      ].join(' ')}
+    >
+      {/* Drag affordance (decorative only — whole row is draggable) */}
+      <div
+        aria-hidden="true"
+        className="flex items-center justify-center w-6 shrink-0
+                   text-[#8D795F] opacity-25 pointer-events-none"
+      >
+        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+          <circle cx="3" cy="2.5" r="1.2"/>
+          <circle cx="7" cy="2.5" r="1.2"/>
+          <circle cx="3" cy="7" r="1.2"/>
+          <circle cx="7" cy="7" r="1.2"/>
+          <circle cx="3" cy="11.5" r="1.2"/>
+          <circle cx="7" cy="11.5" r="1.2"/>
+        </svg>
+      </div>
+
+      {/* Todo content */}
+      <div className="flex items-start gap-3 flex-1 min-w-0 pr-4 py-3">
+        {/* Visual-only checkbox */}
+        <div className="mt-0.5 w-5 h-5 shrink-0 border-2 border-[#171717] flex items-center justify-center bg-transparent" />
+        <span className="flex-1 text-sm text-[#171717] leading-snug">
+          {todo.title}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function MyTodos({ todos }: Pick<StoreDashboardProps, 'todos'>) {
-  const open      = todos.filter(t => !t.completed_at)
-  const completed = todos.filter(t => t.completed_at).slice(0, 3)
+  const initialOpen = todos.filter(t => !t.completed_at)
+  const completed   = todos.filter(t => t.completed_at).slice(0, 3)
+
+  // Local state for optimistic DnD reordering of open todos
+  const [openTodos, setOpenTodos] = useState<DashboardTodo[]>(initialOpen)
+  useEffect(() => { setOpenTodos(todos.filter(t => !t.completed_at)) }, [todos])
+
+  const sensors = useSensors(
+    useSensor(SmartMouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(SmartTouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  )
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = openTodos.findIndex(t => t.id === active.id)
+    const newIndex  = openTodos.findIndex(t => t.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const reordered = arrayMove(openTodos, oldIndex, newIndex)
+    setOpenTodos(reordered)
+    reorderTodos(reordered.map(t => t.id)).catch(() => {/* silent — server already logged */})
+  }, [openTodos])
 
   return (
     <div className="border-2 border-[#171717]">
-      {open.length === 0 && completed.length === 0 ? (
+      {openTodos.length === 0 && completed.length === 0 ? (
         <div className="px-4 py-6 text-center text-xs text-[#8D795F]">
           No to-dos. Add one below.
         </div>
       ) : (
-        <div className="divide-y-2 divide-[#171717]">
-          {[...open, ...completed].map((todo) => (
-            <label
-              key={todo.id}
-              className={[
-                'flex items-start gap-3 px-4 py-3 cursor-pointer select-none',
-                todo.completed_at ? 'bg-[#D2C3A7]/50' : 'bg-[#D2C3A7]',
-              ].join(' ')}
+        <div>
+          {/* ── Draggable open todos ── */}
+          {openTodos.length > 0 && (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
             >
-              {/* Large square checkbox */}
-              <div className={[
-                'mt-0.5 w-5 h-5 shrink-0 border-2 border-[#171717] flex items-center justify-center',
-                todo.completed_at ? 'bg-[#171717]' : 'bg-transparent',
-              ].join(' ')}>
-                {todo.completed_at && (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M2 6l3 3 5-5" stroke="#D2C3A7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
+              <SortableContext
+                items={openTodos.map(t => t.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {openTodos.map(todo => (
+                  <SortableStoreTodoRow key={todo.id} todo={todo} />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
+
+          {/* ── Completed todos (static, not draggable) ── */}
+          {completed.map((todo) => (
+            <div
+              key={todo.id}
+              className="flex items-start gap-3 px-4 py-3 border-b-2 border-[#171717] bg-[#D2C3A7]/50"
+            >
+              <div className="mt-0.5 w-5 h-5 shrink-0 border-2 border-[#171717] flex items-center justify-center bg-[#171717]">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M2 6l3 3 5-5" stroke="#D2C3A7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </div>
-              <span className={[
-                'flex-1 text-sm text-[#171717] leading-snug',
-                todo.completed_at ? 'line-through opacity-50' : '',
-              ].join(' ')}>
+              <span className="flex-1 text-sm text-[#171717] leading-snug line-through opacity-50">
                 {todo.title}
               </span>
-            </label>
+            </div>
           ))}
         </div>
       )}
@@ -558,7 +655,6 @@ function StoreRoutines({
 export default function StoreDashboardClient(props: StoreDashboardProps) {
   const {
     storeName,
-    storeOptions,
     revenueToday, revenueWeek, revenueMonth,
     labourToday, labourWeek, labourMonth,
     kitchenToday, kitchenWeek, kitchenMonth,
@@ -585,29 +681,8 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
             Killer Kockpit
           </div>
-          <div className="flex items-start gap-3">
-            <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight flex-1 min-w-0">
-              {storeName}
-            </div>
-            {storeOptions.length > 1 ? (
-              <details className="relative shrink-0">
-                <summary className="list-none cursor-pointer text-[10px] font-black tracking-[0.1em] uppercase text-[#171717] border-b border-[#171717] pt-1">
-                  Change store <span aria-hidden="true">⌄</span>
-                </summary>
-                <div className="absolute right-0 z-10 mt-2 w-48 border-2 border-[#171717] bg-[#D2C3A7] shadow-[3px_3px_0_#171717]">
-                  {storeOptions.map(store => (
-                    <a
-                      key={store.id}
-                      href={`/store?location=${encodeURIComponent(store.id)}`}
-                      aria-current={store.short_name === storeName ? 'page' : undefined}
-                      className="block px-3 py-2.5 text-xs font-bold text-[#171717] border-b-2 border-[#171717] last:border-b-0 hover:bg-[#C8B89A] aria-[current=page]:text-[#AD3919]"
-                    >
-                      {store.short_name}
-                    </a>
-                  ))}
-                </div>
-              </details>
-            ) : null}
+          <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight">
+            {storeName}
           </div>
           <div className="text-[11px] text-[#171717] mt-1">
             Store Manager Dashboard

@@ -342,14 +342,16 @@ export default async function TodayPage({
     // Open todos (personal only — never aggregated by management view).
     // Recurrence filter: show non-recurring always; recurring only if scheduled_for ≤ today.
     // Upgraded todos are excluded — they now live as Tasks.
+    // Ordering: sort_order ASC NULLS FIRST (manual order; null = new = top),
+    //           then priority ASC, created_at DESC as tie-break fallback.
     supabase.from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id, sort_order')
       .eq('user_id', user.id)
       .is('completed_at', null)
       .is('cancelled_at', null)
       .is('upgraded_to_task_id', null)
       .or(`recurrence_rule.is.null,scheduled_for.lte.${todayDateStr}`)
-      .order('priority', { ascending: true })
+      .order('sort_order', { ascending: true, nullsFirst: true })
       .order('created_at', { ascending: false })
       .limit(50),
 

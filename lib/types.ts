@@ -307,6 +307,8 @@ export interface Todo {
   upgraded_at: string | null
   completion_context: string | null
   completed_by_user_id: string | null
+  /** Manual display order. NULL = never reordered (sorts to top). Lower = higher in list. */
+  sort_order: number | null
 }
 
 /** Todo enriched with owner display name — used for the Team visibility view. */

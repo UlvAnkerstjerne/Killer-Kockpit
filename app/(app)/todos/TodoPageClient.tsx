@@ -10,8 +10,24 @@
  * server-side via getCurrentUser().
  */
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SmartMouseSensor, SmartTouchSensor } from '@/lib/dnd/sensors'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers'
+import { CSS } from '@dnd-kit/utilities'
 import {
   createTodo,
   completeTodo,
@@ -22,10 +38,25 @@ import {
   updateTodoNotes,
   updateTodoRecurrence,
   upgradeTodoToTask,
+  reorderTodos,
 } from '@/lib/actions/todos'
 import type { Todo, TaskPriority } from '@/lib/types'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
+
+// ── Drag handle icon ──────────────────────────────────────────────────────────
+function GripIcon() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+      <circle cx="3" cy="2.5" r="1.2"/>
+      <circle cx="7" cy="2.5" r="1.2"/>
+      <circle cx="3" cy="7" r="1.2"/>
+      <circle cx="7" cy="7" r="1.2"/>
+      <circle cx="3" cy="11.5" r="1.2"/>
+      <circle cx="7" cy="11.5" r="1.2"/>
+    </svg>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for unit testing
@@ -82,6 +113,40 @@ interface Props {
 // Component
 // ---------------------------------------------------------------------------
 
+// ── SortablePageTodoShell ─────────────────────────────────────────────────────
+// Thin sortable wrapper used by the open todos list on the /todos page.
+// The drag handle sits on the left; all other interactive elements (buttons,
+// inputs, selects) in {children} remain independently clickable.
+
+function SortablePageTodoShell({ id, children }: { id: string; children: React.ReactNode }) {
+  const {
+    attributes, listeners,
+    setNodeRef,
+    transform, transition, isDragging,
+  } = useSortable({ id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      className={`group flex items-stretch${isDragging ? ' opacity-50 z-10 relative bg-kk-panel shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-kk-ink/10' : ''}`}
+    >
+      {/* Drag affordance (decorative only — whole row is draggable) */}
+      <div
+        aria-hidden="true"
+        className="flex items-center justify-center w-5 shrink-0
+                   opacity-20 sm:opacity-0 sm:group-hover:opacity-30
+                   text-kk-muted pointer-events-none"
+      >
+        <GripIcon />
+      </div>
+      {children}
+    </div>
+  )
+}
+
 export default function TodoPageClient({ openTodos, completedTodos, cancelledTodos, currentUserId, allUsers, projects }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -133,6 +198,28 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
   const [upgradeError,      setUpgradeError]       = useState<string | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // ── Drag-and-drop ordering ─────────────────────────────────────────────────
+  const [localOpenTodos, setLocalOpenTodos] = useState<Todo[]>(openTodos)
+  useEffect(() => { setLocalOpenTodos(openTodos) }, [openTodos])
+
+  const sensors = useSensors(
+    useSensor(SmartMouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(SmartTouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  )
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = localOpenTodos.findIndex(t => t.id === active.id)
+    const newIndex  = localOpenTodos.findIndex(t => t.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const reordered = arrayMove(localOpenTodos, oldIndex, newIndex)
+    setLocalOpenTodos(reordered)
+    startTransition(async () => {
+      await reorderTodos(reordered.map(t => t.id))
+    })
+  }, [localOpenTodos, startTransition])
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -424,9 +511,20 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
       </div>
 
       {/* ── Open todos ──────────────────────────────────────────────────────── */}
-      <Section title="Open" count={openTodos.length} emptyText="No open to-dos.">
-        {openTodos.map(todo => (
-          <div key={todo.id} className="px-5 py-3 group">
+      <Section title="Open" count={localOpenTodos.length} emptyText="No open to-dos.">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+        >
+          <SortableContext
+            items={localOpenTodos.map(t => t.id)}
+            strategy={verticalListSortingStrategy}
+          >
+        {localOpenTodos.map(todo => (
+          <SortablePageTodoShell key={todo.id} id={todo.id}>
+            <div className="flex-1 min-w-0 px-4 py-3">
             <div className="flex items-start gap-3">
               {/* Complete checkbox — opens context box */}
               <button
@@ -776,7 +874,10 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
               </div>
             )}
           </div>
+          </SortablePageTodoShell>
         ))}
+          </SortableContext>
+        </DndContext>
       </Section>
 
       {/* ── Completed todos ──────────────────────────────────────────────────── */}

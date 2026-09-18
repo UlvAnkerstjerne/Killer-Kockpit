@@ -14,14 +14,31 @@ import { getCopenhagenWeekBounds } from './weekUtils'
 // ---------------------------------------------------------------------------
 
 /**
- * Sorts open to-dos by priority ascending (1=Critical first), then
- * by created_at descending (newest first within the same priority).
+ * Sorts open to-dos by the user's manual order, falling back to the default
+ * display order for items that have never been manually sorted.
+ *
+ * Ordering rules (mirrors the DB ORDER BY used in server queries):
+ *   1. sort_order IS NULL  → item has never been manually ordered; floats to top
+ *   2. sort_order ASC      → lower value = higher in list (user's manual priority)
+ *   3. Tie-break for nulls → created_at DESC (newest first)
+ *
+ * Priority is intentionally NOT used as a tie-break: a newly created todo must
+ * always appear at the top regardless of its priority value.
+ *
+ * Newly created todos always have sort_order = null and therefore appear above
+ * all manually-ordered items until the user explicitly drags them into position.
  *
  * Does NOT mutate the input array.
  */
 export function sortOpenTodos(todos: Todo[]): Todo[] {
   return [...todos].sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority
+    const ao = a.sort_order
+    const bo = b.sort_order
+    // null sort_order → not yet manually ordered → appears first (top of list)
+    if (ao === null && bo !== null) return -1
+    if (ao !== null && bo === null) return 1
+    if (ao !== null && bo !== null) return ao - bo
+    // Both null: newest first (priority must not override creation order)
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 }
