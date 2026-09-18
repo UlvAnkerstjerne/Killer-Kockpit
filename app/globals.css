@@ -22,6 +22,12 @@
 
   --color-kk-brand:    #AD3919;
 
+  /* Kraft palette — Store Manager Dashboard */
+  --color-kraft-brown: #B7A486;
+  --color-kraft-light: #D2C3A7;
+  --color-kraft-dark:  #8D795F;
+  --color-kraft-bg:    #C8B89A;
+
   /* Existing red utilities share Killer Red; light surfaces use its tints. */
   --color-red-50:  color-mix(in srgb, var(--color-kk-brand) 5%, white);
   --color-red-100: var(--color-kk-bad-bg);
