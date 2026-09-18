@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import {
   getRevenueDemoData,
@@ -16,23 +17,61 @@ export const dynamic = 'force-dynamic'
 
 // ─── Location resolution ──────────────────────────────────────────────────────
 //
-// No safe user→location resolution is available for MEMBER role users.
+// Chain: app_users → employees.linked_user_id → employee_locations → locations
 //
-// The structural chain is: app_users → employees.linked_user_id →
-// employee_locations → locations, but the RLS SELECT policy on
-// employee_locations only permits SUPER_ADMIN and UM roles. A store manager
-// (MEMBER) cannot query their own location assignment.
+// All three tables (employees, employee_locations, locations) have RLS SELECT
+// policies restricted to SUPER_ADMIN and UM — a MEMBER cannot traverse this
+// chain with their own session credentials.
 //
-// app_users and employees have no direct canonical_location_id column.
-//
-// Until one of the following is implemented, storeName is null:
-//   Option A — Add canonical_location_id to app_users (or employees) with a
-//              MEMBER-readable RLS policy, then resolve here with a direct join.
-//   Option B — Add a MEMBER-readable SELECT policy on employee_locations
-//              restricted to rows where linked_user_id = auth.uid().
-//
-// DO NOT fall back to "first alphabetical active location" — that silently
-// shows the wrong store to every manager and must not ship.
+// The service client is used narrowly here for identity/location lookup only.
+// Authorization is established by anchoring to userId from getCurrentUser(),
+// which is derived from the authenticated session (not caller-supplied).
+// We only ever read data belonging to that specific user.
+
+type StoreLocation = { id: string; name: string; short_name: string }
+
+type StoreResolution =
+  | { state: 'resolved'; location: StoreLocation }
+  | { state: 'no_store' }
+  | { state: 'multiple_stores'; count: number }
+
+async function resolveStoreLocation(userId: string): Promise<StoreResolution> {
+  const service = createServiceClient()
+
+  // 1. Find the active employee record linked to this authenticated user
+  const { data: emp } = await service
+    .from('employees')
+    .select('id')
+    .eq('linked_user_id', userId)
+    .in('employment_status', ['active', 'probation'])
+    .limit(1)
+    .single()
+
+  if (!emp) return { state: 'no_store' }
+  const employeeId = (emp as { id: string }).id
+
+  // 2. Find active location assignments for this employee
+  const { data: locRows } = await service
+    .from('employee_locations')
+    .select('location_id')
+    .eq('employee_id', employeeId)
+    .eq('active', true)
+
+  const locationIds = ((locRows ?? []) as { location_id: string }[]).map(r => r.location_id)
+  if (locationIds.length === 0) return { state: 'no_store' }
+
+  // 3. Resolve to active canonical locations
+  const { data: locs } = await service
+    .from('locations')
+    .select('id, name, short_name')
+    .in('id', locationIds)
+    .eq('active', true)
+
+  const active = (locs ?? []) as StoreLocation[]
+  if (active.length === 0) return { state: 'no_store' }
+  if (active.length > 1)   return { state: 'multiple_stores', count: active.length }
+  return { state: 'resolved', location: active[0] }
+}
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
@@ -86,10 +125,14 @@ async function fetchTasks(
 }
 
 async function fetchLatestAudit(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  locationId: string | null,
 ): Promise<DashboardAudit | null> {
-  // Find the operational_audit template
-  const { data: template } = await supabase
+  // Uses service client: MEMBER role cannot read audit_submissions for audits
+  // they didn't personally submit, but the dashboard needs the latest store audit
+  // regardless of auditor. locationId comes from the authorised resolveStoreLocation().
+  const service = createServiceClient()
+
+  const { data: template } = await service
     .from('audit_templates')
     .select('id')
     .eq('audit_key', 'operational_audit')
@@ -106,11 +149,17 @@ async function fetchLatestAudit(
     locations: { name: string } | Array<{ name: string }> | null
   }
 
-  const { data } = await supabase
+  let query = service
     .from('audit_submissions')
     .select('id, score_pct, audit_status, submitted_at, locations!location_id (name)')
     .eq('template_id', (template as { id: string }).id)
     .eq('status', 'submitted')
+
+  if (locationId) {
+    query = query.eq('location_id', locationId)
+  }
+
+  const { data } = await query
     .order('submitted_at', { ascending: false })
     .limit(1)
     .single()
@@ -120,17 +169,34 @@ async function fetchLatestAudit(
   const raw = data as RawAudit
   const loc = Array.isArray(raw.locations) ? raw.locations[0] : raw.locations
   return {
-    id:           raw.id,
-    score_pct:    raw.score_pct,
-    audit_status: raw.audit_status,
-    submitted_at: raw.submitted_at,
+    id:            raw.id,
+    score_pct:     raw.score_pct,
+    audit_status:  raw.audit_status,
+    submitted_at:  raw.submitted_at,
     location_name: loc?.name ?? '—',
   }
 }
 
 async function fetchLatestDiner(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  locationId: string | null,
 ): Promise<DashboardDiner | null> {
+  // diner_submissions has no authenticated SELECT RLS policies — service client
+  // is required unconditionally. locationId comes from resolveStoreLocation().
+  const service = createServiceClient()
+
+  // When a location is known, pre-filter by invitation IDs for that location
+  // to scope results to this store only.
+  let invitationIds: string[] | null = null
+  if (locationId) {
+    const { data: invs } = await service
+      .from('diner_invitations')
+      .select('id')
+      .eq('location_id', locationId)
+
+    invitationIds = ((invs ?? []) as { id: string }[]).map(i => i.id)
+    if (invitationIds.length === 0) return null
+  }
+
   type RawDiner = {
     id: string
     score_pct: number | null
@@ -145,7 +211,7 @@ async function fetchLatestDiner(
     }> | null
   }
 
-  const { data } = await supabase
+  let query = service
     .from('diner_submissions')
     .select(`
       id, score_pct, diner_status, submitted_at,
@@ -155,6 +221,12 @@ async function fetchLatestDiner(
       )
     `)
     .eq('status', 'submitted')
+
+  if (invitationIds) {
+    query = query.in('invitation_id', invitationIds)
+  }
+
+  const { data } = await query
     .order('submitted_at', { ascending: false })
     .limit(1)
     .single()
@@ -166,10 +238,10 @@ async function fetchLatestDiner(
   const loc = inv ? (Array.isArray(inv.locations) ? inv.locations[0] : inv.locations) : null
 
   return {
-    id:           raw.id,
-    score_pct:    raw.score_pct,
-    status:       raw.diner_status,
-    submitted_at: raw.submitted_at,
+    id:            raw.id,
+    score_pct:     raw.score_pct,
+    status:        raw.diner_status,
+    submitted_at:  raw.submitted_at,
     location_name: loc?.name ?? null,
   }
 }
@@ -182,16 +254,19 @@ export default async function StorePage() {
 
   const supabase = await createClient()
 
+  // Resolve canonical store location, then fetch everything in parallel
+  const storeResolution = await resolveStoreLocation(user.id)
+  const locationId = storeResolution.state === 'resolved' ? storeResolution.location.id : null
+
   const [todos, tasks, latestAudit, latestDiner] = await Promise.all([
     fetchTodos(supabase, user.id),
     fetchTasks(supabase, user.id),
-    fetchLatestAudit(supabase),
-    fetchLatestDiner(supabase),
+    fetchLatestAudit(locationId),
+    fetchLatestDiner(locationId),
   ])
 
-  // storeName is null until a canonical user→location relationship is available.
-  // See the "Location resolution" comment above for what must be implemented first.
-  const storeName = null
+  const storeName     = storeResolution.state === 'resolved' ? storeResolution.location.short_name : null
+  const storeState    = storeResolution.state
 
   // Adapter data (unwired — all from lib/store/adapter.ts)
   const revenueToday  = getRevenueDemoData('today')
@@ -210,6 +285,7 @@ export default async function StorePage() {
   return (
     <StoreDashboardClient
       storeName={storeName}
+      storeState={storeState}
       managerName={user.display_name}
       revenueToday={revenueToday}
       revenueWeek={revenueWeek}

@@ -47,6 +47,7 @@ export interface DashboardDiner {
 
 export interface StoreDashboardProps {
   storeName: string | null
+  storeState: 'resolved' | 'no_store' | 'multiple_stores'
   managerName: string
   revenueToday: RevenueMetrics
   revenueWeek: RevenueMetrics
@@ -557,6 +558,7 @@ function StoreRoutines({
 export default function StoreDashboardClient(props: StoreDashboardProps) {
   const {
     storeName,
+    storeState,
     revenueToday, revenueWeek, revenueMonth,
     labourToday, labourWeek, labourMonth,
     kitchenToday, kitchenWeek, kitchenMonth,
@@ -583,8 +585,15 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
             Killer Kockpit
           </div>
-          <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight">
-            {storeName ?? '—'}
+          <div className={[
+            'font-brand text-2xl font-black leading-tight tracking-tight',
+            storeState === 'resolved' ? 'text-[#AD3919]' : 'text-[#8D795F]',
+          ].join(' ')}>
+            {storeState === 'resolved'
+              ? (storeName ?? '—')
+              : storeState === 'no_store'
+              ? 'No store assigned'
+              : 'Multiple stores assigned'}
           </div>
           <div className="text-[11px] text-[#171717] mt-1">
             Store Manager Dashboard
