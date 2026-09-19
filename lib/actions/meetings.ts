@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canCreateMeeting, canEditMeeting } from '@/lib/permissions'
-import { resyncMeetingCalendar } from '@/lib/google/sync'
+import { resyncMeetingCalendar, syncMeetingToCalendarForUser } from '@/lib/google/sync'
 import { wallToUtc } from '@/lib/time'
 import type { MeetingStatus, ActionResult } from '@/lib/types'
 
@@ -46,6 +46,113 @@ export async function createMeeting(input: MeetingInput): Promise<ActionResult<{
   revalidatePath('/meetings')
   revalidatePath('/today')
   return { data: { id: meetingId as string } }
+}
+
+// ─── createMeetingWithSetup ────────────────────────────────────────────────────
+//
+// One-shot creation: meeting + attendees + agenda items + Google Calendar/Meet sync.
+// Called from the new meeting form so users never need to visit the meeting detail
+// just to add attendees or agenda items.
+//
+// Failure strategy:
+//   • Meeting creation failure → hard error (nothing created).
+//   • Attendee / agenda failures → logged, skipped; meeting still created.
+//   • Calendar sync failure → meeting created; warning returned in result.
+//     The detail page CalendarSection allows retry.
+
+type SetupAttendee = {
+  userId?:       string
+  externalName?: string
+  externalEmail?: string
+}
+
+type SetupAgendaItem = {
+  title:        string
+  description?: string
+}
+
+export async function createMeetingWithSetup(input: {
+  title:           string
+  owner_user_id?:  string
+  project_id?:     string
+  scheduled_start?: string
+  scheduled_end?:   string
+  context?:        string
+  location?:       string
+  attendees:       SetupAttendee[]
+  agendaItems:     SetupAgendaItem[]
+}): Promise<ActionResult<{ id: string; calendarWarning?: string }>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+  if (!canCreateMeeting(user.role)) {
+    return { error: 'You do not have permission to create meetings.' }
+  }
+
+  const serviceClient = createServiceClient()
+
+  // 1. Create the meeting
+  const { data: meetingId, error: createError } = await serviceClient.rpc('create_meeting_and_audit', {
+    p_title:              input.title.trim(),
+    p_owner_user_id:      input.owner_user_id || user.id,
+    p_project_id:         input.project_id || null,
+    p_scheduled_start:    input.scheduled_start ? wallToUtc(input.scheduled_start) : null,
+    p_scheduled_end:      input.scheduled_end   ? wallToUtc(input.scheduled_end)   : null,
+    p_context:            input.context?.trim() || null,
+    p_location:           input.location?.trim() || null,
+    p_created_by_user_id: user.id,
+    p_actor_user_id:      user.id,
+  })
+
+  if (createError) {
+    console.error('[createMeetingWithSetup] create:', createError)
+    return { error: 'Failed to create meeting. Please try again.' }
+  }
+
+  const id = meetingId as string
+
+  // 2. Add attendees (best-effort; individual failures don't fail the operation)
+  for (const att of input.attendees) {
+    if (!att.userId && !att.externalName && !att.externalEmail) continue
+    const { error: attErr } = await serviceClient.rpc('add_meeting_attendee', {
+      p_meeting_id:    id,
+      p_user_id:       att.userId       || null,
+      p_external_name: att.externalName || null,
+      p_external_email: att.externalEmail || null,
+      p_actor_user_id: user.id,
+    })
+    if (attErr) console.error('[createMeetingWithSetup] attendee:', attErr.message)
+  }
+
+  // 3. Add agenda items (best-effort; individual failures don't fail the operation)
+  for (let i = 0; i < input.agendaItems.length; i++) {
+    const item = input.agendaItems[i]
+    if (!item.title.trim()) continue
+    const { error: itemErr } = await serviceClient.rpc('create_agenda_item_and_audit', {
+      p_meeting_id:          id,
+      p_title:               item.title.trim(),
+      p_description:         item.description?.trim() || null,
+      p_sort_order:          i,
+      p_related_entity_type: null,
+      p_related_entity_id:   null,
+      p_actor_user_id:       user.id,
+    })
+    if (itemErr) console.error('[createMeetingWithSetup] agenda item:', itemErr.message)
+  }
+
+  // 4. Google Calendar + Meet sync — only when a scheduled time is provided
+  let calendarWarning: string | undefined
+  if (input.scheduled_start && input.scheduled_end) {
+    const syncResult = await syncMeetingToCalendarForUser(id, user.id)
+    if (!syncResult.ok) {
+      calendarWarning = syncResult.error
+    } else if (syncResult.meetWarning) {
+      calendarWarning = syncResult.meetWarning
+    }
+  }
+
+  revalidatePath('/meetings')
+  revalidatePath('/today')
+  return { data: { id, calendarWarning } }
 }
 
 export async function updateMeeting(

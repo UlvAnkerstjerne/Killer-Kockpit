@@ -137,6 +137,73 @@ export async function ensureMeetAutoTranscription(
   }
 }
 
+// ─── Conference lifecycle check ───────────────────────────────────────────────
+
+export type ConferenceLifecycleResult =
+  | { status: 'ended'; recordName: string; startTime: string | null; endTime: string }
+  | { status: 'in_progress' }
+  | { status: 'not_started' }
+  | { status: 'error'; error: string }
+
+/**
+ * Lightweight check: has this Meet space had a completed conference session?
+ * Used by the automated reconciliation job to detect when a meeting has ended.
+ *
+ * Returns the most recent ended conference record details, or a status value
+ * indicating the conference is still running, hasn't started, or errored.
+ *
+ * Does NOT fetch transcript entries — use fetchGoogleMeetTranscript for that.
+ *
+ * Required scope: meetings.space.readonly
+ */
+export async function checkConferenceLifecycle(
+  client: Auth.OAuth2Client,
+  meetSpaceName: string,
+): Promise<ConferenceLifecycleResult> {
+  try {
+    const meet = google.meet({ version: 'v2', auth: client })
+    const { data } = await meet.conferenceRecords.list({
+      filter:   `space.name = "${meetSpaceName}"`,
+      pageSize: 10,
+    })
+
+    const records = (data.conferenceRecords ?? []) as Array<{
+      name?:      string | null
+      startTime?: string | null
+      endTime?:   string | null
+    }>
+
+    const ended = records.filter(
+      (r): r is typeof r & { name: string; endTime: string } =>
+        typeof r.name === 'string' && typeof r.endTime === 'string',
+    )
+
+    if (ended.length > 0) {
+      const latest = ended.sort(
+        (a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime(),
+      )[0]
+      return {
+        status:     'ended',
+        recordName: latest.name,
+        startTime:  latest.startTime ?? null,
+        endTime:    latest.endTime,
+      }
+    }
+
+    const inProgress = records.some((r) => r.startTime && !r.endTime)
+    if (inProgress) return { status: 'in_progress' }
+
+    return { status: 'not_started' }
+  } catch (err) {
+    console.error(
+      '[google/meet] checkConferenceLifecycle failed for',
+      meetSpaceName, ':',
+      (err as Error).message,
+    )
+    return { status: 'error', error: (err as Error).message }
+  }
+}
+
 // ─── Error helpers ────────────────────────────────────────────────────────
 
 function getMeetErrorStatus(err: unknown): number | undefined {
