@@ -247,6 +247,22 @@ export async function fetchGbpLocations(
 }
 
 /**
+ * Lists all GBP locations using the wildcard account path (accounts/-/locations).
+ * Required for listings managed indirectly through location groups, which are
+ * not returned by the per-account endpoint.
+ *
+ * NOTE: The wildcard response does not carry a parent account ID.
+ * Callers are responsible for safe account association.
+ */
+export async function fetchGbpLocationsWildcard(
+  oauthClient: Auth.OAuth2Client,
+): Promise<GbpLocation[]> {
+  const readMask = 'name,title,languageCode,storeCode,categories,websiteUri,phoneNumbers,storefrontAddress,regularHours,specialHours,moreHours,openInfo,metadata,profile,serviceArea,latlng,relationshipData,labels'
+  const url = `${BIZ_INFO_BASE}/accounts/-/locations?pageSize=100&readMask=${encodeURIComponent(readMask)}`
+  return fetchPages<GbpLocation>(oauthClient, url, 'locations')
+}
+
+/**
  * Fetches one page of reviews for a location using the v4 Reviews API.
  * Reviews are ordered by updateTime descending (most recently updated first).
  *

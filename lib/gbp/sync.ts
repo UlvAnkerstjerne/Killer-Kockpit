@@ -1,7 +1,8 @@
 import 'server-only'
+import type { Auth } from 'googleapis'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getGoogleOAuth2Client, hasGbpScope } from '@/lib/google/auth'
-import { fetchGbpAccounts, fetchGbpLocations, fetchLocationMetrics, fetchGbpSearchKeywords, safeGbpError, type GbpLocation } from '@/lib/google/gbp-client'
+import { fetchGbpAccounts, fetchGbpLocations, fetchGbpLocationsWildcard, fetchLocationMetrics, fetchGbpSearchKeywords, safeGbpError, type GbpAccount, type GbpLocation } from '@/lib/google/gbp-client'
 import { GbpDataError, addDays, dateChunks, dailyPerformanceRows, gbpDateRange, gbpKeywordMonths, googleId, keywordRows, mappingIssues, profileSnapshot, type StoredGbpLocation } from './data'
 import { claimGbpRun, finishGbpRun, readGbpState, writeGbpState, type GbpDb } from './state'
 import { syncLocationReviews } from './reviews-sync'
@@ -43,6 +44,70 @@ async function storedLocations(db: GbpDb): Promise<StoredGbpLocation[]> {
   }
 }
 
+/**
+ * Discovers GBP location profiles across all accounts.
+ *
+ * Per-account fetch first; falls back to the wildcard endpoint
+ * (accounts/-/locations) when all accounts return zero locations.
+ * Wildcard account association is safe only when there is a single account —
+ * with multiple accounts ownership is ambiguous and google_account_id is never
+ * fabricated.
+ *
+ * Exported for unit testing.
+ */
+export async function discoverGbpProfiles(
+  client: Auth.OAuth2Client,
+  accounts: GbpAccount[],
+  checkDeadline: () => void,
+): Promise<{
+  discovered: Array<{ accountId: string; profile: GbpLocation }>
+  errors: string[]
+  ambiguous: Array<{ accountId: string; locationId: string; title: string }>
+}> {
+  const discovered: Array<{ accountId: string; profile: GbpLocation }> = []
+  const errors: string[] = []
+  const ambiguous: Array<{ accountId: string; locationId: string; title: string }> = []
+
+  for (const account of accounts) {
+    checkDeadline()
+    const accountId = googleId(account.name, 'accounts')
+    try {
+      const profiles = await fetchGbpLocations(client, accountId)
+      for (const profile of profiles) discovered.push({ accountId, profile })
+    } catch (error) {
+      errors.push(`Account ${accountId} profile discovery: ${safeError(error)}`)
+    }
+  }
+
+  if (!discovered.length) {
+    checkDeadline()
+    try {
+      const wildcardProfiles = await fetchGbpLocationsWildcard(client)
+      if (wildcardProfiles.length > 0) {
+        if (accounts.length === 1) {
+          const singleAccountId = googleId(accounts[0].name, 'accounts')
+          for (const profile of wildcardProfiles) discovered.push({ accountId: singleAccountId, profile })
+        } else {
+          errors.push(
+            `GBP_WILDCARD_AMBIGUOUS: ${wildcardProfiles.length} location(s) found via accounts/-/locations ` +
+            `but account ownership is ambiguous across ${accounts.length} accounts. ` +
+            `Assign google_account_id manually in gbp_locations to proceed.`,
+          )
+          for (const profile of wildcardProfiles) {
+            try {
+              ambiguous.push({ accountId: '(wildcard-ambiguous)', locationId: googleId(profile.name, 'locations'), title: profile.title })
+            } catch { /* skip entries with invalid resource names */ }
+          }
+        }
+      }
+    } catch (error) {
+      errors.push(`Wildcard location discovery: ${safeError(error)}`)
+    }
+  }
+
+  return { discovered, errors, ambiguous }
+}
+
 /** One institutional orchestrator, shared by both routes and the existing manual action.
  * Profile discovery never changes canonical mapping, activation cutoff or active flags.
  * A failure in one stage cannot advance another stage's watermark or erase its data. */
@@ -63,19 +128,16 @@ export async function runGbpSync(syncUserId?: string, now = new Date()): Promise
     const previousLocations = await storedLocations(db)
     const discovered: Array<{ accountId: string; profile: GbpLocation }> = []
     const profileErrors = new Map<string, string>()
+    const wildcardAmbiguous: Array<{ accountId: string; locationId: string; title: string }> = []
     const discoveryKey = 'gbp_profiles'
     try {
       await writeGbpState(db, discoveryKey, { status: 'syncing', last_attempt_at: startedAt, last_error: null })
       const accounts = await fetchGbpAccounts(client)
       if (!accounts.length) throw new GbpDataError('No GBP accounts are visible to the connected administrator.')
-      for (const account of accounts) {
-        checkDeadline()
-        const accountId = googleId(account.name, 'accounts')
-        try {
-          const profiles = await fetchGbpLocations(client, accountId)
-          for (const profile of profiles) discovered.push({ accountId, profile })
-        } catch (error) { result.errors.push(`Account ${accountId} profile discovery: ${safeError(error)}`) }
-      }
+      const { discovered: newDiscovered, errors: discoveryErrors, ambiguous } = await discoverGbpProfiles(client, accounts, checkDeadline)
+      for (const d of newDiscovered) discovered.push(d)
+      for (const e of discoveryErrors) result.errors.push(e)
+      wildcardAmbiguous.push(...ambiguous)
       for (const { accountId, profile } of discovered) {
         checkDeadline()
         const locationId = googleId(profile.name, 'locations')
@@ -111,6 +173,7 @@ export async function runGbpSync(syncUserId?: string, now = new Date()): Promise
     result.locationsMapped = locations.filter(row => row.location_id && !ambiguous.has(row.id) && found.has(`${row.google_account_id}:${row.google_location_id}`)).length
     result.unmappedLocations = discovered.filter(row => !locations.some(location => location.google_account_id === row.accountId && location.google_location_id === googleId(row.profile.name, 'locations') && location.location_id))
       .map(row => ({ accountId: row.accountId, locationId: googleId(row.profile.name, 'locations'), title: row.profile.title }))
+    result.unmappedLocations.push(...wildcardAmbiguous)
     if (ambiguous.size) result.errors.push('Ambiguous GBP mappings found; affected profiles were excluded from performance, keyword and review sync.')
     const targets = locations.filter(row => row.active && row.location_id && !ambiguous.has(row.id))
     if (!targets.length) result.errors.push('No active GBP profiles have an unambiguous canonical Kockpit location mapping.')

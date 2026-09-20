@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { gbpDb } from '../../helpers/gbp-db'
-const mocks = vi.hoisted(() => ({ client: vi.fn(), accounts: vi.fn(), locations: vi.fn(), metrics: vi.fn(), keywords: vi.fn(), reviews: vi.fn() }))
+const mocks = vi.hoisted(() => ({ client: vi.fn(), accounts: vi.fn(), locations: vi.fn(), wildcardLocations: vi.fn(), metrics: vi.fn(), keywords: vi.fn(), reviews: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/supabase/server', () => ({ createServiceClient: () => mocks.client() }))
 vi.mock('@/lib/google/auth', () => ({ getGoogleOAuth2Client: vi.fn().mockResolvedValue({}), hasGbpScope: (scopes: string[]) => scopes.includes('business.manage') }))
-vi.mock('@/lib/google/gbp-client', () => ({ fetchGbpAccounts: mocks.accounts, fetchGbpLocations: mocks.locations, fetchLocationMetrics: mocks.metrics, fetchGbpSearchKeywords: mocks.keywords, safeGbpError: () => 'Safe Google API failure' }))
+vi.mock('@/lib/google/gbp-client', () => ({ fetchGbpAccounts: mocks.accounts, fetchGbpLocations: mocks.locations, fetchGbpLocationsWildcard: mocks.wildcardLocations, fetchLocationMetrics: mocks.metrics, fetchGbpSearchKeywords: mocks.keywords, safeGbpError: () => 'Safe Google API failure' }))
 vi.mock('@/lib/gbp/reviews-sync', () => ({ syncLocationReviews: mocks.reviews, retryDraftForReview: vi.fn() }))
 import { runGbpSync } from '@/lib/gbp/sync'
 let db: ReturnType<typeof gbpDb>
@@ -18,6 +18,7 @@ beforeEach(() => {
   db.tables.gbp_locations = [{ ...location }]
   mocks.accounts.mockResolvedValue([{ name: 'accounts/1' }])
   mocks.locations.mockResolvedValue([{ name: 'locations/2', title: 'External Google name', websiteUri: 'https://killerkebab.com' }])
+  mocks.wildcardLocations.mockResolvedValue([])
   mocks.metrics.mockImplementation(async (_client, _account, _location, start) => {
     const [year, month, day] = start.split('-').map(Number)
     return [{ dailyMetric: 'WEBSITE_CLICKS', timeSeries: { datedValues: [{ date: { year, month, day }, value: '7' }] } }]
@@ -117,5 +118,54 @@ describe('institutional GBP orchestrator', () => {
     const result = await runGbpSync(undefined, now)
     expect(result.ok).toBe(false); expect(state('gbp_metrics:1:2').status).toBe('synced'); expect(state('gbp_keywords:1:2').status).toBe('synced')
     expect(state('gbp_reviews:1:2').status).toBe('failed'); expect(JSON.stringify(result)).not.toContain('private-token')
+  })
+})
+
+describe('wildcard location discovery fallback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); db = gbpDb(); mocks.client.mockReturnValue(db)
+    db.tables.google_oauth_tokens = [{ user_id: 'admin', scopes: ['business.manage'] }]
+    db.tables.app_users = [{ id: 'admin', role: 'SUPER_ADMIN', active: true }]
+    db.tables.gbp_locations = []
+    mocks.accounts.mockResolvedValue([{ name: 'accounts/1' }])
+    mocks.metrics.mockResolvedValue([{ dailyMetric: 'WEBSITE_CLICKS', timeSeries: { datedValues: [] } }])
+    mocks.keywords.mockResolvedValue([])
+    mocks.reviews.mockResolvedValue({ reviewsUpserted: 0, draftsGenerated: 0 })
+  })
+
+  it('skips wildcard when per-account discovery returns locations', async () => {
+    mocks.locations.mockResolvedValue([{ name: 'locations/2', title: 'Direct Store' }])
+    mocks.wildcardLocations.mockResolvedValue([{ name: 'locations/99', title: 'Wildcard Store' }])
+    const result = await runGbpSync(undefined, now)
+    expect(result.locationsFound).toBe(1)
+    expect(result.unmappedLocations).toEqual([{ accountId: '1', locationId: '2', title: 'Direct Store' }])
+    expect(mocks.wildcardLocations).not.toHaveBeenCalled()
+  })
+
+  it('falls back to wildcard and associates locations with the single account', async () => {
+    mocks.locations.mockResolvedValue([])
+    mocks.wildcardLocations.mockResolvedValue([
+      { name: 'locations/77', title: 'Indirect Store A' },
+      { name: 'locations/88', title: 'Indirect Store B' },
+    ])
+    const result = await runGbpSync(undefined, now)
+    expect(result.locationsFound).toBe(2)
+    expect(result.errors.filter(e => e.includes('WILDCARD'))).toHaveLength(0)
+    expect(db.tables.gbp_locations.every((row: Record<string, unknown>) => row.google_account_id === '1')).toBe(true)
+    expect(result.unmappedLocations.map(l => l.locationId)).toEqual(expect.arrayContaining(['77', '88']))
+  })
+
+  it('reports ambiguous error and does not insert locations when multiple accounts and wildcard finds profiles', async () => {
+    mocks.accounts.mockResolvedValue([{ name: 'accounts/10' }, { name: 'accounts/20' }])
+    mocks.locations.mockResolvedValue([])
+    mocks.wildcardLocations.mockResolvedValue([
+      { name: 'locations/444', title: 'Ambiguous Store X' },
+      { name: 'locations/555', title: 'Ambiguous Store Y' },
+    ])
+    const result = await runGbpSync(undefined, now)
+    expect(result.errors.some(e => e.includes('GBP_WILDCARD_AMBIGUOUS'))).toBe(true)
+    expect(db.tables.gbp_locations).toHaveLength(0)
+    expect(result.unmappedLocations.every(l => l.accountId === '(wildcard-ambiguous)')).toBe(true)
+    expect(result.unmappedLocations.map(l => l.locationId)).toEqual(expect.arrayContaining(['444', '555']))
   })
 })
