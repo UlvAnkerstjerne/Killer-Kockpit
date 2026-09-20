@@ -145,5 +145,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({ error: 'Use authenticated diagnostic POST.' }, { status: 405, headers })
+  const result = await runDiagnostic()
+  if ('error' in result) return NextResponse.json(result, { status: 502, headers })
+  return NextResponse.json({ probes: result.probes }, { headers })
 }
