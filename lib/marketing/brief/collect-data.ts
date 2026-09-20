@@ -940,6 +940,7 @@ export async function collectGoogleAdsData(
         // Match prior result by the same action resource name — never cross-match
         const prior = priorResultsForCampaign?.get(r.id) ?? null
         return {
+          result_id:           r.id,  // stable: conversion action resource name
           label:               r.label,
           count:               r.count,
           costPerResult:       r.costPerResult,

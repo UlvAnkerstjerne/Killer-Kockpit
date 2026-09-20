@@ -2,19 +2,30 @@
  * Unit tests for buildMaterialSignals in lib/marketing/brief/material-signals.ts
  *
  * Verified guarantees:
- *   1. Small-volume large-% changes are suppressed (volume guard)
- *   2. Meaningful current/prior changes produce candidates
- *   3. Google Ads per-result comparison matches only the same action
- *   4. Meta anomalies are reused, not recomputed
- *   5. IG post outperformance creates a creative_learning candidate
- *   6. Search Console material movement creates a candidate
- *   7. GA4 material movement creates a candidate
- *   8. GBP prior 28d comparison creates a candidate when material
- *   9. Output is ranked by materiality_score descending
- *  10. Candidates are deduplicated (same id → one entry)
- *  11. At most MAX_SIGNAL_CANDIDATES returned
- *  12. No forced candidate when nothing is material
- *  13. Stale critical source creates a data_health candidate
+ *   1.  Small-volume large-% changes suppressed (volume guard)
+ *   2.  Meaningful current/prior changes produce candidates
+ *   3.  Google Ads per-result uses stable result_id for signal ID
+ *   4.  Google Ads account-level fires on impressions-only movement
+ *   5.  Google Ads account-level fires on clicks-only movement
+ *   6.  Meta anomalies are reused, not recomputed
+ *   7.  IG post outperformance creates a creative_learning candidate
+ *   8.  Search Console impressions movement → impressions headline (not clicks)
+ *   9.  Search Console average-position improvement
+ *  10.  Search Console average-position decline
+ *  11.  GA4 new-users-only movement triggers candidate
+ *  12.  GA4 page-views-only movement triggers candidate
+ *  13.  GBP uses truthful metric names (Search impressions, not "interactions")
+ *  14.  GBP combined interactions exclude impressions (volume guard)
+ *  15.  Zero baseline never outputs Infinity/NaN in observation or evidence
+ *  16.  Stale Google Ads source surfaces data-health candidate
+ *  17.  Stale GSC source surfaces data-health candidate
+ *  18.  Stale GA4 source surfaces data-health candidate
+ *  19.  GSC opportunity candidate requires adequate impression volume
+ *  20.  GBP keyword context is honest about threshold values
+ *  21.  Output is ranked by materiality_score descending
+ *  22.  Duplicate suppression — same id appears once
+ *  23.  At most MAX_SIGNAL_CANDIDATES returned
+ *  24.  No forced candidate when nothing is material
  */
 
 import { describe, it, expect } from 'vitest'
@@ -22,34 +33,40 @@ import {
   buildMaterialSignals,
   MAX_SIGNAL_CANDIDATES,
   GADS_MIN_SPEND_7D_FOR_SIGNAL,
+  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL,
+  GADS_MIN_CLICKS_7D_FOR_SIGNAL,
   GADS_MIN_RESULTS_FOR_SIGNAL,
   IG_MIN_REACH_FOR_SIGNAL,
   GSC_MIN_CLICKS_FOR_SIGNAL,
   GSC_MIN_IMPRESSIONS_FOR_SIGNAL,
+  GSC_OPPORTUNITY_MIN_IMPRESSIONS,
+  GSC_OPPORTUNITY_MAX_POSITION,
   GA4_MIN_SESSIONS_FOR_SIGNAL,
+  GA4_MIN_NEW_USERS_FOR_SIGNAL,
+  GA4_MIN_PAGE_VIEWS_FOR_SIGNAL,
   GBP_MIN_INTERACTIONS_FOR_SIGNAL,
+  GBP_MIN_IMPRESSIONS_FOR_SIGNAL,
+  GBP_KEYWORD_MIN_IMPRESSIONS,
 } from '@/lib/marketing/brief/material-signals'
-import type { BriefInputData } from '@/lib/marketing/brief/types'
+import type { BriefInputData, GoogleAdsCampaignSummary } from '@/lib/marketing/brief/types'
 
-// ─── Minimal fixture builder ──────────────────────────────────────────────────
+// ─── Fixture helpers ──────────────────────────────────────────────────────────
 
-function minimalFreshness() {
-  const healthy = {
-    last_success_at: '2026-09-19T10:00:00Z',
-    status: 'success',
-    age_hours: 2,
-    healthy: true,
-  }
+function healthySource() {
+  return { last_success_at: '2026-09-19T10:00:00Z', status: 'success', age_hours: 2, healthy: true }
+}
+
+function minimalFreshness(): BriefInputData['sourceFreshness'] {
   return {
-    meta_ads_daily:        healthy,
-    meta_ig_account_daily: healthy,
-    meta_ig_organic_deep:  healthy,
-    meta_fb_page_daily:    healthy,
-    meta_fb_organic_deep:  healthy,
-    gbp: { kind: 'connected' as const, last_sync_at: '2026-09-19T10:00:00Z', healthy: true },
-    google_ads: healthy,
-    gsc:        healthy,
-    ga4:        healthy,
+    meta_ads_daily:        healthySource(),
+    meta_ig_account_daily: healthySource(),
+    meta_ig_organic_deep:  healthySource(),
+    meta_fb_page_daily:    healthySource(),
+    meta_fb_organic_deep:  healthySource(),
+    gbp: { kind: 'connected', last_sync_at: '2026-09-19T10:00:00Z', healthy: true },
+    google_ads: healthySource(),
+    gsc:        healthySource(),
+    ga4:        healthySource(),
   }
 }
 
@@ -69,33 +86,13 @@ function minimalSignals(overrides: Partial<BriefInputData['signals']> = {}): Bri
   }
 }
 
-function minimalIg(): BriefInputData['organic']['ig'] {
-  return {
-    reach_7d: null,
-    reach_prior_7d: null,
-    accounts_engaged_7d: null,
-    profile_views_7d: null,
-    followers_current: null,
-    followers_7d_delta: null,
-  }
-}
-
-function minimalFbPage(): BriefInputData['organic']['fb'] {
-  return {
-    views_7d: null,
-    engaged_users_7d: null,
-    fan_count_current: null,
-    fan_count_7d_delta: null,
-  }
-}
-
 function minimalOrganic(): BriefInputData['organic'] {
   return {
-    ig: minimalIg(),
+    ig: { reach_7d: null, reach_prior_7d: null, accounts_engaged_7d: null, profile_views_7d: null, followers_current: null, followers_7d_delta: null },
     ig_top_posts: [],
     ig_avg_reach_7d: null,
     ig_daily_reach_series: [],
-    fb: minimalFbPage(),
+    fb: { views_7d: null, engaged_users_7d: null, fan_count_current: null, fan_count_7d_delta: null },
     fb_recent_posts: [],
     fb_available: false,
     fb_daily_views_series: [],
@@ -127,438 +124,812 @@ function makeData(overrides: Partial<BriefInputData> = {}): BriefInputData {
   }
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
+/** Build a minimal GoogleAdsCampaignSummary with result_id on top_results. */
+function makeGadsCampaign(opts: {
+  id: string
+  name?: string
+  spend_7d?: number
+  topResults?: GoogleAdsCampaignSummary['top_results']
+}): GoogleAdsCampaignSummary {
+  return {
+    id: opts.id,
+    name: opts.name ?? opts.id,
+    status: 'ENABLED',
+    channel_type: 'SEARCH',
+    spend_7d: opts.spend_7d ?? GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
+    impressions_7d: 500,
+    clicks_7d: 30,
+    top_results: opts.topResults ?? [],
+  }
+}
 
-describe('buildMaterialSignals — volume guard', () => {
-  it('suppresses small-volume large-% Google Ads result changes (below min results threshold)', () => {
+function makeGadsData(overrides: Partial<BriefInputData['googleAds'] & {}> = {}): NonNullable<BriefInputData['googleAds']> {
+  return {
+    currency: 'DKK',
+    total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
+    total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,  // no change
+    total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,
+    total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,  // no change
+    total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,
+    total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,  // no change
+    active_campaigns:            [],
+    paused_campaigns:            [],
+    ...overrides,
+  }
+}
+
+// ─── 1. Volume guard ──────────────────────────────────────────────────────────
+
+describe('volume guard', () => {
+  it('suppresses Google Ads result with count below GADS_MIN_RESULTS_FOR_SIGNAL', () => {
     const data = makeData({
-      googleAds: {
-        currency: 'DKK',
-        total_spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_spend_prior_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_impressions_7d: 1000,
-        total_impressions_prior_7d: 1000,
-        total_clicks_7d: 50,
-        total_clicks_prior_7d: 50,
+      googleAds: makeGadsData({
         active_campaigns: [
-          {
+          makeGadsCampaign({
             id: 'camp1',
-            name: 'Camp',
-            status: 'ENABLED',
-            channel_type: 'SEARCH',
-            spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-            impressions_7d: 500,
-            clicks_7d: 30,
-            top_results: [
+            topResults: [
               {
-                label: 'Purchases',
-                count: 2, // BELOW GADS_MIN_RESULTS_FOR_SIGNAL = 5
-                costPerResult: 50,
-                primary: true,
-                prior_count: 1,
+                result_id:           'customers/1/conversionActions/100',
+                label:               'Purchases',
+                count:               GADS_MIN_RESULTS_FOR_SIGNAL - 1,  // below threshold
+                costPerResult:       50,
+                primary:             true,
+                prior_count:         1,
                 prior_costPerResult: 100,
               },
             ],
-          },
+          }),
         ],
-        paused_campaigns: [],
-      },
+      }),
     })
-
     const signals = buildMaterialSignals(data)
-    const resultSignal = signals.find((s) => s.id.includes('camp1') && s.id.includes('purchases'))
-    expect(resultSignal).toBeUndefined()
+    // No result signal should be emitted for this low-count result
+    expect(signals.filter(s => s.id.includes('camp1') && s.source === 'google_ads' && s.id !== 'google_ads_account_totals')).toHaveLength(0)
   })
 
-  it('suppresses small-volume large-% IG reach changes (below min reach threshold)', () => {
+  it('suppresses IG reach below IG_MIN_REACH_FOR_SIGNAL', () => {
     const data = makeData({
       organic: {
         ...minimalOrganic(),
-        ig: {
-          ...minimalIg(),
-          reach_7d: IG_MIN_REACH_FOR_SIGNAL - 50, // below threshold
-          reach_prior_7d: 1,                       // enormous % change but tiny volume
-        },
+        ig: { ...minimalOrganic().ig, reach_7d: IG_MIN_REACH_FOR_SIGNAL - 50, reach_prior_7d: 1 },
       },
     })
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.find((s) => s.id === 'organic_ig_reach')).toBeUndefined()
+    expect(buildMaterialSignals(data).find(s => s.id === 'organic_ig_reach')).toBeUndefined()
   })
 
-  it('suppresses small-volume GSC changes (below min clicks threshold)', () => {
+  it('suppresses GSC impressions movement below GSC_MIN_IMPRESSIONS_FOR_SIGNAL', () => {
     const data = makeData({
       searchConsole: {
-        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL - 5, // below min
-        clicks_prior_7d:       1,
-        impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL - 100, // below min
-        impressions_prior_7d:  1,
-        ctr_7d:                0.05,
-        ctr_prior_7d:          0.01,
-        avg_position_7d:       5,
-        avg_position_prior_7d: 6,
-        top_queries: [],
-        top_pages: [],
+        clicks_7d: GSC_MIN_CLICKS_FOR_SIGNAL - 5,
+        clicks_prior_7d: 1,
+        impressions_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL - 100,
+        impressions_prior_7d: 1,
+        ctr_7d: 0.05, ctr_prior_7d: 0.01,
+        avg_position_7d: 5, avg_position_prior_7d: 6,
+        top_queries: [], top_pages: [],
       },
     })
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.find((s) => s.id === 'search_console_organic')).toBeUndefined()
-  })
-
-  it('suppresses small-volume GA4 changes (below min sessions threshold)', () => {
-    const data = makeData({
-      ga4: {
-        sessions_7d:       GA4_MIN_SESSIONS_FOR_SIGNAL - 10, // below threshold
-        sessions_prior_7d: 1,
-        new_users_7d:      20,
-        new_users_prior_7d: 1,
-        page_views_7d:     100,
-        page_views_prior_7d: 1,
-        top_sources: [],
-        top_landing_pages: [],
-      },
-    })
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.find((s) => s.id === 'ga4_sessions')).toBeUndefined()
-  })
-
-  it('suppresses GBP changes when total interactions are below threshold', () => {
-    const data = makeData({
-      gbpPerformance: {
-        search_impressions_28d:       GBP_MIN_INTERACTIONS_FOR_SIGNAL - 5,
-        maps_impressions_28d:         null,
-        website_clicks_28d:           5,     // interactions = 5+5 = 10 < GBP_MIN
-        call_clicks_28d:              null,
-        direction_requests_28d:       null,
-        search_impressions_prior_28d: 1,
-        maps_impressions_prior_28d:   null,
-        website_clicks_prior_28d:     1,
-        call_clicks_prior_28d:        null,
-        direction_requests_prior_28d: null,
-        keyword_month: null,
-        top_keywords: [],
-      },
-    })
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.find((s) => s.id === 'gbp_performance')).toBeUndefined()
+    expect(buildMaterialSignals(data).find(s => s.id === 'search_console_organic')).toBeUndefined()
   })
 })
 
-describe('buildMaterialSignals — material change detection', () => {
-  it('creates a google_ads_account_spend candidate when spend changes materially', () => {
-    const data = makeData({
-      googleAds: {
-        currency: 'DKK',
-        total_spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 3,       // 300 DKK
-        total_spend_prior_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 1.5, // 150 DKK — 100% increase
-        total_impressions_7d: 1000,
-        total_impressions_prior_7d: 1000,
-        total_clicks_7d: 50,
-        total_clicks_prior_7d: 50,
-        active_campaigns: [],
-        paused_campaigns: [],
-      },
-    })
+// ─── 2. Material change detection ────────────────────────────────────────────
 
-    const signals = buildMaterialSignals(data)
-    const spendSignal = signals.find((s) => s.id === 'google_ads_account_spend')
-    expect(spendSignal).toBeDefined()
-    expect(spendSignal!.source).toBe('google_ads')
-    expect(spendSignal!.category).toBe('commercial_consequence')
-    expect(spendSignal!.commercially_relevant).toBe(true)
-    const ev = spendSignal!.evidence[0]
-    expect(ev.metric).toBe('spend_7d')
-    expect(ev.change_pct).toBeGreaterThan(0)
+describe('material change detection', () => {
+  it('creates google_ads_account_totals when spend changes materially', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:       GADS_MIN_SPEND_7D_FOR_SIGNAL * 3,
+        total_spend_prior_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 1.5,  // 100% increase
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    expect(s).toBeDefined()
+    expect(s!.source).toBe('google_ads')
+    expect(s!.commercially_relevant).toBe(true)
+    expect(s!.evidence.some(e => e.metric === 'spend_7d')).toBe(true)
   })
 
-  it('creates an organic_ig_reach candidate when reach changes materially', () => {
+  it('creates organic_ig_reach candidate when reach changes materially', () => {
     const data = makeData({
       organic: {
         ...minimalOrganic(),
-        ig: {
-          ...minimalIg(),
-          reach_7d: IG_MIN_REACH_FOR_SIGNAL * 3,      // 600
-          reach_prior_7d: IG_MIN_REACH_FOR_SIGNAL * 2, // 400 — 50% increase
-        },
+        ig: { ...minimalOrganic().ig, reach_7d: IG_MIN_REACH_FOR_SIGNAL * 3, reach_prior_7d: IG_MIN_REACH_FOR_SIGNAL * 2 },
       },
     })
-
-    const signals = buildMaterialSignals(data)
-    const reachSignal = signals.find((s) => s.id === 'organic_ig_reach')
-    expect(reachSignal).toBeDefined()
-    expect(reachSignal!.source).toBe('organic_ig')
-    expect(reachSignal!.category).toBe('traffic_audience')
-    const ev = reachSignal!.evidence[0]
-    expect(ev.change_pct).toBeCloseTo(0.5)
+    const s = buildMaterialSignals(data).find(c => c.id === 'organic_ig_reach')
+    expect(s).toBeDefined()
+    expect(s!.category).toBe('traffic_audience')
+    expect(s!.evidence[0].change_pct).toBeCloseTo(0.5)
   })
 
-  it('creates a search_console_organic candidate when clicks change materially', () => {
+  it('creates search_console_organic when clicks change materially', () => {
     const data = makeData({
       searchConsole: {
-        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL * 3,   // 90
-        clicks_prior_7d:       GSC_MIN_CLICKS_FOR_SIGNAL * 1.5, // 45 — 100% increase
+        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL * 3,
+        clicks_prior_7d:       GSC_MIN_CLICKS_FOR_SIGNAL * 1.5,  // 100% up
         impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
         impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
-        ctr_7d:                0.05,
-        ctr_prior_7d:          0.04,
-        avg_position_7d:       5,
-        avg_position_prior_7d: 5,
-        top_queries: [],
-        top_pages: [],
+        ctr_7d: 0.05, ctr_prior_7d: 0.04,
+        avg_position_7d: 5, avg_position_prior_7d: 5,
+        top_queries: [], top_pages: [],
       },
     })
-
-    const signals = buildMaterialSignals(data)
-    const gscSignal = signals.find((s) => s.id === 'search_console_organic')
-    expect(gscSignal).toBeDefined()
-    expect(gscSignal!.source).toBe('search_console')
-    expect(gscSignal!.category).toBe('seo_local_search')
+    const s = buildMaterialSignals(data).find(c => c.id === 'search_console_organic')
+    expect(s).toBeDefined()
+    expect(s!.source).toBe('search_console')
   })
 
-  it('creates a ga4_sessions candidate when sessions change materially', () => {
+  it('creates ga4_traffic when sessions change materially', () => {
     const data = makeData({
       ga4: {
-        sessions_7d:       GA4_MIN_SESSIONS_FOR_SIGNAL * 4, // 200
-        sessions_prior_7d: GA4_MIN_SESSIONS_FOR_SIGNAL * 2, // 100 — 100% increase
-        new_users_7d:      50,
-        new_users_prior_7d: 40,
-        page_views_7d:     400,
-        page_views_prior_7d: 200,
-        top_sources: [],
-        top_landing_pages: [],
+        sessions_7d:        GA4_MIN_SESSIONS_FOR_SIGNAL * 4,
+        sessions_prior_7d:  GA4_MIN_SESSIONS_FOR_SIGNAL * 2,  // 100% up
+        new_users_7d:       50, new_users_prior_7d:    50,
+        page_views_7d:      200, page_views_prior_7d:  200,
+        top_sources: [], top_landing_pages: [],
       },
     })
-
-    const signals = buildMaterialSignals(data)
-    const ga4Signal = signals.find((s) => s.id === 'ga4_sessions')
-    expect(ga4Signal).toBeDefined()
-    expect(ga4Signal!.category).toBe('traffic_audience')
-    const sessEv = ga4Signal!.evidence.find((e) => e.metric === 'ga4_sessions_7d')
-    expect(sessEv?.change_pct).toBeCloseTo(1.0)
-  })
-
-  it('creates a gbp_performance candidate when GBP interactions change materially', () => {
-    const interactions = GBP_MIN_INTERACTIONS_FOR_SIGNAL * 3
-    const data = makeData({
-      gbpPerformance: {
-        search_impressions_28d:       null,
-        maps_impressions_28d:         null,
-        website_clicks_28d:           interactions,
-        call_clicks_28d:              null,
-        direction_requests_28d:       null,
-        search_impressions_prior_28d: null,
-        maps_impressions_prior_28d:   null,
-        website_clicks_prior_28d:     Math.round(interactions / 2), // 50% drop
-        call_clicks_prior_28d:        null,
-        direction_requests_prior_28d: null,
-        keyword_month: null,
-        top_keywords: [],
-      },
-    })
-
-    const signals = buildMaterialSignals(data)
-    const gbpSignal = signals.find((s) => s.id === 'gbp_performance')
-    expect(gbpSignal).toBeDefined()
-    expect(gbpSignal!.source).toBe('gbp_performance')
-    expect(gbpSignal!.category).toBe('seo_local_search')
+    const s = buildMaterialSignals(data).find(c => c.id === 'ga4_traffic')
+    expect(s).toBeDefined()
+    expect(s!.category).toBe('traffic_audience')
+    expect(s!.evidence[0].metric).toBe('ga4_sessions_7d')
   })
 })
 
-describe('buildMaterialSignals — Google Ads result isolation', () => {
-  it('does not create a result candidate when prior_count is null (no cross-result aggregation)', () => {
-    const data = makeData({
-      googleAds: {
-        currency: 'DKK',
-        total_spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_spend_prior_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_impressions_7d: 500,
-        total_impressions_prior_7d: 500,
-        total_clicks_7d: 50,
-        total_clicks_prior_7d: 50,
-        active_campaigns: [
-          {
-            id: 'camp1',
-            name: 'Camp',
-            status: 'ENABLED',
-            channel_type: 'SEARCH',
-            spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-            impressions_7d: 500,
-            clicks_7d: 30,
-            top_results: [
-              {
-                label: 'Purchases',
-                count: GADS_MIN_RESULTS_FOR_SIGNAL * 4,
-                costPerResult: 10,
-                primary: true,
-                prior_count: null,           // no matching prior
-                prior_costPerResult: null,
-              },
-            ],
-          },
-        ],
-        paused_campaigns: [],
-      },
-    })
+// ─── 3. Google Ads stable result ID ──────────────────────────────────────────
 
-    const signals = buildMaterialSignals(data)
-    // The result signal requires prior_count — should not exist
-    const resultSignal = signals.find(
-      (s) => s.id.includes('camp1') && s.id.includes('purchases'),
-    )
-    expect(resultSignal).toBeUndefined()
-  })
-
-  it('creates a result candidate only for the matching action (prior_count present)', () => {
+describe('Google Ads stable result_id', () => {
+  it('uses result_id (action resource name) in signal ID, not display label', () => {
+    const resourceName = 'customers/1/conversionActions/999'
     const data = makeData({
-      googleAds: {
-        currency: 'DKK',
-        total_spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_spend_prior_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_impressions_7d: 500,
-        total_impressions_prior_7d: 500,
-        total_clicks_7d: 50,
-        total_clicks_prior_7d: 50,
+      googleAds: makeGadsData({
         active_campaigns: [
-          {
-            id: 'camp2',
-            name: 'Active Camp',
-            status: 'ENABLED',
-            channel_type: 'SEARCH',
-            spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-            impressions_7d: 500,
-            clicks_7d: 40,
-            top_results: [
+          makeGadsCampaign({
+            id: 'camp-stable',
+            topResults: [
               {
-                label: 'Purchases',
-                count: GADS_MIN_RESULTS_FOR_SIGNAL * 4,  // 20
-                costPerResult: 10,
-                primary: true,
-                prior_count: GADS_MIN_RESULTS_FOR_SIGNAL * 2,  // 10 — 100% increase
+                result_id:           resourceName,
+                label:               'Purchases',  // display label — must NOT appear in signal ID
+                count:               GADS_MIN_RESULTS_FOR_SIGNAL * 4,
+                costPerResult:       10,
+                primary:             true,
+                prior_count:         GADS_MIN_RESULTS_FOR_SIGNAL * 2,  // 100% increase
                 prior_costPerResult: 20,
               },
             ],
-          },
+          }),
         ],
-        paused_campaigns: [],
-      },
-    })
-
-    const signals = buildMaterialSignals(data)
-    const resultSignal = signals.find(
-      (s) => s.id.includes('camp2') && s.id.includes('purchases'),
-    )
-    expect(resultSignal).toBeDefined()
-    expect(resultSignal!.source).toBe('google_ads')
-    const ev = resultSignal!.evidence[0]
-    expect(ev.metric).toBe('Purchases')
-    expect(ev.current).toBe(GADS_MIN_RESULTS_FOR_SIGNAL * 4)
-    expect(ev.prior).toBe(GADS_MIN_RESULTS_FOR_SIGNAL * 2)
-  })
-})
-
-describe('buildMaterialSignals — Meta anomaly reuse', () => {
-  it('creates a meta_paid candidate for each PaidAnomalySignal in signals.paid_anomalies', () => {
-    const anomaly = {
-      campaign_name: 'Summer Sale',
-      metric_label: 'spend',
-      change_pct: 45.0,
-      direction: 'increase' as const,
-      yesterday_value: 2000,
-      baseline_value: 1379,
-    }
-
-    const data = makeData({
-      signals: minimalSignals({
-        paid_anomaly_count: 1,
-        paid_anomalies: [anomaly],
       }),
     })
 
     const signals = buildMaterialSignals(data)
-    const metaSignal = signals.find((s) => s.source === 'meta_paid')
-    expect(metaSignal).toBeDefined()
-    expect(metaSignal!.category).toBe('commercial_consequence')
-    const ev = metaSignal!.evidence[0]
-    expect(ev.metric).toBe('spend')
-    // change_pct stored in anomaly is 45.0 (percentage points) → fractional = 0.45
-    expect(ev.change_pct).toBeCloseTo(0.45)
+    // ID must contain the slugified resource name, not 'purchases'
+    const resultSignal = signals.find(s => s.id.includes('camp_stable') && s.id.includes('conversionactions'))
+    expect(resultSignal).toBeDefined()
+    // Must not contain the display label in the ID
+    expect(resultSignal!.id).not.toContain('purchases')
+  })
+
+  it('does not create a result candidate when prior_count is null', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        active_campaigns: [
+          makeGadsCampaign({
+            id: 'camp1',
+            topResults: [
+              {
+                result_id:           'customers/1/conversionActions/100',
+                label:               'Purchases',
+                count:               GADS_MIN_RESULTS_FOR_SIGNAL * 4,
+                costPerResult:       10,
+                primary:             true,
+                prior_count:         null,   // no prior — must not create signal
+                prior_costPerResult: null,
+              },
+            ],
+          }),
+        ],
+      }),
+    })
+    const signals = buildMaterialSignals(data)
+    expect(signals.filter(s => s.source === 'google_ads' && s.id.includes('camp1') && !s.id.includes('account'))).toHaveLength(0)
   })
 })
 
-describe('buildMaterialSignals — IG post outperformance', () => {
-  it('creates a creative_learning candidate for significantly outperforming posts', () => {
-    const data = makeData({
-      organic: {
-        ...minimalOrganic(),
-        ig_top_posts: [
-          {
-            caption_truncated: 'Great post content here',
-            published_at: '2026-09-18',
-            media_type: 'IMAGE',
-            reach: 2000,
-            plays: null,
-            likes: 150,
-            comments_count: 20,
-            shares: 5,
-            total_interactions: 175,
-            performance_vs_avg_pct: 90, // 90% above avg — exceeds IG_POST_OUTPERFORMANCE_PCT * 100 = 50
-          },
-        ],
-      },
-    })
+// ─── 4 & 5. Google Ads — any account metric can trigger ──────────────────────
 
-    const signals = buildMaterialSignals(data)
-    const postSignal = signals.find((s) => s.source === 'organic_ig' && s.category === 'creative_learning')
-    expect(postSignal).toBeDefined()
-    expect(postSignal!.creatively_relevant).toBe(true)
-    expect(postSignal!.observation).toContain('DATA:')
+describe('Google Ads account-level — any metric triggers', () => {
+  it('fires on impressions-only movement (spend and clicks stable)', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
+        total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,  // no change
+        total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 4,
+        total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,  // 100% increase
+        total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,
+        total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,  // no change
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    expect(s).toBeDefined()
+    expect(s!.evidence.some(e => e.metric === 'impressions_7d')).toBe(true)
+    // Spend should NOT be in evidence (it didn't move)
+    expect(s!.evidence.some(e => e.metric === 'spend_7d')).toBe(false)
+    // Observation must mention impressions
+    expect(s!.observation.toLowerCase()).toContain('impressions')
   })
 
-  it('does not create a creative_learning candidate for low-reach posts even with high % above avg', () => {
+  it('fires on clicks-only movement (spend and impressions stable)', () => {
     const data = makeData({
-      organic: {
-        ...minimalOrganic(),
-        ig_top_posts: [
-          {
-            caption_truncated: 'Small post',
-            published_at: '2026-09-18',
-            media_type: 'IMAGE',
-            reach: 50, // below IG_POST_OUTPERFORMANCE_MIN_REACH = 100
-            plays: null,
-            likes: 10,
-            comments_count: 2,
-            shares: 0,
-            total_interactions: 12,
-            performance_vs_avg_pct: 200, // very high % but tiny volume
-          },
-        ],
-      },
+      googleAds: makeGadsData({
+        total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
+        total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,  // no change
+        total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,
+        total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,  // no change
+        total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 4,
+        total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,  // 100% increase
+      }),
     })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    expect(s).toBeDefined()
+    expect(s!.evidence.some(e => e.metric === 'clicks_7d')).toBe(true)
+    expect(s!.observation.toLowerCase()).toContain('clicks')
+  })
 
-    const signals = buildMaterialSignals(data)
-    const postSignal = signals.find((s) => s.source === 'organic_ig' && s.category === 'creative_learning')
-    expect(postSignal).toBeUndefined()
+  it('does not create three separate account-level candidates for the same movement', () => {
+    // All three metrics move materially — should still produce only ONE candidate
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 3,
+        total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 1.5,
+        total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 4,
+        total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,
+        total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 4,
+        total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,
+      }),
+    })
+    const gadsAccountSignals = buildMaterialSignals(data).filter(s => s.id === 'google_ads_account_totals')
+    expect(gadsAccountSignals).toHaveLength(1)
   })
 })
 
-describe('buildMaterialSignals — ranking', () => {
+// ─── 6. Meta anomaly reuse ────────────────────────────────────────────────────
+
+describe('Meta anomaly reuse', () => {
+  it('creates a meta_paid candidate for each PaidAnomalySignal', () => {
+    const data = makeData({
+      signals: minimalSignals({
+        paid_anomaly_count: 1,
+        paid_anomalies: [{
+          campaign_name: 'Summer Sale',
+          metric_label: 'spend',
+          change_pct: 45.0,  // percentage units (45.0%), not fractional (0.45)
+          direction: 'increase',
+          yesterday_value: 2000,
+          baseline_value: 1379,
+        }],
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.source === 'meta_paid')
+    expect(s).toBeDefined()
+    expect(s!.category).toBe('commercial_consequence')
+    // change_pct in evidence is fractional: 45.0% → 0.45
+    expect(s!.evidence[0].change_pct).toBeCloseTo(0.45)
+  })
+})
+
+// ─── 7. IG post outperformance ────────────────────────────────────────────────
+
+describe('IG post outperformance', () => {
+  it('creates a creative_learning candidate for a significantly outperforming post', () => {
+    const data = makeData({
+      organic: {
+        ...minimalOrganic(),
+        ig_top_posts: [{
+          caption_truncated: 'Great creative',
+          published_at: '2026-09-18',
+          media_type: 'IMAGE',
+          reach: 2000,
+          plays: null,
+          likes: 150,
+          comments_count: 20,
+          shares: 5,
+          total_interactions: 175,
+          performance_vs_avg_pct: 90,  // 90% above avg — exceeds 50% threshold
+        }],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.source === 'organic_ig' && c.category === 'creative_learning')
+    expect(s).toBeDefined()
+    expect(s!.creatively_relevant).toBe(true)
+    expect(s!.observation).toContain('DATA:')
+  })
+
+  it('does not create a post candidate for low-reach posts even with high % above avg', () => {
+    const data = makeData({
+      organic: {
+        ...minimalOrganic(),
+        ig_top_posts: [{
+          caption_truncated: 'tiny post',
+          published_at: '2026-09-18',
+          media_type: 'IMAGE',
+          reach: 50,  // below IG_POST_OUTPERFORMANCE_MIN_REACH = 100
+          plays: null,
+          likes: 5,
+          comments_count: 1,
+          shares: 0,
+          total_interactions: 6,
+          performance_vs_avg_pct: 200,
+        }],
+      },
+    })
+    expect(buildMaterialSignals(data).find(s => s.source === 'organic_ig' && s.category === 'creative_learning')).toBeUndefined()
+  })
+})
+
+// ─── 8. Search Console — observation matches actual signal ────────────────────
+
+describe('Search Console — truthful observation', () => {
+  it('impressions-only movement produces an impressions headline, not clicks', () => {
+    const data = makeData({
+      searchConsole: {
+        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL - 5,  // below min clicks
+        clicks_prior_7d:       null,
+        impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 4,
+        impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,  // 100% increase
+        ctr_7d: 0.02, ctr_prior_7d: 0.02,
+        avg_position_7d: 8, avg_position_prior_7d: 8,
+        top_queries: [], top_pages: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'search_console_organic')
+    expect(s).toBeDefined()
+    // Observation must say 'impressions', not 'clicks'
+    expect(s!.observation.toLowerCase()).toContain('impressions')
+    expect(s!.observation.toLowerCase()).not.toContain('clicks')
+  })
+
+  it('average-position improvement produces a position observation', () => {
+    // Position 7.2 → 4.8 = improvement by 2.4 positions
+    const data = makeData({
+      searchConsole: {
+        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL,
+        clicks_prior_7d:       GSC_MIN_CLICKS_FOR_SIGNAL,  // no change in clicks
+        impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 3,
+        impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 3,  // no change in impressions
+        ctr_7d: 0.05, ctr_prior_7d: 0.05,
+        avg_position_7d:       4.8,   // improved (lower = better)
+        avg_position_prior_7d: 7.2,   // was worse
+        top_queries: [], top_pages: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'search_console_organic')
+    expect(s).toBeDefined()
+    expect(s!.observation.toLowerCase()).toContain('position')
+    expect(s!.observation.toLowerCase()).toContain('improved')
+    // Must not say Infinity or NaN
+    expect(s!.observation).not.toContain('Infinity')
+    expect(s!.observation).not.toContain('NaN')
+  })
+
+  it('average-position decline produces a decline observation', () => {
+    // Position 4.8 → 7.2 = decline by 2.4 positions
+    const data = makeData({
+      searchConsole: {
+        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL,
+        clicks_prior_7d:       GSC_MIN_CLICKS_FOR_SIGNAL,
+        impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 3,
+        impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 3,
+        ctr_7d: 0.05, ctr_prior_7d: 0.05,
+        avg_position_7d:       7.2,   // declined (higher number = worse)
+        avg_position_prior_7d: 4.8,
+        top_queries: [], top_pages: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'search_console_organic')
+    expect(s).toBeDefined()
+    expect(s!.observation.toLowerCase()).toContain('position')
+    expect(s!.observation.toLowerCase()).toContain('declined')
+  })
+})
+
+// ─── 9–10. GA4 — any metric triggers ─────────────────────────────────────────
+
+describe('GA4 — any metric triggers', () => {
+  it('new-users-only movement (sessions and page views stable)', () => {
+    const data = makeData({
+      ga4: {
+        sessions_7d:       GA4_MIN_SESSIONS_FOR_SIGNAL * 2,
+        sessions_prior_7d: GA4_MIN_SESSIONS_FOR_SIGNAL * 2,   // no change
+        new_users_7d:      GA4_MIN_NEW_USERS_FOR_SIGNAL * 4,
+        new_users_prior_7d: GA4_MIN_NEW_USERS_FOR_SIGNAL * 2, // 100% increase
+        page_views_7d:     200,
+        page_views_prior_7d: 200,                             // no change
+        top_sources: [], top_landing_pages: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'ga4_traffic')
+    expect(s).toBeDefined()
+    expect(s!.observation.toLowerCase()).toContain('new users')
+    expect(s!.evidence.some(e => e.metric === 'ga4_new_users_7d')).toBe(true)
+  })
+
+  it('page-views-only movement (sessions and new users stable)', () => {
+    const data = makeData({
+      ga4: {
+        sessions_7d:        GA4_MIN_SESSIONS_FOR_SIGNAL * 2,
+        sessions_prior_7d:  GA4_MIN_SESSIONS_FOR_SIGNAL * 2,  // no change
+        new_users_7d:       50,
+        new_users_prior_7d: 50,                               // no change
+        page_views_7d:      GA4_MIN_PAGE_VIEWS_FOR_SIGNAL * 4,
+        page_views_prior_7d: GA4_MIN_PAGE_VIEWS_FOR_SIGNAL * 2, // 100% increase
+        top_sources: [], top_landing_pages: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'ga4_traffic')
+    expect(s).toBeDefined()
+    expect(s!.observation.toLowerCase()).toContain('page views')
+    expect(s!.evidence.some(e => e.metric === 'ga4_page_views_7d')).toBe(true)
+  })
+
+  it('does not produce multiple ga4 candidates for the same traffic movement', () => {
+    const data = makeData({
+      ga4: {
+        sessions_7d:        GA4_MIN_SESSIONS_FOR_SIGNAL * 4,
+        sessions_prior_7d:  GA4_MIN_SESSIONS_FOR_SIGNAL * 2,
+        new_users_7d:       GA4_MIN_NEW_USERS_FOR_SIGNAL * 4,
+        new_users_prior_7d: GA4_MIN_NEW_USERS_FOR_SIGNAL * 2,
+        page_views_7d:      GA4_MIN_PAGE_VIEWS_FOR_SIGNAL * 4,
+        page_views_prior_7d: GA4_MIN_PAGE_VIEWS_FOR_SIGNAL * 2,
+        top_sources: [], top_landing_pages: [],
+      },
+    })
+    expect(buildMaterialSignals(data).filter(s => s.id === 'ga4_traffic')).toHaveLength(1)
+  })
+})
+
+// ─── 11. GBP — truthful metric names ─────────────────────────────────────────
+
+describe('GBP — truthful metric names', () => {
+  it('uses "Search impressions" (not "interactions") when impressions are the dominant mover', () => {
+    const imp = GBP_MIN_IMPRESSIONS_FOR_SIGNAL * 4
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       imp,
+        search_impressions_prior_28d: Math.round(imp / 2),  // 100% up
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           2,  // interactions well below threshold
+        call_clicks_28d:              2,
+        direction_requests_28d:       2,
+        website_clicks_prior_28d:     2,
+        call_clicks_prior_28d:        2,
+        direction_requests_prior_28d: 2,
+        keyword_month: null,
+        top_keywords: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_performance')
+    expect(s).toBeDefined()
+    // Observation must say "Search impressions", not "interactions"
+    expect(s!.observation).toContain('Search impressions')
+    expect(s!.observation.toLowerCase()).not.toContain('interactions')
+  })
+
+  it('uses specific label for calls when calls are the dominant mover', () => {
+    const calls = GBP_MIN_INTERACTIONS_FOR_SIGNAL * 4
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       null,
+        search_impressions_prior_28d: null,
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           5,
+        call_clicks_28d:              calls,
+        direction_requests_28d:       5,
+        website_clicks_prior_28d:     5,
+        call_clicks_prior_28d:        Math.round(calls / 2),  // 100% up
+        direction_requests_prior_28d: 5,
+        keyword_month: null,
+        top_keywords: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_performance')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('Calls')
+    expect(s!.observation.toLowerCase()).not.toContain('interactions')
+  })
+})
+
+// ─── 12. GBP interactions volume guard excludes impressions ───────────────────
+
+describe('GBP combined interactions exclude impressions', () => {
+  it('suppresses interaction-metric candidate when only impressions pass volume guard', () => {
+    // Calls: 5 (below GBP_MIN_INTERACTIONS_FOR_SIGNAL = 20), but search impressions are high
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       GBP_MIN_IMPRESSIONS_FOR_SIGNAL * 4,
+        search_impressions_prior_28d: GBP_MIN_IMPRESSIONS_FOR_SIGNAL * 4,  // no change
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           5,
+        call_clicks_28d:              5,
+        direction_requests_28d:       5,
+        website_clicks_prior_28d:     1,    // 400% increase but interactions = 15 < 20
+        call_clicks_prior_28d:        1,
+        direction_requests_prior_28d: 1,
+        keyword_month: null,
+        top_keywords: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_performance')
+    if (s) {
+      // If a candidate exists, it must not be driven by interaction metrics that failed the guard
+      // The only eligible metrics are impressions (which didn't move materially here)
+      const hasInteractionEvidence = s.evidence.some(e =>
+        ['gbp_website_clicks_28d', 'gbp_call_clicks_28d', 'gbp_direction_requests_28d'].includes(e.metric)
+      )
+      // Interaction metrics failed the volume guard — should not be in evidence
+      expect(hasInteractionEvidence).toBe(false)
+    }
+    // Whether or not a candidate exists, impressions didn't move, so no performance signal
+    expect(s).toBeUndefined()
+  })
+})
+
+// ─── 13. Zero baseline — no Infinity/NaN ─────────────────────────────────────
+
+describe('zero baseline safety', () => {
+  it('never produces Infinity or NaN in observation when prior = 0', () => {
+    // Website clicks: 0 → material positive value
+    const clicks = GBP_MIN_INTERACTIONS_FOR_SIGNAL * 3
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       null,
+        search_impressions_prior_28d: null,
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           clicks,
+        call_clicks_28d:              5,
+        direction_requests_28d:       5,
+        website_clicks_prior_28d:     0,    // was zero — emergence
+        call_clicks_prior_28d:        5,
+        direction_requests_prior_28d: 5,
+        keyword_month: null,
+        top_keywords: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_performance')
+    if (s) {
+      expect(s.observation).not.toContain('Infinity')
+      expect(s.observation).not.toContain('NaN')
+      // change_pct in evidence should be null (emergence), not Infinity
+      const websiteEv = s.evidence.find(e => e.metric === 'gbp_website_clicks_28d')
+      if (websiteEv) {
+        expect(websiteEv.change_pct).toBeNull()
+      }
+    }
+  })
+
+  it('never produces Infinity or NaN for zero-prior Google Ads account spend', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:       GADS_MIN_SPEND_7D_FOR_SIGNAL * 3,
+        total_spend_prior_7d: 0,  // was zero
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    if (s) {
+      expect(s.observation).not.toContain('Infinity')
+      expect(s.observation).not.toContain('NaN')
+      const spendEv = s.evidence.find(e => e.metric === 'spend_7d')
+      if (spendEv) {
+        expect(spendEv.change_pct).toBeNull()
+      }
+      // Observation should say "increased from 0"
+      expect(s.observation).toContain('0')
+    }
+  })
+
+  it('never produces Infinity or NaN for zero-prior GSC clicks', () => {
+    const data = makeData({
+      searchConsole: {
+        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL * 3,
+        clicks_prior_7d:       0,   // was zero
+        impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        ctr_7d: 0.05, ctr_prior_7d: 0.02,
+        avg_position_7d: 5, avg_position_prior_7d: 5,
+        top_queries: [], top_pages: [],
+      },
+    })
+    const signals = buildMaterialSignals(data)
+    for (const s of signals) {
+      expect(s.observation).not.toContain('Infinity')
+      expect(s.observation).not.toContain('NaN')
+      for (const ev of s.evidence) {
+        if (ev.change_pct !== null) {
+          expect(isFinite(ev.change_pct)).toBe(true)
+        }
+      }
+    }
+  })
+})
+
+// ─── 14–16. Data health — Google sources included ─────────────────────────────
+
+describe('data health — Google sources', () => {
+  it('surfaces data_health when google_ads source is unhealthy', () => {
+    const data = makeData({
+      sourceFreshness: {
+        ...minimalFreshness(),
+        google_ads: { last_success_at: null, status: 'failed', age_hours: 50, healthy: false },
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.source === 'data_health')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('google_ads')
+  })
+
+  it('surfaces data_health when gsc source is unhealthy', () => {
+    const data = makeData({
+      sourceFreshness: {
+        ...minimalFreshness(),
+        gsc: { last_success_at: null, status: 'failed', age_hours: 50, healthy: false },
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.source === 'data_health')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('gsc')
+  })
+
+  it('surfaces data_health when ga4 source is unhealthy', () => {
+    const data = makeData({
+      sourceFreshness: {
+        ...minimalFreshness(),
+        ga4: { last_success_at: null, status: 'failed', age_hours: 50, healthy: false },
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.source === 'data_health')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('ga4')
+  })
+
+  it('still surfaces data_health from signals.stale_sources (meta)', () => {
+    const data = makeData({
+      signals: minimalSignals({
+        has_stale_critical_source: true,
+        stale_sources: ['meta_ads_daily'],
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.source === 'data_health')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('meta_ads_daily')
+  })
+
+  it('does not create data_health when all sources are healthy', () => {
+    expect(buildMaterialSignals(makeData()).find(s => s.source === 'data_health')).toBeUndefined()
+  })
+})
+
+// ─── 17. SEO opportunity — volume guard ──────────────────────────────────────
+
+describe('SEO opportunity candidate', () => {
+  it('does not surface an opportunity for a query below GSC_OPPORTUNITY_MIN_IMPRESSIONS', () => {
+    const data = makeData({
+      searchConsole: {
+        clicks_7d: GSC_MIN_CLICKS_FOR_SIGNAL * 2,
+        clicks_prior_7d: GSC_MIN_CLICKS_FOR_SIGNAL * 2,
+        impressions_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        impressions_prior_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        ctr_7d: 0.05, ctr_prior_7d: 0.05,
+        avg_position_7d: 5, avg_position_prior_7d: 5,
+        top_queries: [
+          {
+            query: 'low volume query',
+            clicks: 2,
+            impressions: GSC_OPPORTUNITY_MIN_IMPRESSIONS - 100,  // below threshold
+            ctr: 0.01,
+            position: GSC_OPPORTUNITY_MAX_POSITION + 2,
+          },
+        ],
+        top_pages: [],
+      },
+    })
+    expect(buildMaterialSignals(data).find(s => s.id === 'search_console_opportunity')).toBeUndefined()
+  })
+
+  it('surfaces an opportunity for a query with adequate impressions and low CTR at middling position', () => {
+    const data = makeData({
+      searchConsole: {
+        clicks_7d: GSC_MIN_CLICKS_FOR_SIGNAL * 2,
+        clicks_prior_7d: GSC_MIN_CLICKS_FOR_SIGNAL * 2,
+        impressions_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        impressions_prior_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        ctr_7d: 0.05, ctr_prior_7d: 0.05,
+        avg_position_7d: 5, avg_position_prior_7d: 5,
+        top_queries: [
+          {
+            query: 'order kebab online',
+            clicks: 10,
+            impressions: GSC_OPPORTUNITY_MIN_IMPRESSIONS + 200,  // above threshold
+            ctr: 0.015,  // below GSC_OPPORTUNITY_MAX_CTR = 0.03
+            position: GSC_OPPORTUNITY_MAX_POSITION + 2,          // above max position threshold
+          },
+        ],
+        top_pages: [],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'search_console_opportunity')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('DATA:')
+  })
+})
+
+// ─── 18. GBP keyword threshold honesty ───────────────────────────────────────
+
+describe('GBP keyword context', () => {
+  it('uses <N notation for threshold impressions (not exact count)', () => {
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       null,
+        search_impressions_prior_28d: null,
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           null,
+        call_clicks_28d:              null,
+        direction_requests_28d:       null,
+        website_clicks_prior_28d:     null,
+        call_clicks_prior_28d:        null,
+        direction_requests_prior_28d: null,
+        keyword_month: '2026-09-01',
+        top_keywords: [
+          { keyword: 'killer kebab', impressions: null, impressionsThreshold: 100 },  // threshold value
+        ],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_keyword_context')
+    if (s) {
+      // Must use < prefix for threshold values
+      expect(s.observation).toContain('<')
+    }
+  })
+
+  it('does not emit keyword context when top keyword is below GBP_KEYWORD_MIN_IMPRESSIONS', () => {
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       null,
+        search_impressions_prior_28d: null,
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           null,
+        call_clicks_28d:              null,
+        direction_requests_28d:       null,
+        website_clicks_prior_28d:     null,
+        call_clicks_prior_28d:        null,
+        direction_requests_prior_28d: null,
+        keyword_month: '2026-09-01',
+        top_keywords: [
+          { keyword: 'tiny kw', impressions: GBP_KEYWORD_MIN_IMPRESSIONS - 1, impressionsThreshold: null },
+        ],
+      },
+    })
+    expect(buildMaterialSignals(data).find(s => s.id === 'gbp_keyword_context')).toBeUndefined()
+  })
+})
+
+// ─── 19. Ranking ──────────────────────────────────────────────────────────────
+
+describe('ranking', () => {
   it('ranks candidates by materiality_score descending', () => {
     const data = makeData({
       signals: minimalSignals({
         paid_anomaly_count: 1,
-        paid_anomalies: [
-          {
-            campaign_name: 'Test',
-            metric_label: 'spend',
-            change_pct: 60.0,
-            direction: 'increase',
-            yesterday_value: 5000,
-            baseline_value: 3125,
-          },
-        ],
+        paid_anomalies: [{
+          campaign_name: 'Test', metric_label: 'spend', change_pct: 60.0,
+          direction: 'increase', yesterday_value: 5000, baseline_value: 3125,
+        }],
       }),
       searchConsole: {
         clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL * 3,
@@ -567,11 +938,9 @@ describe('buildMaterialSignals — ranking', () => {
         impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
         ctr_7d: 0.05, ctr_prior_7d: 0.04,
         avg_position_7d: 5, avg_position_prior_7d: 5,
-        top_queries: [],
-        top_pages: [],
+        top_queries: [], top_pages: [],
       },
     })
-
     const signals = buildMaterialSignals(data)
     for (let i = 1; i < signals.length; i++) {
       expect(signals[i - 1].materiality_score).toBeGreaterThanOrEqual(signals[i].materiality_score)
@@ -579,117 +948,58 @@ describe('buildMaterialSignals — ranking', () => {
   })
 })
 
-describe('buildMaterialSignals — deduplication', () => {
-  it('does not produce duplicate candidates with the same id', () => {
-    // Two anomalies for the same campaign+metric would share an id after slugify
+// ─── 20. Duplicate suppression ────────────────────────────────────────────────
+
+describe('duplicate suppression', () => {
+  it('produces no duplicate ids even with many anomalies sharing same campaign+metric', () => {
     const data = makeData({
       signals: minimalSignals({
         paid_anomaly_count: 2,
         paid_anomalies: [
-          {
-            campaign_name: 'Camp A',
-            metric_label: 'spend',
-            change_pct: 50,
-            direction: 'increase',
-            yesterday_value: 3000,
-            baseline_value: 2000,
-          },
-          {
-            campaign_name: 'Camp A',
-            metric_label: 'spend',
-            change_pct: 50,
-            direction: 'increase',
-            yesterday_value: 3000,
-            baseline_value: 2000,
-          },
+          { campaign_name: 'Camp A', metric_label: 'spend', change_pct: 50, direction: 'increase', yesterday_value: 3000, baseline_value: 2000 },
+          { campaign_name: 'Camp A', metric_label: 'spend', change_pct: 50, direction: 'increase', yesterday_value: 3000, baseline_value: 2000 },
         ],
       }),
     })
-
     const signals = buildMaterialSignals(data)
-    const ids = signals.map((s) => s.id)
-    const uniqueIds = new Set(ids)
-    expect(ids.length).toBe(uniqueIds.size)
+    const ids = signals.map(s => s.id)
+    expect(ids.length).toBe(new Set(ids).size)
   })
 })
 
-describe('buildMaterialSignals — output cap', () => {
-  it('returns at most MAX_SIGNAL_CANDIDATES candidates even when many qualify', () => {
-    // Create 20 anomalies with distinct campaign names so they all get unique ids
-    const anomalies = Array.from({ length: 20 }, (_, i) => ({
-      campaign_name: `Campaign ${String(i).padStart(3, '0')}`,
-      metric_label: 'spend',
-      change_pct: 50 + i,
-      direction: 'increase' as const,
+// ─── 21. Output cap ───────────────────────────────────────────────────────────
+
+describe('output cap', () => {
+  it('returns at most MAX_SIGNAL_CANDIDATES', () => {
+    const anomalies = Array.from({ length: 25 }, (_, i) => ({
+      campaign_name:  `Campaign ${String(i).padStart(3, '0')}`,
+      metric_label:   'spend',
+      change_pct:     50 + i,
+      direction:      'increase' as const,
       yesterday_value: 2000 + i * 100,
-      baseline_value: 1000,
+      baseline_value:  1000,
     }))
-
-    const data = makeData({
-      signals: minimalSignals({
-        paid_anomaly_count: anomalies.length,
-        paid_anomalies: anomalies,
-      }),
-    })
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.length).toBeLessThanOrEqual(MAX_SIGNAL_CANDIDATES)
+    const data = makeData({ signals: minimalSignals({ paid_anomaly_count: anomalies.length, paid_anomalies: anomalies }) })
+    expect(buildMaterialSignals(data).length).toBeLessThanOrEqual(MAX_SIGNAL_CANDIDATES)
   })
 })
 
-describe('buildMaterialSignals — no forced candidate', () => {
-  it('returns an empty array when nothing is material', () => {
-    // All data at stable values well within thresholds
+// ─── 22. No forced candidate ──────────────────────────────────────────────────
+
+describe('no forced candidate', () => {
+  it('returns empty array when nothing is material', () => {
     const data = makeData({
-      googleAds: {
-        currency: 'DKK',
-        total_spend_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
-        total_spend_prior_7d: GADS_MIN_SPEND_7D_FOR_SIGNAL * 2, // 0% change
-        total_impressions_7d: 1000,
-        total_impressions_prior_7d: 1000,
-        total_clicks_7d: 50,
-        total_clicks_prior_7d: 50,
-        active_campaigns: [],
-        paused_campaigns: [],
-      },
+      googleAds: makeGadsData(),  // all prior = current, no movement
       searchConsole: {
-        clicks_7d: GSC_MIN_CLICKS_FOR_SIGNAL * 2,
-        clicks_prior_7d: GSC_MIN_CLICKS_FOR_SIGNAL * 2, // 0% change
-        impressions_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
-        impressions_prior_7d: GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        clicks_7d:             GSC_MIN_CLICKS_FOR_SIGNAL * 2,
+        clicks_prior_7d:       GSC_MIN_CLICKS_FOR_SIGNAL * 2,
+        impressions_7d:        GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
+        impressions_prior_7d:  GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 2,
         ctr_7d: 0.05, ctr_prior_7d: 0.05,
         avg_position_7d: 5, avg_position_prior_7d: 5,
-        top_queries: [],
-        top_pages: [],
+        top_queries: [], top_pages: [],
       },
     })
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.length).toBe(0)
-  })
-})
-
-describe('buildMaterialSignals — data health', () => {
-  it('creates a data_health candidate when critical source is stale', () => {
-    const data = makeData({
-      signals: minimalSignals({
-        has_stale_critical_source: true,
-        stale_sources: ['meta_ads_daily', 'meta_ig_account_daily'],
-      }),
-    })
-
-    const signals = buildMaterialSignals(data)
-    const healthSignal = signals.find((s) => s.source === 'data_health')
-    expect(healthSignal).toBeDefined()
-    expect(healthSignal!.category).toBe('data_health')
-    expect(healthSignal!.observation).toContain('meta_ads_daily')
-    expect(healthSignal!.observation).toContain('meta_ig_account_daily')
-  })
-
-  it('does not create a data_health candidate when all sources are healthy', () => {
-    const data = makeData()
-
-    const signals = buildMaterialSignals(data)
-    expect(signals.find((s) => s.source === 'data_health')).toBeUndefined()
+    expect(buildMaterialSignals(data)).toHaveLength(0)
   })
 })

@@ -6,23 +6,22 @@
  *
  * Responsibilities:
  *   - Identify and rank commercially material facts across 6 data sources
- *   - Apply volume guards so small-audience large-% swings are suppressed
- *   - Merge same-movement signals to avoid duplicate coverage
+ *   - Apply per-source volume guards so small-audience large-% swings are suppressed
+ *   - Merge same-movement signals into one candidate with multiple evidence items
  *   - Return at most MAX_SIGNAL_CANDIDATES candidates, ranked strongest first
  *
  * Guarantees:
  *   - Pure function — no side effects, no I/O, no randomness
  *   - All thresholds exported as named constants for testability
- *   - UNTRUSTED text (campaign names, captions, queries, page URLs)
- *     is stored in evidence items under the DATA: prefix
+ *   - UNTRUSTED text (campaign names, captions, queries, keywords)
+ *     is stored under the DATA: prefix in observations
  *   - Does NOT generate recommendations — only identifies facts
+ *   - Never outputs Infinity%, NaN%, or misleading metric labels
+ *   - "Interactions" means website clicks + calls + direction requests only
+ *     (impressions are never called interactions)
  */
 
-import type {
-  BriefInputData,
-  PaidAnomalySignal,
-  GoogleAdsCampaignSummary,
-} from './types'
+import type { BriefInputData, PaidAnomalySignal } from './types'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -43,52 +42,69 @@ export type SignalCategory =
   | 'data_health'              // Stale/failed data source
 
 export interface SignalMetricEvidence {
-  metric:   string         // e.g. 'spend_7d', 'reach_7d', 'clicks_7d'
-  current:  number | null
-  prior:    number | null
-  change_pct: number | null  // fractional: 0.20 = +20%. null when prior unavailable
+  metric:     string         // e.g. 'spend_7d', 'reach_7d', 'clicks_7d'
+  current:    number | null
+  prior:      number | null
+  change_pct: number | null  // fractional: 0.20 = +20%. null when prior unavailable or metric is absolute (e.g. position)
 }
 
 export interface MaterialSignalCandidate {
-  id:                   string   // stable slug, e.g. 'meta_paid_anomaly_camp1_spend'
-  source:               SignalSource
-  category:             SignalCategory
-  observation:          string   // concise factual sentence, no recommendation
-  evidence:             SignalMetricEvidence[]
-  materiality_score:    number   // higher = more material; used only for ranking
+  id:                    string   // stable slug derived from source + stable entity IDs, not display labels
+  source:                SignalSource
+  category:              SignalCategory
+  observation:           string   // concise factual sentence — no recommendations, no Infinity/NaN
+  evidence:              SignalMetricEvidence[]
+  materiality_score:     number   // higher = more material; used only for ranking
   commercially_relevant: boolean
   creatively_relevant:   boolean
 }
 
 // ─── Exported thresholds ──────────────────────────────────────────────────────
 
-// Google Ads
-export const GADS_MIN_SPEND_7D_FOR_SIGNAL   = 100   // DKK (or account currency)
-export const GADS_MIN_RESULTS_FOR_SIGNAL    = 5
-export const GADS_MATERIAL_CHANGE_PCT       = 0.20  // fractional
+// Google Ads — account level (any metric can trigger)
+export const GADS_MIN_SPEND_7D_FOR_SIGNAL        = 100   // DKK/account currency
+export const GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL  = 500
+export const GADS_MIN_CLICKS_7D_FOR_SIGNAL       = 20
+export const GADS_MATERIAL_CHANGE_PCT            = 0.20  // fractional
+
+// Google Ads — per-result
+export const GADS_MIN_RESULTS_FOR_SIGNAL         = 5
 
 // Organic IG
-export const IG_MIN_REACH_FOR_SIGNAL          = 200
-export const IG_MATERIAL_REACH_CHANGE_PCT     = 0.15
-export const IG_POST_OUTPERFORMANCE_PCT       = 0.50  // post must be ≥ 50% above avg
-export const IG_POST_OUTPERFORMANCE_MIN_REACH = 100
-export const IG_MIN_FOLLOWER_DELTA            = 20
+export const IG_MIN_REACH_FOR_SIGNAL             = 200
+export const IG_MATERIAL_REACH_CHANGE_PCT        = 0.15
+export const IG_POST_OUTPERFORMANCE_PCT          = 0.50  // post must be ≥ 50% above avg
+export const IG_POST_OUTPERFORMANCE_MIN_REACH    = 100
+export const IG_MIN_FOLLOWER_DELTA               = 20
 
-// Search Console
-export const GSC_MIN_CLICKS_FOR_SIGNAL        = 30
-export const GSC_MIN_IMPRESSIONS_FOR_SIGNAL   = 500
-export const GSC_MATERIAL_CHANGE_PCT          = 0.20
+// Search Console — movement
+export const GSC_MIN_CLICKS_FOR_SIGNAL           = 30
+export const GSC_MIN_IMPRESSIONS_FOR_SIGNAL      = 500
+export const GSC_MATERIAL_CHANGE_PCT             = 0.20
+// Position: lower is better. Absolute delta threshold (positions, not percent).
+export const GSC_MATERIAL_POSITION_DELTA         = 1.0   // e.g. 7.2 → 4.8 = 2.4 positions, material
+export const GSC_MIN_POSITION_IMPRESSIONS        = 500   // must have adequate impression volume
 
-// GA4
-export const GA4_MIN_SESSIONS_FOR_SIGNAL      = 50
-export const GA4_MATERIAL_CHANGE_PCT          = 0.20
+// Search Console — opportunity (high impressions, middling position, low CTR)
+export const GSC_OPPORTUNITY_MIN_IMPRESSIONS     = 500
+export const GSC_OPPORTUNITY_MAX_POSITION        = 15    // not ranking on page 1
+export const GSC_OPPORTUNITY_MAX_CTR             = 0.03  // 3% CTR
+
+// GA4 — any metric can trigger (one combined candidate)
+export const GA4_MIN_SESSIONS_FOR_SIGNAL         = 50
+export const GA4_MIN_NEW_USERS_FOR_SIGNAL        = 30
+export const GA4_MIN_PAGE_VIEWS_FOR_SIGNAL       = 100
+export const GA4_MATERIAL_CHANGE_PCT             = 0.20
 
 // GBP Performance
-export const GBP_MIN_INTERACTIONS_FOR_SIGNAL  = 20
-export const GBP_MATERIAL_CHANGE_PCT          = 0.20
+// "Interactions" = website_clicks + calls + direction_requests — NEVER impressions
+export const GBP_MIN_INTERACTIONS_FOR_SIGNAL     = 20
+export const GBP_MIN_IMPRESSIONS_FOR_SIGNAL      = 200   // separate guard for impression metrics
+export const GBP_MATERIAL_CHANGE_PCT             = 0.20
+export const GBP_KEYWORD_MIN_IMPRESSIONS         = 50    // minimum volume to surface keyword context
 
 // Output cap
-export const MAX_SIGNAL_CANDIDATES            = 12
+export const MAX_SIGNAL_CANDIDATES               = 12
 
 // ─── Category base weights (for scoring) ─────────────────────────────────────
 
@@ -102,31 +118,69 @@ const CATEGORY_BASE: Record<SignalCategory, number> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function changePct(current: number, prior: number): number {
-  if (prior === 0) return current > 0 ? Infinity : 0
+/**
+ * Fractional change. Returns null when prior = 0 and current > 0 (emergence).
+ * Never returns Infinity or NaN.
+ */
+function changePct(current: number, prior: number): number | null {
+  if (prior === 0) return current > 0 ? null : 0
   return (current - prior) / prior
 }
 
-function isMaterial(pct: number, threshold: number): boolean {
+/**
+ * Is the change material?
+ * null (emergence, prior=0→positive) is always considered material once the volume guard passes.
+ */
+function isMaterial(pct: number | null, threshold: number): boolean {
+  if (pct === null) return true   // emergence
   return Math.abs(pct) >= threshold
 }
 
-/** Score a candidate by category weight × magnitude × volume factor. */
+/**
+ * Magnitude for scoring.
+ * Uses emergenceProxy (default 1.0 = 100%) when pct is null (prior was 0).
+ * Capped at 2.0 (200%) to prevent extreme outliers from dominating.
+ */
+function scoreMagnitude(pct: number | null, emergenceProxy = 1.0): number {
+  if (pct === null) return emergenceProxy
+  return Math.abs(pct)
+}
+
+/** Score = category_base × (1 + magnitude_capped) × volume_factor. */
 function score(
   category: SignalCategory,
-  absChangePct: number,
-  volumeFactor: number, // 0–1, derived from current value vs minimum threshold
+  absMagnitude: number,
+  volumeFactor: number,
 ): number {
-  return CATEGORY_BASE[category] * (1 + Math.min(absChangePct, 2)) * Math.min(volumeFactor, 1)
+  return CATEGORY_BASE[category] * (1 + Math.min(absMagnitude, 2)) * Math.min(volumeFactor, 1)
 }
 
 function clamp(x: number): number {
   return Math.max(0, Math.min(1, x))
 }
 
-/** Sanitize an UNTRUSTED string for use as DATA: evidence in an observation. */
+/** Format a non-null fractional change safely. */
+function fmtPct(pct: number): string {
+  return `${Math.abs(pct * 100).toFixed(1)}%`
+}
+
+/** Sanitize UNTRUSTED text for use as DATA: in an observation. */
 function dataTag(text: string): string {
   return `DATA:${text.slice(0, 80)}`
+}
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`
+  return String(Math.round(n * 100) / 100)
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40)
 }
 
 // ─── Per-source signal builders ───────────────────────────────────────────────
@@ -135,13 +189,13 @@ function metaPaidSignals(data: BriefInputData): MaterialSignalCandidate[] {
   const candidates: MaterialSignalCandidate[] = []
 
   // Reuse PaidAnomalySignal records — already computed deterministically.
-  // change_pct in PaidAnomalySignal is in percentage units (e.g. 28.5 = 28.5%), not fractional.
-  // Anomalies live in data.signals, not data.paid, so they are processed regardless of paid nullability.
+  // change_pct in PaidAnomalySignal is in percentage UNITS (e.g. 28.5 = 28.5%), not fractional.
+  // Anomalies live in data.signals, not data.paid — process regardless of paid nullability.
   const anomalies: PaidAnomalySignal[] = data.signals.paid_anomalies
 
   for (const anomaly of anomalies) {
-    const changeFrac = anomaly.change_pct / 100
-    const volFactor  = clamp(anomaly.yesterday_value / (anomaly.yesterday_value + 1000))
+    const changeFrac   = anomaly.change_pct / 100
+    const volFactor    = clamp(anomaly.yesterday_value / (anomaly.yesterday_value + 1000))
     const isCommercial = ['spend', 'cpc', 'cpm'].includes(anomaly.metric_label)
 
     candidates.push({
@@ -151,9 +205,9 @@ function metaPaidSignals(data: BriefInputData): MaterialSignalCandidate[] {
       observation: `${dataTag(anomaly.campaign_name)} — ${anomaly.metric_label} ${anomaly.direction === 'increase' ? 'up' : 'down'} ${Math.abs(anomaly.change_pct).toFixed(1)}% vs 6-day average (yesterday: ${fmtNum(anomaly.yesterday_value)}, baseline: ${fmtNum(anomaly.baseline_value)}).`,
       evidence: [
         {
-          metric: anomaly.metric_label,
-          current: anomaly.yesterday_value,
-          prior: anomaly.baseline_value,
+          metric:     anomaly.metric_label,
+          current:    anomaly.yesterday_value,
+          prior:      anomaly.baseline_value,
           change_pct: changeFrac,
         },
       ],
@@ -163,9 +217,6 @@ function metaPaidSignals(data: BriefInputData): MaterialSignalCandidate[] {
     })
   }
 
-  // Meta paid currently lacks prior spend at account level in BriefInputData,
-  // so we skip account-level comparison here (anomalies cover campaign-level already).
-
   return candidates
 }
 
@@ -174,50 +225,60 @@ function googleAdsSignals(data: BriefInputData): MaterialSignalCandidate[] {
   const gads = data.googleAds
   if (!gads) return candidates
 
-  // Account-level totals comparison
-  const spendCurrent = gads.total_spend_7d
-  const spendPrior   = gads.total_spend_prior_7d
+  // ── Account-level: ANY material movement in spend / impressions / clicks
+  //    triggers ONE candidate. Use the strongest mover as headline.
+  {
+    type AccountMetric = {
+      key:       string
+      label:     string
+      current:   number
+      prior:     number | null
+      minVolume: number
+    }
+    const checks: AccountMetric[] = [
+      { key: 'spend_7d',       label: 'spend',       current: gads.total_spend_7d,       prior: gads.total_spend_prior_7d,       minVolume: GADS_MIN_SPEND_7D_FOR_SIGNAL },
+      { key: 'impressions_7d', label: 'impressions', current: gads.total_impressions_7d, prior: gads.total_impressions_prior_7d, minVolume: GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL },
+      { key: 'clicks_7d',      label: 'clicks',      current: gads.total_clicks_7d,      prior: gads.total_clicks_prior_7d,      minVolume: GADS_MIN_CLICKS_7D_FOR_SIGNAL },
+    ]
 
-  if (spendPrior !== null && spendCurrent >= GADS_MIN_SPEND_7D_FOR_SIGNAL) {
-    const pct = changePct(spendCurrent, spendPrior)
-    if (isMaterial(pct, GADS_MATERIAL_CHANGE_PCT)) {
-      const evidence: SignalMetricEvidence[] = [
-        { metric: 'spend_7d', current: spendCurrent, prior: spendPrior, change_pct: pct },
-      ]
+    const evidence: SignalMetricEvidence[] = []
+    type BestMetric = { key: string; label: string; current: number; prior: number; pct: number | null; mag: number }
+    let strongest: BestMetric | null = null
 
-      const clicksCurrent = gads.total_clicks_7d
-      const clicksPrior   = gads.total_clicks_prior_7d
-      if (clicksPrior !== null) {
-        const clicksPct = changePct(clicksCurrent, clicksPrior)
-        if (isMaterial(clicksPct, GADS_MATERIAL_CHANGE_PCT)) {
-          evidence.push({ metric: 'clicks_7d', current: clicksCurrent, prior: clicksPrior, change_pct: clicksPct })
-        }
+    for (const c of checks) {
+      if (c.prior === null || c.current < c.minVolume) continue
+      const pct = changePct(c.current, c.prior)
+      if (!isMaterial(pct, GADS_MATERIAL_CHANGE_PCT)) continue
+      const mag = scoreMagnitude(pct)
+      evidence.push({ metric: c.key, current: c.current, prior: c.prior, change_pct: pct })
+      if (!strongest || mag > strongest.mag) {
+        strongest = { key: c.key, label: c.label, current: c.current, prior: c.prior, pct, mag }
       }
+    }
 
-      const impCurrent = gads.total_impressions_7d
-      const impPrior   = gads.total_impressions_prior_7d
-      if (impPrior !== null) {
-        const impPct = changePct(impCurrent, impPrior)
-        if (isMaterial(impPct, GADS_MATERIAL_CHANGE_PCT)) {
-          evidence.push({ metric: 'impressions_7d', current: impCurrent, prior: impPrior, change_pct: impPct })
-        }
-      }
+    if (evidence.length > 0 && strongest) {
+      const dir       = strongest.pct === null || strongest.pct >= 0 ? 'up' : 'down'
+      const volFactor = clamp(strongest.current / (strongest.current + GADS_MIN_SPEND_7D_FOR_SIGNAL * 5))
+      const obs = strongest.pct !== null
+        ? `Google Ads ${strongest.label} ${dir} ${fmtPct(strongest.pct)} vs prior 7 days (${fmtNum(strongest.current)} vs ${fmtNum(strongest.prior)} ${gads.currency}).`
+        : `Google Ads ${strongest.label} increased from 0 to ${fmtNum(strongest.current)} ${gads.currency}.`
 
-      const volFactor = clamp(spendCurrent / (GADS_MIN_SPEND_7D_FOR_SIGNAL * 5))
       candidates.push({
-        id: 'google_ads_account_spend',
+        id: 'google_ads_account_totals',
         source: 'google_ads',
         category: 'commercial_consequence',
-        observation: `Google Ads account spend ${pct > 0 ? 'up' : 'down'} ${Math.abs(pct * 100).toFixed(1)}% vs prior 7 days (${fmtNum(spendCurrent)} vs ${fmtNum(spendPrior)} ${gads.currency}).`,
+        observation: obs,
         evidence,
-        materiality_score: score('commercial_consequence', Math.abs(pct), volFactor),
+        materiality_score: score('commercial_consequence', strongest.mag, volFactor),
         commercially_relevant: true,
         creatively_relevant: false,
       })
     }
   }
 
-  // Per-campaign result comparisons
+  // ── Per-campaign result comparisons
+  //    Signal ID uses result_id (action resource name) — NOT the display label,
+  //    so the ID is stable regardless of label changes.
   for (const campaign of gads.active_campaigns) {
     if (campaign.spend_7d < GADS_MIN_SPEND_7D_FOR_SIGNAL) continue
 
@@ -236,14 +297,19 @@ function googleAdsSignals(data: BriefInputData): MaterialSignalCandidate[] {
         evidence.push({ metric: `costPer_${result.label}`, current: result.costPerResult, prior: result.prior_costPerResult, change_pct: cprPct })
       }
 
+      const dir       = pct === null || pct >= 0 ? 'up' : 'down'
       const volFactor = clamp(result.count / (GADS_MIN_RESULTS_FOR_SIGNAL * 4))
+      const obs = pct !== null
+        ? `${dataTag(campaign.name)} — ${result.label} ${dir} ${fmtPct(pct)} vs prior 7 days (${result.count} vs ${result.prior_count}).`
+        : `${dataTag(campaign.name)} — ${result.label} increased from 0 to ${result.count}.`
+
       candidates.push({
-        id: `google_ads_result_${slugify(campaign.id)}_${slugify(result.label)}`,
+        id: `google_ads_result_${slugify(campaign.id)}_${slugify(result.result_id)}`,
         source: 'google_ads',
         category: 'commercial_consequence',
-        observation: `${dataTag(campaign.name)} — ${result.label} ${pct > 0 ? 'up' : 'down'} ${Math.abs(pct * 100).toFixed(1)}% vs prior 7 days (${result.count} vs ${result.prior_count}).`,
+        observation: obs,
         evidence,
-        materiality_score: score('commercial_consequence', Math.abs(pct), volFactor),
+        materiality_score: score('commercial_consequence', scoreMagnitude(pct), volFactor),
         commercially_relevant: true,
         creatively_relevant: false,
       })
@@ -264,23 +330,25 @@ function organicIgSignals(data: BriefInputData): MaterialSignalCandidate[] {
   if (reachCurrent !== null && reachPrior !== null && reachCurrent >= IG_MIN_REACH_FOR_SIGNAL) {
     const pct = changePct(reachCurrent, reachPrior)
     if (isMaterial(pct, IG_MATERIAL_REACH_CHANGE_PCT)) {
+      const dir = pct === null || pct >= 0 ? 'up' : 'down'
       const evidence: SignalMetricEvidence[] = [
         { metric: 'ig_reach_7d', current: reachCurrent, prior: reachPrior, change_pct: pct },
       ]
-
       const engCurrent = ig.accounts_engaged_7d
       if (engCurrent !== null) {
         evidence.push({ metric: 'ig_accounts_engaged_7d', current: engCurrent, prior: null, change_pct: null })
       }
+      const obs = pct !== null
+        ? `Instagram organic reach ${dir} ${fmtPct(pct)} vs prior 7 days (${fmtNum(reachCurrent)} vs ${fmtNum(reachPrior)}).`
+        : `Instagram organic reach increased from 0 to ${fmtNum(reachCurrent)}.`
 
-      const volFactor = clamp(reachCurrent / (IG_MIN_REACH_FOR_SIGNAL * 5))
       candidates.push({
         id: 'organic_ig_reach',
         source: 'organic_ig',
         category: 'traffic_audience',
-        observation: `Instagram organic reach ${pct > 0 ? 'up' : 'down'} ${Math.abs(pct * 100).toFixed(1)}% vs prior 7 days (${fmtNum(reachCurrent)} vs ${fmtNum(reachPrior)}).`,
+        observation: obs,
         evidence,
-        materiality_score: score('traffic_audience', Math.abs(pct), volFactor),
+        materiality_score: score('traffic_audience', scoreMagnitude(pct), clamp(reachCurrent / (IG_MIN_REACH_FOR_SIGNAL * 5))),
         commercially_relevant: false,
         creatively_relevant: true,
       })
@@ -311,18 +379,17 @@ function organicIgSignals(data: BriefInputData): MaterialSignalCandidate[] {
       p.performance_vs_avg_pct >= IG_POST_OUTPERFORMANCE_PCT * 100 &&
       (p.reach ?? 0) >= IG_POST_OUTPERFORMANCE_MIN_REACH,
   )
-
   for (const post of outperformingPosts.slice(0, 2)) {
     candidates.push({
       id: `organic_ig_post_${post.published_at}`,
       source: 'organic_ig',
       category: 'creative_learning',
-      observation: `Instagram post published ${post.published_at} (${post.media_type}) reached ${fmtNum(post.reach ?? 0)}, ${post.performance_vs_avg_pct!.toFixed(0)}% above 7-day average. Caption: ${dataTag(post.caption_truncated ?? '')}`,
+      observation: `Instagram post ${post.published_at} (${post.media_type}) reached ${fmtNum(post.reach ?? 0)}, ${post.performance_vs_avg_pct!.toFixed(0)}% above 7-day average. Caption: ${dataTag(post.caption_truncated ?? '')}`,
       evidence: [
         {
-          metric: 'ig_post_reach',
-          current: post.reach ?? null,
-          prior: null,
+          metric:     'ig_post_reach',
+          current:    post.reach ?? null,
+          prior:      null,
           change_pct: post.performance_vs_avg_pct !== null ? post.performance_vs_avg_pct / 100 : null,
         },
       ],
@@ -344,56 +411,129 @@ function searchConsoleSignals(data: BriefInputData): MaterialSignalCandidate[] {
   const clicksPrior   = sc.clicks_prior_7d
   const impCurrent    = sc.impressions_7d
   const impPrior      = sc.impressions_prior_7d
+  const clicksOk      = clicksCurrent >= GSC_MIN_CLICKS_FOR_SIGNAL
+  const impOk         = impCurrent    >= GSC_MIN_IMPRESSIONS_FOR_SIGNAL
 
-  const clicksOk = clicksCurrent >= GSC_MIN_CLICKS_FOR_SIGNAL
-  const impOk    = impCurrent >= GSC_MIN_IMPRESSIONS_FOR_SIGNAL
+  // ── Movement candidate — strongest signal drives the headline
+  {
+    type MovingMetric = {
+      metric: string
+      label:  string
+      current: number
+      prior:   number
+      pct:     number | null
+      mag:     number
+    }
+    const moving: MovingMetric[] = []
 
-  if (!clicksOk && !impOk) return candidates
+    if (clicksOk && clicksPrior !== null) {
+      const pct = changePct(clicksCurrent, clicksPrior)
+      if (isMaterial(pct, GSC_MATERIAL_CHANGE_PCT)) {
+        moving.push({ metric: 'gsc_clicks_7d', label: 'clicks', current: clicksCurrent, prior: clicksPrior, pct, mag: scoreMagnitude(pct) })
+      }
+    }
+    if (impOk && impPrior !== null) {
+      const pct = changePct(impCurrent, impPrior)
+      if (isMaterial(pct, GSC_MATERIAL_CHANGE_PCT)) {
+        moving.push({ metric: 'gsc_impressions_7d', label: 'impressions', current: impCurrent, prior: impPrior, pct, mag: scoreMagnitude(pct) })
+      }
+    }
 
-  const evidence: SignalMetricEvidence[] = []
-  let dominated = false
-  let dominantPct = 0
+    const ctrCurrent = sc.ctr_7d
+    const ctrPrior   = sc.ctr_prior_7d
+    if (clicksOk && ctrCurrent !== null && ctrPrior !== null) {
+      const pct = changePct(ctrCurrent, ctrPrior)
+      if (isMaterial(pct, GSC_MATERIAL_CHANGE_PCT)) {
+        moving.push({ metric: 'gsc_ctr_7d', label: 'CTR', current: ctrCurrent, prior: ctrPrior, pct, mag: scoreMagnitude(pct) })
+      }
+    }
 
-  if (clicksOk && clicksPrior !== null) {
-    const pct = changePct(clicksCurrent, clicksPrior)
-    if (isMaterial(pct, GSC_MATERIAL_CHANGE_PCT)) {
-      evidence.push({ metric: 'gsc_clicks_7d', current: clicksCurrent, prior: clicksPrior, change_pct: pct })
-      dominated = true
-      dominantPct = pct
+    // Average position: lower = better. Use absolute delta, not %.
+    // Stored as null change_pct since fractional position change is misleading.
+    const posCurrent = sc.avg_position_7d
+    const posPrior   = sc.avg_position_prior_7d
+    if (
+      posCurrent !== null && posPrior !== null &&
+      impCurrent >= GSC_MIN_POSITION_IMPRESSIONS
+    ) {
+      const posDelta = posCurrent - posPrior // negative = improvement
+      if (Math.abs(posDelta) >= GSC_MATERIAL_POSITION_DELTA) {
+        // Magnitude: each position counts as ~0.15 relative impact, capped at 1.
+        moving.push({
+          metric: 'gsc_avg_position_7d',
+          label:  'average position',
+          current: posCurrent,
+          prior:   posPrior,
+          pct:     null,   // absolute delta — do not express as %
+          mag:     Math.min(Math.abs(posDelta) * 0.15, 1.0),
+        })
+      }
+    }
+
+    if (moving.length > 0) {
+      moving.sort((a, b) => b.mag - a.mag)
+      const s = moving[0]
+      const evidence: SignalMetricEvidence[] = moving.map(m => ({
+        metric: m.metric, current: m.current, prior: m.prior, change_pct: m.pct,
+      }))
+
+      let obs: string
+      if (s.metric === 'gsc_avg_position_7d') {
+        const delta = s.current - s.prior
+        const dir   = delta < 0 ? 'improved' : 'declined'
+        obs = `Organic search average position ${dir} by ${Math.abs(delta).toFixed(1)} positions vs prior 7 days (${s.current.toFixed(1)} vs ${s.prior.toFixed(1)}).`
+      } else {
+        const dir = s.pct === null || s.pct >= 0 ? 'up' : 'down'
+        obs = s.pct !== null
+          ? `Organic search ${s.label} ${dir} ${fmtPct(s.pct)} vs prior 7 days (${fmtNum(s.current)} vs ${fmtNum(s.prior)}).`
+          : `Organic search ${s.label} increased from 0 to ${fmtNum(s.current)}.`
+      }
+
+      const volFactor = clicksOk
+        ? clamp(clicksCurrent / (GSC_MIN_CLICKS_FOR_SIGNAL * 10))
+        : clamp(impCurrent    / (GSC_MIN_IMPRESSIONS_FOR_SIGNAL * 5))
+
+      candidates.push({
+        id: 'search_console_organic',
+        source: 'search_console',
+        category: 'seo_local_search',
+        observation: obs,
+        evidence,
+        materiality_score: score('seo_local_search', s.mag, volFactor),
+        commercially_relevant: true,
+        creatively_relevant: false,
+      })
     }
   }
 
-  if (impOk && impPrior !== null) {
-    const pct = changePct(impCurrent, impPrior)
-    if (isMaterial(pct, GSC_MATERIAL_CHANGE_PCT)) {
-      evidence.push({ metric: 'gsc_impressions_7d', current: impCurrent, prior: impPrior, change_pct: pct })
-      if (!dominated) { dominated = true; dominantPct = pct }
+  // ── Opportunity candidate: high-impression query with low CTR and middling position
+  {
+    const opQueries = sc.top_queries.filter(
+      q =>
+        q.impressions >= GSC_OPPORTUNITY_MIN_IMPRESSIONS &&
+        q.position    !== null &&
+        q.position    >  GSC_OPPORTUNITY_MAX_POSITION &&
+        q.ctr         <  GSC_OPPORTUNITY_MAX_CTR,
+    )
+    if (opQueries.length > 0) {
+      const top = opQueries[0]
+      const posLabel = top.position !== null ? top.position.toFixed(1) : 'unknown'
+      candidates.push({
+        id: 'search_console_opportunity',
+        source: 'search_console',
+        category: 'seo_local_search',
+        observation: `High-impression query at average position ${posLabel} with low CTR (${(top.ctr * 100).toFixed(1)}%): ${dataTag(top.query)} (${fmtNum(top.impressions)} impressions, ${top.clicks} clicks).`,
+        evidence: [
+          { metric: 'gsc_query_impressions', current: top.impressions, prior: null, change_pct: null },
+          { metric: 'gsc_query_ctr',         current: top.ctr,         prior: null, change_pct: null },
+          { metric: 'gsc_query_position',    current: top.position ?? 0, prior: null, change_pct: null },
+        ],
+        materiality_score: score('seo_local_search', clamp(top.impressions / (GSC_OPPORTUNITY_MIN_IMPRESSIONS * 5)), 0.5),
+        commercially_relevant: true,
+        creatively_relevant: true,
+      })
     }
   }
-
-  const ctrCurrent = sc.ctr_7d
-  const ctrPrior   = sc.ctr_prior_7d
-  if (ctrCurrent !== null && ctrPrior !== null && clicksOk) {
-    const pct = changePct(ctrCurrent, ctrPrior)
-    if (isMaterial(pct, GSC_MATERIAL_CHANGE_PCT)) {
-      evidence.push({ metric: 'gsc_ctr_7d', current: ctrCurrent, prior: ctrPrior, change_pct: pct })
-    }
-  }
-
-  if (evidence.length === 0) return candidates
-
-  const volFactor = clamp(clicksCurrent / (GSC_MIN_CLICKS_FOR_SIGNAL * 10))
-  const direction = dominantPct > 0 ? 'up' : 'down'
-  candidates.push({
-    id: 'search_console_organic',
-    source: 'search_console',
-    category: 'seo_local_search',
-    observation: `Organic search clicks ${direction} ${Math.abs(dominantPct * 100).toFixed(1)}% vs prior 7 days (${fmtNum(clicksCurrent)} vs ${fmtNum(clicksPrior ?? 0)}).`,
-    evidence,
-    materiality_score: score('seo_local_search', Math.abs(dominantPct), volFactor),
-    commercially_relevant: true,
-    creatively_relevant: false,
-  })
 
   return candidates
 }
@@ -403,45 +543,45 @@ function ga4Signals(data: BriefInputData): MaterialSignalCandidate[] {
   const ga4 = data.ga4
   if (!ga4) return candidates
 
-  const sessCurrent = ga4.sessions_7d
-  const sessPrior   = ga4.sessions_prior_7d
-
-  if (sessCurrent < GA4_MIN_SESSIONS_FOR_SIGNAL) return candidates
-  if (sessPrior === null) return candidates
-
-  const sessionsPct = changePct(sessCurrent, sessPrior)
-  if (!isMaterial(sessionsPct, GA4_MATERIAL_CHANGE_PCT)) return candidates
-
-  const evidence: SignalMetricEvidence[] = [
-    { metric: 'ga4_sessions_7d', current: sessCurrent, prior: sessPrior, change_pct: sessionsPct },
+  // ANY material movement in sessions / new users / page views →
+  // ONE combined candidate. Strongest mover drives the headline.
+  type Ga4Metric = { key: string; label: string; current: number; prior: number | null; minVolume: number }
+  const checks: Ga4Metric[] = [
+    { key: 'ga4_sessions_7d',   label: 'sessions',   current: ga4.sessions_7d,   prior: ga4.sessions_prior_7d,   minVolume: GA4_MIN_SESSIONS_FOR_SIGNAL },
+    { key: 'ga4_new_users_7d',  label: 'new users',  current: ga4.new_users_7d,  prior: ga4.new_users_prior_7d,  minVolume: GA4_MIN_NEW_USERS_FOR_SIGNAL },
+    { key: 'ga4_page_views_7d', label: 'page views', current: ga4.page_views_7d, prior: ga4.page_views_prior_7d, minVolume: GA4_MIN_PAGE_VIEWS_FOR_SIGNAL },
   ]
 
-  const nuCurrent = ga4.new_users_7d
-  const nuPrior   = ga4.new_users_prior_7d
-  if (nuPrior !== null) {
-    const nuPct = changePct(nuCurrent, nuPrior)
-    if (isMaterial(nuPct, GA4_MATERIAL_CHANGE_PCT)) {
-      evidence.push({ metric: 'ga4_new_users_7d', current: nuCurrent, prior: nuPrior, change_pct: nuPct })
+  const evidence: SignalMetricEvidence[] = []
+  type BestMetric = { key: string; label: string; current: number; prior: number; pct: number | null; mag: number }
+  let strongest: BestMetric | null = null
+
+  for (const c of checks) {
+    if (c.prior === null || c.current < c.minVolume) continue
+    const pct = changePct(c.current, c.prior)
+    if (!isMaterial(pct, GA4_MATERIAL_CHANGE_PCT)) continue
+    const mag = scoreMagnitude(pct)
+    evidence.push({ metric: c.key, current: c.current, prior: c.prior, change_pct: pct })
+    if (!strongest || mag > strongest.mag) {
+      strongest = { key: c.key, label: c.label, current: c.current, prior: c.prior, pct, mag }
     }
   }
 
-  const pvCurrent = ga4.page_views_7d
-  const pvPrior   = ga4.page_views_prior_7d
-  if (pvPrior !== null) {
-    const pvPct = changePct(pvCurrent, pvPrior)
-    if (isMaterial(pvPct, GA4_MATERIAL_CHANGE_PCT)) {
-      evidence.push({ metric: 'ga4_page_views_7d', current: pvCurrent, prior: pvPrior, change_pct: pvPct })
-    }
-  }
+  if (evidence.length === 0 || !strongest) return candidates
 
-  const volFactor = clamp(sessCurrent / (GA4_MIN_SESSIONS_FOR_SIGNAL * 10))
+  const dir       = strongest.pct === null || strongest.pct >= 0 ? 'up' : 'down'
+  const volFactor = clamp(strongest.current / (GA4_MIN_SESSIONS_FOR_SIGNAL * 10))
+  const obs = strongest.pct !== null
+    ? `Website ${strongest.label} ${dir} ${fmtPct(strongest.pct)} vs prior 7 days (${fmtNum(strongest.current)} vs ${fmtNum(strongest.prior)}).`
+    : `Website ${strongest.label} increased from 0 to ${fmtNum(strongest.current)}.`
+
   candidates.push({
-    id: 'ga4_sessions',
+    id: 'ga4_traffic',
     source: 'ga4',
     category: 'traffic_audience',
-    observation: `Website sessions ${sessionsPct > 0 ? 'up' : 'down'} ${Math.abs(sessionsPct * 100).toFixed(1)}% vs prior 7 days (${fmtNum(sessCurrent)} vs ${fmtNum(sessPrior)}).`,
+    observation: obs,
     evidence,
-    materiality_score: score('traffic_audience', Math.abs(sessionsPct), volFactor),
+    materiality_score: score('traffic_audience', strongest.mag, volFactor),
     commercially_relevant: true,
     creatively_relevant: false,
   })
@@ -454,63 +594,120 @@ function gbpPerformanceSignals(data: BriefInputData): MaterialSignalCandidate[] 
   const gbp = data.gbpPerformance
   if (!gbp) return candidates
 
-  // Aggregate current interactions for volume guard
-  const interactions = [
-    gbp.website_clicks_28d,
-    gbp.call_clicks_28d,
-    gbp.direction_requests_28d,
-  ].reduce<number>((sum, v) => sum + (v ?? 0), 0)
+  // "Interactions" = website_clicks + calls + direction_requests — NEVER impressions.
+  const interactions = (gbp.website_clicks_28d ?? 0) + (gbp.call_clicks_28d ?? 0) + (gbp.direction_requests_28d ?? 0)
+  const totalImpressions = (gbp.search_impressions_28d ?? 0) + (gbp.maps_impressions_28d ?? 0)
 
-  if (interactions < GBP_MIN_INTERACTIONS_FOR_SIGNAL) return candidates
+  const interactionVolOk = interactions    >= GBP_MIN_INTERACTIONS_FOR_SIGNAL
+  const impressionVolOk  = totalImpressions >= GBP_MIN_IMPRESSIONS_FOR_SIGNAL
 
-  const evidence: SignalMetricEvidence[] = []
-  let dominantPct = 0
+  // ── Period-over-period movement candidate
+  if (interactionVolOk || impressionVolOk) {
+    type GbpMetric = { key: string; label: string; current: number | null; prior: number | null; isImpression: boolean }
+    const allMetrics: GbpMetric[] = [
+      { key: 'gbp_search_impressions_28d', label: 'Search impressions',  current: gbp.search_impressions_28d, prior: gbp.search_impressions_prior_28d, isImpression: true },
+      { key: 'gbp_maps_impressions_28d',   label: 'Maps impressions',    current: gbp.maps_impressions_28d,   prior: gbp.maps_impressions_prior_28d,   isImpression: true },
+      { key: 'gbp_website_clicks_28d',     label: 'Website clicks',      current: gbp.website_clicks_28d,     prior: gbp.website_clicks_prior_28d,     isImpression: false },
+      { key: 'gbp_call_clicks_28d',        label: 'Calls',               current: gbp.call_clicks_28d,        prior: gbp.call_clicks_prior_28d,        isImpression: false },
+      { key: 'gbp_direction_requests_28d', label: 'Direction requests',  current: gbp.direction_requests_28d, prior: gbp.direction_requests_prior_28d, isImpression: false },
+    ]
 
-  const metrics: Array<[string, number | null, number | null]> = [
-    ['gbp_search_impressions_28d', gbp.search_impressions_28d, gbp.search_impressions_prior_28d],
-    ['gbp_maps_impressions_28d',   gbp.maps_impressions_28d,   gbp.maps_impressions_prior_28d],
-    ['gbp_website_clicks_28d',     gbp.website_clicks_28d,     gbp.website_clicks_prior_28d],
-    ['gbp_call_clicks_28d',        gbp.call_clicks_28d,        gbp.call_clicks_prior_28d],
-    ['gbp_direction_requests_28d', gbp.direction_requests_28d, gbp.direction_requests_prior_28d],
-  ]
+    type MovingMetric = { key: string; label: string; current: number; prior: number; pct: number | null; mag: number }
+    const moving: MovingMetric[] = []
 
-  for (const [metric, current, prior] of metrics) {
-    if (current === null || prior === null) continue
-    const pct = changePct(current, prior)
-    if (isMaterial(pct, GBP_MATERIAL_CHANGE_PCT)) {
-      evidence.push({ metric, current, prior, change_pct: pct })
-      if (dominantPct === 0) dominantPct = pct
+    for (const m of allMetrics) {
+      if (m.current === null || m.prior === null) continue
+      // Apply per-metric volume guard
+      if (m.isImpression && !impressionVolOk) continue
+      if (!m.isImpression && !interactionVolOk) continue
+
+      const pct = changePct(m.current, m.prior)
+      if (!isMaterial(pct, GBP_MATERIAL_CHANGE_PCT)) continue
+      moving.push({ key: m.key, label: m.label, current: m.current, prior: m.prior, pct, mag: scoreMagnitude(pct) })
+    }
+
+    if (moving.length > 0) {
+      moving.sort((a, b) => b.mag - a.mag)
+      const s = moving[0]
+      const dir = s.pct === null || s.pct >= 0 ? 'up' : 'down'
+      const obs = s.pct !== null
+        ? `Google Business Profile ${s.label} ${dir} ${fmtPct(s.pct)} vs prior 28-day period (${fmtNum(s.current)} vs ${fmtNum(s.prior)}).`
+        : `Google Business Profile ${s.label} increased from 0 to ${fmtNum(s.current)}.`
+
+      const strongestIsImpression = s.key.includes('impressions')
+      const volFactor = strongestIsImpression
+        ? clamp(totalImpressions / (GBP_MIN_IMPRESSIONS_FOR_SIGNAL  * 5))
+        : clamp(interactions     / (GBP_MIN_INTERACTIONS_FOR_SIGNAL * 5))
+
+      candidates.push({
+        id: 'gbp_performance',
+        source: 'gbp_performance',
+        category: 'seo_local_search',
+        observation: obs,
+        evidence: moving.map(m => ({ metric: m.key, current: m.current, prior: m.prior, change_pct: m.pct })),
+        materiality_score: score('seo_local_search', s.mag, volFactor),
+        commercially_relevant: true,
+        creatively_relevant: false,
+      })
     }
   }
 
-  if (evidence.length === 0) return candidates
+  // ── GBP keyword context candidate (independent of movement)
+  //    Surface top keyword(s) from the latest month as demand context.
+  //    Be honest: threshold impressions are labeled <N, not as exact counts.
+  const topKws = gbp.top_keywords.slice(0, 3)
+  if (topKws.length > 0 && gbp.keyword_month !== null) {
+    const topVolume = (topKws[0].impressions ?? topKws[0].impressionsThreshold ?? 0)
+    if (topVolume >= GBP_KEYWORD_MIN_IMPRESSIONS) {
+      const kwSummary = topKws.map(k => {
+        const imp = k.impressions !== null
+          ? `${fmtNum(k.impressions)} impressions`
+          : k.impressionsThreshold !== null
+            ? `<${fmtNum(k.impressionsThreshold)} impressions`
+            : 'impressions unavailable'
+        return `${dataTag(k.keyword)} (${imp})`
+      }).join('; ')
 
-  const volFactor = clamp(interactions / (GBP_MIN_INTERACTIONS_FOR_SIGNAL * 5))
-  const direction = dominantPct > 0 ? 'up' : 'down'
-  candidates.push({
-    id: 'gbp_performance',
-    source: 'gbp_performance',
-    category: 'seo_local_search',
-    observation: `Google Business Profile interactions ${direction} ${Math.abs(dominantPct * 100).toFixed(1)}% vs prior 28-day period.`,
-    evidence,
-    materiality_score: score('seo_local_search', Math.abs(dominantPct), volFactor),
-    commercially_relevant: true,
-    creatively_relevant: false,
-  })
+      candidates.push({
+        id: 'gbp_keyword_context',
+        source: 'gbp_performance',
+        category: 'seo_local_search',
+        observation: `Top Google search keywords driving GBP impressions (${gbp.keyword_month}): ${kwSummary}.`,
+        evidence: topKws.map(k => ({
+          metric:     'gbp_keyword_impressions',
+          current:    k.impressions ?? k.impressionsThreshold ?? null,
+          prior:      null,
+          change_pct: null,
+        })),
+        materiality_score: score('seo_local_search', 0.2, 0.4),
+        commercially_relevant: false,
+        creatively_relevant: true,
+      })
+    }
+  }
 
   return candidates
 }
 
 function dataHealthSignals(data: BriefInputData): MaterialSignalCandidate[] {
-  if (!data.signals.has_stale_critical_source) return []
+  // Collect stale sources: Meta sources come from deterministic signals;
+  // Google sources (google_ads, gsc, ga4) are checked directly from sourceFreshness.
+  const stale = new Set<string>(data.signals.stale_sources)
 
-  const stale = data.signals.stale_sources
+  const sf = data.sourceFreshness
+  if (!sf.google_ads.healthy) stale.add('google_ads')
+  if (!sf.gsc.healthy)        stale.add('gsc')
+  if (!sf.ga4.healthy)        stale.add('ga4')
+
+  if (stale.size === 0) return []
+
+  const staleList = [...stale]
   return [
     {
       id: 'data_health_stale_sources',
       source: 'data_health',
       category: 'data_health',
-      observation: `Critical data source(s) stale or failed: ${stale.join(', ')}. Brief data may be incomplete.`,
+      observation: `Critical data source(s) stale or failed: ${staleList.join(', ')}. Brief data may be incomplete.`,
       evidence: [],
       materiality_score: CATEGORY_BASE.data_health,
       commercially_relevant: false,
@@ -521,39 +718,18 @@ function dataHealthSignals(data: BriefInputData): MaterialSignalCandidate[] {
 
 // ─── Deduplication ────────────────────────────────────────────────────────────
 //
-// If two candidates share the same source + direction on overlapping metrics,
-// merge them: keep the higher-scored one and append the other's evidence items.
+// Same id → keep first (highest scored, since input is sorted descending).
 
 function deduplicateCandidates(candidates: MaterialSignalCandidate[]): MaterialSignalCandidate[] {
-  // Strategy: same id → deduplicate (keep first since they're sorted by score).
-  // Candidates from different sources are never merged.
-  const seen = new Set<string>()
+  const seen   = new Set<string>()
   const result: MaterialSignalCandidate[] = []
-
   for (const c of candidates) {
     if (!seen.has(c.id)) {
       seen.add(c.id)
       result.push(c)
     }
   }
-
   return result
-}
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 40)
-}
-
-function fmtNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return String(Math.round(n * 100) / 100)
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -569,7 +745,7 @@ export function buildMaterialSignals(data: BriefInputData): MaterialSignalCandid
     ...dataHealthSignals(data),
   ]
 
-  // Sort descending by materiality_score, then deduplicate, then cap at max.
+  // Sort descending by materiality_score, deduplicate, cap at max.
   const sorted = all.sort((a, b) => b.materiality_score - a.materiality_score)
   const deduped = deduplicateCandidates(sorted)
   return deduped.slice(0, MAX_SIGNAL_CANDIDATES)

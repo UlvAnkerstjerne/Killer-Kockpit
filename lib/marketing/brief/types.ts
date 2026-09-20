@@ -183,6 +183,7 @@ export interface GoogleAdsCampaignSummary {
   impressions_7d: number
   clicks_7d:      number
   top_results: Array<{
+    result_id:           string   // stable: conversion action resource name (e.g. 'customers/1/conversionActions/100')
     label:               string
     count:               number
     costPerResult:       number | null
