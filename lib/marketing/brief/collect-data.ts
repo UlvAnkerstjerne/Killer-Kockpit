@@ -1266,8 +1266,9 @@ type GbpKwRow = {
 }
 
 export function aggregateGbpPerformanceRows(
-  metricRows:  GbpMetricRow[],
-  keywordRows: GbpKwRow[],
+  metricRows:       GbpMetricRow[],
+  keywordRows:      GbpKwRow[],
+  priorMetricRows?: GbpMetricRow[],
 ): Omit<GbpPerformanceBriefData, never> {
   const rows = metricRows as Array<Record<string, unknown>>
 
@@ -1275,6 +1276,13 @@ export function aggregateGbpPerformanceRows(
   const mobileSearch  = sumIntRows(rows, 'impressions_mobile_search')
   const desktopMaps   = sumIntRows(rows, 'impressions_desktop_maps')
   const mobileMaps    = sumIntRows(rows, 'impressions_mobile_maps')
+
+  // Prior period aggregation
+  const priorRows = (priorMetricRows ?? []) as Array<Record<string, unknown>>
+  const priorDesktopSearch = sumIntRows(priorRows, 'impressions_desktop_search')
+  const priorMobileSearch  = sumIntRows(priorRows, 'impressions_mobile_search')
+  const priorDesktopMaps   = sumIntRows(priorRows, 'impressions_desktop_maps')
+  const priorMobileMaps    = sumIntRows(priorRows, 'impressions_mobile_maps')
 
   // Keyword aggregation — same logic as gbp-performance.ts
   const mostRecentMonth = keywordRows.length > 0 ? keywordRows[0].month.slice(0, 7) : null
@@ -1309,12 +1317,17 @@ export function aggregateGbpPerformanceRows(
     .slice(0, MAX_GBP_KEYWORDS)
 
   return {
-    search_impressions_28d: sumTwo(desktopSearch, mobileSearch),
-    maps_impressions_28d:   sumTwo(desktopMaps, mobileMaps),
-    website_clicks_28d:     sumIntRows(rows, 'website_clicks'),
-    call_clicks_28d:        sumIntRows(rows, 'call_clicks'),
-    direction_requests_28d: sumIntRows(rows, 'direction_requests'),
-    keyword_month:          mostRecentMonth,
+    search_impressions_28d:       sumTwo(desktopSearch, mobileSearch),
+    maps_impressions_28d:         sumTwo(desktopMaps, mobileMaps),
+    website_clicks_28d:           sumIntRows(rows, 'website_clicks'),
+    call_clicks_28d:              sumIntRows(rows, 'call_clicks'),
+    direction_requests_28d:       sumIntRows(rows, 'direction_requests'),
+    search_impressions_prior_28d: priorRows.length > 0 ? sumTwo(priorDesktopSearch, priorMobileSearch) : null,
+    maps_impressions_prior_28d:   priorRows.length > 0 ? sumTwo(priorDesktopMaps, priorMobileMaps) : null,
+    website_clicks_prior_28d:     priorRows.length > 0 ? sumIntRows(priorRows, 'website_clicks') : null,
+    call_clicks_prior_28d:        priorRows.length > 0 ? sumIntRows(priorRows, 'call_clicks') : null,
+    direction_requests_prior_28d: priorRows.length > 0 ? sumIntRows(priorRows, 'direction_requests') : null,
+    keyword_month:                mostRecentMonth,
     top_keywords,
   }
 }
@@ -1334,15 +1347,24 @@ export async function collectGbpPerformanceData(
   // both reference gbp_locations.id (NOT the canonical Google location_id).
   const gbpLocationIds = locationRows.map((l) => l.id as string)
   const windowStart  = subtractDays(yesterday, 27)   // 28 days inclusive
+  // Prior 28-day window: the 28 days immediately before the current window
+  const priorWindowEnd   = subtractDays(yesterday, 28)
+  const priorWindowStart = subtractDays(yesterday, 55)
 
-  // Fetch metrics and probe for the most recent keyword month in parallel.
-  // The probe uses a single-row ordered fetch to avoid loading all historical months.
-  const [{ data: metricsRaw }, { data: latestMonthRows }] = await Promise.all([
+  const GBP_METRICS_SELECT = 'location_id, impressions_desktop_search, impressions_mobile_search, impressions_desktop_maps, impressions_mobile_maps, website_clicks, call_clicks, direction_requests'
+
+  // Fetch current metrics, prior metrics, and the latest keyword month probe in parallel.
+  const [{ data: metricsRaw }, { data: priorMetricsRaw }, { data: latestMonthRows }] = await Promise.all([
     db.from('gbp_location_metrics')
-      .select('location_id, impressions_desktop_search, impressions_mobile_search, impressions_desktop_maps, impressions_mobile_maps, website_clicks, call_clicks, direction_requests')
+      .select(GBP_METRICS_SELECT)
       .in('location_id', gbpLocationIds)
       .gte('date', windowStart)
       .lte('date', yesterday),
+    db.from('gbp_location_metrics')
+      .select(GBP_METRICS_SELECT)
+      .in('location_id', gbpLocationIds)
+      .gte('date', priorWindowStart)
+      .lte('date', priorWindowEnd),
     db.from('gbp_search_keywords_monthly')
       .select('month')
       .in('location_id', gbpLocationIds)
@@ -1368,6 +1390,7 @@ export async function collectGbpPerformanceData(
   return aggregateGbpPerformanceRows(
     (metricsRaw ?? []) as GbpMetricRow[],
     keywordRows,
+    (priorMetricsRaw ?? []) as GbpMetricRow[],
   )
 }
 

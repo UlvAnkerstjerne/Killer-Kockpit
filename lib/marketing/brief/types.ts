@@ -237,12 +237,18 @@ export interface Ga4BriefData {
 // ─── GBP performance metrics ──────────────────────────────────────────────────
 
 export interface GbpPerformanceBriefData {
-  search_impressions_28d: number | null
-  maps_impressions_28d:   number | null
-  website_clicks_28d:     number | null
-  call_clicks_28d:        number | null
-  direction_requests_28d: number | null
-  keyword_month:          string | null
+  search_impressions_28d:       number | null
+  maps_impressions_28d:         number | null
+  website_clicks_28d:           number | null
+  call_clicks_28d:              number | null
+  direction_requests_28d:       number | null
+  // Prior 28-day window: [yesterday-55, yesterday-28] — for WoW-style comparison
+  search_impressions_prior_28d: number | null
+  maps_impressions_prior_28d:   number | null
+  website_clicks_prior_28d:     number | null
+  call_clicks_prior_28d:        number | null
+  direction_requests_prior_28d: number | null
+  keyword_month:                string | null
   top_keywords: Array<{ keyword: string; impressions: number | null; impressionsThreshold: number | null }>
 }
 
