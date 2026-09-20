@@ -387,14 +387,22 @@ async function runGenerationPipeline(briefDate: string): Promise<
     }
   }
 
-  const observations: BriefObservation[] = aiResult.output.observations.map((o) => ({
-    signal_id:          o.signal_id,
-    observation:        o.observation,
-    evidence:           o.evidence,
-    interpretation:     o.interpretation,
-    recommended_action: o.recommended_action,
-    creative_start:     o.creative_start,
-  }))
+  // Build a lookup so we can attach source/category from the candidate to the stored observation
+  const candidateById = new Map(candidates.map((c) => [c.id, c]))
+
+  const observations: BriefObservation[] = aiResult.output.observations.map((o) => {
+    const candidate = candidateById.get(o.signal_id)
+    return {
+      signal_id:          o.signal_id,
+      source:             candidate?.source,
+      category:           candidate?.category,
+      observation:        o.observation,
+      evidence:           o.evidence,
+      interpretation:     o.interpretation,
+      recommended_action: o.recommended_action,
+      creative_start:     o.creative_start,
+    }
+  })
 
   const sections  = assembleSections(data, aiResult.output, observations)
   const totalMs   = Date.now() - startMs

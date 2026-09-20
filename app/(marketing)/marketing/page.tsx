@@ -7,6 +7,7 @@ import RegenerateButton from './RegenerateButton'
 import type {
   MorningBriefRow,
   MorningBriefSections,
+  BriefObservation,
   BriefMetricRow,
   TrendPoint,
 } from '@/lib/marketing/brief/types'
@@ -28,46 +29,62 @@ function formatTime(isoTs: string): string {
   })
 }
 
+// ── Pure helpers (exported for tests) ─────────────────────────────────────────
+
+export const SOURCE_LABELS: Record<string, string> = {
+  meta_paid:       'Meta Paid',
+  google_ads:      'Google Ads',
+  organic_ig:      'Instagram',
+  search_console:  'Search',
+  ga4:             'Website',
+  gbp_performance: 'Google Business Profile',
+  data_health:     'Data Health',
+}
+
+/** Human-readable channel label for a signal source. */
+export function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source
+}
+
+/** Returns true when the observation should use a subdued/cautionary treatment. */
+export function categoryIsDataHealth(category: string): boolean {
+  return category === 'data_health'
+}
+
+/** Number of v2 observations stored in a sections payload. */
+export function observationCount(sections: MorningBriefSections | null | undefined): number {
+  return sections?.observations?.length ?? 0
+}
+
+/** Whether Needs Review block should be surfaced near the top of the page. */
+export function needsReviewVisible(total: number): boolean {
+  return total > 0
+}
+
 // ── Status config ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG = {
-  green: {
-    label: 'Green',
-    dot: 'bg-green-500',
-    pill: 'bg-green-100 text-green-700',
-    banner: 'bg-green-50 border-green-200',
-  },
-  amber: {
-    label: 'Amber',
-    dot: 'bg-amber-400',
-    pill: 'bg-amber-100 text-amber-700',
-    banner: 'bg-amber-50 border-amber-200',
-  },
-  red: {
-    label: 'Red',
-    dot: 'bg-red-500',
-    pill: 'bg-red-100 text-red-700',
-    banner: 'bg-red-50 border-red-200',
-  },
+  green: { label: 'Green', dot: 'bg-green-500',  pill: 'bg-kk-good-bg text-kk-good' },
+  amber: { label: 'Amber', dot: 'bg-amber-400',  pill: 'bg-kk-warn-bg text-kk-warn' },
+  red:   { label: 'Red',   dot: 'bg-red-500',    pill: 'bg-kk-bad-bg text-kk-bad'  },
 } as const
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
-function IconCreditCard() {
+function IconWarning() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="1.5" y="4" width="15" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M1.5 8h15" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M4.5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path d="M7 1.5 13.5 13H0.5L7 1.5Z" fill="currentColor"/>
+      <path d="M7 5.5v3" stroke="white" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
+      <circle cx="7" cy="10.8" r="0.65" fill="white"/>
     </svg>
   )
 }
 
-function IconEye() {
+function IconChevronDown() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M1.5 9C1.5 9 4.5 4.5 9 4.5S16.5 9 16.5 9 13.5 13.5 9 13.5 1.5 9 1.5 9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-      <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
@@ -90,61 +107,41 @@ function IconFacebook() {
   )
 }
 
-function IconStore() {
+function IconCreditCard() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M2 8V15.5H16V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M1.5 8H16.5M3 3H15L16.5 8H1.5L3 3Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <rect x="6.5" y="11" width="5" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="1.5" y="4" width="15" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M1.5 8h15" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M4.5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   )
 }
 
-function IconCalendar() {
+function IconEye() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="2.5" y="3.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M2.5 7.5h13" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M6 2v3M12 2v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M5.5 11h1.5M9 11h1.5M12.5 11h0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M1.5 9C1.5 9 4.5 4.5 9 4.5S16.5 9 16.5 9 13.5 13.5 9 13.5 1.5 9 1.5 9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
   )
 }
 
-function IconClipboard() {
+// ── StaleBanner ───────────────────────────────────────────────────────────────
+
+function StaleBanner({ briefDate, reason }: { briefDate: string; reason: string }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="3.5" y="4" width="11" height="12.5" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M6.5 4V3a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 .5.5v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M6.5 9h5M6.5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 bg-kk-warn-bg border border-amber-200 rounded-xl text-xs text-kk-warn">
+      <span className="font-semibold shrink-0">⚠ Showing brief from {formatDate(briefDate)}</span>
+      <span className="opacity-80">{reason}</span>
+    </div>
   )
 }
 
-function IconInfo() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.25"/>
-      <path d="M7 6.5v4" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
-      <circle cx="7" cy="4.5" r="0.6" fill="currentColor"/>
-    </svg>
-  )
-}
+// ── StatusStrip ───────────────────────────────────────────────────────────────
+// Compact: status pill + reason inline + summary paragraph below.
+// No large colored background — this is a brief, not a dashboard banner.
 
-function IconWarning() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <path d="M7 1.5 13.5 13H0.5L7 1.5Z" fill="currentColor"/>
-      <path d="M7 5.5v3" stroke="white" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
-      <circle cx="7" cy="10.8" r="0.65" fill="white"/>
-    </svg>
-  )
-}
-
-// ── StatusBanner ──────────────────────────────────────────────────────────────
-// Warm tinted bg per status, compact pill left, summary text right.
-
-function StatusBanner({
+function StatusStrip({
   status, reason, summary,
 }: {
   status: 'green' | 'amber' | 'red'
@@ -153,23 +150,220 @@ function StatusBanner({
 }) {
   const cfg = STATUS_CFG[status]
   return (
-    <div className={`border rounded-xl px-6 py-3 flex items-start gap-5 ${cfg.banner}`}>
-      <span className={`mt-px shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${cfg.pill}`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
-        {cfg.label}
-      </span>
-      <p className="text-[13px] text-kk-ink/80 leading-snug">{summary || reason}</p>
+    <div>
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <span className={`inline-flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.pill}`}>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} aria-hidden="true" />
+          {cfg.label}
+        </span>
+        {reason && (
+          <span className="text-sm text-kk-ink leading-snug">{reason}</span>
+        )}
+      </div>
+      {summary && (
+        <p className="mt-2 text-[15px] text-kk-ink leading-relaxed">{summary}</p>
+      )}
     </div>
   )
 }
 
-// ── Sparkline ─────────────────────────────────────────────────────────────────
-// Catmull-Rom smooth polyline rendered as cubic Bezier SVG path.
-// No axes, no labels, no external dependencies.
+// ── NeedsReviewBlock ──────────────────────────────────────────────────────────
+// Surfaced near the top of the brief when there is actionable review work.
+
+function NeedsReviewBlock({ needsReview }: { needsReview: MorningBriefSections['needs_review'] }) {
+  if (!needsReviewVisible(needsReview.total)) return null
+  return (
+    <div className="flex items-start justify-between gap-4 px-4 py-3 border-l-2 border-kk-brand bg-kk-bad-bg rounded-r-xl">
+      <div className="min-w-0">
+        <div className="text-xs font-bold tracking-[0.08em] uppercase text-kk-brand mb-1">
+          Needs Review — {needsReview.total} item{needsReview.total !== 1 ? 's' : ''} awaiting approval
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+          {needsReview.items.map((item, i) => (
+            <span key={i} className="text-xs text-kk-muted">
+              {item.count} {item.label}
+            </span>
+          ))}
+        </div>
+      </div>
+      <a
+        href="/marketing/needs-review"
+        className="shrink-0 text-xs font-semibold text-kk-brand hover:underline whitespace-nowrap"
+      >
+        Review all →
+      </a>
+    </div>
+  )
+}
+
+// ── ObservationItem ───────────────────────────────────────────────────────────
+// Editorial numbered observation. data_health observations use quieter treatment.
+
+function ObservationItem({
+  obs,
+  index,
+  isLast,
+}: {
+  obs: BriefObservation
+  index: number
+  isLast: boolean
+}) {
+  // data_health observations signal data quality concerns, not marketing actions
+  const isDataHealth = categoryIsDataHealth(obs.category ?? '')
+  const num = index < 9 ? `0${index + 1}` : `${index + 1}`
+  const label = obs.source ? sourceLabel(obs.source) : null
+
+  return (
+    <div
+      data-observation-index={index}
+      data-is-data-health={isDataHealth ? 'true' : undefined}
+    >
+      {/* Number + source label row */}
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <span className={`text-[11px] font-bold tabular-nums tracking-widest ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted/40'}`}>
+          {num}
+        </span>
+        {label && (
+          <span className={`text-[10px] font-bold tracking-[0.1em] uppercase shrink-0 ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
+            {label}
+          </span>
+        )}
+      </div>
+
+      {/* Observation headline */}
+      <p className={`text-base leading-snug mb-2 ${
+        isDataHealth
+          ? 'text-kk-muted font-normal'
+          : 'text-kk-ink font-semibold'
+      }`}>
+        {obs.observation}
+      </p>
+
+      {/* Evidence */}
+      <p className={`text-xs leading-relaxed mb-3 ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
+        <span className="font-medium">Evidence:</span> {obs.evidence}
+      </p>
+
+      {/* Interpretation */}
+      {!isDataHealth && (
+        <p className="text-[13px] text-kk-ink/80 leading-relaxed mb-4">
+          {obs.interpretation}
+        </p>
+      )}
+      {isDataHealth && (
+        <p className="text-[13px] text-kk-muted leading-relaxed mb-3 italic">
+          {obs.interpretation}
+        </p>
+      )}
+
+      {/* Recommended action */}
+      {!isDataHealth && (
+        <div className="mb-3">
+          <span className="text-[10px] font-bold tracking-[0.1em] uppercase text-kk-brand block mb-1">
+            Next step
+          </span>
+          <p className="text-[13px] text-kk-ink leading-relaxed">{obs.recommended_action}</p>
+        </div>
+      )}
+
+      {/* Creative start — only when non-null */}
+      {!isDataHealth && obs.creative_start && (
+        <div className="mt-3 pl-3 border-l border-kk-line">
+          <span className="text-[10px] font-bold tracking-[0.1em] uppercase text-kk-muted block mb-1">
+            Worth testing
+          </span>
+          <p className="text-[13px] text-kk-muted italic leading-relaxed">{obs.creative_start}</p>
+        </div>
+      )}
+
+      {/* Divider between items */}
+      {!isLast && <hr className="mt-6 border-kk-line" />}
+    </div>
+  )
+}
+
+// ── WhatMattersTodaySection ───────────────────────────────────────────────────
+
+function WhatMattersTodaySection({ observations }: { observations: BriefObservation[] }) {
+  return (
+    <div>
+      <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-5">
+        What matters today
+      </h2>
+      <div className="space-y-6">
+        {observations.map((obs, i) => (
+          <ObservationItem
+            key={obs.signal_id}
+            obs={obs}
+            index={i}
+            isLast={i === observations.length - 1}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Campaign table (legacy detail) ────────────────────────────────────────────
+
+type CampaignSummary = MorningBriefSections['paid']['active_campaign_summaries'][number]
+
+function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
+  if (campaigns.length === 0) return null
+  return (
+    <div className="rounded-xl border border-kk-line overflow-hidden mt-3">
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 bg-kk-soft border-b border-kk-line">
+        <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-kk-muted">Campaign</span>
+        <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">Goal</span>
+        <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">Yesterday</span>
+        <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">7 days</span>
+      </div>
+      {campaigns.map((c, i) => (
+        <div
+          key={i}
+          className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-4 py-2 border-t border-kk-line ${c.anomaly_flag ? 'bg-kk-warn-bg' : ''}`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {c.anomaly_flag ? (
+              <span className="shrink-0 text-kk-warn"><IconWarning /></span>
+            ) : (
+              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-kk-line" />
+            )}
+            <span className={`text-xs truncate ${c.anomaly_flag ? 'text-kk-ink font-medium' : 'text-kk-ink'}`}>{c.name}</span>
+          </div>
+          <span className="text-xs tabular-nums shrink-0 text-kk-muted text-right">{c.goal_label ?? '—'}</span>
+          <span className={`text-xs tabular-nums shrink-0 text-right ${c.anomaly_flag ? 'text-kk-warn font-medium' : 'text-kk-muted'}`}>{c.result_yesterday ?? '—'}</span>
+          <span className={`text-xs tabular-nums shrink-0 text-right ${c.anomaly_flag ? 'text-kk-warn font-medium' : 'text-kk-muted'}`}>{c.result_7d ?? '—'}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Platform metrics (legacy detail) ─────────────────────────────────────────
+
+function PlatformMetrics({ metrics }: { metrics: BriefMetricRow[] }) {
+  if (metrics.length === 0) return <p className="text-xs text-kk-muted py-1">No data available.</p>
+  return (
+    <div className="flex flex-wrap gap-x-6 gap-y-2 pt-2">
+      {metrics.map((m, i) => (
+        <div key={i} className="min-w-0">
+          <div className="text-[10px] text-kk-muted mb-0.5">{m.label}</div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-xl font-bold tabular-nums leading-none ${m.highlight ? 'text-kk-warn' : 'text-kk-ink'}`}>{m.value}</span>
+            {m.change && <span className="text-xs text-kk-muted">{m.change}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Sparkline (legacy detail) ─────────────────────────────────────────────────
 
 function Sparkline({ points, stroke }: { points: TrendPoint[]; stroke: string }) {
   if (points.length < 2) return null
-  const W = 96, H = 36, pad = 3
+  const W = 80, H = 28, pad = 3
   const values = points.map((p) => p.value)
   const min = Math.min(...values)
   const max = Math.max(...values)
@@ -192,16 +386,155 @@ function Sparkline({ points, stroke }: { points: TrendPoint[]; stroke: string })
     d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`
   }
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none" aria-hidden="true" className="shrink-0 opacity-80">
-      <path d={d} stroke={stroke} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none" aria-hidden="true" className="opacity-70">
+      <path d={d} stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
 
-// ── KPI cards ─────────────────────────────────────────────────────────────────
-// Icon + label on same row at top; large number below; change text + sparkline at bottom.
+// ── DetailsSection ────────────────────────────────────────────────────────────
+// Secondary section — visually subordinate. Uses native <details> so no JS required.
 
-function KpiCard({
+function DetailsSection({ sections }: { sections: MorningBriefSections }) {
+  const { paid, organic, gbp } = sections
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
+        Details
+      </h2>
+
+      {/* Paid */}
+      <details className="group border border-kk-line rounded-xl overflow-hidden">
+        <summary className="flex items-center justify-between px-4 py-3 cursor-pointer list-none bg-kk-soft hover:bg-kk-line/40 select-none">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-kk-ink">Paid</span>
+            {paid.anomalies.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-kk-warn-bg text-kk-warn">
+                {paid.anomalies.length} anomal{paid.anomalies.length === 1 ? 'y' : 'ies'}
+              </span>
+            )}
+          </div>
+          <span className="text-kk-muted transition-transform group-open:rotate-180"><IconChevronDown /></span>
+        </summary>
+        <div className="border-t border-kk-line px-4 py-4 space-y-3">
+          <p className="text-xs text-kk-muted leading-relaxed">{paid.assessment}</p>
+          {paid.anomalies.length > 0 && (
+            <div className="space-y-1">
+              {paid.anomalies.map((a, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-kk-warn">
+                  <span className="shrink-0 mt-0.5"><IconWarning /></span>
+                  <span>{a}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {paid.active_campaign_summaries.length > 0 && (
+            <CampaignTable campaigns={paid.active_campaign_summaries} />
+          )}
+          <a href="/marketing/paid" className="text-xs font-medium text-kk-brand hover:underline">
+            View all campaigns →
+          </a>
+        </div>
+      </details>
+
+      {/* Organic */}
+      <details className="group border border-kk-line rounded-xl overflow-hidden">
+        <summary className="flex items-center justify-between px-4 py-3 cursor-pointer list-none bg-kk-soft hover:bg-kk-line/40 select-none">
+          <span className="text-sm font-semibold text-kk-ink">Organic</span>
+          <span className="text-kk-muted transition-transform group-open:rotate-180"><IconChevronDown /></span>
+        </summary>
+        <div className="border-t border-kk-line px-4 py-4 space-y-4">
+          <p className="text-xs text-kk-muted leading-relaxed">{organic.assessment}</p>
+
+          {/* Instagram */}
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-kk-muted"><IconInstagram /></span>
+              <span className="text-xs font-semibold text-kk-ink">Instagram</span>
+            </div>
+            <PlatformMetrics metrics={organic.ig.metrics} />
+            {organic.ig.notable_posts.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {organic.ig.notable_posts.map((p, i) => (
+                  <div key={i} className="flex items-baseline gap-2 text-xs text-kk-muted">
+                    <span className="shrink-0">{p.media_type} {p.published_at.slice(0, 10)}</span>
+                    {p.reach != null && <span>reach {p.reach.toLocaleString()}</span>}
+                    {p.performance_label && <span className="font-medium">{p.performance_label}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Facebook */}
+          {organic.fb.available && organic.fb.metrics.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-kk-muted"><IconFacebook /></span>
+                <span className="text-xs font-semibold text-kk-ink">Facebook</span>
+              </div>
+              <PlatformMetrics metrics={organic.fb.metrics} />
+            </div>
+          )}
+
+          <a href="/marketing/organic" className="text-xs font-medium text-kk-brand hover:underline">
+            View organic analytics →
+          </a>
+        </div>
+      </details>
+
+      {/* Google Business Profile */}
+      <details className="group border border-kk-line rounded-xl overflow-hidden">
+        <summary className="flex items-center justify-between px-4 py-3 cursor-pointer list-none bg-kk-soft hover:bg-kk-line/40 select-none">
+          <span className="text-sm font-semibold text-kk-ink">Google Business Profile</span>
+          <span className="text-kk-muted transition-transform group-open:rotate-180"><IconChevronDown /></span>
+        </summary>
+        <div className="border-t border-kk-line px-4 py-4 space-y-2">
+          {gbp.integration_kind !== 'connected' && (
+            <p className="text-xs text-kk-muted">
+              {gbp.integration_kind === 'pending_approval'
+                ? 'API approval pending — no GBP data available yet.'
+                : 'Connected but sync has not yet run.'}
+            </p>
+          )}
+          {gbp.assessment && (
+            <p className="text-xs text-kk-muted leading-relaxed">{gbp.assessment}</p>
+          )}
+          {gbp.integration_kind === 'connected' && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1.5 pt-1">
+              {gbp.new_reviews_yesterday != null && (
+                <div>
+                  <div className="text-[10px] text-kk-muted">New reviews yesterday</div>
+                  <div className="text-sm font-bold tabular-nums text-kk-ink">{gbp.new_reviews_yesterday}</div>
+                </div>
+              )}
+              {gbp.avg_star_rating_7d != null && (
+                <div>
+                  <div className="text-[10px] text-kk-muted">Avg rating (7d)</div>
+                  <div className="text-sm font-bold tabular-nums text-kk-ink">{gbp.avg_star_rating_7d.toFixed(1)} ★</div>
+                </div>
+              )}
+              {gbp.pending_reply_count > 0 && (
+                <div>
+                  <div className="text-[10px] text-kk-muted">Pending replies</div>
+                  <div className="text-sm font-bold tabular-nums text-kk-brand">{gbp.pending_reply_count}</div>
+                </div>
+              )}
+            </div>
+          )}
+          <a href="/marketing/google-business-profile" className="text-xs font-medium text-kk-brand hover:underline">
+            View GBP page →
+          </a>
+        </div>
+      </details>
+    </div>
+  )
+}
+
+// ── LegacyKpiStrip (v1 backward compat) ──────────────────────────────────────
+
+function LegacyKpiCard({
   metric, icon, iconBg, iconColor, sparkColor,
 }: {
   metric: BriefMetricRow
@@ -218,13 +551,11 @@ function KpiCard({
         </div>
         <span className="text-xs text-kk-muted leading-tight">{metric.label}</span>
       </div>
-      <div className={`text-[32px] font-bold tabular-nums leading-none tracking-tight mt-2 ${metric.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
+      <div className={`text-[32px] font-bold tabular-nums leading-none tracking-tight mt-2 ${metric.highlight ? 'text-kk-warn' : 'text-kk-ink'}`}>
         {metric.value}
       </div>
       <div className="flex items-end justify-between mt-auto pt-2">
-        <div className="text-xs text-kk-muted leading-none">
-          {metric.change ?? ''}
-        </div>
+        <div className="text-xs text-kk-muted leading-none">{metric.change ?? ''}</div>
         {metric.trend && metric.trend.length >= 2 && (
           <Sparkline points={metric.trend} stroke={sparkColor} />
         )}
@@ -233,281 +564,180 @@ function KpiCard({
   )
 }
 
-function KpiStrip({ sections }: { sections: MorningBriefSections }) {
+function LegacyKpiStrip({ sections }: { sections: MorningBriefSections }) {
   type Slot = { metric: BriefMetricRow; icon: React.ReactNode; iconBg: string; iconColor: string; sparkColor: string }
   const candidates: Array<Slot | null> = [
     sections.paid.metrics[0]
-      ? { metric: sections.paid.metrics[0], icon: <IconCreditCard />, iconBg: 'bg-green-100', iconColor: 'text-green-700', sparkColor: '#22c55e' }
+      ? { metric: sections.paid.metrics[0], icon: <IconCreditCard />, iconBg: 'bg-kk-good-bg', iconColor: 'text-kk-good', sparkColor: '#2f6d4c' }
       : null,
     sections.paid.metrics[1]
-      ? { metric: sections.paid.metrics[1], icon: <IconEye />, iconBg: 'bg-violet-100', iconColor: 'text-violet-700', sparkColor: '#8b5cf6' }
+      ? { metric: sections.paid.metrics[1], icon: <IconEye />, iconBg: 'bg-kk-soft', iconColor: 'text-kk-muted', sparkColor: '#8D795F' }
       : null,
     sections.organic.ig.metrics[0]
-      ? { metric: sections.organic.ig.metrics[0], icon: <IconInstagram />, iconBg: 'bg-pink-100', iconColor: 'text-pink-600', sparkColor: '#ec4899' }
+      ? { metric: sections.organic.ig.metrics[0], icon: <IconInstagram />, iconBg: 'bg-kk-soft', iconColor: 'text-kk-muted', sparkColor: '#8D795F' }
       : null,
     sections.organic.fb.metrics[0]
-      ? { metric: sections.organic.fb.metrics[0], icon: <IconFacebook />, iconBg: 'bg-blue-100', iconColor: 'text-blue-700', sparkColor: '#3b82f6' }
+      ? { metric: sections.organic.fb.metrics[0], icon: <IconFacebook />, iconBg: 'bg-kk-soft', iconColor: 'text-kk-muted', sparkColor: '#B7A486' }
       : null,
   ]
   const slots = candidates.filter((s): s is Slot => s !== null)
   if (slots.length === 0) return null
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {slots.map((s, i) => <KpiCard key={i} {...s} />)}
+      {slots.map((s, i) => <LegacyKpiCard key={i} {...s} />)}
     </div>
   )
 }
 
-// ── Campaign table ────────────────────────────────────────────────────────────
-// Bordered container with header row + border-t-separated data rows.
+// ── LegacyBriefContent ────────────────────────────────────────────────────────
+// Rendered when a brief has no observations (old v1 briefs). Keeps the existing
+// dashboard layout intact — no data is lost.
 
-type CampaignSummary = MorningBriefSections['paid']['active_campaign_summaries'][number]
-
-function CampaignTable({ campaigns }: { campaigns: CampaignSummary[] }) {
-  if (campaigns.length === 0) return null
+function LegacyBriefContent({ sections }: { sections: MorningBriefSections }) {
   return (
-    <div className="rounded-xl border border-kk-line overflow-hidden">
-      {/* header row */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 bg-kk-soft border-b border-kk-line">
-        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">Campaign</span>
-        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">Goal</span>
-        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">Yesterday</span>
-        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted text-right">7 days</span>
-      </div>
-      {/* data rows */}
-      {campaigns.map((c, i) => (
-        <div
-          key={i}
-          className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-4 py-2.5 border-t border-kk-line ${
-            c.anomaly_flag ? 'bg-amber-50' : ''
-          }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {c.anomaly_flag ? (
-              <span className="shrink-0 text-amber-500"><IconWarning /></span>
-            ) : (
-              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-kk-line/60" />
-            )}
-            <span className={`text-sm truncate ${c.anomaly_flag ? 'text-kk-ink font-medium' : 'text-kk-ink'}`}>{c.name}</span>
+    <div className="space-y-4" data-legacy-layout="true">
+      <LegacyKpiStrip sections={sections} />
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
+        {/* Left column */}
+        <div className="space-y-4">
+          {/* Paid */}
+          <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+            <div className="px-6 pt-5 pb-5">
+              <h2 className="text-xl font-bold text-kk-ink mb-2">Paid</h2>
+              <p className="text-[13px] text-kk-muted leading-snug mb-3">{sections.paid.assessment}</p>
+              {sections.paid.anomalies.length > 0 && (
+                <div className="space-y-1 mb-4">
+                  {sections.paid.anomalies.map((a, i) => (
+                    <div key={i} className="flex items-start gap-2 px-3 py-1.5 bg-kk-warn-bg border border-amber-200 rounded-lg">
+                      <span className="shrink-0 mt-[3px] w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span className="text-[11px] text-kk-warn leading-snug">{a}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {sections.paid.active_campaign_summaries.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-kk-ink mb-2">Active campaigns</h3>
+                  <CampaignTable campaigns={sections.paid.active_campaign_summaries} />
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-3 border-t border-kk-line">
+              <a href="/marketing/paid" className="text-sm font-medium text-kk-brand hover:underline">View all campaigns →</a>
+            </div>
           </div>
-          <span className="text-sm tabular-nums shrink-0 text-kk-muted text-right">
-            {c.goal_label ?? '—'}
-          </span>
-          <span className={`text-sm tabular-nums shrink-0 text-right ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
-            {c.result_yesterday ?? '—'}
-          </span>
-          <span className={`text-sm tabular-nums shrink-0 text-right ${c.anomaly_flag ? 'text-amber-700 font-medium' : 'text-kk-muted'}`}>
-            {c.result_7d ?? '—'}
-          </span>
+          {/* GBP */}
+          <div className="bg-kk-panel border border-kk-line rounded-2xl px-5 py-5">
+            <h2 className="text-xl font-bold text-kk-ink mb-2">Google Business Profile</h2>
+            {sections.gbp.assessment
+              ? <p className="text-[13px] text-kk-muted leading-snug">{sections.gbp.assessment}</p>
+              : <p className="text-[13px] text-kk-muted">{sections.gbp.integration_kind === 'pending_approval' ? 'API approval pending.' : 'Not yet connected.'}</p>
+            }
+            <div className="mt-3">
+              <a href="/marketing/google-business-profile" className="text-sm font-medium text-kk-brand hover:underline">View GBP →</a>
+            </div>
+          </div>
         </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Paid card ─────────────────────────────────────────────────────────────────
-
-function PaidCard({ paid }: { paid: MorningBriefSections['paid'] }) {
-  return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-      <div className="px-6 pt-5 pb-5">
-        <div className="flex items-center gap-1.5 mb-2">
-          <h2 className="text-xl font-bold text-kk-ink">Paid</h2>
-          <span className="text-kk-muted"><IconInfo /></span>
-        </div>
-        <p className="text-[13px] text-kk-muted leading-snug mb-3">{paid.assessment}</p>
-
-        {paid.anomalies.length > 0 && (
-          <div className="space-y-1 mb-4">
-            {paid.anomalies.map((a, i) => (
-              <div key={i} className="flex items-start gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
-                <span className="shrink-0 mt-[3px] w-1.5 h-1.5 rounded-full bg-amber-400" />
-                <span className="text-[11px] text-amber-800 leading-snug">{a}</span>
+        {/* Right column */}
+        <div className="space-y-4">
+          {/* Organic */}
+          <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+            <div className="px-6 pt-5 pb-4">
+              <h2 className="text-xl font-bold text-kk-ink mb-2">Organic</h2>
+              <p className="text-[13px] text-kk-muted leading-snug mb-3">{sections.organic.assessment}</p>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-kk-muted"><IconInstagram /></span>
+                <span className="text-xs font-semibold text-kk-ink">Instagram</span>
               </div>
-            ))}
+              <PlatformMetrics metrics={sections.organic.ig.metrics} />
+              {sections.organic.fb.available && (
+                <>
+                  <div className="flex items-center gap-2 mt-4 mb-1">
+                    <span className="text-kk-muted"><IconFacebook /></span>
+                    <span className="text-xs font-semibold text-kk-ink">Facebook</span>
+                  </div>
+                  <PlatformMetrics metrics={sections.organic.fb.metrics} />
+                </>
+              )}
+            </div>
+            <div className="px-6 py-3 border-t border-kk-line">
+              <a href="/marketing/organic" className="text-sm font-medium text-kk-brand hover:underline">View organic analytics →</a>
+            </div>
           </div>
-        )}
-
-        {paid.active_campaign_summaries.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium text-kk-ink mb-2">Active campaigns</h3>
-            <CampaignTable campaigns={paid.active_campaign_summaries} />
-          </div>
-        )}
-      </div>
-
-      <div className="px-6 py-3 border-t border-kk-line">
-        <a href="/marketing/paid" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
-          View all campaigns →
-        </a>
-      </div>
-    </div>
-  )
-}
-
-// ── GBP locations ─────────────────────────────────────────────────────────────
-// Canonical 8 Killer Kebab locations. When per-location review data is available
-// from the GBP API, replace the "—" placeholders with real counts.
-const GBP_LOCATIONS = [
-  'Borgergade',
-  'Vesterbro',
-  'Christianshavn',
-  'Fisketorvet',
-  'Frederiksberg',
-  'Nørrebro',
-  'Parken',
-  'CPH Airport',
-] as const
-
-// ── GBP card ──────────────────────────────────────────────────────────────────
-
-function GbpCard({ gbp }: { gbp: MorningBriefSections['gbp'] }) {
-  const isPending = gbp.integration_kind === 'pending_approval' || gbp.integration_kind === 'connected_no_sync'
-
-  return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-      {/* Header */}
-      <div className="flex items-start gap-3 px-5 pt-5 pb-4">
-        <div className="shrink-0 w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center mt-0.5">
-          <IconStore />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm font-semibold text-kk-ink">Google Business Profile</span>
-            <span className="text-kk-muted"><IconInfo /></span>
-          </div>
-          {isPending && (
-            <p className="text-xs text-kk-muted mt-0.5">
-              {gbp.integration_kind === 'pending_approval' ? 'API approval pending' : 'Connected — awaiting first sync'}
-            </p>
+          {/* Needs Review */}
+          {needsReviewVisible(sections.needs_review.total) && (
+            <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
+              <h2 className="text-sm font-semibold text-kk-ink mb-3">Needs Review</h2>
+              <div className="space-y-2 mb-3">
+                {sections.needs_review.items.map((item, i) => (
+                  <div key={i} className="flex items-baseline justify-between gap-3">
+                    <span className="text-xs text-kk-muted">{item.label}</span>
+                    <span className="text-sm font-semibold tabular-nums text-kk-ink">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+              <a href="/marketing/needs-review" className="text-sm text-kk-brand hover:underline">
+                Review all {sections.needs_review.total} →
+              </a>
+            </div>
           )}
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* Per-location new-reviews table */}
-      <div className="border-t border-kk-line">
-        <div className="grid grid-cols-[1fr_auto_auto] px-5 py-2 bg-kk-soft border-b border-kk-line">
-          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">Store</span>
-          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted w-20 text-right">Yesterday</span>
-          <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted w-14 text-right">7 days</span>
-        </div>
-        {GBP_LOCATIONS.map((store, i) => (
-          <div key={store} className={`grid grid-cols-[1fr_auto_auto] items-center px-5 py-2${i > 0 ? ' border-t border-kk-line' : ''}`}>
-            <span className="text-sm text-kk-ink">{store}</span>
-            <span className="text-sm tabular-nums text-kk-muted w-20 text-right">—</span>
-            <span className="text-sm tabular-nums text-kk-muted w-14 text-right">—</span>
-          </div>
-        ))}
-      </div>
+// ── MorningBriefContent ───────────────────────────────────────────────────────
+// Dispatches between v2 (observations) and v1 (legacy) layouts.
 
-      {/* Footer — link to full GBP page when connected with pending replies */}
-      {gbp.integration_kind === 'connected' && gbp.pending_reply_count > 0 && (
-        <div className="px-5 py-3 border-t border-kk-line">
-          <a href="/marketing/google-business-profile" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
-            {gbp.pending_reply_count} {gbp.pending_reply_count === 1 ? 'reply' : 'replies'} awaiting approval →
-          </a>
-        </div>
+function MorningBriefContent({
+  brief, isStale, staleReason,
+}: {
+  brief: MorningBriefRow
+  isStale?: boolean
+  staleReason?: string
+}) {
+  const sections = brief.sections_json
+  const hasV2 = observationCount(sections) > 0
+
+  return (
+    <div className="space-y-5">
+      {isStale && staleReason && (
+        <StaleBanner briefDate={brief.brief_date} reason={staleReason} />
+      )}
+
+      {/* Status + summary — always shown when available */}
+      {brief.overall_status && (
+        <StatusStrip
+          status={brief.overall_status}
+          reason={brief.overall_reason ?? null}
+          summary={brief.ai_summary ?? null}
+        />
+      )}
+
+      {/* Needs Review — surfaced near top for actionability */}
+      {sections && needsReviewVisible(sections.needs_review.total) && (
+        <NeedsReviewBlock needsReview={sections.needs_review} />
+      )}
+
+      {/* v2 layout — observations are primary content */}
+      {sections && hasV2 && (
+        <>
+          <WhatMattersTodaySection observations={sections.observations!} />
+          <hr className="border-kk-line" />
+          <DetailsSection sections={sections} />
+        </>
+      )}
+
+      {/* v1 fallback — render legacy dashboard layout for old briefs */}
+      {sections && !hasV2 && (
+        <LegacyBriefContent sections={sections} />
       )}
     </div>
   )
 }
 
-// ── Platform metrics ──────────────────────────────────────────────────────────
-// Horizontal flex with vertical divide-x separators; large tabular numbers.
-
-function PlatformMetrics({ metrics }: { metrics: BriefMetricRow[] }) {
-  if (metrics.length === 0) {
-    return <p className="px-5 py-4 text-xs text-kk-muted">No data available.</p>
-  }
-  return (
-    <div className="flex divide-x divide-kk-line">
-      {metrics.map((m, i) => (
-        <div key={i} className="flex-1 min-w-0 px-4 py-3">
-          <div className="text-xs text-kk-muted mb-1.5">{m.label}</div>
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <span className={`text-[28px] font-bold tabular-nums leading-none tracking-tight ${m.highlight ? 'text-amber-700' : 'text-kk-ink'}`}>
-              {m.value}
-            </span>
-            {m.change && (
-              <span className="text-xs text-kk-muted">{m.change}</span>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Organic section ───────────────────────────────────────────────────────────
-
-function OrganicSection({ organic }: { organic: MorningBriefSections['organic'] }) {
-  return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden flex flex-col">
-      {/* Heading — same treatment as Paid */}
-      <div className="flex items-center gap-1.5 px-6 pt-5 pb-4">
-        <h2 className="text-xl font-bold text-kk-ink">Organic</h2>
-        <span className="text-kk-muted"><IconInfo /></span>
-      </div>
-
-      {/* Inner platform cards */}
-      <div className="px-4 pb-4 space-y-3">
-        {/* Instagram inner card */}
-        <div className="border border-kk-line rounded-xl overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
-              <IconInstagram />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-kk-ink">Instagram</div>
-              <div className="text-xs text-kk-muted">Past 7 days</div>
-            </div>
-          </div>
-          <div className="border-t border-kk-line">
-            <PlatformMetrics metrics={organic.ig.metrics} />
-          </div>
-        </div>
-
-        {/* Facebook inner card */}
-        {organic.fb.available && (
-          <div className="border border-kk-line rounded-xl overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                <IconFacebook />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-kk-ink">Facebook</div>
-                <div className="text-xs text-kk-muted">Past 7 days</div>
-              </div>
-            </div>
-            <div className="border-t border-kk-line">
-              <PlatformMetrics metrics={organic.fb.metrics} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer link — mirrors Paid card's footer */}
-      <div className="mt-auto px-6 py-3 border-t border-kk-line">
-        <a href="/marketing/organic" className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
-          View organic analytics →
-        </a>
-      </div>
-    </div>
-  )
-}
-
-// ── Stale banner ──────────────────────────────────────────────────────────────
-
-function StaleBanner({ briefDate, reason }: { briefDate: string; reason: string }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-      <span className="font-semibold shrink-0">⚠ Showing brief from {formatDate(briefDate)}</span>
-      <span className="text-amber-700">{reason}</span>
-    </div>
-  )
-}
-
-// ── State panel ───────────────────────────────────────────────────────────────
+// ── StatePanel ────────────────────────────────────────────────────────────────
 
 function StatePanel({ title, detail, action }: {
   title: string
@@ -519,91 +749,6 @@ function StatePanel({ title, detail, action }: {
       <div className="text-sm font-medium text-kk-ink mb-1.5">{title}</div>
       <div className="text-xs text-kk-muted max-w-sm mx-auto leading-relaxed">{detail}</div>
       {action && <div className="mt-5">{action}</div>}
-    </div>
-  )
-}
-
-// ── MorningBriefContent ───────────────────────────────────────────────────────
-
-function MorningBriefContent({
-  brief, isStale, staleReason,
-}: {
-  brief: MorningBriefRow
-  isStale?: boolean
-  staleReason?: string
-}) {
-  const sections = brief.sections_json
-
-  return (
-    <div className="space-y-4">
-      {isStale && staleReason && (
-        <StaleBanner briefDate={brief.brief_date} reason={staleReason} />
-      )}
-
-      {/* 1 — Status banner */}
-      {brief.overall_status && (
-        <StatusBanner
-          status={brief.overall_status}
-          reason={brief.overall_reason ?? null}
-          summary={brief.ai_summary ?? null}
-        />
-      )}
-
-      {/* 2 — KPI strip */}
-      {sections && <KpiStrip sections={sections} />}
-
-      {/* 3 — Main grid */}
-      {sections && (
-        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
-          {/* Left: Paid + GBP */}
-          <div className="space-y-4">
-            <PaidCard paid={sections.paid} />
-            <GbpCard gbp={sections.gbp} />
-          </div>
-          {/* Right: Organic + Today's Content + Needs Review */}
-          <div className="space-y-4">
-            <OrganicSection organic={sections.organic} />
-
-            {/* Today's Content */}
-            <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 rounded-xl bg-green-100 text-green-700 flex items-center justify-center shrink-0">
-                  <IconCalendar />
-                </div>
-                <h2 className="text-sm font-semibold text-kk-ink">Today&apos;s Content</h2>
-              </div>
-              <p className="text-sm text-kk-muted">No content scheduled.</p>
-            </div>
-
-            {/* Needs Review */}
-            <div className="bg-kk-panel border border-kk-line rounded-2xl p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-                  <IconClipboard />
-                </div>
-                <h2 className="text-sm font-semibold text-kk-ink">Needs Review</h2>
-              </div>
-              {sections.needs_review.total === 0 ? (
-                <p className="text-sm text-kk-muted">Nothing awaiting your approval right now.</p>
-              ) : (
-                <div>
-                  <div className="space-y-2 mb-3">
-                    {sections.needs_review.items.map((item, i) => (
-                      <div key={i} className="flex items-baseline justify-between gap-3">
-                        <span className="text-xs text-kk-muted">{item.label}</span>
-                        <span className="text-sm font-semibold tabular-nums text-kk-ink">{item.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <a href="/marketing/needs-review" className="text-sm text-blue-600 hover:text-blue-700 transition-colors">
-                    Review all {sections.needs_review.total} →
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

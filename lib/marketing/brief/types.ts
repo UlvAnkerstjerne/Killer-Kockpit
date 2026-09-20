@@ -312,6 +312,10 @@ export interface BriefInputData {
 // signal_id must correspond to a MaterialSignalCandidate.id supplied in the prompt.
 export interface BriefObservation {
   signal_id:          string
+  // source and category from the MaterialSignalCandidate — stored for display on the page
+  // optional for backward compat with stored briefs that predate this field
+  source?:            string
+  category?:          string
   observation:        string
   evidence:           string
   interpretation:     string
