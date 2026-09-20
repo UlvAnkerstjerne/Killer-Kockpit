@@ -85,9 +85,9 @@ export interface GbpMetrics {
   reviewsThisWeek: number | null
 }
 
-/** @unwired — returns demo data until GBP API quota approval is granted and synced */
+/** @unwired — GBP v4 Reviews API pending approval; returns unavailable state */
 export function getGbpDemoData(): GbpMetrics {
-  return { rating: 4.6, reviewCount: 412, reviewsThisWeek: 8 }
+  return { rating: null, reviewCount: null, reviewsThisWeek: null }
 }
 
 // ─── Stock Take ───────────────────────────────────────────────────────────────
