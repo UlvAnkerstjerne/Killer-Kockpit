@@ -113,6 +113,14 @@ export async function callMorningBriefAI(
         paid_assessment:     parsed.paid_assessment.trim(),
         organic_assessment:  parsed.organic_assessment.trim(),
         gbp_assessment:      parsed.gbp_assessment?.trim() ?? null,
+        observations:        parsed.observations.map((o) => ({
+          signal_id:          o.signal_id.trim(),
+          observation:        o.observation.trim(),
+          evidence:           o.evidence.trim(),
+          interpretation:     o.interpretation.trim(),
+          recommended_action: o.recommended_action.trim(),
+          creative_start:     o.creative_start?.trim() ?? null,
+        })),
       }
 
       return {

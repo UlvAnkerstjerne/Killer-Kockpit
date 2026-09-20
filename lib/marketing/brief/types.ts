@@ -308,8 +308,19 @@ export interface BriefInputData {
 // Lengths are capped to prevent runaway responses.
 // All string fields are trimmed after parsing.
 
+// One actionable observation grounded in a specific material signal candidate.
+// signal_id must correspond to a MaterialSignalCandidate.id supplied in the prompt.
+export interface BriefObservation {
+  signal_id:          string
+  observation:        string
+  evidence:           string
+  interpretation:     string
+  recommended_action: string
+  creative_start:     string | null
+}
+
 export const MorningBriefAIOutputSchema = z.object({
-  // 2–4 sentence executive summary; decision-oriented, not a data recap
+  // 2–4 sentence executive summary; summarises the 1–3 most important observations only
   ai_summary: z.string().min(20).max(800),
 
   // Per-section assessments — short, direct
@@ -321,6 +332,19 @@ export const MorningBriefAIOutputSchema = z.object({
 
   // Single sentence explaining the overall status (green/amber/red)
   overall_reason: z.string().min(5).max(200),
+
+  // Actionable observations grounded in the supplied material signal candidates.
+  // Target 5–8. Never pad. signal_id must correspond to a supplied candidate id.
+  observations: z.array(
+    z.object({
+      signal_id:          z.string().min(1).max(100),
+      observation:        z.string().min(10).max(300),
+      evidence:           z.string().min(10).max(300),
+      interpretation:     z.string().min(10).max(400),
+      recommended_action: z.string().min(10).max(300),
+      creative_start:     z.string().max(200).nullable(),
+    })
+  ).min(0).max(8),
 })
 
 export type MorningBriefAIOutput = z.infer<typeof MorningBriefAIOutputSchema>
@@ -420,6 +444,8 @@ export interface MorningBriefSections {
   gbp:          StoredGbpSection
   content:      StoredContentSection
   needs_review: StoredNeedsReviewSection
+  // Added in v2 prompt — optional so old stored briefs continue rendering without migration
+  observations?: BriefObservation[]
 }
 
 // ─── DB row type ───────────────────────────────────────────────────────────────

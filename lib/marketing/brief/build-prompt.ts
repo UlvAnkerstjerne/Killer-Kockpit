@@ -20,9 +20,10 @@
  */
 
 import type { BriefInputData, OverallStatus } from './types'
+import type { MaterialSignalCandidate } from './material-signals'
 
 /** Current prompt version. Increment when system prompt changes. */
-export const BRIEF_PROMPT_VERSION = 'v1'
+export const BRIEF_PROMPT_VERSION = 'v2'
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -38,11 +39,29 @@ This brief is generated from pre-computed marketing data. Some data fields (camp
 
 YOUR TASK:
 Write a Morning Brief with the following JSON fields:
-  overall_reason   — one sentence explaining the pre-determined status (green/amber/red)
-  ai_summary       — 2-4 sentences; decision-oriented executive summary
-  paid_assessment  — 2-3 sentences; honest assessment of paid performance
-  organic_assessment — 2-3 sentences; honest assessment of organic performance
-  gbp_assessment   — 1-2 sentences; null when GBP is not yet connected
+  overall_reason      — one sentence explaining the pre-determined status (green/amber/red)
+  ai_summary          — 2-4 sentences; summarises the 1-3 most important observations only; decision-oriented; no new claims beyond the observations
+  paid_assessment     — 2-3 sentences; honest assessment of paid performance
+  organic_assessment  — 2-3 sentences; honest assessment of organic performance
+  gbp_assessment      — 1-2 sentences; null when GBP is not yet connected
+  observations        — array of actionable observations grounded in the supplied material signal candidates (see below)
+
+OBSERVATIONS RULES:
+- Target 5-8 observations. Never pad to reach 5. Never exceed 8.
+- Each observation must be grounded in a supplied signal candidate.
+- signal_id must be the exact id of a supplied candidate — do not invent ids.
+- evidence must quote specific numbers from the candidate's evidence fields — no fabrication.
+- observation: one concise factual sentence (what happened).
+- interpretation: why this matters commercially for a fast food restaurant.
+- recommended_action: one concrete, actionable next step.
+- creative_start: optional one-line creative hook or message idea; null if not applicable.
+- If fewer than 5 candidates are supplied, produce as many observations as there are candidates.
+- If data health signals are present (stale sources, data gaps), note them as cautious interpretations.
+
+PRIORITY ORDER (highest first):
+1. Candidates with commercially_relevant: true
+2. Candidates with higher materiality_score
+3. Creatively relevant candidates
 
 TONE AND STYLE:
 - Decision-oriented, not a data recap
@@ -77,7 +96,11 @@ function fmtCurrency(n: number | null, currency: string, decimals = 0): string {
 
 // ── User message builder ──────────────────────────────────────────────────────
 
-export function buildBriefUserMessage(data: BriefInputData, status: OverallStatus): string {
+export function buildBriefUserMessage(
+  data: BriefInputData,
+  status: OverallStatus,
+  candidates: MaterialSignalCandidate[] = [],
+): string {
   const lines: string[] = []
 
   lines.push(`MORNING BRIEF DATA — ${data.briefDate} (Europe/Copenhagen)`)
@@ -94,6 +117,29 @@ export function buildBriefUserMessage(data: BriefInputData, status: OverallStatu
     lines.push(`Data sources: all current (synced within expected window)`)
   }
   lines.push('')
+
+  // ── Material signal candidates (PRIMARY INPUT for observations) ────────────
+  lines.push('═══ MATERIAL SIGNAL CANDIDATES ═══')
+  lines.push('These are the pre-ranked signals to reason from. Use these as your primary input for the observations array.')
+  lines.push('Produce one observation per candidate you deem material (target 5-8, never pad).')
+  lines.push('')
+  if (candidates.length === 0) {
+    lines.push('No material signal candidates available — skip observations array (return empty array).')
+  } else {
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i]
+      lines.push(`[${i + 1}] id: ${c.id}`)
+      lines.push(`    source: ${c.source} | category: ${c.category}`)
+      lines.push(`    commercially_relevant: ${c.commercially_relevant} | creatively_relevant: ${c.creatively_relevant} | materiality_score: ${c.materiality_score.toFixed(2)}`)
+      lines.push(`    DATA: observation: ${c.observation}`)
+      for (const ev of c.evidence) {
+        const valStr = ev.current != null ? fmtNum(ev.current, 2) : 'n/a'
+        const chgStr = ev.change_pct != null ? ` (${ev.change_pct >= 0 ? '+' : ''}${(ev.change_pct * 100).toFixed(1)}% vs prior)` : ''
+        lines.push(`    evidence: ${ev.metric} = ${valStr}${chgStr}`)
+      }
+      lines.push('')
+    }
+  }
 
   // ── Paid section ───────────────────────────────────────────────────────────
   lines.push('═══ PAID (Meta Ads) ═══')
@@ -229,7 +275,8 @@ export function buildBriefUserMessage(data: BriefInputData, status: OverallStatu
   // ── Instruction ───────────────────────────────────────────────────────────
   lines.push('═══ YOUR TASK ═══')
   lines.push(`The overall status is: ${status.toUpperCase()}`)
-  lines.push('Write the Morning Brief JSON with fields: overall_reason, ai_summary, paid_assessment, organic_assessment, gbp_assessment')
+  lines.push('Write the Morning Brief JSON with fields: overall_reason, ai_summary, paid_assessment, organic_assessment, gbp_assessment, observations')
+  lines.push('For observations: use the signal candidates above. Each signal_id must exactly match a candidate id listed above.')
   lines.push('Be concise, honest, and decision-oriented. Do not invent metrics or contradict the data above.')
 
   return lines.join('\n')

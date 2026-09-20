@@ -46,8 +46,11 @@ import { collectBriefData } from './collect-data'
 import { buildBriefUserMessage } from './build-prompt'
 import { BRIEF_PROMPT_VERSION } from './build-prompt'
 import { callMorningBriefAI } from '@/lib/ai/morning-brief'
+import { buildMaterialSignals } from './material-signals'
+import type { MaterialSignalCandidate } from './material-signals'
 import type {
   BriefInputData,
+  BriefObservation,
   CampaignMetrics,
   MorningBriefSections,
   MorningBriefAIOutput,
@@ -291,8 +294,12 @@ function assembleGbpSection(data: BriefInputData, ai: MorningBriefAIOutput): Sto
   }
 }
 
-function assembleSections(data: BriefInputData, ai: MorningBriefAIOutput): MorningBriefSections {
-  return {
+function assembleSections(
+  data: BriefInputData,
+  ai: MorningBriefAIOutput,
+  observations: BriefObservation[],
+): MorningBriefSections {
+  const sections: MorningBriefSections = {
     paid:    assemblePaidSection(data, ai),
     organic: assembleOrganicSection(data, ai),
     gbp:     assembleGbpSection(data, ai),
@@ -318,6 +325,10 @@ function assembleSections(data: BriefInputData, ai: MorningBriefAIOutput): Morni
       ].filter(Boolean) as MorningBriefSections['needs_review']['items'],
     },
   }
+  if (observations.length > 0) {
+    sections.observations = observations
+  }
+  return sections
 }
 
 // ── Core generation (shared between cron and forced regen) ────────────────────
@@ -351,15 +362,41 @@ async function runGenerationPipeline(briefDate: string): Promise<
     return { ok: false, error: 'Data collection failed.', errorDetail: detail }
   }
 
+  const candidates: MaterialSignalCandidate[] = buildMaterialSignals(data)
+
   const overallStatus = data.signals.computed_status
-  const userMessage   = buildBriefUserMessage(data, overallStatus)
+  const userMessage   = buildBriefUserMessage(data, overallStatus, candidates)
   const aiResult      = await callMorningBriefAI(userMessage)
 
   if (!aiResult.ok) {
     return { ok: false, error: aiResult.error, errorDetail: aiResult.errorDetail ?? aiResult.error }
   }
 
-  const sections  = assembleSections(data, aiResult.output)
+  // Validate every signal_id the AI returned against the candidates we supplied.
+  // An unknown signal_id means the AI hallucinated an id — fail safely.
+  const validIds = new Set(candidates.map((c) => c.id))
+  const unknownIds = aiResult.output.observations
+    .map((o) => o.signal_id)
+    .filter((id) => !validIds.has(id))
+  if (unknownIds.length > 0) {
+    console.error('[generate-brief] AI returned unknown signal_id(s):', unknownIds)
+    return {
+      ok: false,
+      error: 'AI response contained unknown signal IDs. The existing brief is preserved.',
+      errorDetail: `Unknown signal_id(s): ${unknownIds.join(', ')}`,
+    }
+  }
+
+  const observations: BriefObservation[] = aiResult.output.observations.map((o) => ({
+    signal_id:          o.signal_id,
+    observation:        o.observation,
+    evidence:           o.evidence,
+    interpretation:     o.interpretation,
+    recommended_action: o.recommended_action,
+    creative_start:     o.creative_start,
+  }))
+
+  const sections  = assembleSections(data, aiResult.output, observations)
   const totalMs   = Date.now() - startMs
 
   return {

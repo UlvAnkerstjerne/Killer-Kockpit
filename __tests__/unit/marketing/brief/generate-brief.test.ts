@@ -1,7 +1,7 @@
 /**
  * Tests for lib/marketing/brief/generate-brief.ts
  *
- * Focus: safe-regeneration failure-safety and idempotency behavior.
+ * Focus: safe-regeneration failure-safety, idempotency, and v2 material-signal wiring.
  * All external dependencies are mocked so tests run without DB or AI.
  *
  * Key guarantees verified:
@@ -11,10 +11,15 @@
  *     'already_ready' without calling AI at all.
  *  3. generateMorningBrief: if generation is already in progress and not
  *     stuck, returns 'skipped_generating' without calling AI.
+ *  4. buildMaterialSignals is called in the pipeline and candidates passed to prompt.
+ *  5. Unknown signal_id in AI output → pipeline fails safely, existing brief preserved.
+ *  6. Valid observations are persisted in sections_json.observations.
+ *  7. BRIEF_PROMPT_VERSION is v2.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { BriefInputData } from '@/lib/marketing/brief/types'
+import type { MaterialSignalCandidate } from '@/lib/marketing/brief/material-signals'
 
 // ── Mock dependencies ─────────────────────────────────────────────────────────
 
@@ -35,7 +40,11 @@ vi.mock('@/lib/ai/morning-brief', () => ({
 
 vi.mock('@/lib/marketing/brief/build-prompt', () => ({
   buildBriefUserMessage: vi.fn().mockReturnValue('mock prompt'),
-  BRIEF_PROMPT_VERSION: 'v1',
+  BRIEF_PROMPT_VERSION: 'v2',
+}))
+
+vi.mock('@/lib/marketing/brief/material-signals', () => ({
+  buildMaterialSignals: vi.fn().mockReturnValue([]),
 }))
 
 // ── Import after mocks ────────────────────────────────────────────────────────
@@ -44,6 +53,8 @@ import { generateMorningBrief, forcedRegenerateMorningBrief } from '@/lib/market
 import { createServiceClient } from '@/lib/supabase/server'
 import { collectBriefData } from '@/lib/marketing/brief/collect-data'
 import { callMorningBriefAI } from '@/lib/ai/morning-brief'
+import { buildBriefUserMessage } from '@/lib/marketing/brief/build-prompt'
+import { buildMaterialSignals } from '@/lib/marketing/brief/material-signals'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -101,7 +112,7 @@ function makeMockBriefData(): BriefInputData {
   }
 }
 
-/** Successful AI response fixture. */
+/** Successful AI response fixture (v2 — includes observations). */
 const mockAISuccess = {
   ok: true as const,
   output: {
@@ -110,10 +121,25 @@ const mockAISuccess = {
     paid_assessment:    'No paid campaigns active.',
     organic_assessment: 'Instagram reach grew week-over-week.',
     gbp_assessment:     null,
+    observations:       [],
   },
   model:         'claude-sonnet-4-6',
-  promptVersion: 'v1',
+  promptVersion: 'v2',
   durationMs:    1200,
+}
+
+/** A minimal valid material signal candidate. */
+function makeMockCandidate(id: string): MaterialSignalCandidate {
+  return {
+    id,
+    source:                'organic_ig',
+    category:              'traffic_audience',
+    observation:           'IG reach increased 25% week-over-week.',
+    evidence:              [{ metric: 'reach_7d', current: 1250, prior: 1000, change_pct: 0.25 }],
+    materiality_score:     0.8,
+    commercially_relevant: true,
+    creatively_relevant:   false,
+  }
 }
 
 // ── DB mock builder ───────────────────────────────────────────────────────────
@@ -317,5 +343,227 @@ describe('forcedRegenerateMorningBrief — safe failure behavior', () => {
     expect(result.ok).toBe(true)
     // DB must have been updated (the new brief is written)
     expect(updateSpy).toHaveBeenCalled()
+  })
+})
+
+// ── Material signal wiring tests ──────────────────────────────────────────────
+
+describe('runGenerationPipeline — material signal wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function makeSuccessDb() {
+    const updateEqSpy = vi.fn().mockResolvedValue({ error: null })
+    const updateSpy   = vi.fn().mockReturnValue({ eq: updateEqSpy })
+    return {
+      db: {
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq:          vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: 'existing-id', status: 'ready' },
+              error: null,
+            }),
+          }),
+          update: updateSpy,
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      },
+      updateSpy,
+    }
+  }
+
+  it('BRIEF_PROMPT_VERSION is v2', async () => {
+    // Importing the mock — should be v2
+    const { BRIEF_PROMPT_VERSION } = await import('@/lib/marketing/brief/build-prompt')
+    expect(BRIEF_PROMPT_VERSION).toBe('v2')
+  })
+
+  it('buildMaterialSignals is called with collected data', async () => {
+    const { db } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(mockAISuccess)
+
+    await forcedRegenerateMorningBrief(BRIEF_DATE)
+
+    expect(vi.mocked(buildMaterialSignals)).toHaveBeenCalledWith(expect.objectContaining({
+      briefDate: BRIEF_DATE,
+    }))
+  })
+
+  it('passes candidates to buildBriefUserMessage', async () => {
+    const candidate = makeMockCandidate('ig-reach-drop')
+    vi.mocked(buildMaterialSignals).mockReturnValue([candidate])
+
+    const { db } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(mockAISuccess)
+
+    await forcedRegenerateMorningBrief(BRIEF_DATE)
+
+    expect(vi.mocked(buildBriefUserMessage)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [candidate],
+    )
+  })
+
+  it('valid observations are persisted in sections_json.observations', async () => {
+    const candidate = makeMockCandidate('ig-reach-drop')
+    vi.mocked(buildMaterialSignals).mockReturnValue([candidate])
+
+    const aiWithObs = {
+      ...mockAISuccess,
+      output: {
+        ...mockAISuccess.output,
+        observations: [{
+          signal_id:          'ig-reach-drop',
+          observation:        'IG reach dropped 25% week-over-week.',
+          evidence:           'reach_7d = 1,000 (-25.0% vs prior)',
+          interpretation:     'Lower organic reach means fewer free impressions.',
+          recommended_action: 'Boost top-performing post.',
+          creative_start:     'This week in Killer Kebab…',
+        }],
+      },
+    }
+
+    const { db, updateSpy } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(aiWithObs)
+
+    const result = await forcedRegenerateMorningBrief(BRIEF_DATE)
+
+    expect(result.ok).toBe(true)
+    // The update call should include sections_json with observations
+    const updateArgs = updateSpy.mock.calls[0][0] as { sections_json?: { observations?: unknown[] } }
+    expect(updateArgs.sections_json?.observations).toHaveLength(1)
+    expect(updateArgs.sections_json?.observations?.[0]).toMatchObject({
+      signal_id:  'ig-reach-drop',
+      observation: 'IG reach dropped 25% week-over-week.',
+    })
+  })
+
+  it('unknown signal_id in AI output → pipeline fails, existing brief preserved', async () => {
+    const candidate = makeMockCandidate('ig-reach-drop')
+    vi.mocked(buildMaterialSignals).mockReturnValue([candidate])
+
+    const aiWithBadId = {
+      ...mockAISuccess,
+      output: {
+        ...mockAISuccess.output,
+        observations: [{
+          signal_id:          'hallucinated-id',   // not in candidates
+          observation:        'Something happened.',
+          evidence:           'some metric = 100',
+          interpretation:     'interpretation',
+          recommended_action: 'Do something.',
+          creative_start:     null,
+        }],
+      },
+    }
+
+    const { db, updateSpy } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(aiWithBadId)
+
+    const result = await forcedRegenerateMorningBrief(BRIEF_DATE)
+
+    // Must fail
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('unchanged')
+    // Existing brief must NOT be updated
+    expect(updateSpy).not.toHaveBeenCalled()
+  })
+
+  it('fewer than 5 observations accepted without error', async () => {
+    vi.mocked(buildMaterialSignals).mockReturnValue([makeMockCandidate('c1')])
+
+    const aiWithOneObs = {
+      ...mockAISuccess,
+      output: {
+        ...mockAISuccess.output,
+        observations: [{
+          signal_id:          'c1',
+          observation:        'One observation is enough.',
+          evidence:           'metric = 100',
+          interpretation:     'interpretation',
+          recommended_action: 'Do something.',
+          creative_start:     null,
+        }],
+      },
+    }
+
+    const { db } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(aiWithOneObs)
+
+    const result = await forcedRegenerateMorningBrief(BRIEF_DATE)
+    expect(result.ok).toBe(true)
+  })
+
+  it('creative_start may be null', async () => {
+    vi.mocked(buildMaterialSignals).mockReturnValue([makeMockCandidate('c1')])
+
+    const aiWithNullCreative = {
+      ...mockAISuccess,
+      output: {
+        ...mockAISuccess.output,
+        observations: [{
+          signal_id:          'c1',
+          observation:        'Observation text.',
+          evidence:           'metric = 100',
+          interpretation:     'interpretation',
+          recommended_action: 'Do something.',
+          creative_start:     null,
+        }],
+      },
+    }
+
+    const { db, updateSpy } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(aiWithNullCreative)
+
+    const result = await forcedRegenerateMorningBrief(BRIEF_DATE)
+    expect(result.ok).toBe(true)
+    const updateArgs = updateSpy.mock.calls[0][0] as { sections_json?: { observations?: Array<{ creative_start: unknown }> } }
+    expect(updateArgs.sections_json?.observations?.[0]?.creative_start).toBeNull()
+  })
+
+  it('sections_json without observations when no candidates produced', async () => {
+    // buildMaterialSignals returns empty array
+    vi.mocked(buildMaterialSignals).mockReturnValue([])
+
+    const { db, updateSpy } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(mockAISuccess) // observations: []
+
+    const result = await forcedRegenerateMorningBrief(BRIEF_DATE)
+    expect(result.ok).toBe(true)
+    const updateArgs = updateSpy.mock.calls[0][0] as { sections_json?: { observations?: unknown[] } }
+    // observations should be absent (not set when empty)
+    expect(updateArgs.sections_json?.observations).toBeUndefined()
+  })
+
+  it('v1 fields (overall_reason, ai_summary, paid_assessment etc.) remain in output', async () => {
+    vi.mocked(buildMaterialSignals).mockReturnValue([])
+
+    const { db, updateSpy } = makeSuccessDb()
+    vi.mocked(createServiceClient).mockReturnValue(db as never)
+    vi.mocked(collectBriefData).mockResolvedValue(makeMockBriefData())
+    vi.mocked(callMorningBriefAI).mockResolvedValue(mockAISuccess)
+
+    await forcedRegenerateMorningBrief(BRIEF_DATE)
+
+    const updateArgs = updateSpy.mock.calls[0][0] as { overall_reason?: string; ai_summary?: string }
+    expect(updateArgs.overall_reason).toBe('All systems green.')
+    expect(updateArgs.ai_summary).toBe('Solid week across all channels.')
   })
 })
