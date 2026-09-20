@@ -131,9 +131,14 @@ async function runDiagnostic() {
 }
 
 export async function POST(request: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return NextResponse.json({ error: 'Server misconfiguration.' }, { status: 500, headers })
-  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
+  const cronSecret = process.env.CRON_SECRET
+  const diagSecret = process.env.GBP_DIAG_SECRET
+  if (!cronSecret && !diagSecret) return NextResponse.json({ error: 'Server misconfiguration.' }, { status: 500, headers })
+  const auth = request.headers.get('authorization')
+  const authorised =
+    (cronSecret && auth === `Bearer ${cronSecret}`) ||
+    (diagSecret && auth === `Bearer ${diagSecret}`)
+  if (!authorised) {
     return NextResponse.json({ error: 'Unauthorised.' }, { status: 401, headers })
   }
   return NextResponse.json(await runDiagnostic(), { headers })
