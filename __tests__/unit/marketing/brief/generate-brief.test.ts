@@ -548,8 +548,9 @@ describe('runGenerationPipeline — material signal wiring', () => {
     const result = await forcedRegenerateMorningBrief(BRIEF_DATE)
     expect(result.ok).toBe(true)
     const updateArgs = updateSpy.mock.calls[0][0] as { sections_json?: { observations?: unknown[] } }
-    // observations should be absent (not set when empty)
-    expect(updateArgs.sections_json?.observations).toBeUndefined()
+    // observations is always set for v2 briefs — even when empty — so the page can
+    // distinguish a v2 brief with zero material signals from a legacy v1 brief (field absent)
+    expect(updateArgs.sections_json?.observations).toEqual([])
   })
 
   it('v1 fields (overall_reason, ai_summary, paid_assessment etc.) remain in output', async () => {

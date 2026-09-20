@@ -56,6 +56,15 @@ export function observationCount(sections: MorningBriefSections | null | undefin
   return sections?.observations?.length ?? 0
 }
 
+/**
+ * Returns true when a brief is v2 (has the observations field, even if empty).
+ * v1 briefs have no observations field at all.
+ * Relies on generate-brief.ts always setting sections.observations = [] for v2.
+ */
+export function isBriefV2(sections: MorningBriefSections | null | undefined): boolean {
+  return sections?.observations !== undefined
+}
+
 /** Whether Needs Review block should be surfaced near the top of the page. */
 export function needsReviewVisible(total: number): boolean {
   return total > 0
@@ -290,16 +299,22 @@ function WhatMattersTodaySection({ observations }: { observations: BriefObservat
       <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-5">
         What matters today
       </h2>
-      <div className="space-y-6">
-        {observations.map((obs, i) => (
-          <ObservationItem
-            key={obs.signal_id}
-            obs={obs}
-            index={i}
-            isLast={i === observations.length - 1}
-          />
-        ))}
-      </div>
+      {observations.length === 0 ? (
+        <p className="text-sm text-kk-muted" data-zero-observations="true">
+          Nothing material needs your attention today.
+        </p>
+      ) : (
+        <div className="space-y-6">
+          {observations.map((obs, i) => (
+            <ObservationItem
+              key={obs.signal_id}
+              obs={obs}
+              index={i}
+              isLast={i === observations.length - 1}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -698,7 +713,8 @@ function MorningBriefContent({
   staleReason?: string
 }) {
   const sections = brief.sections_json
-  const hasV2 = observationCount(sections) > 0
+  // isBriefV2: observations field present (even if []) → v2; absent → v1 legacy
+  const isV2 = isBriefV2(sections)
 
   return (
     <div className="space-y-5">
@@ -715,22 +731,22 @@ function MorningBriefContent({
         />
       )}
 
-      {/* Needs Review — surfaced near top for actionability */}
-      {sections && needsReviewVisible(sections.needs_review.total) && (
+      {/* Needs Review — near-top block only for v2; v1 has its own in LegacyBriefContent */}
+      {sections && isV2 && needsReviewVisible(sections.needs_review.total) && (
         <NeedsReviewBlock needsReview={sections.needs_review} />
       )}
 
       {/* v2 layout — observations are primary content */}
-      {sections && hasV2 && (
+      {sections && isV2 && (
         <>
-          <WhatMattersTodaySection observations={sections.observations!} />
+          <WhatMattersTodaySection observations={sections.observations ?? []} />
           <hr className="border-kk-line" />
           <DetailsSection sections={sections} />
         </>
       )}
 
       {/* v1 fallback — render legacy dashboard layout for old briefs */}
-      {sections && !hasV2 && (
+      {sections && !isV2 && (
         <LegacyBriefContent sections={sections} />
       )}
     </div>

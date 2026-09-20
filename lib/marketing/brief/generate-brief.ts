@@ -325,9 +325,10 @@ function assembleSections(
       ].filter(Boolean) as MorningBriefSections['needs_review']['items'],
     },
   }
-  if (observations.length > 0) {
-    sections.observations = observations
-  }
+  // Always set observations — even when empty — so the page can distinguish a
+  // v2 brief with zero material signals from an old v1 brief (where the field
+  // is absent entirely).
+  sections.observations = observations
   return sections
 }
 

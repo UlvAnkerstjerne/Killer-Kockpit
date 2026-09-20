@@ -257,11 +257,14 @@ function googleAdsSignals(data: BriefInputData): MaterialSignalCandidate[] {
     }
 
     if (evidence.length > 0 && strongest) {
-      const dir       = strongest.pct === null || strongest.pct >= 0 ? 'up' : 'down'
-      const volFactor = clamp(strongest.current / (strongest.current + GADS_MIN_SPEND_7D_FOR_SIGNAL * 5))
+      const dir          = strongest.pct === null || strongest.pct >= 0 ? 'up' : 'down'
+      const volFactor    = clamp(strongest.current / (strongest.current + GADS_MIN_SPEND_7D_FOR_SIGNAL * 5))
+      // Only include currency unit for spend — impressions and clicks are dimensionless counts.
+      const isSpend      = strongest.key === 'spend_7d'
+      const currencySufx = isSpend ? ` ${gads.currency}` : ''
       const obs = strongest.pct !== null
-        ? `Google Ads ${strongest.label} ${dir} ${fmtPct(strongest.pct)} vs prior 7 days (${fmtNum(strongest.current)} vs ${fmtNum(strongest.prior)} ${gads.currency}).`
-        : `Google Ads ${strongest.label} increased from 0 to ${fmtNum(strongest.current)} ${gads.currency}.`
+        ? `Google Ads ${strongest.label} ${dir} ${fmtPct(strongest.pct)} vs prior 7 days (${fmtNum(strongest.current)} vs ${fmtNum(strongest.prior)}${currencySufx}).`
+        : `Google Ads ${strongest.label} increased from 0 to ${fmtNum(strongest.current)}${currencySufx}.`
 
       candidates.push({
         id: 'google_ads_account_totals',
@@ -655,10 +658,18 @@ function gbpPerformanceSignals(data: BriefInputData): MaterialSignalCandidate[] 
   // ── GBP keyword context candidate (independent of movement)
   //    Surface top keyword(s) from the latest month as demand context.
   //    Be honest: threshold impressions are labeled <N, not as exact counts.
+  //
+  //    Volume gate: only an exact impressions value can prove the minimum-volume
+  //    threshold has been met.  A threshold value (e.g. <100 impressions) is an
+  //    upper bound — it does NOT prove the keyword exceeds GBP_KEYWORD_MIN_IMPRESSIONS.
+  //    Threshold-only keywords may appear as supporting context once an exact
+  //    qualifying keyword has triggered the candidate, but cannot trigger it alone.
   const topKws = gbp.top_keywords.slice(0, 3)
   if (topKws.length > 0 && gbp.keyword_month !== null) {
-    const topVolume = (topKws[0].impressions ?? topKws[0].impressionsThreshold ?? 0)
-    if (topVolume >= GBP_KEYWORD_MIN_IMPRESSIONS) {
+    const hasExactQualifyingKeyword = topKws.some(
+      (k) => k.impressions !== null && k.impressions >= GBP_KEYWORD_MIN_IMPRESSIONS,
+    )
+    if (hasExactQualifyingKeyword) {
       const kwSummary = topKws.map(k => {
         const imp = k.impressions !== null
           ? `${fmtNum(k.impressions)} impressions`

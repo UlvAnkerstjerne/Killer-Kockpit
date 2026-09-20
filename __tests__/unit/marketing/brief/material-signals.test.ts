@@ -919,6 +919,124 @@ describe('GBP keyword context', () => {
   })
 })
 
+// ─── Google Ads — currency suffix only on spend ───────────────────────────────
+
+describe('Google Ads — currency suffix', () => {
+  it('spend observation includes currency when spend is the headline metric', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 3,
+        total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 1.5,  // 100% up
+        total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,
+        total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,  // no change
+        total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,
+        total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,   // no change
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('DKK')
+  })
+
+  it('impressions observation does NOT include currency', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
+        total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,   // no change
+        total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 4,
+        total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,  // 100% up
+        total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,
+        total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,   // no change
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    expect(s).toBeDefined()
+    expect(s!.observation.toLowerCase()).toContain('impressions')
+    expect(s!.observation).not.toContain('DKK')
+  })
+
+  it('clicks observation does NOT include currency', () => {
+    const data = makeData({
+      googleAds: makeGadsData({
+        total_spend_7d:              GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,
+        total_spend_prior_7d:        GADS_MIN_SPEND_7D_FOR_SIGNAL * 2,   // no change
+        total_impressions_7d:        GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,
+        total_impressions_prior_7d:  GADS_MIN_IMPRESSIONS_7D_FOR_SIGNAL * 2,  // no change
+        total_clicks_7d:             GADS_MIN_CLICKS_7D_FOR_SIGNAL * 4,
+        total_clicks_prior_7d:       GADS_MIN_CLICKS_7D_FOR_SIGNAL * 2,   // 100% up
+      }),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'google_ads_account_totals')
+    expect(s).toBeDefined()
+    expect(s!.observation.toLowerCase()).toContain('clicks')
+    expect(s!.observation).not.toContain('DKK')
+  })
+})
+
+// ─── GBP keyword gate — exact impressions required to trigger ─────────────────
+
+describe('GBP keyword gate — threshold-only keyword cannot trigger', () => {
+  function minimalGbpPerfKeywordsOnly(keywords: NonNullable<NonNullable<BriefInputData['gbpPerformance']>['top_keywords']>): NonNullable<BriefInputData['gbpPerformance']> {
+    return {
+      search_impressions_28d:       null,
+      search_impressions_prior_28d: null,
+      maps_impressions_28d:         null,
+      maps_impressions_prior_28d:   null,
+      website_clicks_28d:           null,
+      call_clicks_28d:              null,
+      direction_requests_28d:       null,
+      website_clicks_prior_28d:     null,
+      call_clicks_prior_28d:        null,
+      direction_requests_prior_28d: null,
+      keyword_month: '2026-09-01',
+      top_keywords: keywords,
+    }
+  }
+
+  it('threshold-only keyword (exact impressions null) cannot trigger the candidate', () => {
+    const data = makeData({
+      gbpPerformance: minimalGbpPerfKeywordsOnly([
+        // impressionsThreshold is an upper bound — actual count could be 0; cannot prove minimum volume
+        { keyword: 'killer kebab', impressions: null, impressionsThreshold: GBP_KEYWORD_MIN_IMPRESSIONS * 10 },
+      ]),
+    })
+    expect(buildMaterialSignals(data).find(s => s.id === 'gbp_keyword_context')).toBeUndefined()
+  })
+
+  it('exact qualifying keyword (impressions >= GBP_KEYWORD_MIN_IMPRESSIONS) triggers candidate', () => {
+    const data = makeData({
+      gbpPerformance: minimalGbpPerfKeywordsOnly([
+        { keyword: 'killer kebab', impressions: GBP_KEYWORD_MIN_IMPRESSIONS * 2, impressionsThreshold: null },
+      ]),
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_keyword_context')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('killer kebab')
+  })
+
+  it('exact qualifying keyword can coexist with threshold-only keywords as supporting context', () => {
+    const data = makeData({
+      gbpPerformance: minimalGbpPerfKeywordsOnly([
+        { keyword: 'order kebab',  impressions: GBP_KEYWORD_MIN_IMPRESSIONS * 3, impressionsThreshold: null },
+        { keyword: 'kebab near me', impressions: null, impressionsThreshold: 200 },  // threshold only
+      ]),
+    })
+    // Candidate fires because the first keyword has a qualifying exact count
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_keyword_context')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('order kebab')
+  })
+
+  it('exact keyword below GBP_KEYWORD_MIN_IMPRESSIONS does not trigger candidate', () => {
+    const data = makeData({
+      gbpPerformance: minimalGbpPerfKeywordsOnly([
+        { keyword: 'tiny kw', impressions: GBP_KEYWORD_MIN_IMPRESSIONS - 1, impressionsThreshold: null },
+      ]),
+    })
+    expect(buildMaterialSignals(data).find(s => s.id === 'gbp_keyword_context')).toBeUndefined()
+  })
+})
+
 // ─── 19. Ranking ──────────────────────────────────────────────────────────────
 
 describe('ranking', () => {

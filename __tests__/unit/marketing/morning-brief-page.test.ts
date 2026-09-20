@@ -22,6 +22,7 @@ import {
   SOURCE_LABELS,
   categoryIsDataHealth,
   observationCount,
+  isBriefV2,
   needsReviewVisible,
 } from '@/app/(marketing)/marketing/page'
 import type { MorningBriefSections } from '@/lib/marketing/brief/types'
@@ -145,6 +146,54 @@ describe('observationCount', () => {
   it('legacy layout is chosen when observationCount === 0 (old brief)', () => {
     const sections = {} as unknown as MorningBriefSections
     expect(observationCount(sections) === 0).toBe(true)
+  })
+})
+
+// ── isBriefV2 ─────────────────────────────────────────────────────────────────
+
+describe('isBriefV2', () => {
+  it('returns false for null sections (no brief yet)', () => {
+    expect(isBriefV2(null)).toBe(false)
+  })
+
+  it('returns false for undefined sections', () => {
+    expect(isBriefV2(undefined)).toBe(false)
+  })
+
+  it('returns false for v1 sections where observations field is absent', () => {
+    const sections = {} as unknown as MorningBriefSections
+    expect(isBriefV2(sections)).toBe(false)
+  })
+
+  it('returns false when observations is explicitly undefined', () => {
+    const sections = { observations: undefined } as unknown as MorningBriefSections
+    expect(isBriefV2(sections)).toBe(false)
+  })
+
+  it('returns true for v2 sections with observations (non-empty)', () => {
+    const sections = {
+      observations: [
+        { signal_id: 'x', observation: 'test', evidence: 'e', interpretation: 'i', recommended_action: 'a', creative_start: null },
+      ],
+    } as unknown as MorningBriefSections
+    expect(isBriefV2(sections)).toBe(true)
+  })
+
+  it('returns true for v2 sections with empty observations array (zero material signals)', () => {
+    const sections = { observations: [] } as unknown as MorningBriefSections
+    expect(isBriefV2(sections)).toBe(true)
+  })
+
+  it('v2 brief with zero observations still selects v2 layout — not legacy fallback', () => {
+    const sections = { observations: [] } as unknown as MorningBriefSections
+    // dispatch signal is field presence, not count — observationCount=0 must not route to legacy
+    expect(isBriefV2(sections)).toBe(true)
+    expect(observationCount(sections)).toBe(0)
+  })
+
+  it('v1 brief routes to legacy layout — isBriefV2 false, so NeedsReview not shown via v2 path', () => {
+    const v1 = {} as unknown as MorningBriefSections
+    expect(isBriefV2(v1)).toBe(false)
   })
 })
 
