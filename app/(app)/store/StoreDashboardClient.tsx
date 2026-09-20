@@ -293,7 +293,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">Not connected</div>
+          <div className="text-xs text-[#8D795F]">Unavailable</div>
         )}
       </div>
 
@@ -312,7 +312,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">Not connected</div>
+          <div className="text-xs text-[#8D795F]">Unavailable</div>
         )}
       </div>
     </div>

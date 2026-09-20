@@ -194,29 +194,29 @@ export async function getGbpPerformance(
     ? allKeywords.filter((k) => k.month.slice(0, 7) === mostRecentMonth)
     : []
 
-  const kwMap = new Map<string, { impressions: number | null; impressionsThreshold: number | null }>()
+  // Aggregate keywords across locations.
+  // Rule: if ANY location is threshold-only, the aggregate is an upper bound:
+  //   upperBound = sum(all exact counts) + sum(all threshold values)
+  //   represented as impressionsThreshold with impressions=null.
+  // Only when ALL locations have exact counts do we show an exact sum.
+  type KwAgg = { exactSum: number; thresholdSum: number; hasThreshold: boolean }
+  const kwMap = new Map<string, KwAgg>()
   for (const kw of recentKeywords) {
-    const existing = kwMap.get(kw.keyword)
-    if (!existing) {
-      kwMap.set(kw.keyword, { impressions: kw.impressions, impressionsThreshold: kw.impressions_threshold })
-    } else {
-      const newImpressions =
-        existing.impressions !== null && kw.impressions !== null
-          ? existing.impressions + kw.impressions
-          : (existing.impressions ?? kw.impressions)
-      const newThreshold =
-        existing.impressionsThreshold !== null || kw.impressions_threshold !== null
-          ? Math.max(existing.impressionsThreshold ?? 0, kw.impressions_threshold ?? 0)
-          : null
-      kwMap.set(kw.keyword, { impressions: newImpressions, impressionsThreshold: newThreshold })
+    const agg = kwMap.get(kw.keyword) ?? { exactSum: 0, thresholdSum: 0, hasThreshold: false }
+    if (kw.impressions !== null) {
+      agg.exactSum += kw.impressions
+    } else if (kw.impressions_threshold !== null) {
+      agg.thresholdSum += kw.impressions_threshold
+      agg.hasThreshold = true
     }
+    kwMap.set(kw.keyword, agg)
   }
 
   const topKeywords: GbpKeywordRow[] = [...kwMap.entries()]
-    .map(([keyword, v]) => ({
+    .map(([keyword, agg]) => ({
       keyword,
-      impressions:          v.impressions,
-      impressionsThreshold: v.impressionsThreshold,
+      impressions:          agg.hasThreshold ? null : agg.exactSum,
+      impressionsThreshold: agg.hasThreshold ? agg.exactSum + agg.thresholdSum : null,
     }))
     .sort((a, b) => {
       const aVal = a.impressions ?? (a.impressionsThreshold ?? 0)

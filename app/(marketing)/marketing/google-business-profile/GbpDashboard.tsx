@@ -25,7 +25,7 @@ function fmtN(n: number | null): string {
 
 function fmtKeyword(kw: GbpKeywordRow): string {
   if (kw.impressions !== null) return fmtN(kw.impressions)
-  if (kw.impressionsThreshold !== null) return `≥${fmtN(kw.impressionsThreshold)}`
+  if (kw.impressionsThreshold !== null) return `<${fmtN(kw.impressionsThreshold)}`
   return '—'
 }
 
@@ -195,9 +195,6 @@ export default function GbpDashboard({
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-kk-muted w-5 text-right">{i + 1}</span>
                   <span className="text-sm text-kk-ink">{kw.keyword}</span>
-                  {kw.impressions === null && kw.impressionsThreshold !== null && (
-                    <span className="text-[10px] text-kk-muted bg-kk-line/50 px-1.5 py-0.5 rounded">approx.</span>
-                  )}
                 </div>
                 <span className="text-sm font-semibold text-kk-ink tabular-nums">
                   {fmtKeyword(kw)}

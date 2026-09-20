@@ -199,7 +199,7 @@ describe('getGbpPerformance — keywords', () => {
     expect(result.topKeywords[0].impressions).toBe(500)
   })
 
-  it('aggregates keyword counts across locations for the same month', async () => {
+  it('sums exact impressions when all locations have exact counts', async () => {
     setupDb({
       keywords: [
         { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: 300, impressions_threshold: null },
@@ -210,18 +210,51 @@ describe('getGbpPerformance — keywords', () => {
     const result = await getGbpPerformance(null)
     expect(result.topKeywords[0].keyword).toBe('kebab')
     expect(result.topKeywords[0].impressions).toBe(500)
+    expect(result.topKeywords[0].impressionsThreshold).toBeNull()
   })
 
-  it('preserves threshold values when exact count is unavailable', async () => {
+  it('single threshold row → impressionsThreshold set, impressions null', async () => {
     setupDb({
       keywords: [
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 500 },
+        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
     const result = await getGbpPerformance(null)
     expect(result.topKeywords[0].impressions).toBeNull()
-    expect(result.topKeywords[0].impressionsThreshold).toBe(500)
+    expect(result.topKeywords[0].impressionsThreshold).toBe(15)
+  })
+
+  it('multiple threshold rows → thresholds summed (not max)', async () => {
+    setupDb({
+      keywords: [
+        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'canon-b', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+      ],
+    })
+    const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
+    const result = await getGbpPerformance(null)
+    expect(result.topKeywords[0].impressions).toBeNull()
+    expect(result.topKeywords[0].impressionsThreshold).toBe(30)
+  })
+
+  it('mixed exact + threshold → safe upper bound (spec example: 40+15+15=70)', async () => {
+    setupDb({
+      locations: [
+        { id: 'gbp-a', store_name: 'Vesterbro',     store_short_name: 'VB', location_id: 'canon-a' },
+        { id: 'gbp-b', store_name: 'Nørrebro',      store_short_name: 'NB', location_id: 'canon-b' },
+        { id: 'gbp-c', store_name: 'Frederiksberg',  store_short_name: 'FB', location_id: 'canon-c' },
+      ],
+      keywords: [
+        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: 40, impressions_threshold: null },
+        { location_id: 'canon-b', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'canon-c', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+      ],
+    })
+    const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
+    const result = await getGbpPerformance(null)
+    expect(result.topKeywords[0].impressions).toBeNull()
+    expect(result.topKeywords[0].impressionsThreshold).toBe(70)
   })
 
   it('returns empty keywords when no keyword data', async () => {
