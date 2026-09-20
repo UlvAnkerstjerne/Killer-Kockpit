@@ -183,10 +183,14 @@ export interface GoogleAdsCampaignSummary {
   impressions_7d: number
   clicks_7d:      number
   top_results: Array<{
-    label:         string
-    count:         number
-    costPerResult: number | null
-    primary:       boolean
+    label:               string
+    count:               number
+    costPerResult:       number | null
+    primary:             boolean
+    // Prior-period comparison for the SAME result/action — null when unavailable
+    // Matched by action resource name; never combined across different actions
+    prior_count:         number | null
+    prior_costPerResult: number | null
   }>
 }
 

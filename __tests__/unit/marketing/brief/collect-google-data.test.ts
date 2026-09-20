@@ -338,3 +338,64 @@ describe('collectGbpPerformanceData — uses gbp_locations.id not location_id', 
     }
   })
 })
+
+// ── collectGbpPerformanceData — keyword pagination / latest-month ──────────────
+//
+// The collector must fetch ALL keyword rows for the most recent month via
+// pagination instead of a fixed .limit(). A truncated fetch would silently
+// miss the highest-impression keywords if they appear after row 200.
+
+describe('collectGbpPerformanceData — keyword pagination fetches beyond old truncation limit', () => {
+  it('finds the top keyword even when it appears beyond the old 200-row limit', async () => {
+    // Build 250 keywords. Most have impressions=10, but kw210 has impressions=1000.
+    // With the old .limit(200), kw210 would never be fetched, and the top keyword
+    // returned to the brief would incorrectly show impressions=10.
+    const makeKw = (i: number) => ({
+      location_id: 'loc1',
+      month: '2026-09-01',
+      keyword: `kw${i}`,
+      impressions: i === 210 ? 1000 : 10,
+      impressions_threshold: null,
+    })
+    const allKeywords = Array.from({ length: 250 }, (_, i) => makeKw(i))
+
+    let gbpKwCallCount = 0
+    let callIndex = 0
+
+    function makeQueryChain(returnData: unknown[]) {
+      const chain: Record<string, unknown> = {}
+      for (const m of ['select', 'in', 'eq', 'not', 'gte', 'lte', 'order', 'limit', 'range']) {
+        chain[m] = () => chain
+      }
+      chain['then'] = (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+        Promise.resolve(resolve({ data: returnData, error: null }))
+      return chain
+    }
+
+    const db = {
+      from: vi.fn((table: string) => {
+        if (table === 'gbp_locations') return makeQueryChain([{ id: 'loc1' }])
+        if (table === 'gbp_location_metrics') return makeQueryChain([])
+        if (table === 'gbp_search_keywords_monthly') {
+          gbpKwCallCount++
+          if (gbpKwCallCount === 1) {
+            // Probe: return the latest month row
+            return makeQueryChain([{ month: '2026-09-01' }])
+          }
+          // Paginated fetch: return all 250 keywords (< 1000, so pagination stops after 1 page)
+          return makeQueryChain(allKeywords)
+        }
+        // Track call order for parallel Promise.all
+        callIndex++
+        return makeQueryChain([])
+      }),
+    }
+
+    const result = await collectGbpPerformanceData(db as never, '2026-09-19')
+
+    // kw210 must appear as the top keyword — it would be missed with .limit(200)
+    expect(result).not.toBeNull()
+    expect(result!.top_keywords[0].keyword).toBe('kw210')
+    expect(result!.top_keywords[0].impressions).toBe(1000)
+  })
+})

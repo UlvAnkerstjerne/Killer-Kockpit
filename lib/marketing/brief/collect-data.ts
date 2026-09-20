@@ -32,6 +32,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { hasGbpScope } from '@/lib/google/auth'
 import {
   buildGooglePaidCampaigns,
+  type PaidCampaign,
   type GooglePaidAccount,
   type GooglePaidCampaign,
   type GooglePaidAction,
@@ -835,7 +836,9 @@ export async function collectGoogleAdsData(
   const priorStart = subtractDays(windowStart, 7)
   const priorEnd   = subtractDays(windowStart, 1)
 
-  const [{ data: campaigns }, { data: actions }, { data: daily }, { data: priorDaily }] = await Promise.all([
+  // Prior daily must include conversion_results so we can run buildGooglePaidCampaigns
+  // for per-result comparison against the same action resource names.
+  const [{ data: campaigns }, { data: actions }, { data: daily }, { data: priorDailyRaw }] = await Promise.all([
     db.from('google_ads_campaigns')
       .select('customer_id, campaign_id, name, status, channel_type, goal_config_level, conversion_goals, custom_conversion_goal')
       .in('customer_id', customerIds),
@@ -848,7 +851,7 @@ export async function collectGoogleAdsData(
       .gte('date', windowStart)
       .lte('date', yesterday),
     db.from('google_ads_campaign_daily')
-      .select('cost_micros, impressions, clicks')
+      .select('customer_id, campaign_id, date, cost_micros, impressions, clicks, conversions, all_conversions, conversion_results')
       .in('customer_id', customerIds)
       .gte('date', priorStart)
       .lte('date', priorEnd),
@@ -856,9 +859,19 @@ export async function collectGoogleAdsData(
 
   if (!campaigns || campaigns.length === 0) return null
 
+  // Identify currently ENABLED campaign keys (customer_id:campaign_id).
+  // Prior-period totals and comparisons must only cover these same campaigns
+  // so current vs prior is apples-to-apples. A campaign that was running last
+  // week but is now paused must not inflate the prior benchmark.
+  const enabledCampaignKeys = new Set(
+    (campaigns as GooglePaidCampaign[])
+      .filter(c => c.status === 'ENABLED')
+      .map(c => `${c.customer_id}:${c.campaign_id}`)
+  )
+
   const range = { start: windowStart, end: yesterday }
 
-  let paidCampaigns
+  let paidCampaigns: PaidCampaign[]
   try {
     paidCampaigns = buildGooglePaidCampaigns(
       campaigns as GooglePaidCampaign[],
@@ -872,11 +885,49 @@ export async function collectGoogleAdsData(
     return null
   }
 
+  // Filter prior daily rows to currently-ENABLED campaigns only.
+  // Never aggregate prior rows for campaigns that are currently paused.
+  const priorDailyFiltered = ((priorDailyRaw ?? []) as unknown as Array<Record<string, unknown>>).filter(
+    r => enabledCampaignKeys.has(`${r['customer_id']}:${r['campaign_id']}`),
+  ) as unknown as GooglePaidDaily[]
+
+  // Build prior-period paid campaigns (ENABLED only) to get per-result comparison.
+  // Reuses buildGooglePaidCampaigns so result/goal semantics are identical.
+  const enabledCampaigns = (campaigns as GooglePaidCampaign[]).filter(c => c.status === 'ENABLED')
+  const priorRange = { start: priorStart, end: priorEnd }
+  let priorPaidCampaigns: PaidCampaign[] = []
+  if (priorDailyFiltered.length > 0) {
+    try {
+      priorPaidCampaigns = buildGooglePaidCampaigns(
+        enabledCampaigns,
+        accounts as GooglePaidAccount[],
+        (actions ?? []) as GooglePaidAction[],
+        priorDailyFiltered,
+        priorRange,
+      )
+    } catch (e) {
+      console.error('[collect-data] collectGoogleAdsData prior buildGooglePaidCampaigns:', e)
+      // prior comparison unavailable — not fatal, summaries will show null prior fields
+    }
+  }
+
+  // Index prior results by campaign id → action resource name → GoogleResultDetail.
+  // Only the SAME action resource name is a valid match; different actions are never combined.
+  const priorByCampaignId = new Map<string, Map<string, GoogleResultDetail>>()
+  for (const c of priorPaidCampaigns) {
+    const resultMap = new Map<string, GoogleResultDetail>()
+    for (const r of (c.googleResults ?? [])) {
+      resultMap.set(r.id, r)
+    }
+    priorByCampaignId.set(c.id, resultMap)
+  }
+
   const active: GoogleAdsCampaignSummary[] = []
   const paused: GoogleAdsCampaignSummary[] = []
 
   for (const c of paidCampaigns) {
     const googleResults = c.googleResults ?? c.results
+    const priorResultsForCampaign = priorByCampaignId.get(c.id) ?? null
     const summary: GoogleAdsCampaignSummary = {
       id:             c.id,
       name:           truncate(c.name, 60) ?? c.name.slice(0, 60),
@@ -885,12 +936,18 @@ export async function collectGoogleAdsData(
       spend_7d:       c.spend,
       impressions_7d: c.impressions,
       clicks_7d:      c.clicks,
-      top_results: googleResults.slice(0, 3).map((r) => ({
-        label:         r.label,
-        count:         r.count,
-        costPerResult: r.costPerResult,
-        primary:       'primary' in r ? (r as GoogleResultDetail).primary : true,
-      })),
+      top_results: googleResults.slice(0, 3).map((r) => {
+        // Match prior result by the same action resource name — never cross-match
+        const prior = priorResultsForCampaign?.get(r.id) ?? null
+        return {
+          label:               r.label,
+          count:               r.count,
+          costPerResult:       r.costPerResult,
+          primary:             'primary' in r ? (r as GoogleResultDetail).primary : true,
+          prior_count:         prior !== null ? prior.count         : null,
+          prior_costPerResult: prior !== null ? prior.costPerResult : null,
+        }
+      }),
     }
     if (c.status === 'ENABLED') active.push(summary)
     else paused.push(summary)
@@ -901,16 +958,16 @@ export async function collectGoogleAdsData(
   const total_impressions_7d = active.reduce((s, c) => s + c.impressions_7d, 0)
   const total_clicks_7d      = active.reduce((s, c) => s + c.clicks_7d, 0)
 
-  // Prior-period totals — null when no prior rows exist (no data = no comparison)
+  // Prior-period account totals — ENABLED campaigns only, null when no prior rows
   let total_spend_prior_7d:       number | null = null
   let total_impressions_prior_7d: number | null = null
   let total_clicks_prior_7d:      number | null = null
-  if (priorDaily && priorDaily.length > 0) {
+  if (priorDailyFiltered.length > 0) {
     // cost_micros is a bigint column — coerce each value safely before summing
     let spendMicros = 0
     let impressions = 0
     let clicks      = 0
-    for (const r of priorDaily as Array<Record<string, unknown>>) {
+    for (const r of priorDailyFiltered as unknown as Array<Record<string, unknown>>) {
       spendMicros += Number(r['cost_micros'] ?? 0)
       impressions += Number(r['impressions'] ?? 0)
       clicks      += Number(r['clicks']      ?? 0)
@@ -1278,22 +1335,39 @@ export async function collectGbpPerformanceData(
   const gbpLocationIds = locationRows.map((l) => l.id as string)
   const windowStart  = subtractDays(yesterday, 27)   // 28 days inclusive
 
-  const [{ data: metricsRaw }, { data: keywordRaw }] = await Promise.all([
+  // Fetch metrics and probe for the most recent keyword month in parallel.
+  // The probe uses a single-row ordered fetch to avoid loading all historical months.
+  const [{ data: metricsRaw }, { data: latestMonthRows }] = await Promise.all([
     db.from('gbp_location_metrics')
       .select('location_id, impressions_desktop_search, impressions_mobile_search, impressions_desktop_maps, impressions_mobile_maps, website_clicks, call_clicks, direction_requests')
       .in('location_id', gbpLocationIds)
       .gte('date', windowStart)
       .lte('date', yesterday),
     db.from('gbp_search_keywords_monthly')
-      .select('location_id, month, keyword, impressions, impressions_threshold')
+      .select('month')
       .in('location_id', gbpLocationIds)
       .order('month', { ascending: false })
-      .limit(200),
+      .limit(1),
   ])
+
+  // Fetch ALL keyword rows for the latest month only, using pagination.
+  // An arbitrary .limit() would silently truncate the top keywords.
+  const latestMonthDate = latestMonthRows?.[0]?.month as string | undefined
+  const keywordRows = latestMonthDate
+    ? await fetchAllPages<GbpKwRow>(
+        (from, to) =>
+          db.from('gbp_search_keywords_monthly')
+            .select('location_id, month, keyword, impressions, impressions_threshold')
+            .in('location_id', gbpLocationIds)
+            .eq('month', latestMonthDate)
+            .range(from, to),
+        'gbp_search_keywords_monthly',
+      )
+    : []
 
   return aggregateGbpPerformanceRows(
     (metricsRaw ?? []) as GbpMetricRow[],
-    (keywordRaw ?? []) as GbpKwRow[],
+    keywordRows,
   )
 }
 
