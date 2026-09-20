@@ -160,7 +160,10 @@ export async function getGbpPerformance(
   const locations = (locationRows ?? []) as LocationRow[]
   if (locations.length === 0) return EMPTY
 
-  const canonicalIds = locations.map((l) => l.location_id)
+  // gbp_location_metrics.location_id and gbp_search_keywords_monthly.location_id
+  // both reference gbp_locations.id (NOT canonical locations.id).
+  // The canonical location_id is retained only for cross-system mapping.
+  const gbpLocationIds = locations.map((l) => l.id)
 
   // 2. Date range (last N days ending yesterday, Copenhagen time)
   const today = todayCph()
@@ -172,7 +175,7 @@ export async function getGbpPerformance(
   const { data: metricsRaw } = await db
     .from('gbp_location_metrics')
     .select('location_id, impressions_desktop_search, impressions_mobile_search, impressions_desktop_maps, impressions_mobile_maps, website_clicks, call_clicks, direction_requests, total_impressions')
-    .in('location_id', canonicalIds)
+    .in('location_id', gbpLocationIds)
     .gte('date', start)
     .lte('date', end)
 
@@ -183,7 +186,7 @@ export async function getGbpPerformance(
   const { data: keywordRaw } = await db
     .from('gbp_search_keywords_monthly')
     .select('location_id, month, keyword, impressions, impressions_threshold')
-    .in('location_id', canonicalIds)
+    .in('location_id', gbpLocationIds)
     .order('month', { ascending: false })
 
   const allKeywords = (keywordRaw ?? []) as KwRow[]
@@ -250,7 +253,7 @@ export async function getGbpPerformance(
   }
 
   const locationSummaries: GbpLocationSummaryRow[] = locations.map((loc) => {
-    const locMetrics = locMetricsMap.get(loc.location_id) ?? []
+    const locMetrics = locMetricsMap.get(loc.id) ?? []
     const locSearch  = sumTwo(sumCol(locMetrics, 'impressions_desktop_search'), sumCol(locMetrics, 'impressions_mobile_search'))
     const locMaps    = sumTwo(sumCol(locMetrics, 'impressions_desktop_maps'),   sumCol(locMetrics, 'impressions_mobile_maps'))
     return {
