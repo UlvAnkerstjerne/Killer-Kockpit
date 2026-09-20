@@ -37,8 +37,8 @@ function q(data: unknown) {
   return stub
 }
 
-const LOC_A = { id: 'gbp-a', store_name: 'Nørreport', store_short_name: 'NP', location_id: 'canon-a' }
-const LOC_B = { id: 'gbp-b', store_name: 'Aarhus',    store_short_name: 'ARH', location_id: 'canon-b' }
+const LOC_A = { id: 'gbp-a', store_name: 'Nørreport', store_short_name: 'NP', location_id: 'gbp-a' }
+const LOC_B = { id: 'gbp-b', store_name: 'Aarhus',    store_short_name: 'ARH', location_id: 'gbp-b' }
 
 function metricRow(locationId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -120,8 +120,8 @@ describe('getGbpPerformance — aggregation', () => {
   it('sums search and maps impressions across all rows', async () => {
     setupDb({
       metrics: [
-        metricRow('canon-a'),
-        metricRow('canon-b'),
+        metricRow('gbp-a'),
+        metricRow('gbp-b'),
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -137,7 +137,7 @@ describe('getGbpPerformance — aggregation', () => {
   })
 
   it('exposes breakdown by desktop/mobile', async () => {
-    setupDb({ metrics: [metricRow('canon-a')] })
+    setupDb({ metrics: [metricRow('gbp-a')] })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
     const result = await getGbpPerformance(null)
     expect(result.breakdown.desktopSearch).toBe(100)
@@ -149,7 +149,7 @@ describe('getGbpPerformance — aggregation', () => {
   it('treats null metric columns as absent (not zero)', async () => {
     setupDb({
       metrics: [
-        metricRow('canon-a', { impressions_desktop_search: null, impressions_mobile_search: null }),
+        metricRow('gbp-a', { impressions_desktop_search: null, impressions_mobile_search: null }),
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -162,8 +162,8 @@ describe('getGbpPerformance — aggregation', () => {
   it('builds per-location summaries', async () => {
     setupDb({
       metrics: [
-        metricRow('canon-a', { website_clicks: 10 }),
-        metricRow('canon-b', { website_clicks: 20 }),
+        metricRow('gbp-a', { website_clicks: 10 }),
+        metricRow('gbp-b', { website_clicks: 20 }),
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -186,9 +186,9 @@ describe('getGbpPerformance — keywords', () => {
   it('returns top keywords for the most recent month', async () => {
     setupDb({
       keywords: [
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab',    impressions: 500, impressions_threshold: null },
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'shawarma', impressions: 200, impressions_threshold: null },
-        { location_id: 'canon-a', month: '2026-08-01', keyword: 'old',      impressions: 999, impressions_threshold: null },
+        { location_id: 'gbp-a', month: '2026-09-01', keyword: 'kebab',    impressions: 500, impressions_threshold: null },
+        { location_id: 'gbp-a', month: '2026-09-01', keyword: 'shawarma', impressions: 200, impressions_threshold: null },
+        { location_id: 'gbp-a', month: '2026-08-01', keyword: 'old',      impressions: 999, impressions_threshold: null },
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -202,8 +202,8 @@ describe('getGbpPerformance — keywords', () => {
   it('sums exact impressions when all locations have exact counts', async () => {
     setupDb({
       keywords: [
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: 300, impressions_threshold: null },
-        { location_id: 'canon-b', month: '2026-09-01', keyword: 'kebab', impressions: 200, impressions_threshold: null },
+        { location_id: 'gbp-a', month: '2026-09-01', keyword: 'kebab', impressions: 300, impressions_threshold: null },
+        { location_id: 'gbp-b', month: '2026-09-01', keyword: 'kebab', impressions: 200, impressions_threshold: null },
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -216,7 +216,7 @@ describe('getGbpPerformance — keywords', () => {
   it('single threshold row → impressionsThreshold set, impressions null', async () => {
     setupDb({
       keywords: [
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'gbp-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -228,8 +228,8 @@ describe('getGbpPerformance — keywords', () => {
   it('multiple threshold rows → thresholds summed (not max)', async () => {
     setupDb({
       keywords: [
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
-        { location_id: 'canon-b', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'gbp-a', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'gbp-b', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
@@ -241,14 +241,14 @@ describe('getGbpPerformance — keywords', () => {
   it('mixed exact + threshold → safe upper bound (spec example: 40+15+15=70)', async () => {
     setupDb({
       locations: [
-        { id: 'gbp-a', store_name: 'Vesterbro',     store_short_name: 'VB', location_id: 'canon-a' },
-        { id: 'gbp-b', store_name: 'Nørrebro',      store_short_name: 'NB', location_id: 'canon-b' },
-        { id: 'gbp-c', store_name: 'Frederiksberg',  store_short_name: 'FB', location_id: 'canon-c' },
+        { id: 'gbp-a', store_name: 'Vesterbro',     store_short_name: 'VB', location_id: 'gbp-a' },
+        { id: 'gbp-b', store_name: 'Nørrebro',      store_short_name: 'NB', location_id: 'gbp-b' },
+        { id: 'gbp-c', store_name: 'Frederiksberg',  store_short_name: 'FB', location_id: 'gbp-c' },
       ],
       keywords: [
-        { location_id: 'canon-a', month: '2026-09-01', keyword: 'kebab', impressions: 40, impressions_threshold: null },
-        { location_id: 'canon-b', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
-        { location_id: 'canon-c', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'gbp-a', month: '2026-09-01', keyword: 'kebab', impressions: 40, impressions_threshold: null },
+        { location_id: 'gbp-b', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
+        { location_id: 'gbp-c', month: '2026-09-01', keyword: 'kebab', impressions: null, impressions_threshold: 15 },
       ],
     })
     const { getGbpPerformance } = await import('@/lib/actions/marketing/gbp-performance')
