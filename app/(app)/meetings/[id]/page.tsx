@@ -20,11 +20,13 @@ import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import TranscriptSection from './TranscriptSection'
 import AiDraftSection from './AiDraftSection'
+import InPersonRecordingSection from './InPersonRecordingSection'
 import { getGoogleConnectionStatus, hasDriveScope } from '@/lib/google/auth'
 import { getEntityDriveFiles } from '@/lib/actions/drive'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { getTranscriptSource } from '@/lib/actions/transcripts'
 import { getLatestDraft } from '@/lib/actions/ai-drafts'
+import { getRecordingsForMeeting } from '@/lib/actions/recordings'
 import { canManageTranscript, canGenerateDraft } from '@/lib/permissions'
 import type { MeetingStatus, AgendaItem, MeetingOutcome, MeetingAttendee, MeetingMinutes } from '@/lib/types'
 
@@ -40,7 +42,7 @@ export default async function MeetingDetailPage({
 
   const supabase = await createClient()
 
-  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, googleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, minutesResult] = await Promise.all([
+  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, googleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, recordingsResult, minutesResult] = await Promise.all([
     supabase
       .from('meetings')
       .select(`
@@ -97,6 +99,7 @@ export default async function MeetingDetailPage({
     getEntityGmailSources('meeting', id),
     getTranscriptSource(id),
     getLatestDraft(id),
+    getRecordingsForMeeting(id),
 
     // Canonical minutes: latest published version. May be null for legacy
     // meetings published before M5D (migration 014).
@@ -134,7 +137,8 @@ export default async function MeetingDetailPage({
   const canGenerateDraftFile  = canGenerateDraft(user.role, owner?.id ?? null, user.id, meeting.status)
   // Canonical published minutes (null for legacy meetings pre-dating M5D)
   const canonicalMinutes = minutesResult.data as MeetingMinutes | null
-  const gmailSources = gmailSourcesResult.data ?? []
+  const gmailSources     = gmailSourcesResult.data ?? []
+  const recordings       = recordingsResult.data ?? []
 
   const corrections = (correctionsResult.data ?? []) as unknown as {
     id: string; body: string; reason: string | null; author_id: string | null;
@@ -407,6 +411,15 @@ export default async function MeetingDetailPage({
             canRead={canReadTranscriptFile}
             meetSpaceName={(meeting.meet_space_name as string | null) ?? null}
           />
+
+          {/* In-person recording */}
+          {isActive && (
+            <InPersonRecordingSection
+              meetingId={id}
+              recordings={recordings}
+              canManage={canManageTranscriptFile}
+            />
+          )}
 
           {/* AI Draft — only shown when there is a transcript or the user can generate */}
           {(transcriptSource || latestDraft) && (

@@ -25,18 +25,18 @@ import GmailProvenance from '@/components/ui/GmailProvenance'
 
 export const dynamic = 'force-dynamic'
 
+const ALLOWED_RETURN_DESTINATIONS = ['/today', '/tasks', '/store']
+
 export default async function TaskDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ returnTo?: string | string[] }>
+  searchParams: Promise<{ returnTo?: string }>
 }) {
-  const { id } = await params
-  const query = await searchParams
-  const rawReturnTo = Array.isArray(query.returnTo) ? query.returnTo[0] : query.returnTo
-  const allowedReturnTos = new Set(['/today', '/tasks', '/store'])
-  const returnTo = rawReturnTo && allowedReturnTos.has(rawReturnTo) ? rawReturnTo : '/tasks'
+  const [{ id }, sp] = await Promise.all([params, searchParams])
+  const rawReturn = sp.returnTo
+  const returnTo = rawReturn && ALLOWED_RETURN_DESTINATIONS.includes(rawReturn) ? rawReturn : '/tasks'
   const [user, allUsers] = await Promise.all([getCurrentUser(), getActiveUsers()])
   if (!user) return null
 
