@@ -63,6 +63,9 @@ function makeMockBriefData(): BriefInputData {
       meta_fb_page_daily:    { last_success_at: null, status: 'synced', age_hours: 1, healthy: true },
       meta_fb_organic_deep:  { last_success_at: null, status: 'synced', age_hours: 1, healthy: true },
       gbp: { kind: 'pending_approval', last_sync_at: null, healthy: true },
+      google_ads: { last_success_at: null, status: 'never', age_hours: null, healthy: false },
+      gsc:        { last_success_at: null, status: 'never', age_hours: null, healthy: false },
+      ga4:        { last_success_at: null, status: 'never', age_hours: null, healthy: false },
     },
     signals: {
       has_stale_critical_source: false,
@@ -94,6 +97,7 @@ function makeMockBriefData(): BriefInputData {
       avg_star_rating_7d: null,
     },
     needsReview: { total: 0, review_reply: 0, paid_recommendation: 0, content_approval: 0 },
+    googleAds: null, searchConsole: null, ga4: null, gbpPerformance: null,
   }
 }
 

@@ -30,21 +30,34 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { hasGbpScope } from '@/lib/google/auth'
+import {
+  buildGooglePaidCampaigns,
+  type GooglePaidAccount,
+  type GooglePaidCampaign,
+  type GooglePaidAction,
+  type GooglePaidDaily,
+  type GoogleResultDetail,
+} from '@/lib/marketing/paid-performance'
 import type {
   BriefInputData,
   CampaignMetrics,
   DeterministicSignals,
   FbPageMetrics,
   FbPostSummary,
+  Ga4BriefData,
   GbpBriefData,
   GbpIntegrationStatus,
   GbpIntegrationStatusKind,
+  GbpPerformanceBriefData,
+  GoogleAdsBriefData,
+  GoogleAdsCampaignSummary,
   IgAccountMetrics,
   IgPostSummary,
   IntegrationFreshness,
   NeedsReviewCount,
   OverallStatus,
   PaidAnomalySignal,
+  SearchConsoleBriefData,
   SourceFreshnessSummary,
   TrendPoint,
 } from './types'
@@ -77,6 +90,20 @@ const MAX_FB_POSTS = 5
 
 /** Maximum caption/message length sent to AI (UNTRUSTED text — truncated for safety). */
 const MAX_CAPTION_LENGTH = 80
+
+/** Maximum number of top keywords to include in the GBP performance brief. */
+const MAX_GBP_KEYWORDS = 5
+
+/** Maximum number of top queries/pages/sources/landing-pages in brief sections. */
+const MAX_BRIEF_ROWS = 5
+
+// ── Integration constants ──────────────────────────────────────────────────────
+
+/** Canonical Search Console site URL used throughout the app. */
+export const SC_SITE_URL = 'https://killerkebab.com/'
+
+/** GA4 property ID used throughout the app. */
+export const GA4_PROPERTY_ID = '333149501'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -137,23 +164,33 @@ function makeFreshness(
 type Db = ReturnType<typeof createServiceClient>
 
 async function collectSourceFreshness(db: Db): Promise<Omit<SourceFreshnessSummary, 'gbp'>> {
-  const { data: rows } = await db
-    .from('integration_sync_state')
-    .select('integration, status, last_success_at')
-    .in('integration', [
-      'meta_ads_daily',
-      'meta_ig_account_daily',
-      'meta_ig_organic_deep',
-      'meta_fb_page_daily',
-      'meta_fb_organic_deep',
-    ])
-    .is('user_id', null)  // institutional rows only
+  const [{ data: rows }, { data: gadsRows }] = await Promise.all([
+    db.from('integration_sync_state')
+      .select('integration, status, last_success_at')
+      .in('integration', [
+        'meta_ads_daily',
+        'meta_ig_account_daily',
+        'meta_ig_organic_deep',
+        'meta_fb_page_daily',
+        'meta_fb_organic_deep',
+        `gsc_daily:${SC_SITE_URL}`,
+        `ga4_daily:${GA4_PROPERTY_ID}`,
+      ])
+      .is('user_id', null),  // institutional rows only
+    db.from('integration_sync_state')
+      .select('integration, status, last_success_at')
+      .like('integration', 'google_ads_campaign_daily:%')
+      .is('user_id', null)
+      .order('last_success_at', { ascending: false })
+      .limit(1),
+  ])
 
   const byKey = Object.fromEntries(
     (rows ?? []).map((r) => [r.integration, r]),
   ) as Record<string, { status: string; last_success_at: string | null }>
 
-  const get = (key: string) => byKey[key] ?? { status: 'never', last_success_at: null }
+  const get  = (key: string) => byKey[key] ?? { status: 'never', last_success_at: null }
+  const gads = gadsRows?.[0]  ?? { status: 'never', last_success_at: null }
 
   return {
     meta_ads_daily:        makeFreshness(get('meta_ads_daily').last_success_at,        get('meta_ads_daily').status,        CRITICAL_STALENESS_HOURS),
@@ -161,6 +198,9 @@ async function collectSourceFreshness(db: Db): Promise<Omit<SourceFreshnessSumma
     meta_ig_organic_deep:  makeFreshness(get('meta_ig_organic_deep').last_success_at,  get('meta_ig_organic_deep').status,  DEEP_SYNC_STALENESS_HOURS),
     meta_fb_page_daily:    makeFreshness(get('meta_fb_page_daily').last_success_at,    get('meta_fb_page_daily').status,    CRITICAL_STALENESS_HOURS),
     meta_fb_organic_deep:  makeFreshness(get('meta_fb_organic_deep').last_success_at,  get('meta_fb_organic_deep').status,  DEEP_SYNC_STALENESS_HOURS),
+    google_ads:            makeFreshness(gads.last_success_at,                         (gads as { status: string }).status,                          CRITICAL_STALENESS_HOURS),
+    gsc:                   makeFreshness(get(`gsc_daily:${SC_SITE_URL}`).last_success_at,    get(`gsc_daily:${SC_SITE_URL}`).status,    CRITICAL_STALENESS_HOURS),
+    ga4:                   makeFreshness(get(`ga4_daily:${GA4_PROPERTY_ID}`).last_success_at, get(`ga4_daily:${GA4_PROPERTY_ID}`).status, CRITICAL_STALENESS_HOURS),
   }
 }
 
@@ -740,6 +780,381 @@ async function collectFbData(
   }
 }
 
+// ── sumTwo helper ─────────────────────────────────────────────────────────────
+
+function sumTwo(a: number | null, b: number | null): number | null {
+  if (a === null && b === null) return null
+  return (a ?? 0) + (b ?? 0)
+}
+
+// ── Google Ads data collection ─────────────────────────────────────────────────
+
+export async function collectGoogleAdsData(
+  db: Db,
+  windowStart: string,
+  yesterday: string,
+): Promise<GoogleAdsBriefData | null> {
+  const { data: accounts } = await db
+    .from('google_ads_accounts')
+    .select('customer_id, name, currency_code, time_zone')
+
+  if (!accounts || accounts.length === 0) return null
+
+  const customerIds = accounts.map((a) => a.customer_id as string)
+
+  const [{ data: campaigns }, { data: actions }, { data: daily }] = await Promise.all([
+    db.from('google_ads_campaigns')
+      .select('customer_id, campaign_id, name, status, channel_type, goal_config_level, conversion_goals, custom_conversion_goal')
+      .in('customer_id', customerIds),
+    db.from('google_ads_conversion_actions')
+      .select('customer_id, resource_name, name, category, origin, primary_for_goal, status, type')
+      .in('customer_id', customerIds),
+    db.from('google_ads_campaign_daily')
+      .select('customer_id, campaign_id, date, cost_micros, impressions, clicks, conversions, all_conversions, conversion_results')
+      .in('customer_id', customerIds)
+      .gte('date', windowStart)
+      .lte('date', yesterday),
+  ])
+
+  if (!campaigns || campaigns.length === 0) return null
+
+  const range = { start: windowStart, end: yesterday }
+
+  let paidCampaigns
+  try {
+    paidCampaigns = buildGooglePaidCampaigns(
+      campaigns as GooglePaidCampaign[],
+      accounts as GooglePaidAccount[],
+      (actions ?? []) as GooglePaidAction[],
+      (daily ?? []) as GooglePaidDaily[],
+      range,
+    )
+  } catch (e) {
+    console.error('[collect-data] collectGoogleAdsData buildGooglePaidCampaigns:', e)
+    return null
+  }
+
+  const active: GoogleAdsCampaignSummary[] = []
+  const paused: GoogleAdsCampaignSummary[] = []
+
+  for (const c of paidCampaigns) {
+    const googleResults = c.googleResults ?? c.results
+    const summary: GoogleAdsCampaignSummary = {
+      id:             c.id,
+      name:           truncate(c.name, 60) ?? c.name.slice(0, 60),
+      status:         c.status,
+      channel_type:   c.type,
+      spend_7d:       c.spend,
+      impressions_7d: c.impressions,
+      clicks_7d:      c.clicks,
+      top_results: googleResults.slice(0, 3).map((r) => ({
+        label:         r.label,
+        count:         r.count,
+        costPerResult: r.costPerResult,
+        primary:       'primary' in r ? (r as GoogleResultDetail).primary : true,
+      })),
+    }
+    if (c.status === 'ENABLED') active.push(summary)
+    else paused.push(summary)
+  }
+
+  const currency             = (accounts as GooglePaidAccount[])[0]?.currency_code ?? 'USD'
+  const total_spend_7d       = active.reduce((s, c) => s + c.spend_7d, 0)
+  const total_impressions_7d = active.reduce((s, c) => s + c.impressions_7d, 0)
+  const total_clicks_7d      = active.reduce((s, c) => s + c.clicks_7d, 0)
+
+  return { currency, total_spend_7d, total_impressions_7d, total_clicks_7d, active_campaigns: active, paused_campaigns: paused }
+}
+
+// ── GSC aggregation (exported for testing) ────────────────────────────────────
+
+type GscDailyRow  = { date?: unknown; clicks: unknown; impressions: unknown; position: unknown }
+type GscQueryRow  = { query: unknown; date?: unknown; clicks: unknown; impressions: unknown; position: unknown }
+type GscPageRow   = { page: unknown; date?: unknown; clicks: unknown; impressions: unknown; position: unknown }
+
+function aggregateGscDimension<T extends { clicks: unknown; impressions: unknown; position: unknown }>(
+  rows: T[],
+  getKey: (r: T) => string,
+  limit: number,
+): Array<{ key: string; clicks: number; impressions: number; ctr: number; position: number | null }> {
+  const map = new Map<string, { clicks: number; impressions: number; posW: number; posI: number }>()
+  for (const r of rows) {
+    const k   = getKey(r)
+    const acc = map.get(k) ?? { clicks: 0, impressions: 0, posW: 0, posI: 0 }
+    const imp = (r.impressions as number | null) ?? 0
+    acc.clicks      += (r.clicks as number | null) ?? 0
+    acc.impressions += imp
+    const pos = r.position as number | null
+    if (pos != null && imp > 0) { acc.posW += pos * imp; acc.posI += imp }
+    map.set(k, acc)
+  }
+  return Array.from(map.entries())
+    .map(([key, acc]) => ({
+      key,
+      clicks:      acc.clicks,
+      impressions: acc.impressions,
+      ctr:         acc.impressions > 0 ? acc.clicks / acc.impressions : 0,
+      position:    acc.posI > 0 ? acc.posW / acc.posI : null,
+    }))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, limit)
+}
+
+export function aggregateGscRows(
+  dailyRows: GscDailyRow[],
+  queryRows: GscQueryRow[],
+  pageRows: GscPageRow[],
+): SearchConsoleBriefData | null {
+  if (dailyRows.length === 0) return null
+
+  const clicks_7d      = sumIntRows(dailyRows as Array<Record<string, unknown>>, 'clicks')
+  const impressions_7d = sumIntRows(dailyRows as Array<Record<string, unknown>>, 'impressions')
+  const ctr_7d         = impressions_7d && impressions_7d > 0 && clicks_7d != null
+    ? clicks_7d / impressions_7d : null
+
+  let posW = 0, posI = 0
+  for (const r of dailyRows) {
+    const pos = r.position as number | null
+    const imp = (r.impressions as number | null) ?? 0
+    if (pos != null && imp > 0) { posW += pos * imp; posI += imp }
+  }
+  const avg_position_7d = posI > 0 ? posW / posI : null
+
+  const queryAgg = aggregateGscDimension(queryRows, (r) => r.query as string, MAX_BRIEF_ROWS)
+  const pageAgg  = aggregateGscDimension(pageRows,  (r) => r.page  as string, MAX_BRIEF_ROWS)
+
+  return {
+    clicks_7d:       clicks_7d ?? 0,
+    impressions_7d:  impressions_7d ?? 0,
+    ctr_7d,
+    avg_position_7d,
+    top_queries: queryAgg.map((r) => ({ query:    r.key, clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
+    top_pages:   pageAgg.map((r)  => ({ page:     r.key, clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
+  }
+}
+
+export async function collectSearchConsoleData(
+  db: Db,
+  windowStart: string,
+  yesterday: string,
+): Promise<SearchConsoleBriefData | null> {
+  const [{ data: dailyRows }, { data: queryRows }, { data: pageRows }] = await Promise.all([
+    db.from('gsc_daily')
+      .select('date, clicks, impressions, ctr, position')
+      .eq('site_url', SC_SITE_URL)
+      .gte('date', windowStart)
+      .lte('date', yesterday)
+      .order('date'),
+    db.from('gsc_queries')
+      .select('date, query, clicks, impressions, position')
+      .eq('site_url', SC_SITE_URL)
+      .gte('date', windowStart)
+      .lte('date', yesterday)
+      .limit(500),
+    db.from('gsc_pages')
+      .select('date, page, clicks, impressions, position')
+      .eq('site_url', SC_SITE_URL)
+      .gte('date', windowStart)
+      .lte('date', yesterday)
+      .limit(500),
+  ])
+
+  return aggregateGscRows(
+    (dailyRows ?? []) as GscDailyRow[],
+    (queryRows ?? []) as GscQueryRow[],
+    (pageRows  ?? []) as GscPageRow[],
+  )
+}
+
+// ── GA4 aggregation (exported for testing) ────────────────────────────────────
+
+type Ga4DailyRow   = { sessions: unknown; new_users: unknown; page_views: unknown }
+type Ga4SourceRow  = { session_source: unknown; session_medium: unknown; sessions: unknown }
+type Ga4LandingRow = { landing_page: unknown; sessions: unknown }
+
+export function aggregateGa4Rows(
+  dailyRows:   Ga4DailyRow[],
+  sourceRows:  Ga4SourceRow[],
+  landingRows: Ga4LandingRow[],
+): Ga4BriefData | null {
+  if (dailyRows.length === 0) return null
+
+  const sessions_7d   = sumIntRows(dailyRows as Array<Record<string, unknown>>, 'sessions')   ?? 0
+  const new_users_7d  = sumIntRows(dailyRows as Array<Record<string, unknown>>, 'new_users')  ?? 0
+  const page_views_7d = sumIntRows(dailyRows as Array<Record<string, unknown>>, 'page_views') ?? 0
+
+  const sourceMap = new Map<string, { sessions: number }>()
+  for (const r of sourceRows) {
+    const k   = `${r.session_source as string}\x00${r.session_medium as string}`
+    const acc = sourceMap.get(k) ?? { sessions: 0 }
+    acc.sessions += (r.sessions as number | null) ?? 0
+    sourceMap.set(k, acc)
+  }
+  const top_sources = Array.from(sourceMap.entries())
+    .map(([k, acc]) => {
+      const [source, medium] = k.split('\x00')
+      return { source: source ?? k, medium: medium ?? '', sessions: acc.sessions, share: sessions_7d > 0 ? acc.sessions / sessions_7d : 0 }
+    })
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, MAX_BRIEF_ROWS)
+
+  const landingMap = new Map<string, { sessions: number }>()
+  for (const r of landingRows) {
+    const k   = r.landing_page as string
+    const acc = landingMap.get(k) ?? { sessions: 0 }
+    acc.sessions += (r.sessions as number | null) ?? 0
+    landingMap.set(k, acc)
+  }
+  const top_landing_pages = Array.from(landingMap.entries())
+    .map(([page, acc]) => ({ page, sessions: acc.sessions, share: sessions_7d > 0 ? acc.sessions / sessions_7d : 0 }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, MAX_BRIEF_ROWS)
+
+  return { sessions_7d, new_users_7d, page_views_7d, top_sources, top_landing_pages }
+}
+
+export async function collectGa4Data(
+  db: Db,
+  windowStart: string,
+  yesterday: string,
+): Promise<Ga4BriefData | null> {
+  const [{ data: dailyRows }, { data: sourceRows }, { data: landingRows }] = await Promise.all([
+    db.from('ga4_daily')
+      .select('date, sessions, new_users, page_views')
+      .eq('property_id', GA4_PROPERTY_ID)
+      .gte('date', windowStart)
+      .lte('date', yesterday)
+      .order('date'),
+    db.from('ga4_traffic_sources')
+      .select('date, session_source, session_medium, sessions, new_users')
+      .eq('property_id', GA4_PROPERTY_ID)
+      .gte('date', windowStart)
+      .lte('date', yesterday)
+      .limit(500),
+    db.from('ga4_landing_pages')
+      .select('date, landing_page, sessions, new_users')
+      .eq('property_id', GA4_PROPERTY_ID)
+      .gte('date', windowStart)
+      .lte('date', yesterday)
+      .limit(500),
+  ])
+
+  return aggregateGa4Rows(
+    (dailyRows   ?? []) as Ga4DailyRow[],
+    (sourceRows  ?? []) as Ga4SourceRow[],
+    (landingRows ?? []) as Ga4LandingRow[],
+  )
+}
+
+// ── GBP performance data collection ───────────────────────────────────────────
+
+type GbpMetricRow = {
+  location_id:                 string
+  impressions_desktop_search:  number | null
+  impressions_mobile_search:   number | null
+  impressions_desktop_maps:    number | null
+  impressions_mobile_maps:     number | null
+  website_clicks:              number | null
+  call_clicks:                 number | null
+  direction_requests:          number | null
+}
+
+type GbpKwRow = {
+  location_id:          string
+  month:                string
+  keyword:              string
+  impressions:          number | null
+  impressions_threshold: number | null
+}
+
+export function aggregateGbpPerformanceRows(
+  metricRows:  GbpMetricRow[],
+  keywordRows: GbpKwRow[],
+): Omit<GbpPerformanceBriefData, never> {
+  const rows = metricRows as Array<Record<string, unknown>>
+
+  const desktopSearch = sumIntRows(rows, 'impressions_desktop_search')
+  const mobileSearch  = sumIntRows(rows, 'impressions_mobile_search')
+  const desktopMaps   = sumIntRows(rows, 'impressions_desktop_maps')
+  const mobileMaps    = sumIntRows(rows, 'impressions_mobile_maps')
+
+  // Keyword aggregation — same logic as gbp-performance.ts
+  const mostRecentMonth = keywordRows.length > 0 ? keywordRows[0].month.slice(0, 7) : null
+  const recentKws = mostRecentMonth
+    ? keywordRows.filter((k) => k.month.slice(0, 7) === mostRecentMonth)
+    : []
+
+  type KwAgg = { exactSum: number; thresholdSum: number; hasThreshold: boolean }
+  const kwMap = new Map<string, KwAgg>()
+  for (const kw of recentKws) {
+    const agg = kwMap.get(kw.keyword) ?? { exactSum: 0, thresholdSum: 0, hasThreshold: false }
+    if (kw.impressions !== null) {
+      agg.exactSum += kw.impressions
+    } else if (kw.impressions_threshold !== null) {
+      agg.thresholdSum += kw.impressions_threshold
+      agg.hasThreshold = true
+    }
+    kwMap.set(kw.keyword, agg)
+  }
+
+  const top_keywords = [...kwMap.entries()]
+    .map(([keyword, agg]) => ({
+      keyword,
+      impressions:          agg.hasThreshold ? null : agg.exactSum,
+      impressionsThreshold: agg.hasThreshold ? agg.exactSum + agg.thresholdSum : null,
+    }))
+    .sort((a, b) => {
+      const aVal = a.impressions ?? (a.impressionsThreshold ?? 0)
+      const bVal = b.impressions ?? (b.impressionsThreshold ?? 0)
+      return bVal - aVal
+    })
+    .slice(0, MAX_GBP_KEYWORDS)
+
+  return {
+    search_impressions_28d: sumTwo(desktopSearch, mobileSearch),
+    maps_impressions_28d:   sumTwo(desktopMaps, mobileMaps),
+    website_clicks_28d:     sumIntRows(rows, 'website_clicks'),
+    call_clicks_28d:        sumIntRows(rows, 'call_clicks'),
+    direction_requests_28d: sumIntRows(rows, 'direction_requests'),
+    keyword_month:          mostRecentMonth,
+    top_keywords,
+  }
+}
+
+export async function collectGbpPerformanceData(
+  db: Db,
+  yesterday: string,
+): Promise<GbpPerformanceBriefData | null> {
+  const { data: locationRows } = await db
+    .from('gbp_locations')
+    .select('id, location_id')
+    .eq('active', true)
+    .not('location_id', 'is', null)
+
+  if (!locationRows || locationRows.length === 0) return null
+
+  const canonicalIds = locationRows.map((l) => l.location_id as string)
+  const windowStart  = subtractDays(yesterday, 27)   // 28 days inclusive
+
+  const [{ data: metricsRaw }, { data: keywordRaw }] = await Promise.all([
+    db.from('gbp_location_metrics')
+      .select('location_id, impressions_desktop_search, impressions_mobile_search, impressions_desktop_maps, impressions_mobile_maps, website_clicks, call_clicks, direction_requests')
+      .in('location_id', canonicalIds)
+      .gte('date', windowStart)
+      .lte('date', yesterday),
+    db.from('gbp_search_keywords_monthly')
+      .select('location_id, month, keyword, impressions, impressions_threshold')
+      .in('location_id', canonicalIds)
+      .order('month', { ascending: false })
+      .limit(200),
+  ])
+
+  return aggregateGbpPerformanceRows(
+    (metricsRaw ?? []) as GbpMetricRow[],
+    (keywordRaw ?? []) as GbpKwRow[],
+  )
+}
+
 // ── Deterministic signals ─────────────────────────────────────────────────────
 
 function computeSignals(
@@ -868,6 +1283,10 @@ export async function collectBriefData(briefDate: string): Promise<BriefInputDat
     igData,
     fbData,
     needsReview,
+    googleAdsData,
+    searchConsoleData,
+    ga4Data,
+    gbpPerformanceData,
   ] = await Promise.all([
     collectSourceFreshness(db),
     detectGbpIntegrationStatus(db),
@@ -875,6 +1294,10 @@ export async function collectBriefData(briefDate: string): Promise<BriefInputDat
     collectIgData(db, windowStart, yesterday),
     collectFbData(db, windowStart, yesterday),
     collectNeedsReviewCounts(db),
+    collectGoogleAdsData(db, windowStart, yesterday),
+    collectSearchConsoleData(db, windowStart, yesterday),
+    collectGa4Data(db, windowStart, yesterday),
+    collectGbpPerformanceData(db, yesterday),
   ])
 
   // GBP data depends on integration status (sequential, fast)
@@ -907,5 +1330,9 @@ export async function collectBriefData(briefDate: string): Promise<BriefInputDat
     },
     gbp: gbpData,
     needsReview,
+    googleAds:      googleAdsData,
+    searchConsole:  searchConsoleData,
+    ga4:            ga4Data,
+    gbpPerformance: gbpPerformanceData,
   }
 }

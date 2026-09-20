@@ -50,6 +50,9 @@ export interface SourceFreshnessSummary {
   meta_fb_page_daily:    IntegrationFreshness
   meta_fb_organic_deep:  IntegrationFreshness
   gbp:                   GbpIntegrationStatus
+  google_ads:            IntegrationFreshness
+  gsc:                   IntegrationFreshness
+  ga4:                   IntegrationFreshness
 }
 
 export type GbpIntegrationStatusKind =
@@ -169,6 +172,66 @@ export interface GbpBriefData {
   avg_star_rating_7d: number | null
 }
 
+// ─── Google Ads ───────────────────────────────────────────────────────────────
+
+export interface GoogleAdsCampaignSummary {
+  id:             string
+  name:           string   // UNTRUSTED — truncated to 60 chars
+  status:         string   // ENABLED, PAUSED
+  channel_type:   string
+  spend_7d:       number
+  impressions_7d: number
+  clicks_7d:      number
+  top_results: Array<{
+    label:         string
+    count:         number
+    costPerResult: number | null
+    primary:       boolean
+  }>
+}
+
+export interface GoogleAdsBriefData {
+  currency:             string
+  total_spend_7d:       number
+  total_impressions_7d: number
+  total_clicks_7d:      number
+  active_campaigns:     GoogleAdsCampaignSummary[]
+  paused_campaigns:     GoogleAdsCampaignSummary[]
+}
+
+// ─── Search Console ───────────────────────────────────────────────────────────
+
+export interface SearchConsoleBriefData {
+  clicks_7d:       number
+  impressions_7d:  number
+  ctr_7d:          number | null
+  avg_position_7d: number | null
+  top_queries: Array<{ query: string; clicks: number; impressions: number; ctr: number; position: number | null }>
+  top_pages:   Array<{ page: string; clicks: number; impressions: number; ctr: number; position: number | null }>
+}
+
+// ─── GA4 ──────────────────────────────────────────────────────────────────────
+
+export interface Ga4BriefData {
+  sessions_7d:   number
+  new_users_7d:  number
+  page_views_7d: number
+  top_sources:       Array<{ source: string; medium: string; sessions: number; share: number }>
+  top_landing_pages: Array<{ page: string; sessions: number; share: number }>
+}
+
+// ─── GBP performance metrics ──────────────────────────────────────────────────
+
+export interface GbpPerformanceBriefData {
+  search_impressions_28d: number | null
+  maps_impressions_28d:   number | null
+  website_clicks_28d:     number | null
+  call_clicks_28d:        number | null
+  direction_requests_28d: number | null
+  keyword_month:          string | null
+  top_keywords: Array<{ keyword: string; impressions: number | null; impressionsThreshold: number | null }>
+}
+
 export interface NeedsReviewCount {
   total: number
   review_reply: number
@@ -208,6 +271,12 @@ export interface BriefInputData {
 
   gbp: GbpBriefData
   needsReview: NeedsReviewCount
+
+  // null when the respective integration has no synced data yet
+  googleAds:      GoogleAdsBriefData | null
+  searchConsole:  SearchConsoleBriefData | null
+  ga4:            Ga4BriefData | null
+  gbpPerformance: GbpPerformanceBriefData | null
 }
 
 // ─── AI output schema (runtime-validated) ─────────────────────────────────────
