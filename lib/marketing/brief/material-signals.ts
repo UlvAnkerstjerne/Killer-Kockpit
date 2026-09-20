@@ -75,7 +75,10 @@ export const IG_MIN_REACH_FOR_SIGNAL             = 200
 export const IG_MATERIAL_REACH_CHANGE_PCT        = 0.15
 export const IG_POST_OUTPERFORMANCE_PCT          = 0.50  // post must be ≥ 50% above avg
 export const IG_POST_OUTPERFORMANCE_MIN_REACH    = 100
-export const IG_MIN_FOLLOWER_DELTA               = 20
+// Follower change: BOTH thresholds must be met for a candidate to fire.
+// Absolute floor prevents noise on large accounts; rate floor prevents noise on small accounts.
+export const IG_MIN_FOLLOWER_DELTA               = 100   // absolute change (gains or losses)
+export const IG_MIN_FOLLOWER_CHANGE_RATE         = 0.004 // ~0.4% of existing follower base
 
 // Search Console — movement
 export const GSC_MIN_CLICKS_FOR_SIGNAL           = 30
@@ -358,21 +361,31 @@ function organicIgSignals(data: BriefInputData): MaterialSignalCandidate[] {
     }
   }
 
-  // Follower delta
-  const followerDelta = ig.followers_7d_delta
+  // Follower delta — BOTH absolute floor AND rate-of-change must be met.
+  // Absolute floor: suppresses routine +/- noise on large accounts.
+  // Rate floor: expressed as fraction of the approximate follower base (followers before
+  //   the 7-day window = followers_current - followers_7d_delta), so the bar scales with
+  //   account size. Missing or non-positive base → no signal (cannot compute rate safely).
+  const followerDelta   = ig.followers_7d_delta
+  const followerCurrent = ig.followers_current
   if (followerDelta !== null && Math.abs(followerDelta) >= IG_MIN_FOLLOWER_DELTA) {
-    candidates.push({
-      id: 'organic_ig_followers',
-      source: 'organic_ig',
-      category: 'traffic_audience',
-      observation: `Instagram follower count ${followerDelta > 0 ? 'grew' : 'fell'} by ${Math.abs(followerDelta)} in the past 7 days (current: ${fmtNum(ig.followers_current ?? 0)}).`,
-      evidence: [
-        { metric: 'ig_followers_delta_7d', current: followerDelta, prior: null, change_pct: null },
-      ],
-      materiality_score: score('traffic_audience', clamp(Math.abs(followerDelta) / 100), 0.5),
-      commercially_relevant: false,
-      creatively_relevant: false,
-    })
+    const followerBase   = followerCurrent !== null ? followerCurrent - followerDelta : null
+    const baseIsValid    = followerBase !== null && followerBase > 0
+    const changeRate     = baseIsValid ? Math.abs(followerDelta) / followerBase! : null
+    if (changeRate !== null && changeRate >= IG_MIN_FOLLOWER_CHANGE_RATE) {
+      candidates.push({
+        id: 'organic_ig_followers',
+        source: 'organic_ig',
+        category: 'traffic_audience',
+        observation: `Instagram follower count ${followerDelta > 0 ? 'grew' : 'fell'} by ${Math.abs(followerDelta)} in the past 7 days (current: ${fmtNum(followerCurrent ?? 0)}).`,
+        evidence: [
+          { metric: 'ig_followers_delta_7d', current: followerDelta, prior: null, change_pct: changeRate * Math.sign(followerDelta) },
+        ],
+        materiality_score: score('traffic_audience', changeRate, 0.5),
+        commercially_relevant: false,
+        creatively_relevant: false,
+      })
+    }
   }
 
   // Top posts with significant outperformance
@@ -664,8 +677,13 @@ function gbpPerformanceSignals(data: BriefInputData): MaterialSignalCandidate[] 
   //    upper bound — it does NOT prove the keyword exceeds GBP_KEYWORD_MIN_IMPRESSIONS.
   //    Threshold-only keywords may appear as supporting context once an exact
   //    qualifying keyword has triggered the candidate, but cannot trigger it alone.
+  //
+  //    Suppression: if gbp_performance already occupies the brief, keyword context
+  //    adds editorial redundancy — the same GBP story is already leading the brief.
+  //    Only emit keyword context when there is no material GBP performance signal.
+  const hasGbpPerformance = candidates.some(c => c.id === 'gbp_performance')
   const topKws = gbp.top_keywords.slice(0, 3)
-  if (topKws.length > 0 && gbp.keyword_month !== null) {
+  if (!hasGbpPerformance && topKws.length > 0 && gbp.keyword_month !== null) {
     const hasExactQualifyingKeyword = topKws.some(
       (k) => k.impressions !== null && k.impressions >= GBP_KEYWORD_MIN_IMPRESSIONS,
     )

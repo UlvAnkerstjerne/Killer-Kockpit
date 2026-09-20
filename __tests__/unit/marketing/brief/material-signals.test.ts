@@ -37,6 +37,8 @@ import {
   GADS_MIN_CLICKS_7D_FOR_SIGNAL,
   GADS_MIN_RESULTS_FOR_SIGNAL,
   IG_MIN_REACH_FOR_SIGNAL,
+  IG_MIN_FOLLOWER_DELTA,
+  IG_MIN_FOLLOWER_CHANGE_RATE,
   GSC_MIN_CLICKS_FOR_SIGNAL,
   GSC_MIN_IMPRESSIONS_FOR_SIGNAL,
   GSC_OPPORTUNITY_MIN_IMPRESSIONS,
@@ -1034,6 +1036,147 @@ describe('GBP keyword gate — threshold-only keyword cannot trigger', () => {
       ]),
     })
     expect(buildMaterialSignals(data).find(s => s.id === 'gbp_keyword_context')).toBeUndefined()
+  })
+})
+
+// ─── IG follower dual-threshold ───────────────────────────────────────────────
+
+describe('IG follower dual-threshold gate', () => {
+  function makeIgFollowerData(followersCurrent: number | null, followersDelta: number | null) {
+    return makeData({
+      organic: {
+        ...minimalOrganic(),
+        ig: {
+          ...minimalOrganic().ig,
+          followers_current:  followersCurrent,
+          followers_7d_delta: followersDelta,
+        },
+      },
+    })
+  }
+
+  it('+34 on a ~22k account does NOT emit a signal (below both absolute and rate thresholds)', () => {
+    // 34 < IG_MIN_FOLLOWER_DELTA (100) → fails absolute floor immediately
+    const data = makeIgFollowerData(22_224, 34)
+    expect(buildMaterialSignals(data).find(s => s.id === 'organic_ig_followers')).toBeUndefined()
+  })
+
+  it(`+${IG_MIN_FOLLOWER_DELTA} on a ~22k account still suppressed if rate is below IG_MIN_FOLLOWER_CHANGE_RATE`, () => {
+    // base ≈ 22,124 → rate = 100 / 22,124 ≈ 0.0045 — just above threshold at 100
+    // Use a large account so rate stays below 0.4%: 100 / 27,000 ≈ 0.0037 < 0.004
+    const data = makeIgFollowerData(27_100, 100)
+    // 100 / 27000 = 0.0037 < 0.004 → suppressed
+    expect(buildMaterialSignals(data).find(s => s.id === 'organic_ig_followers')).toBeUndefined()
+  })
+
+  it('meaningful absolute + percentage movement DOES emit a signal', () => {
+    // 500 followers gained on a 5,000-follower account → 10% rate, well above both thresholds
+    const data = makeIgFollowerData(5_500, 500)
+    const s = buildMaterialSignals(data).find(c => c.id === 'organic_ig_followers')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('grew')
+  })
+
+  it('+50 on a small 2k account does NOT emit (below absolute floor of 100)', () => {
+    // 50 < IG_MIN_FOLLOWER_DELTA (100) — absolute floor check
+    const data = makeIgFollowerData(2_050, 50)
+    expect(buildMaterialSignals(data).find(s => s.id === 'organic_ig_followers')).toBeUndefined()
+  })
+
+  it('negative meaningful follower loss CAN emit a signal', () => {
+    // −500 on a 5,000-follower account → 10% loss rate — both thresholds met
+    const data = makeIgFollowerData(4_500, -500)
+    const s = buildMaterialSignals(data).find(c => c.id === 'organic_ig_followers')
+    expect(s).toBeDefined()
+    expect(s!.observation).toContain('fell')
+  })
+
+  it('missing followers_current does NOT emit (cannot compute rate)', () => {
+    const data = makeIgFollowerData(null, 500)
+    expect(buildMaterialSignals(data).find(s => s.id === 'organic_ig_followers')).toBeUndefined()
+  })
+})
+
+// ─── GBP keyword context — suppressed when gbp_performance exists ─────────────
+
+describe('GBP keyword context suppression', () => {
+  function makeGbpWithPerformanceAndKeywords(): BriefInputData['gbpPerformance'] {
+    const imp = GBP_MIN_IMPRESSIONS_FOR_SIGNAL * 4
+    return {
+      search_impressions_28d:       imp,
+      search_impressions_prior_28d: Math.round(imp / 2),   // 100% up → gbp_performance fires
+      maps_impressions_28d:         null,
+      maps_impressions_prior_28d:   null,
+      website_clicks_28d:           null,
+      call_clicks_28d:              null,
+      direction_requests_28d:       null,
+      website_clicks_prior_28d:     null,
+      call_clicks_prior_28d:        null,
+      direction_requests_prior_28d: null,
+      keyword_month: '2026-09-01',
+      top_keywords: [
+        { keyword: 'killer kebab', impressions: GBP_KEYWORD_MIN_IMPRESSIONS * 2, impressionsThreshold: null },
+      ],
+    }
+  }
+
+  it('gbp_performance signal suppresses gbp_keyword_context on the same brief', () => {
+    const data = makeData({ gbpPerformance: makeGbpWithPerformanceAndKeywords() })
+    const signals = buildMaterialSignals(data)
+    expect(signals.find(s => s.id === 'gbp_performance')).toBeDefined()
+    expect(signals.find(s => s.id === 'gbp_keyword_context')).toBeUndefined()
+  })
+
+  it('gbp_keyword_context still emits when there is no gbp_performance signal', () => {
+    // No movement in GBP metrics → no gbp_performance → keyword context allowed
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       null,
+        search_impressions_prior_28d: null,
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           null,
+        call_clicks_28d:              null,
+        direction_requests_28d:       null,
+        website_clicks_prior_28d:     null,
+        call_clicks_prior_28d:        null,
+        direction_requests_prior_28d: null,
+        keyword_month: '2026-09-01',
+        top_keywords: [
+          { keyword: 'killer kebab', impressions: GBP_KEYWORD_MIN_IMPRESSIONS * 2, impressionsThreshold: null },
+        ],
+      },
+    })
+    const signals = buildMaterialSignals(data)
+    expect(signals.find(s => s.id === 'gbp_performance')).toBeUndefined()
+    expect(signals.find(s => s.id === 'gbp_keyword_context')).toBeDefined()
+  })
+
+  it('threshold-only keyword honesty is preserved: <N notation when impressions is null', () => {
+    // No gbp_performance present, qualifying exact keyword + threshold-only keyword
+    const data = makeData({
+      gbpPerformance: {
+        search_impressions_28d:       null,
+        search_impressions_prior_28d: null,
+        maps_impressions_28d:         null,
+        maps_impressions_prior_28d:   null,
+        website_clicks_28d:           null,
+        call_clicks_28d:              null,
+        direction_requests_28d:       null,
+        website_clicks_prior_28d:     null,
+        call_clicks_prior_28d:        null,
+        direction_requests_prior_28d: null,
+        keyword_month: '2026-09-01',
+        top_keywords: [
+          { keyword: 'order kebab',  impressions: GBP_KEYWORD_MIN_IMPRESSIONS * 2, impressionsThreshold: null },
+          { keyword: 'kebab near me', impressions: null, impressionsThreshold: 500 },
+        ],
+      },
+    })
+    const s = buildMaterialSignals(data).find(c => c.id === 'gbp_keyword_context')
+    expect(s).toBeDefined()
+    // Threshold keyword must use <N notation, not exact count
+    expect(s!.observation).toContain('<')
   })
 })
 
