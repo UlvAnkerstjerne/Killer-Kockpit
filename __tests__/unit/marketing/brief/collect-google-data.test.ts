@@ -5,11 +5,12 @@
  * Uses only pure exported functions — no DB, no mocking required.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   aggregateGscRows,
   aggregateGa4Rows,
   aggregateGbpPerformanceRows,
+  collectGbpPerformanceData,
   SC_SITE_URL,
   GA4_PROPERTY_ID,
 } from '@/lib/marketing/brief/collect-data'
@@ -287,5 +288,53 @@ describe('aggregateGbpPerformanceRows — keyword aggregation', () => {
     }))
     const result = aggregateGbpPerformanceRows([], keywords)
     expect(result.top_keywords.length).toBeLessThanOrEqual(5)
+  })
+})
+
+// ── collectGbpPerformanceData — GBP location ID regression ────────────────────
+//
+// gbp_location_metrics.location_id and gbp_search_keywords_monthly.location_id
+// both reference gbp_locations.id (the PK UUID), NOT gbp_locations.location_id
+// (the canonical Google API ID). This test guards against that regression.
+
+describe('collectGbpPerformanceData — uses gbp_locations.id not location_id', () => {
+  it('queries performance tables with gbp_locations.id, not location_id', async () => {
+    // A location row with distinct id vs location_id values
+    const locationRow = { id: 'gbp-pk-uuid-1', location_id: 'canonical-google-id-xyz' }
+
+    // Track which values were passed to .in() on performance tables
+    const inCalls: Array<{ col: string; vals: unknown[] }> = []
+
+    function makeChain(returnData: unknown[]) {
+      const chain: Record<string, unknown> = {}
+      for (const m of ['select', 'eq', 'not', 'gte', 'lte', 'order', 'limit', 'range']) {
+        chain[m] = () => chain
+      }
+      chain['in'] = (col: string, vals: unknown[]) => {
+        inCalls.push({ col, vals: vals as unknown[] })
+        return chain
+      }
+      chain['then'] = (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+        Promise.resolve(resolve({ data: returnData, error: null }))
+      return chain
+    }
+
+    let callIndex = 0
+    const db = {
+      from: vi.fn((_table: string) => {
+        // First call: gbp_locations
+        // Subsequent calls: performance tables
+        if (callIndex++ === 0) return makeChain([locationRow])
+        return makeChain([])
+      }),
+    }
+
+    await collectGbpPerformanceData(db as never, '2026-09-19')
+
+    // The performance table queries must use the PK id, not the canonical location_id
+    for (const call of inCalls) {
+      expect(call.vals).toContain('gbp-pk-uuid-1')
+      expect(call.vals).not.toContain('canonical-google-id-xyz')
+    }
   })
 })

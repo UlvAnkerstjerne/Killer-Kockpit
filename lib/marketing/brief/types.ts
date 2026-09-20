@@ -191,21 +191,28 @@ export interface GoogleAdsCampaignSummary {
 }
 
 export interface GoogleAdsBriefData {
-  currency:             string
-  total_spend_7d:       number
-  total_impressions_7d: number
-  total_clicks_7d:      number
-  active_campaigns:     GoogleAdsCampaignSummary[]
-  paused_campaigns:     GoogleAdsCampaignSummary[]
+  currency:                    string
+  total_spend_7d:              number
+  total_spend_prior_7d:        number | null
+  total_impressions_7d:        number
+  total_impressions_prior_7d:  number | null
+  total_clicks_7d:             number
+  total_clicks_prior_7d:       number | null
+  active_campaigns:            GoogleAdsCampaignSummary[]
+  paused_campaigns:            GoogleAdsCampaignSummary[]
 }
 
 // ─── Search Console ───────────────────────────────────────────────────────────
 
 export interface SearchConsoleBriefData {
-  clicks_7d:       number
-  impressions_7d:  number
-  ctr_7d:          number | null
-  avg_position_7d: number | null
+  clicks_7d:             number
+  clicks_prior_7d:       number | null
+  impressions_7d:        number
+  impressions_prior_7d:  number | null
+  ctr_7d:                number | null
+  ctr_prior_7d:          number | null
+  avg_position_7d:       number | null
+  avg_position_prior_7d: number | null
   top_queries: Array<{ query: string; clicks: number; impressions: number; ctr: number; position: number | null }>
   top_pages:   Array<{ page: string; clicks: number; impressions: number; ctr: number; position: number | null }>
 }
@@ -213,9 +220,12 @@ export interface SearchConsoleBriefData {
 // ─── GA4 ──────────────────────────────────────────────────────────────────────
 
 export interface Ga4BriefData {
-  sessions_7d:   number
-  new_users_7d:  number
-  page_views_7d: number
+  sessions_7d:        number
+  sessions_prior_7d:  number | null
+  new_users_7d:       number
+  new_users_prior_7d: number | null
+  page_views_7d:        number
+  page_views_prior_7d:  number | null
   top_sources:       Array<{ source: string; medium: string; sessions: number; share: number }>
   top_landing_pages: Array<{ page: string; sessions: number; share: number }>
 }

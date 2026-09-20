@@ -780,6 +780,36 @@ async function collectFbData(
   }
 }
 
+// ── Pagination helper ─────────────────────────────────────────────────────────
+//
+// Mirrors the fetchAllPages pattern in app/(marketing)/marketing/google/page.tsx.
+// PostgREST enforces a server-side max-rows cap that .limit() cannot override.
+// Fetching in 1000-row pages via .range() bypasses the cap safely.
+
+const BRIEF_PAGE_SIZE = 1000
+
+type BriefPageResult<T> = { data: T[] | null; error: { message: string } | null }
+
+export async function fetchAllPages<T>(
+  fetcher: (from: number, to: number) => PromiseLike<BriefPageResult<T>>,
+  label: string,
+): Promise<T[]> {
+  const all: T[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await fetcher(from, from + BRIEF_PAGE_SIZE - 1)
+    if (error) {
+      console.error(`[collect-data] ${label} (page ${from / BRIEF_PAGE_SIZE}):`, error.message)
+      break
+    }
+    const page = data ?? []
+    all.push(...page)
+    if (page.length < BRIEF_PAGE_SIZE) break
+    from += BRIEF_PAGE_SIZE
+  }
+  return all
+}
+
 // ── sumTwo helper ─────────────────────────────────────────────────────────────
 
 function sumTwo(a: number | null, b: number | null): number | null {
@@ -802,7 +832,10 @@ export async function collectGoogleAdsData(
 
   const customerIds = accounts.map((a) => a.customer_id as string)
 
-  const [{ data: campaigns }, { data: actions }, { data: daily }] = await Promise.all([
+  const priorStart = subtractDays(windowStart, 7)
+  const priorEnd   = subtractDays(windowStart, 1)
+
+  const [{ data: campaigns }, { data: actions }, { data: daily }, { data: priorDaily }] = await Promise.all([
     db.from('google_ads_campaigns')
       .select('customer_id, campaign_id, name, status, channel_type, goal_config_level, conversion_goals, custom_conversion_goal')
       .in('customer_id', customerIds),
@@ -814,6 +847,11 @@ export async function collectGoogleAdsData(
       .in('customer_id', customerIds)
       .gte('date', windowStart)
       .lte('date', yesterday),
+    db.from('google_ads_campaign_daily')
+      .select('cost_micros, impressions, clicks')
+      .in('customer_id', customerIds)
+      .gte('date', priorStart)
+      .lte('date', priorEnd),
   ])
 
   if (!campaigns || campaigns.length === 0) return null
@@ -863,7 +901,36 @@ export async function collectGoogleAdsData(
   const total_impressions_7d = active.reduce((s, c) => s + c.impressions_7d, 0)
   const total_clicks_7d      = active.reduce((s, c) => s + c.clicks_7d, 0)
 
-  return { currency, total_spend_7d, total_impressions_7d, total_clicks_7d, active_campaigns: active, paused_campaigns: paused }
+  // Prior-period totals — null when no prior rows exist (no data = no comparison)
+  let total_spend_prior_7d:       number | null = null
+  let total_impressions_prior_7d: number | null = null
+  let total_clicks_prior_7d:      number | null = null
+  if (priorDaily && priorDaily.length > 0) {
+    // cost_micros is a bigint column — coerce each value safely before summing
+    let spendMicros = 0
+    let impressions = 0
+    let clicks      = 0
+    for (const r of priorDaily as Array<Record<string, unknown>>) {
+      spendMicros += Number(r['cost_micros'] ?? 0)
+      impressions += Number(r['impressions'] ?? 0)
+      clicks      += Number(r['clicks']      ?? 0)
+    }
+    total_spend_prior_7d       = spendMicros / 1_000_000
+    total_impressions_prior_7d = impressions
+    total_clicks_prior_7d      = clicks
+  }
+
+  return {
+    currency,
+    total_spend_7d,
+    total_spend_prior_7d,
+    total_impressions_7d,
+    total_impressions_prior_7d,
+    total_clicks_7d,
+    total_clicks_prior_7d,
+    active_campaigns: active,
+    paused_campaigns: paused,
+  }
 }
 
 // ── GSC aggregation (exported for testing) ────────────────────────────────────
@@ -901,9 +968,10 @@ function aggregateGscDimension<T extends { clicks: unknown; impressions: unknown
 }
 
 export function aggregateGscRows(
-  dailyRows: GscDailyRow[],
-  queryRows: GscQueryRow[],
-  pageRows: GscPageRow[],
+  dailyRows:      GscDailyRow[],
+  queryRows:      GscQueryRow[],
+  pageRows:       GscPageRow[],
+  priorDailyRows?: GscDailyRow[],
 ): SearchConsoleBriefData | null {
   if (dailyRows.length === 0) return null
 
@@ -920,16 +988,39 @@ export function aggregateGscRows(
   }
   const avg_position_7d = posI > 0 ? posW / posI : null
 
+  // Prior-period totals — null when no prior rows passed
+  let clicks_prior_7d:       number | null = null
+  let impressions_prior_7d:  number | null = null
+  let ctr_prior_7d:          number | null = null
+  let avg_position_prior_7d: number | null = null
+  if (priorDailyRows && priorDailyRows.length > 0) {
+    clicks_prior_7d      = sumIntRows(priorDailyRows as Array<Record<string, unknown>>, 'clicks')
+    impressions_prior_7d = sumIntRows(priorDailyRows as Array<Record<string, unknown>>, 'impressions')
+    ctr_prior_7d         = impressions_prior_7d && impressions_prior_7d > 0 && clicks_prior_7d != null
+      ? clicks_prior_7d / impressions_prior_7d : null
+    let pPosW = 0, pPosI = 0
+    for (const r of priorDailyRows) {
+      const pos = r.position as number | null
+      const imp = (r.impressions as number | null) ?? 0
+      if (pos != null && imp > 0) { pPosW += pos * imp; pPosI += imp }
+    }
+    avg_position_prior_7d = pPosI > 0 ? pPosW / pPosI : null
+  }
+
   const queryAgg = aggregateGscDimension(queryRows, (r) => r.query as string, MAX_BRIEF_ROWS)
   const pageAgg  = aggregateGscDimension(pageRows,  (r) => r.page  as string, MAX_BRIEF_ROWS)
 
   return {
-    clicks_7d:       clicks_7d ?? 0,
-    impressions_7d:  impressions_7d ?? 0,
+    clicks_7d:             clicks_7d ?? 0,
+    clicks_prior_7d,
+    impressions_7d:        impressions_7d ?? 0,
+    impressions_prior_7d,
     ctr_7d,
+    ctr_prior_7d,
     avg_position_7d,
-    top_queries: queryAgg.map((r) => ({ query:    r.key, clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
-    top_pages:   pageAgg.map((r)  => ({ page:     r.key, clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
+    avg_position_prior_7d,
+    top_queries: queryAgg.map((r) => ({ query: r.key, clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
+    top_pages:   pageAgg.map((r)  => ({ page:  r.key, clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position })),
   }
 }
 
@@ -938,32 +1029,47 @@ export async function collectSearchConsoleData(
   windowStart: string,
   yesterday: string,
 ): Promise<SearchConsoleBriefData | null> {
-  const [{ data: dailyRows }, { data: queryRows }, { data: pageRows }] = await Promise.all([
+  const priorStart = subtractDays(windowStart, 7)
+  const priorEnd   = subtractDays(windowStart, 1)
+
+  const [dailyRows, priorDailyRows, queryRows, pageRows] = await Promise.all([
     db.from('gsc_daily')
       .select('date, clicks, impressions, ctr, position')
       .eq('site_url', SC_SITE_URL)
       .gte('date', windowStart)
       .lte('date', yesterday)
-      .order('date'),
-    db.from('gsc_queries')
-      .select('date, query, clicks, impressions, position')
+      .order('date')
+      .then((r) => (r.data ?? []) as GscDailyRow[]),
+    db.from('gsc_daily')
+      .select('date, clicks, impressions, ctr, position')
       .eq('site_url', SC_SITE_URL)
-      .gte('date', windowStart)
-      .lte('date', yesterday)
-      .limit(500),
-    db.from('gsc_pages')
-      .select('date, page, clicks, impressions, position')
-      .eq('site_url', SC_SITE_URL)
-      .gte('date', windowStart)
-      .lte('date', yesterday)
-      .limit(500),
+      .gte('date', priorStart)
+      .lte('date', priorEnd)
+      .order('date')
+      .then((r) => (r.data ?? []) as GscDailyRow[]),
+    fetchAllPages<GscQueryRow>(
+      (from, to) =>
+        db.from('gsc_queries')
+          .select('date, query, clicks, impressions, position')
+          .eq('site_url', SC_SITE_URL)
+          .gte('date', windowStart)
+          .lte('date', yesterday)
+          .range(from, to),
+      'gsc_queries',
+    ),
+    fetchAllPages<GscPageRow>(
+      (from, to) =>
+        db.from('gsc_pages')
+          .select('date, page, clicks, impressions, position')
+          .eq('site_url', SC_SITE_URL)
+          .gte('date', windowStart)
+          .lte('date', yesterday)
+          .range(from, to),
+      'gsc_pages',
+    ),
   ])
 
-  return aggregateGscRows(
-    (dailyRows ?? []) as GscDailyRow[],
-    (queryRows ?? []) as GscQueryRow[],
-    (pageRows  ?? []) as GscPageRow[],
-  )
+  return aggregateGscRows(dailyRows, queryRows, pageRows, priorDailyRows)
 }
 
 // ── GA4 aggregation (exported for testing) ────────────────────────────────────
@@ -973,9 +1079,10 @@ type Ga4SourceRow  = { session_source: unknown; session_medium: unknown; session
 type Ga4LandingRow = { landing_page: unknown; sessions: unknown }
 
 export function aggregateGa4Rows(
-  dailyRows:   Ga4DailyRow[],
-  sourceRows:  Ga4SourceRow[],
-  landingRows: Ga4LandingRow[],
+  dailyRows:      Ga4DailyRow[],
+  sourceRows:     Ga4SourceRow[],
+  landingRows:    Ga4LandingRow[],
+  priorDailyRows?: Ga4DailyRow[],
 ): Ga4BriefData | null {
   if (dailyRows.length === 0) return null
 
@@ -1010,7 +1117,26 @@ export function aggregateGa4Rows(
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, MAX_BRIEF_ROWS)
 
-  return { sessions_7d, new_users_7d, page_views_7d, top_sources, top_landing_pages }
+  // Prior-period totals — null when no prior rows passed
+  let sessions_prior_7d:   number | null = null
+  let new_users_prior_7d:  number | null = null
+  let page_views_prior_7d: number | null = null
+  if (priorDailyRows && priorDailyRows.length > 0) {
+    sessions_prior_7d   = sumIntRows(priorDailyRows as Array<Record<string, unknown>>, 'sessions')   ?? null
+    new_users_prior_7d  = sumIntRows(priorDailyRows as Array<Record<string, unknown>>, 'new_users')  ?? null
+    page_views_prior_7d = sumIntRows(priorDailyRows as Array<Record<string, unknown>>, 'page_views') ?? null
+  }
+
+  return {
+    sessions_7d,
+    sessions_prior_7d,
+    new_users_7d,
+    new_users_prior_7d,
+    page_views_7d,
+    page_views_prior_7d,
+    top_sources,
+    top_landing_pages,
+  }
 }
 
 export async function collectGa4Data(
@@ -1018,32 +1144,47 @@ export async function collectGa4Data(
   windowStart: string,
   yesterday: string,
 ): Promise<Ga4BriefData | null> {
-  const [{ data: dailyRows }, { data: sourceRows }, { data: landingRows }] = await Promise.all([
+  const priorStart = subtractDays(windowStart, 7)
+  const priorEnd   = subtractDays(windowStart, 1)
+
+  const [dailyRows, priorDailyRows, sourceRows, landingRows] = await Promise.all([
     db.from('ga4_daily')
       .select('date, sessions, new_users, page_views')
       .eq('property_id', GA4_PROPERTY_ID)
       .gte('date', windowStart)
       .lte('date', yesterday)
-      .order('date'),
-    db.from('ga4_traffic_sources')
-      .select('date, session_source, session_medium, sessions, new_users')
+      .order('date')
+      .then((r) => (r.data ?? []) as Ga4DailyRow[]),
+    db.from('ga4_daily')
+      .select('date, sessions, new_users, page_views')
       .eq('property_id', GA4_PROPERTY_ID)
-      .gte('date', windowStart)
-      .lte('date', yesterday)
-      .limit(500),
-    db.from('ga4_landing_pages')
-      .select('date, landing_page, sessions, new_users')
-      .eq('property_id', GA4_PROPERTY_ID)
-      .gte('date', windowStart)
-      .lte('date', yesterday)
-      .limit(500),
+      .gte('date', priorStart)
+      .lte('date', priorEnd)
+      .order('date')
+      .then((r) => (r.data ?? []) as Ga4DailyRow[]),
+    fetchAllPages<Ga4SourceRow>(
+      (from, to) =>
+        db.from('ga4_traffic_sources')
+          .select('date, session_source, session_medium, sessions, new_users')
+          .eq('property_id', GA4_PROPERTY_ID)
+          .gte('date', windowStart)
+          .lte('date', yesterday)
+          .range(from, to),
+      'ga4_traffic_sources',
+    ),
+    fetchAllPages<Ga4LandingRow>(
+      (from, to) =>
+        db.from('ga4_landing_pages')
+          .select('date, landing_page, sessions, new_users')
+          .eq('property_id', GA4_PROPERTY_ID)
+          .gte('date', windowStart)
+          .lte('date', yesterday)
+          .range(from, to),
+      'ga4_landing_pages',
+    ),
   ])
 
-  return aggregateGa4Rows(
-    (dailyRows   ?? []) as Ga4DailyRow[],
-    (sourceRows  ?? []) as Ga4SourceRow[],
-    (landingRows ?? []) as Ga4LandingRow[],
-  )
+  return aggregateGa4Rows(dailyRows, sourceRows, landingRows, priorDailyRows)
 }
 
 // ── GBP performance data collection ───────────────────────────────────────────
@@ -1127,24 +1268,25 @@ export async function collectGbpPerformanceData(
 ): Promise<GbpPerformanceBriefData | null> {
   const { data: locationRows } = await db
     .from('gbp_locations')
-    .select('id, location_id')
+    .select('id')
     .eq('active', true)
-    .not('location_id', 'is', null)
 
   if (!locationRows || locationRows.length === 0) return null
 
-  const canonicalIds = locationRows.map((l) => l.location_id as string)
+  // gbp_location_metrics.location_id and gbp_search_keywords_monthly.location_id
+  // both reference gbp_locations.id (NOT the canonical Google location_id).
+  const gbpLocationIds = locationRows.map((l) => l.id as string)
   const windowStart  = subtractDays(yesterday, 27)   // 28 days inclusive
 
   const [{ data: metricsRaw }, { data: keywordRaw }] = await Promise.all([
     db.from('gbp_location_metrics')
       .select('location_id, impressions_desktop_search, impressions_mobile_search, impressions_desktop_maps, impressions_mobile_maps, website_clicks, call_clicks, direction_requests')
-      .in('location_id', canonicalIds)
+      .in('location_id', gbpLocationIds)
       .gte('date', windowStart)
       .lte('date', yesterday),
     db.from('gbp_search_keywords_monthly')
       .select('location_id, month, keyword, impressions, impressions_threshold')
-      .in('location_id', canonicalIds)
+      .in('location_id', gbpLocationIds)
       .order('month', { ascending: false })
       .limit(200),
   ])
