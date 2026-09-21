@@ -391,14 +391,23 @@ export async function runGA4Sync(): Promise<GA4SyncResult> {
   // ── Daily totals ─────────────────────────────────────────────────────────────
   try {
     dailyRows = await syncDaily(db, ad, propertyId, range)
-    await upsertInstitutionalSyncState(db, DAILY_KEY, {
-      status:          'synced',
-      cursor:          range.endDate,
-      last_success_at: now,
-      last_attempt_at: now,
-      last_error:      null,
-    })
-    console.log(`[ga4/sync] ga4_daily: ${dailyRows} rows upserted`)
+    if (dailyRows === 0) {
+      const msg = `Zero rows returned for ${range.startDate}–${range.endDate}. Verify GA4_PROPERTY_ID and that the property has data in this window (currently '${propertyId}').`
+      console.warn('[ga4/sync] ga4_daily:', msg)
+      errors.push(`ga4_daily: ${msg}`)
+      await upsertInstitutionalSyncState(db, DAILY_KEY, {
+        status: 'failed', last_attempt_at: now, last_error: msg,
+      })
+    } else {
+      await upsertInstitutionalSyncState(db, DAILY_KEY, {
+        status:          'synced',
+        cursor:          range.endDate,
+        last_success_at: now,
+        last_attempt_at: now,
+        last_error:      null,
+      })
+      console.log(`[ga4/sync] ga4_daily: ${dailyRows} rows upserted`)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[ga4/sync] ga4_daily failed:', msg)
@@ -411,14 +420,23 @@ export async function runGA4Sync(): Promise<GA4SyncResult> {
   // ── Traffic sources ──────────────────────────────────────────────────────────
   try {
     sourceRows = await syncTrafficSources(db, ad, propertyId, range)
-    await upsertInstitutionalSyncState(db, SOURCES_KEY, {
-      status:          'synced',
-      cursor:          range.endDate,
-      last_success_at: now,
-      last_attempt_at: now,
-      last_error:      null,
-    })
-    console.log(`[ga4/sync] ga4_traffic_sources: ${sourceRows} rows upserted`)
+    if (sourceRows === 0) {
+      const msg = `Zero rows returned for ${range.startDate}–${range.endDate}. Verify GA4_PROPERTY_ID and that the property has data in this window (currently '${propertyId}').`
+      console.warn('[ga4/sync] ga4_traffic_sources:', msg)
+      errors.push(`ga4_traffic_sources: ${msg}`)
+      await upsertInstitutionalSyncState(db, SOURCES_KEY, {
+        status: 'failed', last_attempt_at: now, last_error: msg,
+      })
+    } else {
+      await upsertInstitutionalSyncState(db, SOURCES_KEY, {
+        status:          'synced',
+        cursor:          range.endDate,
+        last_success_at: now,
+        last_attempt_at: now,
+        last_error:      null,
+      })
+      console.log(`[ga4/sync] ga4_traffic_sources: ${sourceRows} rows upserted`)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[ga4/sync] ga4_traffic_sources failed:', msg)
@@ -431,14 +449,23 @@ export async function runGA4Sync(): Promise<GA4SyncResult> {
   // ── Landing pages ────────────────────────────────────────────────────────────
   try {
     pageRows = await syncLandingPages(db, ad, propertyId, range)
-    await upsertInstitutionalSyncState(db, PAGES_KEY, {
-      status:          'synced',
-      cursor:          range.endDate,
-      last_success_at: now,
-      last_attempt_at: now,
-      last_error:      null,
-    })
-    console.log(`[ga4/sync] ga4_landing_pages: ${pageRows} rows upserted`)
+    if (pageRows === 0) {
+      const msg = `Zero rows returned for ${range.startDate}–${range.endDate}. Verify GA4_PROPERTY_ID and that the property has data in this window (currently '${propertyId}').`
+      console.warn('[ga4/sync] ga4_landing_pages:', msg)
+      errors.push(`ga4_landing_pages: ${msg}`)
+      await upsertInstitutionalSyncState(db, PAGES_KEY, {
+        status: 'failed', last_attempt_at: now, last_error: msg,
+      })
+    } else {
+      await upsertInstitutionalSyncState(db, PAGES_KEY, {
+        status:          'synced',
+        cursor:          range.endDate,
+        last_success_at: now,
+        last_attempt_at: now,
+        last_error:      null,
+      })
+      console.log(`[ga4/sync] ga4_landing_pages: ${pageRows} rows upserted`)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[ga4/sync] ga4_landing_pages failed:', msg)
