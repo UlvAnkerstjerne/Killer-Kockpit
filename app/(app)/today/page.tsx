@@ -511,7 +511,7 @@ export default async function TodayPage({
 
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-end justify-between -mx-4 px-4 -mt-4 pt-4 pb-3 mb-1.5 border-b border-[#171717]/20">
-        <h1 className="font-brand leading-none text-8xl font-black text-[#AD3919] tracking-tight [text-shadow:2px_3px_6px_rgba(0,0,0,0.25)] [-webkit-text-stroke:0.5px_#171717]">
+        <h1 className="font-brand leading-none text-8xl font-black text-[#AD3919] tracking-tight [text-shadow:2px_3px_6px_rgba(0,0,0,0.25)] [-webkit-text-stroke:0.25px_#171717]">
           KILLER KOCKPIT
         </h1>
         {canManage && (
