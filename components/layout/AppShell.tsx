@@ -293,7 +293,7 @@ export default function AppShell({
       <nav className="flex-1 px-3 overflow-y-auto">
         {/* Primary group */}
         <div className="mb-1">
-          <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/60">
+          <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink">
             Operations
           </div>
           <div className="space-y-0.5">
