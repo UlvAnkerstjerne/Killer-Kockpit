@@ -430,7 +430,7 @@ export default function AppShell({
         {/* Mascot */}
         <div className="px-3 pt-0 pb-2 shrink-0">
           <Image
-            src="/kk-kebab.png"
+            src="/kk-mascot.png"
             alt="Killer Kebab mascot"
             width={580}
             height={650}
