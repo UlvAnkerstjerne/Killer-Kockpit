@@ -50,20 +50,20 @@ export default function CaptureBar({
       </button>
       <button
         onClick={() => setOpen('project')}
-        className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
+        className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
       >
         + Project
       </button>
       <button
         onClick={() => setOpen('waiting-on')}
-        className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
+        className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
       >
         + Waiting On
       </button>
       {canDecide ? (
         <button
           onClick={() => setOpen('decision')}
-          className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
+          className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
         >
           + Decision
         </button>
@@ -71,7 +71,7 @@ export default function CaptureBar({
         <button
           disabled
           title="Coming in a later milestone"
-          className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-muted rounded-md cursor-not-allowed opacity-50"
+          className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md cursor-not-allowed opacity-50 font-medium"
         >
           + Note
         </button>
@@ -82,7 +82,7 @@ export default function CaptureBar({
   const defaultCaptureAction = canCapture ? (
     <button
       onClick={() => setCaptureOpen(true)}
-      className="text-sm px-3.5 py-1.5 bg-white border border-kk-line text-kk-ink rounded-md hover:bg-kk-soft transition-colors"
+      className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
       title="Quick Capture (⌘⇧C)"
     >
       + Capture
