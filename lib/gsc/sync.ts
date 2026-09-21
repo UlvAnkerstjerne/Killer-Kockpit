@@ -13,9 +13,9 @@
  * integration_sync_state rows all use user_id IS NULL (matches Meta pattern).
  *
  * Sync state keys (user_id IS NULL):
- *   gsc_daily:https://killerkebab.com/    — cursor = last endDate synced
- *   gsc_queries:https://killerkebab.com/  — cursor = last endDate synced
- *   gsc_pages:https://killerkebab.com/    — cursor = last endDate synced
+ *   gsc_daily:sc-domain:killerkebab.com    — cursor = last endDate synced
+ *   gsc_queries:sc-domain:killerkebab.com  — cursor = last endDate synced
+ *   gsc_pages:sc-domain:killerkebab.com    — cursor = last endDate synced
  *
  * Date strategy
  * -------------
@@ -47,7 +47,11 @@ import { getGoogleOAuth2Client, hasSearchConsoleScope } from '@/lib/google/auth'
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-const SC_SITE_URL   = 'https://killerkebab.com/'
+// Domain property aggregates all subdomains and protocols (www, non-www, http, https).
+// Confirmed via sites.list() — 539 clicks vs 26 clicks for the URL-prefix property
+// over the same window.  The URL-prefix 'https://killerkebab.com/' is still
+// siteOwner-verified but captures only a fraction of actual search traffic.
+const SC_SITE_URL   = 'sc-domain:killerkebab.com'
 const BACKFILL_DAYS = 90   // days of history to fetch on first run
 const ROLLING_DAYS  = 14   // days to re-fetch on incremental runs
 const GSC_LAG_DAYS  = 3    // GSC data lags 2–3 days; always end this many days ago
