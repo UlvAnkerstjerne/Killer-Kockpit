@@ -348,12 +348,12 @@ export default function NotificationBell() {
         className={[
           'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm transition-colors',
           isOpen
-            ? 'bg-kk-soft text-kk-ink'
-            : 'text-kk-ink/60 hover:bg-kk-soft hover:text-kk-ink',
+            ? 'bg-kraft-brown text-[#171717] font-bold'
+            : 'text-kk-ink font-medium hover:bg-[#B7A486]/25',
         ].join(' ')}
       >
         {/* Icon wrapper — badge is absolute-positioned relative to this span */}
-        <span className={['relative', isOpen ? 'text-kk-ink' : 'text-kk-ink/50'].join(' ')}>
+        <span className={['relative', isOpen ? 'text-kk-ink' : 'text-kk-ink/70'].join(' ')}>
           <IconBell />
           {badge && (
             <span
@@ -387,13 +387,13 @@ export default function NotificationBell() {
           style={{ position: 'fixed', top: popoverPos.top, left: popoverPos.left }}
           className={[
             'z-[9999]',
-            'w-80 max-w-[calc(100vw-240px)]',                   // viewport-safe on narrow screens
-            'bg-white border border-kk-line rounded-2xl shadow-xl',
-            'flex flex-col max-h-[calc(100vh-80px)]',           // never taller than viewport
+            'w-80 max-w-[calc(100vw-240px)]',
+            'bg-kraft-light border-2 border-[#171717] rounded-2xl [box-shadow:4px_4px_0_#555555]',
+            'flex flex-col max-h-[calc(100vh-80px)]',
           ].join(' ')}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-kk-line shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b-2 border-[#171717] bg-kraft-brown shrink-0">
             <span className="text-sm font-semibold text-kk-ink">Notifications</span>
             {unreadCount > 0 && (
               <button
@@ -435,8 +435,8 @@ export default function NotificationBell() {
                         onClick={() => handleClickRow(n)}
                         className={[
                           'w-full text-left px-4 py-3 flex gap-3 transition-colors',
-                          'border-b border-kk-line last:border-b-0',
-                          isRead ? 'hover:bg-kk-soft/60' : 'hover:bg-kk-soft',
+                          'border-b border-[#171717]/15 last:border-b-0',
+                          isRead ? 'hover:bg-[#B7A486]/15' : 'hover:bg-[#B7A486]/25',
                         ].join(' ')}
                       >
                         {/* Unread dot */}
