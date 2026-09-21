@@ -17,12 +17,16 @@
  * labelled as such in AI context so it is not confused with the original intent.
  *
  * Security:
- *  - Uses createServiceClient (Brain is management-gated at the action layer).
- *  - Consistent with all other lib/brain/ modules.
+ *  - Uses createClient() (authenticated user session) so the Supabase RLS policy
+ *    "todos: management can read all" (migration 027) remains authoritative.
+ *    SUPER_ADMIN + UM see all todos via RLS; MEMBER users are blocked at the
+ *    action layer before this function is ever called.
+ *  - Does NOT use service_role / createServiceClient — To-Do access must stay
+ *    under RLS control, not bypass it.
  *  - Caps results to prevent context bloat.
  */
 
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -112,7 +116,7 @@ export async function fetchBrainTodoContext({
   }
 
   try {
-    const db = createServiceClient()
+    const db = await createClient()
     const collectedIds = new Set<string>()
     const allItems: BrainTodoItem[] = []
 

@@ -511,18 +511,25 @@ describe('management security', () => {
     expect(true).toBe(true)
   })
 
-  it('[spec] createServiceClient is used consistent with all other brain modules', () => {
-    // lib/brain/todos.ts uses createServiceClient() — same as reviews, morning-brief,
-    // files. Brain is management-gated at the action layer; no service_role bypass
-    // for circumventing todo permissions specifically.
-    expect(true).toBe(true)
+  it('uses createClient() (authenticated session), not createServiceClient()', async () => {
+    // fetchBrainTodoContext must use the caller's authenticated session so that
+    // the Supabase RLS policy "todos: management can read all" stays authoritative.
+    // service_role / createServiceClient bypasses RLS and must NOT be used here.
+    const { createClient, createServiceClient } = await import('@/lib/supabase/server')
+    mocks.setTableResult('todos', [makeTodoRow()])
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    await fetchBrainTodoContext({ keywords: ['catering'] })
+
+    expect(createClient).toHaveBeenCalled()
+    expect(createServiceClient).not.toHaveBeenCalled()
   })
 
   it('[spec] the RLS "todos: management can read all" policy covers management users', () => {
     // Supabase migration 027 grants SUPER_ADMIN and UM SELECT on all todos rows.
-    // The user-JWT client in the management todos page relies on this.
-    // Brain uses createServiceClient which inherits full access, consistent with
-    // other brain modules.
+    // The authenticated createClient() session respects this policy — management
+    // users see all todos, MEMBER users are blocked at the action layer before
+    // fetchBrainTodoContext is ever called.
     expect(true).toBe(true)
   })
 })
