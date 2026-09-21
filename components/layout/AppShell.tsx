@@ -426,16 +426,6 @@ export default function AppShell({
 
       {/* ── Desktop sidebar (hidden on mobile) ── */}
       <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen">
-        {/* Brand */}
-        <div className="px-5 pt-5 pb-4">
-          <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
-            KILLER
-          </div>
-          <div className="font-brand text-[26px] font-extrabold text-[#AD3919] leading-tight tracking-[0.1em] uppercase mt-1">
-            KOCKPIT
-          </div>
-        </div>
-
         <NavContent onOpenSearch={() => setSearchOpen(true)} />
         <SidebarFooter onSignOut={handleSignOut} />
       </aside>
@@ -452,11 +442,7 @@ export default function AppShell({
             onClick={e => e.stopPropagation()}
           >
             {/* Drawer header — compact to preserve vertical space for all nav items */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#171717]/20 shrink-0">
-              <div className="font-brand leading-none">
-                <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
-                <span className="text-[18px] font-extrabold text-[#AD3919] tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
-              </div>
+            <div className="flex items-center justify-end px-4 py-3 border-b border-[#171717]/20 shrink-0">
               <button
                 onClick={() => setMobileMenuOpen(false)}
                 className="p-1.5 text-kk-muted hover:text-kk-ink transition-colors"
@@ -491,10 +477,6 @@ export default function AppShell({
               <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </button>
-          <div className="font-brand leading-none">
-            <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
-            <span className="text-[18px] font-extrabold text-[#AD3919] tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
-          </div>
         </div>
 
         {pathname !== '/today' && <CaptureBar user={user} currentView={currentView} />}
