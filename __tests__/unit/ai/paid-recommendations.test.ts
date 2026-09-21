@@ -7,11 +7,12 @@
  *   3.  buildPaidRecUserMessage — null prior serialises as null in JSON
  *   4.  buildPaidRecUserMessage — uses Copenhagen timezone for date
  *   5.  buildPaidRecUserMessage — includes prior window when provided
- *   6.  callPaidRecommendationsAI — returns failure when BRIEF_AI_MODEL not set
+ *   6.  callPaidRecommendationsAI — returns failure when both model vars are absent
  *   7.  callPaidRecommendationsAI — returns failure when ANTHROPIC_API_KEY not set
- *   8.  SYSTEM_PROMPT — new campaign (prior = null) spend_no_results → medium urgency guidance
- *   9.  SYSTEM_PROMPT — established spend_no_results with prior → high urgency path retained
- *   10. SYSTEM_PROMPT — learning-phase claims explicitly forbidden
+ *   8.  callPaidRecommendationsAI — falls back to MEETING_AI_MODEL when BRIEF_AI_MODEL absent
+ *   9.  SYSTEM_PROMPT — new campaign (prior = null) spend_no_results → medium urgency guidance
+ *   10. SYSTEM_PROMPT — established spend_no_results with prior → high urgency path retained
+ *   11. SYSTEM_PROMPT — learning-phase claims explicitly forbidden
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -99,18 +100,21 @@ describe('callPaidRecommendationsAI', () => {
   beforeEach(() => {
     envBackup = {
       BRIEF_AI_MODEL:    process.env.BRIEF_AI_MODEL,
+      MEETING_AI_MODEL:  process.env.MEETING_AI_MODEL,
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     }
   })
 
   afterEach(() => {
     process.env.BRIEF_AI_MODEL    = envBackup.BRIEF_AI_MODEL
+    process.env.MEETING_AI_MODEL  = envBackup.MEETING_AI_MODEL
     process.env.ANTHROPIC_API_KEY = envBackup.ANTHROPIC_API_KEY
   })
 
-  it('5. returns failure when BRIEF_AI_MODEL not set', async () => {
+  it('5. returns failure when both BRIEF_AI_MODEL and MEETING_AI_MODEL are absent', async () => {
     const { callPaidRecommendationsAI } = await import('@/lib/ai/paid-recommendations')
     delete process.env.BRIEF_AI_MODEL
+    delete process.env.MEETING_AI_MODEL
     delete process.env.ANTHROPIC_API_KEY
 
     const result = await callPaidRecommendationsAI([])
@@ -129,6 +133,21 @@ describe('callPaidRecommendationsAI', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('not configured')
+    }
+  })
+
+  it('7. falls back to MEETING_AI_MODEL when BRIEF_AI_MODEL is absent', async () => {
+    const { callPaidRecommendationsAI } = await import('@/lib/ai/paid-recommendations')
+    delete process.env.BRIEF_AI_MODEL
+    process.env.MEETING_AI_MODEL = 'claude-sonnet-4-6'
+    // No ANTHROPIC_API_KEY → fails at the API key guard, not the model guard
+    // This proves model resolution succeeded (wrong error = model was found)
+    delete process.env.ANTHROPIC_API_KEY
+
+    const result = await callPaidRecommendationsAI([])
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('AI provider is not configured')
     }
   })
 })

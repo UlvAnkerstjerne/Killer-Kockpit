@@ -13,7 +13,8 @@
  *   No user session or PII is sent.
  *
  * Environment variables:
- *   BRIEF_AI_MODEL    — Model ID (shared with morning brief)
+ *   BRIEF_AI_MODEL    — Model ID (falls back to MEETING_AI_MODEL if absent, matching morning-brief.ts)
+ *   MEETING_AI_MODEL  — Fallback model ID
  *   ANTHROPIC_API_KEY — Anthropic API key
  */
 
@@ -121,12 +122,12 @@ export async function callPaidRecommendationsAI(
   signals: PaidRecSignal[],
   now = new Date(),
 ): Promise<PaidRecAIResult> {
-  const model = process.env.BRIEF_AI_MODEL
+  const model = process.env.BRIEF_AI_MODEL ?? process.env.MEETING_AI_MODEL
   if (!model) {
     return {
       ok: false,
       error: 'Paid Recommendations AI model is not configured.',
-      errorDetail: 'Set BRIEF_AI_MODEL in environment variables.',
+      errorDetail: 'Set BRIEF_AI_MODEL or MEETING_AI_MODEL in environment variables.',
     }
   }
 
