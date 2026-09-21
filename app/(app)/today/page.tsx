@@ -81,7 +81,7 @@ function formatShortDate(dt: string | null): string | null {
 
 function TypeChip({ label, green }: { label: string; green?: boolean }) {
   return (
-    <span className={`text-[10px] border rounded px-1 py-px shrink-0 ${green ? 'text-kk-good border-kk-good/40 bg-kk-good-bg/50' : 'text-kk-muted border-kk-line bg-kk-soft'}`}>
+    <span className={`text-[10px] border rounded px-1 py-px shrink-0 ${green ? 'text-kk-good border-kk-good/40 bg-kk-good-bg/50' : 'text-kraft-light bg-[#171717] border-[#171717]'}`}>
       {label}
     </span>
   )
