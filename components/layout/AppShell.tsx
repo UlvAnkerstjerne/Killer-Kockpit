@@ -360,14 +360,14 @@ export default function AppShell({
         {/* Org / Personal view toggle */}
         {managementAllowed && (
           <div className="px-3 pb-2">
-            <div className="flex bg-kraft-brown/20 border border-[#171717]/20 rounded-xl p-1">
+            <div className="flex bg-[#171717] rounded-xl p-1">
               <button
                 onClick={() => setView('management')}
                 className={[
                   'flex-1 text-xs py-1.5 px-2 rounded-lg transition-colors',
                   currentView === 'management'
-                    ? 'bg-kk-ink text-white font-medium'
-                    : 'text-kk-muted hover:text-kk-ink',
+                    ? 'bg-kraft-light text-[#171717] font-semibold'
+                    : 'text-kraft-light/60 hover:text-kraft-light',
                 ].join(' ')}
               >
                 Org
@@ -377,8 +377,8 @@ export default function AppShell({
                 className={[
                   'flex-1 text-xs py-1.5 px-2 rounded-lg transition-colors',
                   currentView === 'personal'
-                    ? 'bg-kk-ink text-white font-medium'
-                    : 'text-kk-muted hover:text-kk-ink',
+                    ? 'bg-kraft-light text-[#171717] font-semibold'
+                    : 'text-kraft-light/60 hover:text-kraft-light',
                 ].join(' ')}
               >
                 Mine
