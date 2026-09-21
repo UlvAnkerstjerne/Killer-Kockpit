@@ -21,9 +21,9 @@ export const dynamic = 'force-dynamic'
 // ─── Due-state badge config ──────────────────────────────────────────────────
 
 const DUE_STATE_CONFIG = {
-  overdue:   { label: 'OVERDUE',  cls: 'text-white bg-[#AD3919]' },
-  today:     { label: 'TODAY',    cls: 'text-kk-warn  bg-kk-warn-bg' },
-  tomorrow:  { label: 'TOMORROW', cls: 'text-kraft-light bg-[#171717]' },
+  overdue:   { label: 'OVERDUE',  cls: 'text-white bg-[#AD3919] [box-shadow:2px_2px_0_#555555]' },
+  today:     { label: 'TODAY',    cls: 'text-kk-warn bg-kk-warn-bg [box-shadow:2px_2px_0_#555555]' },
+  tomorrow:  { label: 'TOMORROW', cls: 'text-kraft-light bg-[#171717] [box-shadow:2px_2px_0_#555555]' },
   this_week: { label: '',         cls: '' },
   no_date:   { label: '',         cls: '' },
 } as const
@@ -81,7 +81,7 @@ function formatShortDate(dt: string | null): string | null {
 
 function TypeChip({ label, green }: { label: string; green?: boolean }) {
   return (
-    <span className={`text-[10px] border rounded px-1 py-px shrink-0 ${green ? 'text-kk-good border-kk-good/40 bg-kk-good-bg/50' : 'text-kraft-light bg-[#171717] border-[#171717]'}`}>
+    <span className={`text-[10px] border rounded px-1 py-px shrink-0 ${green ? 'text-kk-good border-kk-good/40 bg-kk-good-bg/50' : 'text-kraft-light bg-[#171717] border-[#171717] [box-shadow:2px_2px_0_#555555]'}`}>
       {label}
     </span>
   )
