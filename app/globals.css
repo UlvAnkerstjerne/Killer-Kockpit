@@ -76,6 +76,13 @@ body {
   transition: width 0.2s ease;
 }
 
+/* Form elements — offset shadow for tactile depth */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea {
+  box-shadow: 3px 3px 0 #555555;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
