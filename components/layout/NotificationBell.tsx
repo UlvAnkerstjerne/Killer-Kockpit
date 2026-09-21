@@ -450,7 +450,7 @@ export default function NotificationBell() {
                         <span className="flex-1 min-w-0">
                           <span className={[
                             'block text-sm leading-snug',
-                            isRead ? 'text-kk-muted' : 'text-kk-ink',
+                            isRead ? 'text-kk-muted' : 'text-kk-ink font-bold',
                           ].join(' ')}>
                             {safeFormatMessage(n)}
                           </span>
