@@ -76,8 +76,9 @@ body {
   transition: width 0.2s ease;
 }
 
-/* Scrollbar — subtle */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1cec7; border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #b0aca4; }
+::-webkit-scrollbar-thumb { background: #171717; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #171717cc; }
+* { scrollbar-color: #171717 transparent; }
