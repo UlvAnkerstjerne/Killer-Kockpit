@@ -44,26 +44,26 @@ export default function CaptureBar({
     <>
       <button
         onClick={() => setOpen('task')}
-        className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
+        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium"
       >
         + Task
       </button>
       <button
         onClick={() => setOpen('project')}
-        className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
+        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium"
       >
         + Project
       </button>
       <button
         onClick={() => setOpen('waiting-on')}
-        className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
+        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium"
       >
         + Waiting On
       </button>
       {canDecide ? (
         <button
           onClick={() => setOpen('decision')}
-          className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
+          className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium"
         >
           + Decision
         </button>
@@ -71,7 +71,7 @@ export default function CaptureBar({
         <button
           disabled
           title="Coming in a later milestone"
-          className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md cursor-not-allowed opacity-50 font-medium"
+          className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md cursor-not-allowed opacity-50 font-medium"
         >
           + Note
         </button>
@@ -82,7 +82,7 @@ export default function CaptureBar({
   const defaultCaptureAction = canCapture ? (
     <button
       onClick={() => setCaptureOpen(true)}
-      className="text-sm px-3.5 py-1.5 bg-kk-brand text-white rounded-md hover:opacity-90 transition-opacity font-medium"
+      className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium"
       title="Quick Capture (⌘⇧C)"
     >
       + Capture
@@ -92,7 +92,7 @@ export default function CaptureBar({
   const todayCaptureAction = canCapture ? (
     <button
       onClick={() => setCaptureOpen(true)}
-      className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-2 text-sm px-3.5 py-1.5 bg-[#F5DA93] border border-[#e2c66f] text-kk-brand rounded-lg hover:bg-[#f2d27d] transition-colors font-medium shadow-sm"
+      className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-2 text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-lg hover:opacity-80 transition-opacity font-medium"
       title="Open Quick Capture (⌘⇧C)"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
