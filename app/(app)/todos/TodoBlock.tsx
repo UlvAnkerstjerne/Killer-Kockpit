@@ -122,7 +122,7 @@ function SortableOpenTodo({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className={`group${isDragging ? ' opacity-50 relative z-10 bg-kk-panel shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-kk-ink/10' : ''}`}
+      className={`group${isDragging ? ' opacity-50 relative z-10 bg-kraft-light ring-1 ring-[#171717]/20' : ''}`}
     >
       <div className="flex items-stretch">
         {/* ── Drag affordance (decorative only — whole row is draggable) ── */}
@@ -190,7 +190,7 @@ function SortableOpenTodo({
 
           {/* Completion context box */}
           {completingTodoId === todo.id && (
-            <div className="mt-2 pt-2 border-t border-kk-line/60 space-y-1.5">
+            <div className="mt-2 pt-2 border-t border-[#171717]/20 space-y-1.5">
               <div>
                 <p className="text-xs font-semibold text-kk-ink">Add context</p>
                 <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
@@ -228,7 +228,7 @@ function SortableOpenTodo({
                   type="button"
                   onClick={onContextCancel}
                   disabled={completionLoading}
-                  className="text-xs px-3 py-1 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
+                  className="text-xs px-3 py-1 border border-[#171717]/30 text-kk-muted rounded-lg hover:bg-[#B7A486]/20 transition-colors"
                 >
                   Cancel
                 </button>
@@ -345,9 +345,9 @@ export default function TodoBlock({
   }
 
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
+    <div className="bg-kraft-light border border-[#171717] overflow-hidden">
       {/* Header */}
-      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${accentHeader ? ' bg-[#DDD9D1]' : ''}`}>
+      <div className="px-4 py-2 border-b border-[#171717] flex items-center justify-between bg-kraft-brown">
         <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
           <span className="text-kk-ink/50 shrink-0">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -376,7 +376,7 @@ export default function TodoBlock({
       </div>
 
       {/* Quick-add form */}
-      <form onSubmit={handleCreate} className="px-4 py-2 border-b border-kk-line flex items-center gap-2">
+      <form onSubmit={handleCreate} className="px-4 py-2 border-b border-[#171717] flex items-center gap-2">
         <input
           ref={inputRef}
           type="text"
@@ -390,7 +390,7 @@ export default function TodoBlock({
         <select
           value={priority}
           onChange={e => setPriority(Number(e.target.value) as 1 | 2 | 3 | 4)}
-          className="text-xs text-kk-muted bg-transparent border border-kk-line rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
+          className="text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
           disabled={isPending}
           aria-label="Priority"
         >
@@ -418,7 +418,7 @@ export default function TodoBlock({
           No to-dos. Add one above.
         </div>
       ) : (
-        <div className="divide-y divide-kk-line">
+        <div className="divide-y divide-[#171717]/15">
           {/* ── Sortable open todos ─────────────────────────────────────────── */}
           <DndContext
             sensors={sensors}
@@ -454,7 +454,7 @@ export default function TodoBlock({
           {/* Completed this week */}
           {completedThisWeek.length > 0 && (
             <>
-              <div className="px-5 py-2 bg-kk-soft">
+              <div className="px-5 py-2 bg-kraft-brown/40">
                 <span className="text-xs font-medium text-kk-good">
                   ✓ Completed this week · {completedThisWeek.length}
                 </span>
@@ -488,11 +488,11 @@ export default function TodoBlock({
       )}
 
       {actionError && (
-        <div className="px-5 py-2 border-t border-kk-line text-xs text-kk-bad">{actionError}</div>
+        <div className="px-5 py-2 border-t border-[#171717]/20 text-xs text-kk-bad">{actionError}</div>
       )}
 
       {showFooter && (
-        <div className="px-4 py-1.5 border-t border-kk-line flex justify-end">
+        <div className="px-4 py-1.5 border-t border-[#171717]/20 flex justify-end">
           <Link href="/todos" className="text-xs text-kk-brand font-medium hover:opacity-70 transition-opacity">
             View all to-dos →
           </Link>
