@@ -269,8 +269,8 @@ export default function AppShell({
         className={[
           'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm transition-colors',
           isActive
-            ? 'bg-[#ecddc8] text-kk-ink font-bold'
-            : 'text-kk-ink font-medium hover:bg-kk-soft',
+            ? 'bg-kraft-brown text-[#171717] font-bold'
+            : 'text-kk-ink font-medium hover:bg-[#B7A486]/25',
         ].join(' ')}
       >
         {Icon && (
@@ -306,7 +306,7 @@ export default function AppShell({
         </div>
 
         {/* Divider */}
-        <div className="my-2 border-t border-kk-line" />
+        <div className="my-2 border-t border-[#171717]/20" />
 
         {/* Global search trigger */}
         {onOpenSearch && (
@@ -334,7 +334,7 @@ export default function AppShell({
         {/* Killer Kuality Check group */}
         {qualityCheckAllowed && (
           <>
-            <div className="my-2 border-t border-kk-line" />
+            <div className="my-2 border-t border-[#171717]/20" />
             <div>
               <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink/60">
                 Killer Kuality Check
@@ -359,7 +359,7 @@ export default function AppShell({
         {/* Org / Personal view toggle */}
         {managementAllowed && (
           <div className="px-3 pb-2">
-            <div className="flex bg-white border border-kk-line rounded-xl p-1">
+            <div className="flex bg-kraft-brown/20 border border-[#171717]/20 rounded-xl p-1">
               <button
                 onClick={() => setView('management')}
                 className={[
@@ -394,9 +394,9 @@ export default function AppShell({
         )}
 
         {/* User */}
-        <div className="border-t border-kk-line mx-3 mb-4 pt-3">
+        <div className="border-t border-[#171717]/20 mx-3 mb-4 pt-3">
           <div className="flex items-center gap-2.5 px-1">
-            <div className="w-7 h-7 rounded-full bg-kk-line flex items-center justify-center text-[11px] font-bold text-kk-ink shrink-0">
+            <div className="w-7 h-7 rounded-full bg-kraft-brown flex items-center justify-center text-[11px] font-bold text-[#171717] shrink-0">
               {initials}
             </div>
             <div className="flex-1 min-w-0">
@@ -425,7 +425,7 @@ export default function AppShell({
       <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* ── Desktop sidebar (hidden on mobile) ── */}
-      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen">
+      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen">
         {/* Brand */}
         <div className="px-5 pt-5 pb-4">
           <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
@@ -448,11 +448,11 @@ export default function AppShell({
           style={{ background: 'rgba(23,23,23,0.35)', backdropFilter: 'blur(1px)' }}
         >
           <div
-            className="h-full w-64 bg-kk-sidebar flex flex-col overflow-hidden shadow-2xl"
+            className="h-full w-64 bg-kraft-light flex flex-col overflow-hidden shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             {/* Drawer header — compact to preserve vertical space for all nav items */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-kk-line shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#171717]/20 shrink-0">
               <div className="font-brand leading-none">
                 <span className="text-[18px] font-black text-[#AD3919] tracking-tight">KILLER</span>
                 <span className="text-[18px] font-extrabold text-[#AD3919] tracking-[0.1em] uppercase ml-2">KOCKPIT</span>
@@ -481,7 +481,7 @@ export default function AppShell({
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Mobile header with hamburger (hidden on desktop) */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-kk-sidebar border-b border-kk-line shrink-0">
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-kraft-light border-b border-[#171717]/20 shrink-0">
           <button
             onClick={() => setMobileMenuOpen(true)}
             className="p-1.5 -ml-1.5 text-kk-ink/60 hover:text-kk-ink transition-colors"
