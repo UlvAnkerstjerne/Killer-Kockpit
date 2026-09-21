@@ -402,7 +402,7 @@ export default function TodoBlock({
         <button
           type="submit"
           disabled={!title.trim() || isPending}
-          className="text-xs px-3 py-1.5 bg-kk-ink text-white rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0"
+          className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0 [box-shadow:3px_3px_0_#555555]"
         >
           Add
         </button>
