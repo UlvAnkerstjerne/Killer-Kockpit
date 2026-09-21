@@ -19,7 +19,7 @@ import {
 
 describe('integration constants', () => {
   it('SC_SITE_URL is the canonical killerkebab URL', () => {
-    expect(SC_SITE_URL).toBe('https://killerkebab.com/')
+    expect(SC_SITE_URL).toBe('sc-domain:killerkebab.com')
   })
 
   it('GA4_PROPERTY_ID is a non-empty string', () => {

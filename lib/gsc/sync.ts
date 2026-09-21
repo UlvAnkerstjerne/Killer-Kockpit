@@ -44,14 +44,9 @@
 import { google } from 'googleapis'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getGoogleOAuth2Client, hasSearchConsoleScope } from '@/lib/google/auth'
+import { SC_SITE_URL } from '@/lib/gsc/config'
 
 // ── Config ─────────────────────────────────────────────────────────────────────
-
-// Domain property aggregates all subdomains and protocols (www, non-www, http, https).
-// Confirmed via sites.list() — 539 clicks vs 26 clicks for the URL-prefix property
-// over the same window.  The URL-prefix 'https://killerkebab.com/' is still
-// siteOwner-verified but captures only a fraction of actual search traffic.
-const SC_SITE_URL   = 'sc-domain:killerkebab.com'
 const BACKFILL_DAYS = 90   // days of history to fetch on first run
 const ROLLING_DAYS  = 14   // days to re-fetch on incremental runs
 const GSC_LAG_DAYS  = 3    // GSC data lags 2–3 days; always end this many days ago

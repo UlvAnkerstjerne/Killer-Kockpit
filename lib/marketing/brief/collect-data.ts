@@ -30,6 +30,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { hasGbpScope } from '@/lib/google/auth'
+import { SC_SITE_URL } from '@/lib/gsc/config'
 import {
   buildGooglePaidCampaigns,
   type PaidCampaign,
@@ -100,8 +101,9 @@ const MAX_BRIEF_ROWS = 5
 
 // ── Integration constants ──────────────────────────────────────────────────────
 
-/** Canonical Search Console site URL used throughout the app. */
-export const SC_SITE_URL = 'https://killerkebab.com/'
+// SC_SITE_URL is imported from @/lib/gsc/config and re-exported so that
+// existing callers (tests, etc.) can still import it from this module.
+export { SC_SITE_URL }
 
 /** GA4 property ID used throughout the app. */
 export const GA4_PROPERTY_ID = '333149501'

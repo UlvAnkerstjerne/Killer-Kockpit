@@ -6,10 +6,9 @@ import GooglePageClient, {
   type GscBreakdownRow,
   type Ga4BreakdownRow,
 } from './GooglePageClient'
+import { SC_SITE_URL } from '@/lib/gsc/config'
 
 export const dynamic = 'force-dynamic'
-
-const SC_SITE_URL     = 'https://killerkebab.com/'
 const GA4_PROPERTY_ID = '333149501'
 
 function daysAgo(n: number): string {
