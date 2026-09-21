@@ -8,9 +8,14 @@
  * Retrieves relevant To-Dos for Brain context. Three complementary paths:
  *
  *   A. Keyword search — title, notes, completion_context ILIKE against query keywords.
- *   B. Recency path  — recent completed To-Dos with meaningful completion_context,
- *                      when the question signals recency/feedback intent.
- *   C. Person path   — recent relevant To-Dos owned by mentioned people.
+ *   B. Recency path  — fallback when keyword path found zero results: returns recent
+ *                      completed To-Dos with meaningful completion_context.
+ *   C. Person path   — fallback when keyword path found zero results: returns recent
+ *                      To-Dos owned by mentioned people.
+ *
+ * Fallback semantics: Paths B and C only run when Path A found nothing. If keyword
+ * search already surfaces relevant To-Dos, the recency and person fillers are
+ * suppressed entirely — returning high-signal matches rather than padding.
  *
  * Cancelled To-Dos are excluded — they represent intent that was abandoned,
  * not outcomes. Completion context is the highest-value field and is clearly
@@ -150,13 +155,13 @@ export async function fetchBrainTodoContext({
       }
     }
 
-    // ── Path B: Recency — recent completed with meaningful completion_context ─
+    // ── Path B: Recency — fallback when keyword path found nothing ───────────
     //
-    // Triggered when the question carries recency/feedback/outcome intent even
-    // if the exact wording does not appear in keyword-matched titles. Returns
-    // the most recent completed todos that have something written in
-    // completion_context — the operational knowledge written by the user.
-    if (includeRecent && allItems.length < maxTodos) {
+    // Only runs when keyword search returned zero results. If Path A already
+    // surfaced relevant To-Dos, adding unrelated recency results would dilute
+    // signal with noise. When triggered, returns recent completed todos that
+    // have something written in completion_context.
+    if (includeRecent && allItems.length === 0) {
       const cutoff = new Date(Date.now() - RECENCY_DAYS * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10)
@@ -176,8 +181,12 @@ export async function fetchBrainTodoContext({
       }
     }
 
-    // ── Path C: Person context — include todos owned by mentioned people ─────
-    if (hasPersons && allItems.length < maxTodos) {
+    // ── Path C: Person context — fallback when keyword path found nothing ─────
+    //
+    // Only runs when keyword search returned zero results. If Path A already
+    // found relevant To-Dos (even ones involving the mentioned person), generic
+    // person-owned filler is suppressed.
+    if (hasPersons && allItems.length === 0) {
       const { data: personRows } = await db
         .from('todos')
         .select('id, title, notes, completion_context, completed_at, scheduled_for, user_id, cancelled_at, owner:user_id(display_name)')

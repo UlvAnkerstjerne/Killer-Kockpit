@@ -51,12 +51,19 @@ const mocks = vi.hoisted(() => {
     mockFrom,
     mockServiceClient,
     tableResults,
+    makeChain,
     setTableResult(table: string, data: unknown) {
       tableResults.set(table, { data, error: null })
     },
     reset() {
       tableResults.clear()
-      mockFrom.mockClear()
+      // mockReset clears both call history AND any queued mockImplementationOnce entries,
+      // preventing leftover once-implementations from bleeding into subsequent tests.
+      mockFrom.mockReset()
+      mockFrom.mockImplementation((table: string) => {
+        const result = tableResults.get(table) ?? { data: [], error: null }
+        return makeChain(result)
+      })
     },
   }
 })
@@ -499,6 +506,141 @@ describe('formatTodoContext — system prompt contracts', () => {
     // The system prompt TO-DO KNOWLEDGE section states: "Cancelled = abandoned intent
     // (treat as C-type planned/abandoned, never as a factual outcome)."
     expect(true).toBe(true)
+  })
+})
+
+// ─── Relevance filtering — fallback paths suppressed when keyword matches exist ─
+
+describe('relevance filtering — fallback paths suppressed when keyword matches exist', () => {
+  beforeEach(() => mocks.reset())
+
+  it('recency path does NOT run when keyword path found results', async () => {
+    const cateringRow = makeTodoRow()
+    const unrelatedRow = makeTodoRow({
+      id:                 'todo-unrelated',
+      title:              'Bestil nye servietter',
+      completion_context: 'Bestilt fra leverandøren',
+    })
+
+    // First DB call (keyword path) → catering match
+    // If recency path ran (wrongly), it would return the unrelated row
+    mocks.mockFrom
+      .mockImplementationOnce(() => mocks.makeChain({ data: [cateringRow], error: null }))
+      .mockImplementationOnce(() => mocks.makeChain({ data: [unrelatedRow], error: null }))
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    const result = await fetchBrainTodoContext({
+      keywords:      ['catering'],
+      includeRecent: true,
+    })
+
+    // Only the keyword match — no recency filler
+    expect(result.todos).toHaveLength(1)
+    expect(result.todos[0].id).toBe('todo-1')
+    expect(result.todos.some(t => t.id === 'todo-unrelated')).toBe(false)
+  })
+
+  it('person path does NOT run when keyword path found results', async () => {
+    const cateringRow = makeTodoRow()
+    const unrelatedPersonRow = makeTodoRow({
+      id:    'todo-kasper-unrelated',
+      title: 'Opdater vagtplan',
+    })
+
+    // First DB call (keyword path) → catering match
+    // If person path ran (wrongly), it would return unrelated Kasper todos
+    mocks.mockFrom
+      .mockImplementationOnce(() => mocks.makeChain({ data: [cateringRow], error: null }))
+      .mockImplementationOnce(() => mocks.makeChain({ data: [unrelatedPersonRow], error: null }))
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    const result = await fetchBrainTodoContext({
+      keywords:      ['catering'],
+      personUserIds: ['user-kasper'],
+    })
+
+    // Only the keyword match — no person filler
+    expect(result.todos).toHaveLength(1)
+    expect(result.todos[0].id).toBe('todo-1')
+    expect(result.todos.some(t => t.id === 'todo-kasper-unrelated')).toBe(false)
+  })
+
+  it('recency fallback still works when keyword path found zero results', async () => {
+    const recentRow = makeTodoRow({
+      id:                 'todo-recent',
+      title:              'Rengøring efter event',
+      completion_context: 'Alt ryddet op og lukket ned kl. 23.',
+    })
+
+    // Keyword path returns nothing; recency path returns a recent row
+    mocks.mockFrom
+      .mockImplementationOnce(() => mocks.makeChain({ data: [], error: null }))        // keyword (no match)
+      .mockImplementationOnce(() => mocks.makeChain({ data: [recentRow], error: null })) // recency fallback
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    const result = await fetchBrainTodoContext({
+      keywords:      ['xyznotpresent'],
+      includeRecent: true,
+    })
+
+    expect(result.todos).toHaveLength(1)
+    expect(result.todos[0].id).toBe('todo-recent')
+  })
+
+  it('person fallback still works when keyword path found zero results', async () => {
+    const personRow = makeTodoRow({
+      id:    'todo-kasper-recent',
+      title: 'Gennemgå ugeplan',
+    })
+
+    // Keyword path returns nothing; person path returns the person's todo
+    mocks.mockFrom
+      .mockImplementationOnce(() => mocks.makeChain({ data: [], error: null }))          // keyword (no match)
+      .mockImplementationOnce(() => mocks.makeChain({ data: [personRow], error: null })) // person fallback
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    const result = await fetchBrainTodoContext({
+      keywords:      ['xyznotpresent'],
+      personUserIds: ['user-kasper'],
+    })
+
+    expect(result.todos).toHaveLength(1)
+    expect(result.todos[0].id).toBe('todo-kasper-recent')
+  })
+
+  it('broad recency-only question (no keywords) runs recency path normally', async () => {
+    const row1 = makeTodoRow({ id: 'todo-r1', title: 'Event cleanup', completion_context: 'Done.' })
+    const row2 = makeTodoRow({ id: 'todo-r2', title: 'Feedback session', completion_context: 'Positive.' })
+
+    mocks.setTableResult('todos', [row1, row2])
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    const result = await fetchBrainTodoContext({ includeRecent: true })
+
+    expect(result.todos.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('catering regression — keyword match is returned without recency filler appended', async () => {
+    const cateringRow = makeTodoRow()
+    const unrelated1 = makeTodoRow({ id: 'u1', title: 'Unrelated A', completion_context: 'Done A.' })
+    const unrelated2 = makeTodoRow({ id: 'u2', title: 'Unrelated B', completion_context: 'Done B.' })
+
+    // Keyword path returns only the catering row
+    // Recency path would return unrelated rows — but must NOT be called
+    mocks.mockFrom
+      .mockImplementationOnce(() => mocks.makeChain({ data: [cateringRow], error: null }))
+      .mockImplementationOnce(() => mocks.makeChain({ data: [unrelated1, unrelated2], error: null }))
+
+    const { fetchBrainTodoContext } = await import('@/lib/brain/todos')
+    const result = await fetchBrainTodoContext({
+      keywords:      ['feedback', 'catering'],
+      includeRecent: true,
+    })
+
+    expect(result.todos).toHaveLength(1)
+    expect(result.todos[0].title).toBe('Få feedback fra weekendens catering')
+    expect(result.todos[0].completionContext).toContain('Alt gik godt')
+    expect(result.todos.some(t => t.id === 'u1' || t.id === 'u2')).toBe(false)
   })
 })
 
