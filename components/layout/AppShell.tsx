@@ -428,7 +428,7 @@ export default function AppShell({
       {/* ── Desktop sidebar (hidden on mobile) ── */}
       <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen">
         {/* Mascot */}
-        <div className="px-3 pt-4 pb-2 shrink-0">
+        <div className="px-3 pt-0 pb-2 shrink-0">
           <Image
             src="/kk-kebab.png"
             alt="Killer Kebab mascot"
