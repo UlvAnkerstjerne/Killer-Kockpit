@@ -180,7 +180,7 @@ function DashCard({
 }) {
   return (
     <div className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden shadow-[0_1px_3px_0_rgba(0,0,0,0.07),0_1px_2px_-1px_rgba(0,0,0,0.04)]">
-      <div className={`px-4 py-2 border-b border-kk-line flex items-center justify-between${accentHeader ? ' bg-[#DDD9D1]' : ''}`}>
+      <div className="px-4 py-2 border-b border-kk-line flex items-center justify-between bg-kraft-brown">
         <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
           {icon && <span className="text-kk-ink/50 shrink-0">{icon}</span>}
           {title}
@@ -507,10 +507,10 @@ export default async function TodayPage({
   //   auto-place to col 1, ordered by the `order-N` class.
 
   return (
-    <div>
+    <div className="-m-4 p-4 min-h-screen bg-kraft-light">
 
-      {/* ── Header — warm grey banner ────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-[#DDD9D1]">
+      {/* ── Header — kraft-brown banner ──────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 -mx-4 px-4 -mt-4 pt-4 mb-1.5 bg-kraft-brown">
         <h1 className="font-brand text-2xl font-normal tracking-tight whitespace-nowrap">
           <span className="text-kk-brand">This week</span>
           <span className="text-kk-muted"> · {weekRangeLabel}</span>
@@ -751,7 +751,7 @@ export default async function TodayPage({
                         <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
                       )}
                     </div>
-                    <span className="text-xs text-purple-700 font-medium shrink-0">Draft</span>
+                    <span className="text-xs text-kraft-dark font-medium shrink-0">Draft</span>
                   </Link>
                 ))}
               </div>
@@ -851,7 +851,7 @@ export default async function TodayPage({
                           <div className="text-xs text-kk-muted mt-0.5">From: {o.display_name}</div>
                         )}
                       </div>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-purple-700 bg-purple-50">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-kk-brand bg-kk-bad-bg">
                         Review
                       </span>
                     </Link>
