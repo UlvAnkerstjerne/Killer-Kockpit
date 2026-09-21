@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -425,7 +426,18 @@ export default function AppShell({
       <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* ── Desktop sidebar (hidden on mobile) ── */}
-      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen pt-[6.5rem]">
+      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen">
+        {/* Mascot */}
+        <div className="px-3 pt-4 pb-1 shrink-0">
+          <Image
+            src="/kk-kebab.png"
+            alt="Killer Kebab mascot"
+            width={560}
+            height={520}
+            className="w-full mix-blend-multiply"
+            priority
+          />
+        </div>
         <NavContent onOpenSearch={() => setSearchOpen(true)} />
         <SidebarFooter onSignOut={handleSignOut} />
       </aside>
