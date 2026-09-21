@@ -324,14 +324,28 @@ export async function runGscSync(): Promise<GscSyncResult> {
   // ── Daily totals ─────────────────────────────────────────────────────────────
   try {
     dailyRows = await syncDaily(db, wm, siteUrl, range)
-    await upsertInstitutionalSyncState(db, DAILY_KEY, {
-      status:          'synced',
-      cursor:          range.endDate,
-      last_success_at: now,
-      last_attempt_at: now,
-      last_error:      null,
-    })
-    console.log(`[gsc/sync] gsc_daily: ${dailyRows} rows upserted`)
+    if (dailyRows === 0) {
+      // Zero rows from the API is not a successful sync — the cursor must not
+      // advance and last_success_at must not be updated.  The most common cause
+      // is a property-type mismatch: SC_SITE_URL is the URL-prefix property
+      // 'https://killerkebab.com/' but the primary GSC property may be the
+      // domain property 'sc-domain:killerkebab.com'.  Verify in Search Console.
+      const msg = `Zero rows returned for ${range.startDate}–${range.endDate}. Verify SC_SITE_URL matches the verified Search Console property (currently '${siteUrl}').`
+      console.warn('[gsc/sync] gsc_daily:', msg)
+      errors.push(`gsc_daily: ${msg}`)
+      await upsertInstitutionalSyncState(db, DAILY_KEY, {
+        status: 'failed', last_attempt_at: now, last_error: msg,
+      })
+    } else {
+      await upsertInstitutionalSyncState(db, DAILY_KEY, {
+        status:          'synced',
+        cursor:          range.endDate,
+        last_success_at: now,
+        last_attempt_at: now,
+        last_error:      null,
+      })
+      console.log(`[gsc/sync] gsc_daily: ${dailyRows} rows upserted`)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[gsc/sync] gsc_daily failed:', msg)
@@ -344,14 +358,23 @@ export async function runGscSync(): Promise<GscSyncResult> {
   // ── Top queries ──────────────────────────────────────────────────────────────
   try {
     queryRows = await syncQueries(db, wm, siteUrl, range)
-    await upsertInstitutionalSyncState(db, QUERIES_KEY, {
-      status:          'synced',
-      cursor:          range.endDate,
-      last_success_at: now,
-      last_attempt_at: now,
-      last_error:      null,
-    })
-    console.log(`[gsc/sync] gsc_queries: ${queryRows} rows upserted`)
+    if (queryRows === 0) {
+      const msg = `Zero rows returned for ${range.startDate}–${range.endDate}. Verify SC_SITE_URL matches the verified Search Console property (currently '${siteUrl}').`
+      console.warn('[gsc/sync] gsc_queries:', msg)
+      errors.push(`gsc_queries: ${msg}`)
+      await upsertInstitutionalSyncState(db, QUERIES_KEY, {
+        status: 'failed', last_attempt_at: now, last_error: msg,
+      })
+    } else {
+      await upsertInstitutionalSyncState(db, QUERIES_KEY, {
+        status:          'synced',
+        cursor:          range.endDate,
+        last_success_at: now,
+        last_attempt_at: now,
+        last_error:      null,
+      })
+      console.log(`[gsc/sync] gsc_queries: ${queryRows} rows upserted`)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[gsc/sync] gsc_queries failed:', msg)
@@ -364,14 +387,23 @@ export async function runGscSync(): Promise<GscSyncResult> {
   // ── Top pages ────────────────────────────────────────────────────────────────
   try {
     pageRows = await syncPages(db, wm, siteUrl, range)
-    await upsertInstitutionalSyncState(db, PAGES_KEY, {
-      status:          'synced',
-      cursor:          range.endDate,
-      last_success_at: now,
-      last_attempt_at: now,
-      last_error:      null,
-    })
-    console.log(`[gsc/sync] gsc_pages: ${pageRows} rows upserted`)
+    if (pageRows === 0) {
+      const msg = `Zero rows returned for ${range.startDate}–${range.endDate}. Verify SC_SITE_URL matches the verified Search Console property (currently '${siteUrl}').`
+      console.warn('[gsc/sync] gsc_pages:', msg)
+      errors.push(`gsc_pages: ${msg}`)
+      await upsertInstitutionalSyncState(db, PAGES_KEY, {
+        status: 'failed', last_attempt_at: now, last_error: msg,
+      })
+    } else {
+      await upsertInstitutionalSyncState(db, PAGES_KEY, {
+        status:          'synced',
+        cursor:          range.endDate,
+        last_success_at: now,
+        last_attempt_at: now,
+        last_error:      null,
+      })
+      console.log(`[gsc/sync] gsc_pages: ${pageRows} rows upserted`)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[gsc/sync] gsc_pages failed:', msg)
