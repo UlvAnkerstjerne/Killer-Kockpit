@@ -21,9 +21,9 @@ export const dynamic = 'force-dynamic'
 // ─── Due-state badge config ──────────────────────────────────────────────────
 
 const DUE_STATE_CONFIG = {
-  overdue:   { label: 'OVERDUE',  cls: 'text-kk-bad   bg-kk-bad-bg' },
+  overdue:   { label: 'OVERDUE',  cls: 'text-white bg-[#AD3919]' },
   today:     { label: 'TODAY',    cls: 'text-kk-warn  bg-kk-warn-bg' },
-  tomorrow:  { label: 'TOMORROW', cls: 'text-amber-700 bg-amber-50' },
+  tomorrow:  { label: 'TOMORROW', cls: 'text-kraft-light bg-[#171717]' },
   this_week: { label: '',         cls: '' },
   no_date:   { label: '',         cls: '' },
 } as const
