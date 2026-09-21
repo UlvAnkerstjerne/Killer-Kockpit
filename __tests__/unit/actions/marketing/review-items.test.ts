@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => {
   return { mockGetCurrentUser, mockFrom, mockClient }
 })
 
+vi.mock('server-only', () => ({}))
 vi.mock('@/lib/auth', () => ({ getCurrentUser: mocks.mockGetCurrentUser }))
 vi.mock('@/lib/supabase/server', () => ({
   createClient:        vi.fn().mockResolvedValue(mocks.mockClient),
@@ -294,10 +295,20 @@ describe('getMarketingPendingReviews — GBP review reply items (M2)', () => {
     mocks.mockClient.from = vi.fn().mockImplementation(() => {
       callCount++
       if (callCount === 1) {
-        // permissions — empty (SUPER_ADMIN bypasses)
+        // user_marketing_permissions — empty (SUPER_ADMIN bypasses rows)
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        }
+      }
+      if (callCount === 2) {
+        // paid_recommendations — SUPER_ADMIN has paid_approve (bypasses check)
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
           }),
         }
       }
@@ -339,6 +350,16 @@ describe('getMarketingPendingReviews — GBP review reply items (M2)', () => {
       if (callCount === 1) {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) }
       }
+      if (callCount === 2) {
+        // paid_recommendations — SUPER_ADMIN, empty
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        }
+      }
       return {
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
@@ -362,6 +383,16 @@ describe('getMarketingPendingReviews — GBP review reply items (M2)', () => {
       callCount++
       if (callCount === 1) {
         return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) }
+      }
+      if (callCount === 2) {
+        // paid_recommendations — SUPER_ADMIN, empty
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        }
       }
       return {
         select: vi.fn().mockReturnValue({

@@ -6,6 +6,7 @@ import { getUserMarketingPermissions } from '@/lib/actions/marketing/permissions
 import { createServiceClient } from '@/lib/supabase/server'
 import type { KKRole } from '@/lib/types'
 import type { MarketingPermission, MarketingReviewItem } from '@/lib/marketing/types'
+import { getPendingPaidRecommendations } from '@/lib/actions/marketing/paid-recommendations'
 
 // ─── getMarketingPendingReviews — public server action ────────────────────────
 //
@@ -78,6 +79,11 @@ async function collectPendingReviews(
   permissions: MarketingPermission[]
 ): Promise<MarketingReviewItem[]> {
   const items: MarketingReviewItem[] = []
+
+  // M2 — paid recommendations awaiting approval
+  if (hasMarketingPermission(role, permissions, 'paid_approve')) {
+    items.push(...await getPendingPaidRecommendations())
+  }
 
   // M2 — GBP review replies awaiting approval
   if (hasMarketingPermission(role, permissions, 'reviews_approve')) {
