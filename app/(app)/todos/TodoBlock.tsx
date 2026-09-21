@@ -345,7 +345,7 @@ export default function TodoBlock({
   }
 
   return (
-    <div className="bg-kraft-light border border-[#171717] overflow-hidden">
+    <div className="bg-kraft-light border border-[#171717] rounded-lg overflow-hidden">
       {/* Header */}
       <div className="px-4 py-2 border-b border-[#171717] flex items-center justify-between bg-kraft-brown">
         <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
