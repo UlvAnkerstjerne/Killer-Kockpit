@@ -142,10 +142,14 @@ function SortableOpenTodo({
             <button
               onClick={onComplete}
               disabled={isPending || completionLoading}
-              className="w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
+              className="w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light hover:bg-[#171717] hover:text-kraft-light transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center [box-shadow:2px_2px_0_#555555] active:translate-x-px active:translate-y-px active:[box-shadow:1px_1px_0_#555555] group"
               title="Mark complete"
               aria-label="Mark complete"
-            />
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true">
+                <path d="M1.5 5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
 
             {/* Title + recurrence indicator */}
             <div className="flex-1 flex items-center gap-2 min-w-0">
