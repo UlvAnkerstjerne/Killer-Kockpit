@@ -13,14 +13,14 @@ type Props = {
  */
 export default function WorkspaceSwitcher({ currentWorkspace }: Props) {
   return (
-    <div className="flex bg-white border border-kk-line rounded-xl p-1">
+    <div className="flex bg-[#171717] rounded-xl p-1">
       <Link
         href="/today"
         className={[
           'flex-1 text-xs text-center py-1.5 px-2 rounded-lg transition-colors',
           currentWorkspace === 'management'
-            ? 'bg-kk-ink text-white font-medium'
-            : 'text-kk-muted hover:text-kk-ink',
+            ? 'bg-kraft-light text-[#171717] font-semibold'
+            : 'text-kraft-light/60 hover:text-kraft-light',
         ].join(' ')}
       >
         Management
@@ -30,8 +30,8 @@ export default function WorkspaceSwitcher({ currentWorkspace }: Props) {
         className={[
           'flex-1 text-xs text-center py-1.5 px-2 rounded-lg transition-colors',
           currentWorkspace === 'marketing'
-            ? 'bg-kk-brand text-white font-medium'
-            : 'text-kk-muted hover:text-kk-ink',
+            ? 'bg-kraft-light text-[#171717] font-semibold'
+            : 'text-kraft-light/60 hover:text-kraft-light',
         ].join(' ')}
       >
         Marketing
