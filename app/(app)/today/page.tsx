@@ -509,23 +509,22 @@ export default async function TodayPage({
   return (
     <div className="-m-4 p-4 min-h-screen bg-kraft-light">
 
-      {/* ── Header — kraft-brown banner ──────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 -mx-4 px-4 -mt-4 pt-4 pb-3 mb-1.5 border-b border-[#171717]/20">
-        <h1 className="font-brand text-2xl font-normal tracking-tight whitespace-nowrap">
-          <span className="text-kk-brand">This week</span>
-          <span className="text-kk-muted"> · {weekRangeLabel}</span>
+      {/* ── Header ────────────────────────────────────────────────────────────── */}
+      <div className="relative flex items-center justify-center -mx-4 px-4 -mt-4 pt-4 pb-3 mb-1.5 border-b border-[#171717]/20">
+        <h1 className="font-brand leading-none text-8xl font-black text-[#AD3919] tracking-tight">
+          KILLER KOCKPIT
         </h1>
         {canManage && (
-          <div className="flex gap-1 text-sm ml-auto">
+          <div className="absolute right-4 bottom-3 flex gap-1 text-sm">
             <Link
               href="/today?view=personal"
-              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-white text-kk-ink font-semibold shadow-sm ring-1 ring-kk-line' : 'text-kk-muted hover:bg-kk-line/50 hover:text-kk-ink'}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-[#171717] text-kraft-light font-semibold' : 'text-kk-muted hover:bg-[#B7A486]/25 hover:text-kk-ink'}`}
             >
               Personal
             </Link>
             <Link
               href="/today?view=management"
-              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-white text-kk-ink font-semibold shadow-sm ring-1 ring-kk-line' : 'text-kk-muted hover:bg-kk-line/50 hover:text-kk-ink'}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'management' ? 'bg-[#171717] text-kraft-light font-semibold' : 'text-kk-muted hover:bg-[#B7A486]/25 hover:text-kk-ink'}`}
             >
               Management
             </Link>
