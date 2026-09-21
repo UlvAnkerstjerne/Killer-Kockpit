@@ -22,6 +22,7 @@ import type { BrainMeetingContext }       from '@/lib/brain/meetings'
 import type { BrainReviewContext }        from '@/lib/brain/reviews'
 import type { BrainMorningBriefContext }  from '@/lib/brain/morning-brief'
 import type { BrainFileContext }          from '@/lib/brain/files'
+import type { BrainTodoContext }          from '@/lib/brain/todos'
 
 const MAX_ANSWER_TOKENS = 1_024
 
@@ -298,6 +299,15 @@ MARKETING MORNING BRIEF — when present, treat as derived internal summary:
 - Label findings as "according to the morning brief for [date]" to indicate source.
 - If multiple briefs are shown, note the most recent date and any notable changes.
 - Do NOT treat brief assessments as ground truth — they are AI-generated summaries of raw data.
+
+TO-DO KNOWLEDGE — when present, treat as operational source material:
+CRITICAL DISTINCTION: The To-Do title is the INTENDED action (what someone planned to do). The completion_context is the OUTCOME (what actually happened). Never present the title as if it describes a completed result — always read the completion_context for the actual outcome.
+- "To-Do: X" means the task title — the original intent or action planned.
+- "Outcome: Y" means the completion_context — what the person recorded as actually having happened.
+- Completed = has a completion date. Open = no completion date. Cancelled = abandoned intent (treat as C-type planned/abandoned, never as a factual outcome).
+- If a completed To-Do has no completion_context: the task was marked done but no outcome was recorded.
+- Use completion_context as the primary factual source for "what happened", "what was the result", "any feedback?" questions.
+- Apply the same GROUNDING RULES as for all other sources (A/B/C/D above).
 
 DRIVE FILE REFERENCES — when present:
 - These are metadata records of Google Drive files linked to projects or meetings in Kockpit.
@@ -633,6 +643,31 @@ function formatFileContext(files: BrainFileContext): string[] {
   return lines
 }
 
+// ─── Todo context formatter ───────────────────────────────────────────────────
+
+function formatTodoContext(todos: BrainTodoContext): string[] {
+  const lines: string[] = []
+  if (todos.todos.length === 0) return lines
+
+  lines.push('To-Do Knowledge (operational source — title = intent, Outcome = what actually happened):')
+  lines.push('')
+
+  for (const t of todos.todos) {
+    const ownerStr    = t.ownerName ? ` — ${t.ownerName}` : ''
+    const dateStr     = t.completedAt ? `completed ${t.completedAt}` : (t.scheduledFor ? `scheduled ${t.scheduledFor}` : 'open')
+    const statusLabel = t.isCompleted ? 'Completed' : 'Open'
+
+    lines.push(`[TO-DO${ownerStr} — ${dateStr} — ${statusLabel}]`)
+    lines.push(`To-Do: ${t.title}`)
+    if (t.notes)             lines.push(`Notes: ${t.notes}`)
+    if (t.completionContext) lines.push(`Outcome (what actually happened): ${t.completionContext}`)
+    if (!t.completionContext && t.isCompleted) lines.push('Outcome: (no outcome recorded)')
+    lines.push('')
+  }
+
+  return lines
+}
+
 // ─── Context builder ──────────────────────────────────────────────────────────
 
 const TYPE_LABEL: Record<string, string> = {
@@ -653,6 +688,7 @@ function buildUserMessage(
   reviewContext:       BrainReviewContext | null,
   morningBriefContext: BrainMorningBriefContext | null,
   fileContext:         BrainFileContext | null,
+  todoContext:         BrainTodoContext | null,
 ): string {
   const lines: string[] = []
 
@@ -854,6 +890,12 @@ function buildUserMessage(
     for (const l of fileLines) lines.push(l)
   }
 
+  // ── To-Do Knowledge ────────────────────────────────────────────────────────
+  if (todoContext) {
+    const todoLines = formatTodoContext(todoContext)
+    for (const l of todoLines) lines.push(l)
+  }
+
   return lines.join('\n')
 }
 
@@ -877,6 +919,7 @@ export async function queryBrain(
   reviewContext:       BrainReviewContext | null,
   morningBriefContext: BrainMorningBriefContext | null,
   fileContext:         BrainFileContext | null,
+  todoContext:         BrainTodoContext | null,
 ): Promise<BrainQueryResult> {
   const model = process.env.MEETING_AI_MODEL
   if (!model) return { ok: false, error: 'AI model is not configured.' }
@@ -893,6 +936,7 @@ export async function queryBrain(
   const userContent = buildUserMessage(
     question, updates, profiles, operationalContexts, projectOpContexts,
     emailContexts, qualityContext, meetingContext, reviewContext, morningBriefContext, fileContext,
+    todoContext,
   )
 
   try {

@@ -58,6 +58,8 @@ import { fetchBrainMorningBriefContext }               from '@/lib/brain/morning
 import type { BrainMorningBriefContext }               from '@/lib/brain/morning-brief'
 import { fetchBrainFileContext }                       from '@/lib/brain/files'
 import type { BrainFileContext }                       from '@/lib/brain/files'
+import { fetchBrainTodoContext }                       from '@/lib/brain/todos'
+import type { BrainTodoContext }                       from '@/lib/brain/todos'
 import type { ActionResult, KkUpdateEntityType } from '@/lib/types'
 import type {
   BrainContextUpdate,
@@ -218,6 +220,18 @@ export interface BrainFileSource {
   href:        string
 }
 
+/** A card shown in the sources panel for a completed To-Do. */
+export interface BrainTodoSource {
+  kind:                    'todo'
+  id:                      string
+  title:                   string
+  ownerName:               string | null
+  completedAt:             string | null   // YYYY-MM-DD
+  completionContextExcerpt: string | null  // first ~200 chars of completion_context
+  isCompleted:             boolean
+  href:                    string
+}
+
 export interface BrainAnswer {
   answer:             string
   profileSources:     BrainProfileSource[]
@@ -232,6 +246,7 @@ export interface BrainAnswer {
   reviewSources:      BrainReviewSource[]
   briefSources:       BrainBriefSource[]
   fileSources:        BrainFileSource[]
+  todoSources:        BrainTodoSource[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -436,11 +451,12 @@ export async function askBrain(
 
   // ── 5. Fetch full entity profiles for matched entities ────────────────────
   // Run in parallel with the superseded-IDs fetch (step 6) below.
-  const entityProfiles:         BrainEntityProfile[]         = []
-  const profileSources:         BrainProfileSource[]         = []
-  const operationalContexts:    PersonOperationalContext[]   = []
-  const operationalSources:     BrainOperationalSource[]     = []
-  const projectOpContexts:      ProjectOperationalContext[]  = []
+  const entityProfiles:            BrainEntityProfile[]         = []
+  const profileSources:            BrainProfileSource[]         = []
+  const operationalContexts:       PersonOperationalContext[]   = []
+  const operationalSources:        BrainOperationalSource[]     = []
+  const projectOpContexts:         ProjectOperationalContext[]  = []
+  const mentionedEmployeeUserIds:  string[]                     = []   // linked_user_id per matched employee
 
   const [supersededRowsResult] = await Promise.all([
 
@@ -483,6 +499,7 @@ export async function askBrain(
 
         // ── Operational context ──────────────────────────────────────────────
         const linkedUserId = emp.linked_user_id as string | null
+        if (linkedUserId) mentionedEmployeeUserIds.push(linkedUserId)
         const noData = { data: [] as never[] }
 
         const [taskRows, projRows, waitingOnRows, decisionRows, meetingAttRows] = await Promise.all([
@@ -1384,7 +1401,52 @@ export async function askBrain(
     }
   }
 
-  // ── 16. Call AI ───────────────────────────────────────────────────────────
+  // ── 16. To-Do knowledge retrieval ─────────────────────────────────────────
+  //
+  // Retrieves relevant To-Dos when:
+  //   a. Keyword search — any query keywords are present (title/notes/completion_context).
+  //   b. Recency/feedback/outcome intent — question signals interest in recent events.
+  //   c. Person context — a known person is mentioned (include their recent todos).
+  //
+  // Cancelled todos are excluded — they are abandoned intent, not factual outcomes.
+  const TODO_RECENCY_WORDS = [
+    'recent', 'recently', 'latest', 'happened', 'feedback', 'outcome', 'outcomes',
+    'result', 'results', 'reported', 'what have', 'what has', 'completed', 'finished',
+    'done', 'completion',
+  ]
+  const hasRecencyIntent = TODO_RECENCY_WORDS.some(w => qLower.includes(w))
+
+  let todoContext: BrainTodoContext | null = null
+  const todoSources: BrainTodoSource[] = []
+
+  if (keywords.length > 0 || hasRecencyIntent || mentionedEmployeeUserIds.length > 0) {
+    try {
+      todoContext = await fetchBrainTodoContext({
+        keywords,
+        personUserIds: mentionedEmployeeUserIds,
+        includeRecent: hasRecencyIntent,
+      })
+
+      for (const t of todoContext.todos) {
+        todoSources.push({
+          kind:                    'todo',
+          id:                      t.id,
+          title:                   t.title,
+          ownerName:               t.ownerName,
+          completedAt:             t.completedAt,
+          completionContextExcerpt: t.completionContext
+            ? t.completionContext.slice(0, 200)
+            : null,
+          isCompleted: t.isCompleted,
+          href:        '/todos',
+        })
+      }
+    } catch (todoErr) {
+      console.error('[brain] Todo retrieval failed:', (todoErr as Error).message)
+    }
+  }
+
+  // ── 17. Call AI ───────────────────────────────────────────────────────────
   const aiResult = await queryBrain(
     q,
     contextUpdates,
@@ -1397,10 +1459,11 @@ export async function askBrain(
     reviewContext,
     morningBriefContext,
     fileContext,
+    todoContext,
   )
   if (!aiResult.ok) return { error: aiResult.error }
 
-  // ── 17. Build Update sources for UI display ───────────────────────────────
+  // ── 18. Build Update sources for UI display ───────────────────────────────
   const sources: BrainSource[] = contextUpdates.map(u => ({
     updateId:    u.id,
     body:        u.body,
@@ -1430,6 +1493,7 @@ export async function askBrain(
       reviewSources,
       briefSources,
       fileSources,
+      todoSources,
     },
   }
 }

@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
-import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource, BrainReviewSource, BrainBriefSource, BrainFileSource } from '@/lib/actions/brain'
+import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource, BrainReviewSource, BrainBriefSource, BrainFileSource, BrainTodoSource } from '@/lib/actions/brain'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -448,6 +448,39 @@ function FileSourceCard({ source }: { source: BrainFileSource }) {
   )
 }
 
+// ─── To-Do source card ────────────────────────────────────────────────────────
+
+function TodoSourceCard({ source }: { source: BrainTodoSource }) {
+  const statusLabel = source.isCompleted ? 'Completed' : 'Open'
+  const statusCls   = source.isCompleted
+    ? 'bg-emerald-50 text-emerald-700'
+    : 'bg-amber-50 text-amber-700'
+  return (
+    <Link
+      href={source.href}
+      className="block border border-kk-line rounded-xl p-4 bg-white hover:border-emerald-300 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${statusCls}`}>
+          To-Do · {statusLabel}
+        </span>
+        <span className="text-sm font-semibold text-kk-ink truncate">{source.title}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-kk-muted mb-1.5">
+        {source.ownerName && <span>{source.ownerName}</span>}
+        {source.ownerName && source.completedAt && <span>·</span>}
+        {source.completedAt && <span>{source.completedAt}</span>}
+      </div>
+      {source.completionContextExcerpt && (
+        <p className="text-xs text-kk-ink leading-relaxed line-clamp-2">
+          <span className="font-medium text-kk-muted">Outcome: </span>
+          {source.completionContextExcerpt}
+        </p>
+      )}
+    </Link>
+  )
+}
+
 // ─── Update source card ───────────────────────────────────────────────────────
 
 function SourceCard({ source }: { source: BrainSource }) {
@@ -736,10 +769,10 @@ export default function BrainClient() {
           </div>
 
           {/* Sources */}
-          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0 || result.reviewSources.length > 0 || result.briefSources.length > 0 || result.fileSources.length > 0) && (
+          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0 || result.reviewSources.length > 0 || result.briefSources.length > 0 || result.fileSources.length > 0 || result.todoSources.length > 0) && (
             <div>
               <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length + result.reviewSources.length + result.briefSources.length + result.fileSources.length})
+                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length + result.reviewSources.length + result.briefSources.length + result.fileSources.length + result.todoSources.length})
               </h2>
               <div className="space-y-2">
                 {result.profileSources.map(s => (
@@ -771,6 +804,9 @@ export default function BrainClient() {
                 ))}
                 {result.fileSources.map(s => (
                   <FileSourceCard key={`file-${s.sourceId}`} source={s} />
+                ))}
+                {result.todoSources.map(s => (
+                  <TodoSourceCard key={`todo-${s.id}`} source={s} />
                 ))}
                 {result.sources.map(s => (
                   <SourceCard key={s.updateId} source={s} />
