@@ -425,7 +425,7 @@ export default function AppShell({
       <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* ── Desktop sidebar (hidden on mobile) ── */}
-      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen">
+      <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen pt-[6.5rem]">
         <NavContent onOpenSearch={() => setSearchOpen(true)} />
         <SidebarFooter onSignOut={handleSignOut} />
       </aside>
