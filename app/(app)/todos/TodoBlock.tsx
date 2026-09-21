@@ -493,7 +493,7 @@ export default function TodoBlock({
 
       {showFooter && (
         <div className="px-4 py-1.5 border-t border-[#171717]/20 flex justify-end">
-          <Link href="/todos" className="text-xs text-kk-brand font-medium hover:opacity-70 transition-opacity">
+          <Link href="/todos" className="text-xs text-kk-ink font-medium hover:opacity-70 transition-opacity">
             View all to-dos →
           </Link>
         </div>
