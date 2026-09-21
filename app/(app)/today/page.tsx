@@ -905,26 +905,6 @@ export default async function TodayPage({
           </div>
         )}
 
-        {/* ═══ Card 7 — At a Glance (right col, row 4) ════════════════════ */}
-        <div className="self-start order-7 lg:order-none lg:col-start-2 lg:row-start-4">
-          <DashCard title="This week at a glance" icon={<IconGlance />}>
-            <div className="grid grid-cols-2 gap-px bg-[#171717]/20 m-px overflow-hidden">
-              {([
-                { label: 'Open items',   value: unfinished.length, accent: false },
-                { label: 'Overdue',      value: overdueCount,      accent: overdueCount > 0 },
-                { label: 'Completed',    value: completedCount,    accent: false },
-                { label: 'Meetings',     value: meetingsThisWeek,  accent: false },
-              ] as const).map(({ label, value, accent }) => (
-                <div key={label} className="bg-kraft-light px-4 py-2.5">
-                  <div className={`text-2xl font-bold tabular-nums leading-none ${accent ? 'text-kk-bad' : value === 0 ? 'text-kk-muted' : 'text-kk-ink'}`}>
-                    {value}
-                  </div>
-                  <div className="text-xs text-kk-muted mt-1 leading-tight">{label}</div>
-                </div>
-              ))}
-            </div>
-          </DashCard>
-        </div>
 
       </div>
     </div>
