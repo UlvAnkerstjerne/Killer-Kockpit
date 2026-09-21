@@ -510,12 +510,12 @@ export default async function TodayPage({
     <div className="-m-4 p-4 min-h-screen bg-kraft-light">
 
       {/* ── Header ────────────────────────────────────────────────────────────── */}
-      <div className="relative flex items-center justify-center -mx-4 px-4 -mt-4 pt-4 pb-3 mb-1.5 border-b border-[#171717]/20">
+      <div className="flex items-end justify-between -mx-4 px-4 -mt-4 pt-4 pb-3 mb-1.5 border-b border-[#171717]/20">
         <h1 className="font-brand leading-none text-8xl font-black text-[#AD3919] tracking-tight [text-shadow:2px_3px_6px_rgba(0,0,0,0.25)] [-webkit-text-stroke:0.5px_#171717]">
           KILLER KOCKPIT
         </h1>
         {canManage && (
-          <div className="absolute right-4 bottom-3 flex gap-1 text-sm">
+          <div className="flex gap-1 text-sm">
             <Link
               href="/today?view=personal"
               className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-[#171717] text-kraft-light font-semibold' : 'text-kk-muted hover:bg-[#B7A486]/25 hover:text-kk-ink'}`}
