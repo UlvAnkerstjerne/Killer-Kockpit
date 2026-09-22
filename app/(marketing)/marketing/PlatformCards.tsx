@@ -137,7 +137,6 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
       borderRadius: '16px',
       boxShadow: '0 6px 20px rgba(23,23,23,0.065)',
       overflow: 'hidden',
-      alignSelf: 'start',
     }}>
 
       {/* ── Header ── */}
