@@ -50,7 +50,7 @@ OBSERVATION RULES:
 - Target 5–8 observations. Never pad. Never exceed 8.
 - Each observation must be grounded in a supplied signal candidate.
 - signal_id must be the exact id of a supplied candidate — do not invent ids.
-- observation: ≤ 12 words. One core fact only. State the core change and magnitude. Do NOT append comparison-window phrases like "vs prior 7 days", "vs prior 28 days", or "week-on-week" — the evidence line provides that context. Example: "Website new users surged 159%" not "Website new users surged 159% vs prior 7 days."
+- observation: ≤ 12 words. Exactly ONE metric and its magnitude. No second metric, no consequences, no causal language, no comparison-window phrases ("vs prior 7 days", "week-on-week"). Supporting metrics belong in evidence. Interpretation belongs in interpretation. Example: "Website new users surged 159%" or "GBP Maps impressions fell 50%".
 - evidence: One line, ≤ 3 metrics. Use the human-readable labels from the data — NEVER raw metric keys such as ga4_new_users_7d or gbp_maps_impressions_28d.
   Format: "Label +N% · Label +N% · Label N"
   Example: "New users +133% · Sessions +109% · Page views +55%"
