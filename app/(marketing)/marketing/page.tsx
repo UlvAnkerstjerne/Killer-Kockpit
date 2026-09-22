@@ -138,6 +138,59 @@ function IconEye() {
   )
 }
 
+function IconMapPin() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5Z" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="9" cy="6" r="1.5" fill="currentColor"/>
+    </svg>
+  )
+}
+
+function IconSearch() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M12.5 12.5l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function IconGlobe() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M9 2C9 2 6.5 5.5 6.5 9s2.5 7 2.5 7M9 2c0 0 2.5 3.5 2.5 7S9 16 9 16M2 9h14" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+// Icon + colour config per observation source
+function observationIconConfig(source: string | undefined): {
+  icon: React.ReactNode
+  bg: string
+  color: string
+} {
+  switch (source) {
+    case 'meta_paid':
+      return { icon: <IconCreditCard />, bg: '#EBF3FF', color: '#1877F2' }
+    case 'organic_ig':
+      return { icon: <IconInstagram />, bg: '#FDF0F7', color: '#C13584' }
+    case 'organic_fb':
+      return { icon: <IconFacebook />, bg: '#EBF3FF', color: '#1877F2' }
+    case 'gbp_performance':
+      return { icon: <IconMapPin />, bg: '#E8F5E9', color: '#2E7D32' }
+    case 'search_console':
+      return { icon: <IconSearch />, bg: '#FFF8E1', color: '#F57F17' }
+    case 'ga4':
+      return { icon: <IconGlobe />, bg: '#F3F0EB', color: '#5C4F3D' }
+    case 'data_health':
+      return { icon: <IconWarning />, bg: '#FFF8E1', color: '#B45309' }
+    default:
+      return { icon: <IconEye />, bg: '#F3F0EB', color: '#5C4F3D' }
+  }
+}
+
 // ── StaleBanner ───────────────────────────────────────────────────────────────
 
 function StaleBanner({ briefDate, reason }: { briefDate: string; reason: string }) {
@@ -211,52 +264,56 @@ function NeedsReviewBlock({ needsReview }: { needsReview: MorningBriefSections['
 function ObservationItem({
   obs,
   index,
-  isLast,
 }: {
   obs: BriefObservation
   index: number
-  isLast: boolean
 }) {
-  // data_health observations signal data quality concerns, not marketing actions
   const isDataHealth = categoryIsDataHealth(obs.category ?? '')
   const label = obs.source ? sourceLabel(obs.source) : null
+  const { icon, bg, color } = observationIconConfig(obs.source)
 
   return (
     <div
       data-observation-index={index}
       data-is-data-health={isDataHealth ? 'true' : undefined}
+      className="bg-white border border-kk-line rounded-2xl p-5 flex flex-col gap-3"
+      style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}
     >
-      {/* Source label */}
-      {label && (
-        <div className={`text-[10px] font-bold tracking-[0.1em] uppercase mb-1 ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
-          {label}
+      {/* Icon badge + source label */}
+      <div className="flex items-center gap-2.5">
+        <div
+          className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: bg, color }}
+        >
+          {icon}
         </div>
-      )}
+        {label && (
+          <span className={`text-[10px] font-bold tracking-[0.1em] uppercase ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
+            {label}
+          </span>
+        )}
+      </div>
 
       {/* Headline */}
-      <p className={`text-base leading-snug mb-1.5 ${
-        isDataHealth
-          ? 'text-kk-muted font-normal'
-          : 'text-kk-ink font-semibold'
-      }`}>
+      <p className={`text-[15px] leading-snug ${isDataHealth ? 'text-kk-muted font-normal' : 'text-kk-ink font-semibold'}`}>
         {obs.observation}
       </p>
 
-      {/* Evidence — plain text, no label prefix */}
-      <p className={`text-xs leading-relaxed mb-2 ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
+      {/* Evidence */}
+      <p className={`text-xs leading-relaxed ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
         {obs.evidence}
       </p>
 
       {/* Recommended action */}
       {!isDataHealth && obs.recommended_action && (
-        <p className="text-[13px] text-kk-ink leading-relaxed mb-2">
+        <p className="text-[13px] text-kk-ink leading-relaxed">
           → {obs.recommended_action}
         </p>
       )}
 
-      {/* Why? — interpretation + creative_start behind optional expand */}
+      {/* Why? */}
       {!isDataHealth && (obs.interpretation || obs.creative_start) && (
-        <details className="group mt-1">
+        <details className="group">
           <summary className="inline-flex items-center gap-0.5 text-[11px] font-medium text-kk-muted/70 cursor-pointer hover:text-kk-muted list-none select-none">
             <span>Why?</span>
             <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
@@ -271,9 +328,6 @@ function ObservationItem({
           </div>
         </details>
       )}
-
-      {/* Divider between items */}
-      {!isLast && <hr className="mt-4 border-kk-line" />}
     </div>
   )
 }
@@ -283,21 +337,20 @@ function ObservationItem({
 function WhatMattersTodaySection({ observations }: { observations: BriefObservation[] }) {
   return (
     <div>
-      <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-5">
-        What matters today
+      <h2 className="text-3xl font-black tracking-tight text-kk-ink mb-5">
+        What&apos;s happening?
       </h2>
       {observations.length === 0 ? (
         <p className="text-sm text-kk-muted" data-zero-observations="true">
           Nothing material needs your attention today.
         </p>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {observations.map((obs, i) => (
             <ObservationItem
               key={obs.signal_id}
               obs={obs}
               index={i}
-              isLast={i === observations.length - 1}
             />
           ))}
         </div>

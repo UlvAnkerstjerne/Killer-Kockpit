@@ -19,7 +19,7 @@ function fmtDelta(delta: number | null): { text: string; up: boolean } | null {
 }
 
 function fmtSpend(n: number): string {
-  return `kr. ${Math.round(n).toLocaleString()}`
+  return Math.round(n).toLocaleString()
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -124,11 +124,10 @@ function ChangePill({ badge, small }: { badge: { text: string; up: boolean }; sm
 
 // ── Platform cards ────────────────────────────────────────────────────────────
 
-function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'meta_paid'>) {
+function InstagramCard({ ig }: Pick<PlatformSnapshotData, 'ig'>) {
   const reachBadge     = fmtPct(ig.reach_change_pct)
+  const engagedBadge   = fmtPct(ig.engaged_change_pct)
   const followersBadge = fmtDelta(ig.followers_delta)
-  const impressionsBadge = fmtPct(meta_paid.impressions_change_pct)
-  const spendBadge       = fmtPct(meta_paid.spend_change_pct)
 
   return (
     <div style={{
@@ -175,10 +174,27 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
       </div>
 
       {/* ── Organic metrics ── */}
-      <div style={{ padding: '14px 16px 0' }}>
+      <div style={{ padding: '14px 16px 16px' }}>
+
+        {/* Followers */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Followers</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <circle cx="10" cy="7" r="3.5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <path d="M3.5 17c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+              </svg>
+              {ig.followers !== null ? fmtCompact(ig.followers) : '—'}
+            </span>
+          </div>
+          {followersBadge && <ChangePill badge={followersBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
 
         {/* Reach */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
             <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Reach (7D)</div>
             <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -194,61 +210,18 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
 
         <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
 
-        {/* Followers — identical geometry */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+        {/* Engaged */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Followers</div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Engaged (7D)</div>
             <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
-                <circle cx="10" cy="7" r="3.5" stroke="#171717" strokeWidth="1.6" fill="none"/>
-                <path d="M3.5 17c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+                <path d="M10 2.5l1.8 3.6 4 .58-2.9 2.83.68 4L10 11.35l-3.58 1.88.68-4L4.2 6.68l4-.58L10 2.5Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
               </svg>
-              {ig.followers !== null ? fmtCompact(ig.followers) : '—'}
+              {fmtCompact(ig.engaged_7d)}
             </span>
           </div>
-          {followersBadge && <ChangePill badge={followersBadge} />}
-        </div>
-      </div>
-
-      {/* ── Meta Paid inset ── */}
-      <div style={{
-        margin: '12px 16px 16px',
-        background: '#F1EEE8',
-        borderRadius: '12px',
-        padding: '12px 14px',
-      }}>
-
-        {/* Inset header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-            <path d="M12 3.5v9L6.5 10H4a1.5 1.5 0 01-1.5-1.5v-1A1.5 1.5 0 014 6h2.5L12 3.5z" stroke="rgba(23,23,23,0.55)" strokeWidth="1.3" strokeLinejoin="round" fill="none"/>
-            <path d="M6.2 10.2l-.5 3.3" stroke="rgba(23,23,23,0.55)" strokeWidth="1.3" strokeLinecap="round"/>
-          </svg>
-          <span style={{ fontSize: '12px', lineHeight: '16px', fontWeight: 700, color: '#171717' }}>Meta Paid</span>
-        </div>
-
-        {/* Impressions */}
-        <div style={{ marginBottom: '8px' }}>
-          <div style={{ fontSize: '10px', fontWeight: 500, color: 'rgba(23,23,23,0.55)', marginBottom: '2px' }}>Impressions (7D)</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-            <span className="tabular-nums" style={{ fontSize: '19px', fontWeight: 700, color: '#171717', lineHeight: '1.2', display: 'block' }}>
-              {fmtCompact(meta_paid.impressions_7d)}
-            </span>
-            {impressionsBadge && <ChangePill badge={impressionsBadge} small />}
-          </div>
-        </div>
-
-        <div style={{ height: '1px', background: 'rgba(23,23,23,0.06)', marginBottom: '8px' }} />
-
-        {/* Spend */}
-        <div>
-          <div style={{ fontSize: '10px', fontWeight: 500, color: 'rgba(23,23,23,0.55)', marginBottom: '2px' }}>Spend (7D)</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-            <span className="tabular-nums" style={{ fontSize: '19px', fontWeight: 700, color: '#171717', lineHeight: '1.2', display: 'block' }}>
-              {fmtSpend(meta_paid.spend_7d)}
-            </span>
-            {spendBadge && <ChangePill badge={spendBadge} small />}
-          </div>
+          {engagedBadge && <ChangePill badge={engagedBadge} />}
         </div>
       </div>
     </div>
@@ -256,33 +229,281 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
 }
 
 function FacebookCard({ fb }: Pick<PlatformSnapshotData, 'fb'>) {
+  const pageViewsBadge   = fmtPct(fb.page_views_change_pct)
+  const engagedBadge = fmtPct(fb.engaged_change_pct)
+  const fansBadge    = fmtDelta(fb.fans_delta)
+
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-3">
-      <CardHeader icon={<IconFB />} title="Facebook" />
-      <div className="space-y-2">
-        <Stat label="Page views 7d" value={fmtCompact(fb.page_views_7d)} badge={fmtPct(fb.page_views_change_pct)} />
-        <Stat label="Engaged 7d" value={fmtCompact(fb.engaged_users_7d)} />
-        <Stat
-          label="Fans"
-          value={fb.fans !== null ? fmtCompact(fb.fans) : '—'}
-          badge={fmtDelta(fb.fans_delta)}
-        />
+    <div style={{
+      background: '#FFFFFF',
+      border: '1px solid rgba(23,23,23,0.10)',
+      borderRadius: '16px',
+      boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
+      overflow: 'hidden',
+    }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        height: '52px',
+        borderBottom: '1px solid rgba(23,23,23,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+          {/* Facebook blue badge — 30×30 */}
+          <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect width="28" height="28" rx="8" fill="#1877F2"/>
+            <path d="M15.5 14.5h2.2l.4-2.8h-2.6v-1.6c0-.77.38-1.52 1.58-1.52H18V6.22S16.96 6 15.96 6C13.6 6 12.1 7.4 12.1 10.06v1.64H9.7v2.8h2.4V21h3.4v-6.5Z" fill="white"/>
+          </svg>
+
+          <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Facebook</span>
+        </div>
+
+        {/* Right-pointing chevron */}
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* ── Metrics ── */}
+      <div style={{ padding: '14px 16px 16px' }}>
+
+        {/* Fans */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Fans</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <circle cx="10" cy="7" r="3.5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <path d="M3.5 17c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+              </svg>
+              {fb.fans !== null ? fmtCompact(fb.fans) : '—'}
+            </span>
+          </div>
+          {fansBadge && <ChangePill badge={fansBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Page views */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Page Views (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
+              </svg>
+              {fmtCompact(fb.page_views_7d)}
+            </span>
+          </div>
+          {pageViewsBadge && <ChangePill badge={pageViewsBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Engaged users */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Engaged (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <path d="M10 2.5l1.8 3.6 4 .58-2.9 2.83.68 4L10 11.35l-3.58 1.88.68-4L4.2 6.68l4-.58L10 2.5Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+              </svg>
+              {fmtCompact(fb.engaged_users_7d)}
+            </span>
+          </div>
+          {engagedBadge && <ChangePill badge={engagedBadge} />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MetaPaidCard({ meta_paid }: Pick<PlatformSnapshotData, 'meta_paid'>) {
+  const impressionsBadge = fmtPct(meta_paid.impressions_change_pct)
+  const spendBadge       = fmtPct(meta_paid.spend_change_pct)
+  const clicksBadge      = fmtPct(meta_paid.clicks_change_pct)
+
+  return (
+    <div style={{
+      background: '#FFFFFF',
+      border: '1px solid rgba(23,23,23,0.10)',
+      borderRadius: '16px',
+      boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
+      overflow: 'hidden',
+    }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        height: '52px',
+        borderBottom: '1px solid rgba(23,23,23,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+          {/* Meta blue badge — 30×30 */}
+          <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect width="28" height="28" rx="8" fill="#0082FB"/>
+            <path d="M6 17.5c0 1.1.85 2 1.9 2 .52 0 1.02-.22 1.38-.6L14 13.6l4.72 5.3c.36.38.86.6 1.38.6 1.05 0 1.9-.9 1.9-2 0-.5-.18-.97-.5-1.33L15.9 10H12.1L6.5 16.17c-.32.36-.5.83-.5 1.33Z" fill="white"/>
+          </svg>
+
+          <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Meta Paid</span>
+        </div>
+
+        {/* Right-pointing chevron */}
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* ── Metrics ── */}
+      <div style={{ padding: '14px 16px 16px' }}>
+
+        {/* Impressions */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Impressions (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
+              </svg>
+              {fmtCompact(meta_paid.impressions_7d)}
+            </span>
+          </div>
+          {impressionsBadge && <ChangePill badge={impressionsBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Spend */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Spend (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <circle cx="10" cy="10" r="7.5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <path d="M10 6v8M7.5 7.5h3.75a1.25 1.25 0 010 2.5h-2.5a1.25 1.25 0 000 2.5H12" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+              </svg>
+              {fmtSpend(meta_paid.spend_7d)}
+            </span>
+          </div>
+          {spendBadge && <ChangePill badge={spendBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Clicks / Engagement */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Clicks (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <path d="M7 2v10.5l2.5-2.5 2 4.5 1.5-.7-2-4.3H14L7 2Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+              </svg>
+              {fmtCompact(meta_paid.clicks_7d)}
+            </span>
+          </div>
+          {clicksBadge && <ChangePill badge={clicksBadge} />}
+        </div>
       </div>
     </div>
   )
 }
 
 function GbpCard({ gbp }: Pick<PlatformSnapshotData, 'gbp'>) {
+  const impressionsBadge = fmtPct(gbp.impressions_change_pct)
+  const directionsBadge  = fmtPct(gbp.directions_change_pct)
+
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-3">
-      <CardHeader icon={<IconMapPin />} title="Google Business" />
-      <div className="space-y-2">
-        <Stat label="Impressions 28d" value={fmtCompact(gbp.impressions_28d)} badge={fmtPct(gbp.impressions_change_pct)} />
-        <Stat label="Directions 28d" value={fmtCompact(gbp.directions_28d)} badge={fmtPct(gbp.directions_change_pct)} />
-        <Stat label="Website clicks 28d" value={fmtCompact(gbp.website_clicks_28d)} />
-        <div>
-          <div className="text-[10px] text-kk-muted uppercase tracking-[0.07em] leading-none mb-0.5">Reviews</div>
-          <span className="text-[11px] text-kk-muted/60 italic">unavailable</span>
+    <div style={{
+      background: '#FFFFFF',
+      border: '1px solid rgba(23,23,23,0.10)',
+      borderRadius: '16px',
+      boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
+      overflow: 'hidden',
+    }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        height: '52px',
+        borderBottom: '1px solid rgba(23,23,23,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+          {/* GBP badge — 30×30 */}
+          <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect width="28" height="28" rx="8" fill="#4285F4"/>
+            <path d="M14 7a5 5 0 00-5 5c0 3.75 5 9 5 9s5-5.25 5-9a5 5 0 00-5-5Zm0 6.8a1.8 1.8 0 110-3.6 1.8 1.8 0 010 3.6Z" fill="white"/>
+          </svg>
+
+          <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Google Business</span>
+        </div>
+
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* ── Metrics ── */}
+      <div style={{ padding: '14px 16px 16px' }}>
+
+        {/* Impressions */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Impressions (28D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
+              </svg>
+              {fmtCompact(gbp.impressions_28d)}
+            </span>
+          </div>
+          {impressionsBadge && <ChangePill badge={impressionsBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Directions */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Directions (28D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <path d="M10 2l8 8-8 8-8-8 8-8Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+                <path d="M10 8v4M8 10h4" stroke="#171717" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              {fmtCompact(gbp.directions_28d)}
+            </span>
+          </div>
+          {directionsBadge && <ChangePill badge={directionsBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Reviews */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Reviews</div>
+            <span style={{ fontSize: '26px', fontWeight: 700, color: 'rgba(23,23,23,0.25)', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <path d="M10 2.5l1.8 3.6 4 .58-2.9 2.83.68 4L10 11.35l-3.58 1.88.68-4L4.2 6.68l4-.58L10 2.5Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+              </svg>
+              —
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -290,13 +511,96 @@ function GbpCard({ gbp }: Pick<PlatformSnapshotData, 'gbp'>) {
 }
 
 function WebsiteCard({ ga4 }: Pick<PlatformSnapshotData, 'ga4'>) {
+  const sessionsBadge   = fmtPct(ga4.sessions_change_pct)
+  const newUsersBadge   = fmtPct(ga4.new_users_change_pct)
+  const pageViewsBadge  = fmtPct(ga4.page_views_change_pct)
+
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-3">
-      <CardHeader icon={<IconGlobe />} title="Website" />
-      <div className="space-y-2">
-        <Stat label="Sessions 7d" value={fmtCompact(ga4.sessions_7d)} badge={fmtPct(ga4.sessions_change_pct)} />
-        <Stat label="New users 7d" value={fmtCompact(ga4.new_users_7d)} badge={fmtPct(ga4.new_users_change_pct)} />
-        <Stat label="Page views 7d" value={fmtCompact(ga4.page_views_7d)} badge={fmtPct(ga4.page_views_change_pct)} />
+    <div style={{
+      background: '#FFFFFF',
+      border: '1px solid rgba(23,23,23,0.10)',
+      borderRadius: '16px',
+      boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
+      overflow: 'hidden',
+    }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        height: '52px',
+        borderBottom: '1px solid rgba(23,23,23,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+          {/* Website badge — 30×30 */}
+          <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect width="28" height="28" rx="8" fill="#171717"/>
+            <circle cx="14" cy="14" r="7" stroke="white" strokeWidth="1.4" fill="none"/>
+            <path d="M14 7c0 0-3 3-3 7s3 7 3 7M14 7c0 0 3 3 3 7s-3 7-3 7M7 14h14" stroke="white" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+
+          <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Website</span>
+        </div>
+
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* ── Metrics ── */}
+      <div style={{ padding: '14px 16px 16px' }}>
+
+        {/* Sessions */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Sessions (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <path d="M7 2v10.5l2.5-2.5 2 4.5 1.5-.7-2-4.3H14L7 2Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+              </svg>
+              {fmtCompact(ga4.sessions_7d)}
+            </span>
+          </div>
+          {sessionsBadge && <ChangePill badge={sessionsBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* New users */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>New Users (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <circle cx="8.5" cy="7" r="3.5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <path d="M2 17c0-3.59 2.91-6.5 6.5-6.5" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+                <path d="M15 11v6M12 14h6" stroke="#171717" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              {fmtCompact(ga4.new_users_7d)}
+            </span>
+          </div>
+          {newUsersBadge && <ChangePill badge={newUsersBadge} />}
+        </div>
+
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+
+        {/* Page views */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Page Views (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
+              </svg>
+              {fmtCompact(ga4.page_views_7d)}
+            </span>
+          </div>
+          {pageViewsBadge && <ChangePill badge={pageViewsBadge} />}
+        </div>
       </div>
     </div>
   )
@@ -307,9 +611,10 @@ function WebsiteCard({ ga4 }: Pick<PlatformSnapshotData, 'ga4'>) {
 export default function PlatformCards({ snapshot }: { snapshot: PlatformSnapshotData | null }) {
   if (!snapshot) return null
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-platform-cards="true">
-      <InstagramCard ig={snapshot.ig} meta_paid={snapshot.meta_paid} />
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-platform-cards="true">
+      <InstagramCard ig={snapshot.ig} />
       <FacebookCard fb={snapshot.fb} />
+      <MetaPaidCard meta_paid={snapshot.meta_paid} />
       <GbpCard gbp={snapshot.gbp} />
       <WebsiteCard ga4={snapshot.ga4} />
     </div>

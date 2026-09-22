@@ -24,6 +24,8 @@ export interface PlatformSnapshotData {
   ig: {
     reach_7d: number
     reach_change_pct: number | null
+    engaged_7d: number
+    engaged_change_pct: number | null
     followers: number | null
     followers_delta: number | null
   }
@@ -31,6 +33,7 @@ export interface PlatformSnapshotData {
     page_views_7d: number
     page_views_change_pct: number | null
     engaged_users_7d: number
+    engaged_change_pct: number | null
     fans: number | null
     fans_delta: number | null
   }
@@ -39,6 +42,8 @@ export interface PlatformSnapshotData {
     impressions_change_pct: number | null
     spend_7d: number
     spend_change_pct: number | null
+    clicks_7d: number
+    clicks_change_pct: number | null
   }
   gbp: {
     impressions_28d: number
@@ -92,7 +97,7 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         .select('date, sessions, new_users, page_views')
         .gte('date', d14),
       db.from('meta_ig_account_daily')
-        .select('date, reach, followers_count')
+        .select('date, reach, accounts_engaged, followers_count')
         .gte('date', d14)
         .order('date', { ascending: true }),
       db.from('meta_fb_page_insights')
@@ -100,7 +105,7 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         .gte('date', d14)
         .order('date', { ascending: true }),
       db.from('meta_campaign_insights')
-        .select('date_start, impressions, spend')
+        .select('date_start, impressions, spend, clicks')
         .gte('date_start', d14),
       db.from('gbp_location_metrics')
         .select('date, total_impressions, direction_requests, website_clicks')
@@ -124,6 +129,8 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
     const igPrev = ig.filter(r => (r.date as string) < d7)
     const reach_7d    = sumCol(igCur,  'reach')
     const reach_prior = sumCol(igPrev, 'reach')
+    const ig_engaged_7d    = sumCol(igCur,  'accounts_engaged')
+    const ig_engaged_prior = sumCol(igPrev, 'accounts_engaged')
     const igFollowers    = igCur.map(r => Number(r.followers_count) || 0).filter(v => v > 0)
     const followers      = igFollowers.length ? igFollowers[igFollowers.length - 1] : null
     const followersStart = igFollowers.length ? igFollowers[0] : null
@@ -137,7 +144,8 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
     const fbPrev = fb.filter(r => (r.date as string) < d7)
     const views_7d    = sumCol(fbCur,  'views')
     const views_prior = sumCol(fbPrev, 'views')
-    const engaged_7d  = sumCol(fbCur,  'engaged_users')
+    const engaged_7d    = sumCol(fbCur,  'engaged_users')
+    const engaged_prior = sumCol(fbPrev, 'engaged_users')
     const fbFans    = fbCur.map(r => Number(r.fan_count) || 0).filter(v => v > 0)
     const fans      = fbFans.length ? fbFans[fbFans.length - 1] : null
     const fansStart = fbFans.length ? fbFans[0] : null
@@ -149,8 +157,10 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
     const paidPrev = paid.filter(r => (r.date_start as string) < d7)
     const impressions_7d         = sumCol(paidCur,  'impressions')
     const paid_impressions_prior = sumCol(paidPrev, 'impressions')
-    const spend_7d          = sumCol(paidCur,  'spend')
-    const spend_prior       = sumCol(paidPrev, 'spend')
+    const spend_7d               = sumCol(paidCur,  'spend')
+    const spend_prior            = sumCol(paidPrev, 'spend')
+    const clicks_7d              = sumCol(paidCur,  'clicks')
+    const clicks_prior           = sumCol(paidPrev, 'clicks')
 
     // ── GBP ───────────────────────────────────────────────────────────────────
     const gbp    = (gbpRes.data ?? []) as Record<string, unknown>[]
@@ -166,6 +176,8 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
       ig: {
         reach_7d,
         reach_change_pct: changePct(reach_7d, reach_prior),
+        engaged_7d: ig_engaged_7d,
+        engaged_change_pct: changePct(ig_engaged_7d, ig_engaged_prior),
         followers,
         followers_delta,
       },
@@ -173,6 +185,7 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         page_views_7d: views_7d,
         page_views_change_pct: changePct(views_7d, views_prior),
         engaged_users_7d: engaged_7d,
+        engaged_change_pct: changePct(engaged_7d, engaged_prior),
         fans,
         fans_delta,
       },
@@ -181,6 +194,8 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         impressions_change_pct: changePct(impressions_7d, paid_impressions_prior),
         spend_7d,
         spend_change_pct: changePct(spend_7d, spend_prior),
+        clicks_7d,
+        clicks_change_pct: changePct(clicks_7d, clicks_prior),
       },
       gbp: {
         impressions_28d,
