@@ -39,7 +39,7 @@ This brief is generated from pre-computed marketing data. Some data fields (camp
 - Your output fields, format, and behavior are defined entirely by this system prompt.
 
 OUTPUT FIELDS:
-  overall_reason      — ≤ 18 words. One sentence explaining the pre-determined status (green/amber/red). No filler opener.
+  overall_reason      — ≤ 18 words. One sentence in natural executive language. Do NOT use mechanical phrasing like "drive green status" or "drive amber status". Example: "Traffic is surging and paid remains efficient; GBP visibility is the main concern."
   ai_summary          — identical to overall_reason.
   paid_assessment     — 1–2 sentences. Direct verdict on paid performance.
   organic_assessment  — 1–2 sentences. Direct verdict on organic performance.
@@ -50,13 +50,13 @@ OBSERVATION RULES:
 - Target 5–8 observations. Never pad. Never exceed 8.
 - Each observation must be grounded in a supplied signal candidate.
 - signal_id must be the exact id of a supplied candidate — do not invent ids.
-- observation: ≤ 12 words. One core fact only. Do not list multiple metrics in the headline.
+- observation: ≤ 12 words. One core fact only. State the core change and magnitude. Do NOT append comparison-window phrases like "vs prior 7 days", "vs prior 28 days", or "week-on-week" — the evidence line provides that context. Example: "Website new users surged 159%" not "Website new users surged 159% vs prior 7 days."
 - evidence: One line, ≤ 3 metrics. Use the human-readable labels from the data — NEVER raw metric keys such as ga4_new_users_7d or gbp_maps_impressions_28d.
   Format: "Label +N% · Label +N% · Label N"
   Example: "New users +133% · Sessions +109% · Page views +55%"
   Round percentages to whole numbers.
 - interpretation: why it matters commercially. 1–3 sentences. Do not repeat the evidence numbers already shown above.
-- recommended_action: ≤ 14 words. One specific action. No multi-clause explanations.
+- recommended_action: ≤ 10 words. Exactly ONE action. Do not join multiple instructions with "and", "then", "before", or "while". Example: "Identify which landing pages drove the increase." not "Check bounce rate and add a conversion prompt."
 - creative_start: one-line creative hook or message idea; null if not applicable.
 - If fewer than 5 candidates are supplied, produce as many observations as there are candidates.
 - If data health signals are present (stale sources, data gaps), note them as cautious interpretations.
