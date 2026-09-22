@@ -109,11 +109,15 @@ function IconGlobe() {
 
 function ChangePill({ badge }: { badge: { text: string; up: boolean } }) {
   return (
-    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-2 py-1 rounded-lg shrink-0 leading-none ${
-      badge.up
-        ? 'bg-kk-good-bg text-kk-good'
-        : 'bg-kk-bad-bg text-kk-bad'
-    }`}>
+    <span
+      className="inline-flex items-center gap-0.5 text-[11px] shrink-0 leading-none tabular-nums rounded-[8px]"
+      style={{
+        fontWeight: 650,
+        padding: '4px 8px',
+        background: badge.up ? '#E5F4EA' : '#F8E7E2',
+        color:      badge.up ? '#2F6D4C' : '#AD3919',
+      }}
+    >
       {badge.up ? '↑' : '↓'} {badge.text}
     </span>
   )
@@ -127,50 +131,71 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
   const spendBadge     = fmtPct(meta_paid.spend_change_pct)
 
   return (
-    <div
-      className="bg-kk-panel border border-kk-line rounded-2xl"
-      style={{ boxShadow: '0 4px 16px rgba(23, 23, 23, 0.06)' }}
-    >
+    <div style={{
+      background: '#FFFFFF',
+      border: '1px solid rgba(23,23,23,0.09)',
+      borderRadius: '16px',
+      boxShadow: '0 6px 20px rgba(23,23,23,0.065)',
+      overflow: 'hidden',
+      alignSelf: 'start',
+    }}>
+
       {/* ── Header ── */}
-      <div className="flex items-center justify-between gap-2 px-5 py-3.5 border-b border-kk-line">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-kk-ink shrink-0">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <rect x="2.5" y="2.5" width="13" height="13" rx="4" stroke="currentColor" strokeWidth="1.5"/>
-              <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.5"/>
-              <circle cx="13" cy="5" r="0.8" fill="currentColor"/>
-            </svg>
-          </span>
-          <span className="text-base font-bold text-kk-ink leading-none">Instagram</span>
-        </div>
-        <span className="text-kk-muted/40 shrink-0">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        height: '48px',
+        borderBottom: '1px solid rgba(23,23,23,0.07)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+
+          {/* Instagram gradient badge — 28×28 */}
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <defs>
+              <linearGradient id="ig-badge-grad" x1="0" y1="28" x2="28" y2="0" gradientUnits="userSpaceOnUse">
+                <stop offset="0%"   stopColor="#F9CE34"/>
+                <stop offset="40%"  stopColor="#EE2A7B"/>
+                <stop offset="100%" stopColor="#6228D7"/>
+              </linearGradient>
+            </defs>
+            <rect width="28" height="28" rx="7" fill="url(#ig-badge-grad)"/>
+            <rect x="7" y="7" width="14" height="14" rx="4" stroke="white" strokeWidth="1.5" fill="none"/>
+            <circle cx="14" cy="14" r="3.4" stroke="white" strokeWidth="1.5" fill="none"/>
+            <circle cx="18.4" cy="9.6" r="1.05" fill="white"/>
           </svg>
-        </span>
+
+          <span style={{ fontSize: '15px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Instagram</span>
+        </div>
+
+        {/* Right-pointing chevron */}
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(107,103,96,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
       </div>
 
       {/* ── Body ── */}
-      <div className="px-5 pt-1 pb-5">
+      <div style={{ padding: '10px 16px 12px' }}>
 
-        {/* Reach */}
-        <div className="flex items-center justify-between gap-2 py-3">
+        {/* Reach — symmetric 8px top+bottom so pills share same right edge and geometry matches Followers */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div className="text-[11px] font-medium text-kk-muted mb-1">Reach (7D)</div>
-            <span className="text-[24px] font-bold tabular-nums text-kk-ink leading-none">
+            <div style={{ fontSize: '11px', fontWeight: 500, color: '#6B6760', lineHeight: '15px', marginBottom: '2px' }}>Reach (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '24px', fontWeight: 700, color: '#171717', lineHeight: '28px', display: 'block' }}>
               {fmtCompact(ig.reach_7d)}
             </span>
           </div>
           {reachBadge && <ChangePill badge={reachBadge} />}
         </div>
 
-        <hr className="border-kk-line" />
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
 
-        {/* Followers */}
-        <div className="flex items-center justify-between gap-2 py-3">
+        {/* Followers — identical geometry to Reach */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div className="text-[11px] font-medium text-kk-muted mb-1">Followers</div>
-            <span className="text-[24px] font-bold tabular-nums text-kk-ink leading-none">
+            <div style={{ fontSize: '11px', fontWeight: 500, color: '#6B6760', lineHeight: '15px', marginBottom: '2px' }}>Followers</div>
+            <span className="tabular-nums" style={{ fontSize: '24px', fontWeight: 700, color: '#171717', lineHeight: '28px', display: 'block' }}>
               {ig.followers !== null ? fmtCompact(ig.followers) : '—'}
             </span>
           </div>
@@ -178,38 +203,42 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
         </div>
 
         {/* ── Meta Paid inset ── */}
-        <div className="bg-kk-soft rounded-xl px-3.5 py-3.5 mt-1">
+        <div style={{
+          marginTop: '10px',
+          background: '#F1EEE8',
+          borderRadius: '11px',
+          padding: '10px 12px',
+        }}>
 
-          {/* Inset header */}
-          <div className="flex items-center gap-1.5 mb-3">
-            <span className="text-kk-muted shrink-0">
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path d="M1 9.5 L7 2 L13 9.5 H1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none"/>
-                <path d="M4.5 9.5v3M7 9.5v3M9.5 9.5v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-              </svg>
-            </span>
-            <span className="text-[12px] font-semibold text-kk-ink">Meta Paid</span>
+          {/* Inset header — quieter than organic title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '8px' }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <path d="M12 3.5v9L6.5 10H4a1.5 1.5 0 01-1.5-1.5v-1A1.5 1.5 0 014 6h2.5L12 3.5z" stroke="#6B6760" strokeWidth="1.3" strokeLinejoin="round" fill="none"/>
+              <path d="M6.2 10.2l-.5 3.3" stroke="#6B6760" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            <span style={{ fontSize: '12px', fontWeight: 650, color: '#171717' }}>Meta Paid</span>
           </div>
 
           {/* Impressions */}
-          <div className="mb-3">
-            <div className="text-[10px] font-medium text-kk-muted mb-0.5">Impressions (7D)</div>
-            <span className="text-[19px] font-bold tabular-nums text-kk-ink leading-none">
+          <div style={{ marginBottom: '6px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 500, color: '#6B6760', marginBottom: '2px' }}>Impressions (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '18px', fontWeight: 700, color: '#171717', lineHeight: '1.15', display: 'block' }}>
               {fmtCompact(meta_paid.impressions_7d)}
             </span>
           </div>
 
+          <div style={{ height: '1px', background: 'rgba(23,23,23,0.05)', marginBottom: '6px' }} />
+
           {/* Spend */}
           <div>
-            <div className="text-[10px] font-medium text-kk-muted mb-0.5">Spend (7D)</div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[19px] font-bold tabular-nums text-kk-ink leading-none">
+            <div style={{ fontSize: '10px', fontWeight: 500, color: '#6B6760', marginBottom: '2px' }}>Spend (7D)</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <span className="tabular-nums" style={{ fontSize: '18px', fontWeight: 700, color: '#171717', lineHeight: '1.15', display: 'block' }}>
                 {fmtSpend(meta_paid.spend_7d)}
               </span>
               {spendBadge && <ChangePill badge={spendBadge} />}
             </div>
           </div>
-
         </div>
       </div>
     </div>
