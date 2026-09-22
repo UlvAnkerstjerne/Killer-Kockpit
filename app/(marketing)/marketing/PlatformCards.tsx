@@ -1,3 +1,4 @@
+// v2 — redesigned Instagram card
 import type { PlatformSnapshotData } from '@/lib/actions/marketing/platform-snapshot'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -104,24 +105,112 @@ function IconGlobe() {
   )
 }
 
+// ── Change pill ───────────────────────────────────────────────────────────────
+
+function ChangePill({ badge }: { badge: { text: string; up: boolean } }) {
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-2 py-1 rounded-lg shrink-0 leading-none ${
+      badge.up
+        ? 'bg-kk-good-bg text-kk-good'
+        : 'bg-kk-bad-bg text-kk-bad'
+    }`}>
+      {badge.up ? '↑' : '↓'} {badge.text}
+    </span>
+  )
+}
+
 // ── Platform cards ────────────────────────────────────────────────────────────
 
 function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'meta_paid'>) {
+  const reachBadge     = fmtPct(ig.reach_change_pct)
+  const followersBadge = fmtDelta(ig.followers_delta)
+  const spendBadge     = fmtPct(meta_paid.spend_change_pct)
+
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-3">
-      <CardHeader icon={<IconIG />} title="Instagram" />
-      <div className="space-y-2">
-        <Stat label="Reach 7d" value={fmtCompact(ig.reach_7d)} badge={fmtPct(ig.reach_change_pct)} />
-        <Stat
-          label="Followers"
-          value={ig.followers !== null ? fmtCompact(ig.followers) : '—'}
-          badge={fmtDelta(ig.followers_delta)}
-        />
+    <div
+      className="bg-kk-panel border border-kk-line rounded-2xl"
+      style={{ boxShadow: '0 4px 16px rgba(23, 23, 23, 0.06)' }}
+    >
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between gap-2 px-5 py-3.5 border-b border-kk-line">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-kk-ink shrink-0">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="13" height="13" rx="4" stroke="currentColor" strokeWidth="1.5"/>
+              <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.5"/>
+              <circle cx="13" cy="5" r="0.8" fill="currentColor"/>
+            </svg>
+          </span>
+          <span className="text-base font-bold text-kk-ink leading-none">Instagram</span>
+        </div>
+        <span className="text-kk-muted/40 shrink-0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
       </div>
-      <SectionLabel>Meta Paid</SectionLabel>
-      <div className="space-y-2">
-        <Stat label="Impressions 7d" value={fmtCompact(meta_paid.impressions_7d)} />
-        <Stat label="Spend 7d" value={fmtSpend(meta_paid.spend_7d)} badge={fmtPct(meta_paid.spend_change_pct)} />
+
+      {/* ── Body ── */}
+      <div className="px-5 pt-1 pb-5">
+
+        {/* Reach */}
+        <div className="flex items-center justify-between gap-2 py-3">
+          <div>
+            <div className="text-[11px] font-medium text-kk-muted mb-1">Reach (7D)</div>
+            <span className="text-[24px] font-bold tabular-nums text-kk-ink leading-none">
+              {fmtCompact(ig.reach_7d)}
+            </span>
+          </div>
+          {reachBadge && <ChangePill badge={reachBadge} />}
+        </div>
+
+        <hr className="border-kk-line" />
+
+        {/* Followers */}
+        <div className="flex items-center justify-between gap-2 py-3">
+          <div>
+            <div className="text-[11px] font-medium text-kk-muted mb-1">Followers</div>
+            <span className="text-[24px] font-bold tabular-nums text-kk-ink leading-none">
+              {ig.followers !== null ? fmtCompact(ig.followers) : '—'}
+            </span>
+          </div>
+          {followersBadge && <ChangePill badge={followersBadge} />}
+        </div>
+
+        {/* ── Meta Paid inset ── */}
+        <div className="bg-kk-soft rounded-xl px-3.5 py-3.5 mt-1">
+
+          {/* Inset header */}
+          <div className="flex items-center gap-1.5 mb-3">
+            <span className="text-kk-muted shrink-0">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M1 9.5 L7 2 L13 9.5 H1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none"/>
+                <path d="M4.5 9.5v3M7 9.5v3M9.5 9.5v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+              </svg>
+            </span>
+            <span className="text-[12px] font-semibold text-kk-ink">Meta Paid</span>
+          </div>
+
+          {/* Impressions */}
+          <div className="mb-3">
+            <div className="text-[10px] font-medium text-kk-muted mb-0.5">Impressions (7D)</div>
+            <span className="text-[19px] font-bold tabular-nums text-kk-ink leading-none">
+              {fmtCompact(meta_paid.impressions_7d)}
+            </span>
+          </div>
+
+          {/* Spend */}
+          <div>
+            <div className="text-[10px] font-medium text-kk-muted mb-0.5">Spend (7D)</div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[19px] font-bold tabular-nums text-kk-ink leading-none">
+                {fmtSpend(meta_paid.spend_7d)}
+              </span>
+              {spendBadge && <ChangePill badge={spendBadge} />}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   )
