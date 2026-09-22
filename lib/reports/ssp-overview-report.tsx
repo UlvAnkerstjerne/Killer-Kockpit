@@ -16,6 +16,7 @@ import React from 'react'
 import { Document, Page, View, Text } from '@react-pdf/renderer'
 import { groupBySection, displaySection } from '@/lib/kkc/presentation'
 import type { KKCSspCphData, KKCResult, KKCScoreRow } from '@/lib/kkc/ssp-cph'
+import { buildSubmissionDetail } from '@/lib/kkc/detail'
 
 // ─── Layout constants ──────────────────────────────────────────────────────────
 
@@ -124,6 +125,14 @@ export function SspOverviewDocument({ input }: { input: SspOverviewInput }) {
     chunks.push(allVisits.slice(i, i + COLS_PER_PAGE))
 
   const CELL = 11   // result cell square size (pt)
+
+  // Build comments data for the selected visits, most recent first
+  const commentsData = [...allVisits].reverse().map(visit => {
+    const detail = buildSubmissionDetail(data, visit.timestamp)
+    const sectionComments = detail?.sectionComments ?? []
+    const overallComments = detail?.overallComments ?? null
+    return { date: visit.date, time: visit.time, sectionComments, overallComments }
+  }).filter(v => v.sectionComments.length > 0 || v.overallComments !== null)
 
   return (
     <Document
@@ -477,6 +486,152 @@ export function SspOverviewDocument({ input }: { input: SspOverviewInput }) {
           </Page>
         )
       })}
+
+      {/* ─── Comments / Notes ───────────────────────────────────────────────── */}
+      {commentsData.length > 0 && (
+        <Page size="A4" style={{
+          fontFamily:      'Helvetica',
+          fontSize:        9,
+          color:           C.ink,
+          backgroundColor: C.white,
+          paddingBottom:   18,
+        }}>
+
+          {/* Fixed page header — same brand bar as matrix pages */}
+          <View fixed style={{ backgroundColor: C.white }}>
+            <View style={{ height: 3, backgroundColor: C.red }} />
+            <View style={{
+              paddingHorizontal: PM,
+              paddingTop:        6,
+              paddingBottom:     5,
+              flexDirection:     'row',
+              justifyContent:    'space-between',
+              alignItems:        'flex-end',
+              borderBottomWidth: 0.5,
+              borderBottomColor: C.border,
+            }}>
+              <View>
+                <Text style={{
+                  fontSize: 6, fontFamily: 'Helvetica-Bold',
+                  color: C.red, letterSpacing: 1.1, marginBottom: 2,
+                }}>
+                  KILLER KEBAB
+                </Text>
+                <Text style={{
+                  fontSize: 13, fontFamily: 'Helvetica-Bold',
+                  color: C.ink, marginBottom: 2,
+                }}>
+                  KQC SSP / CPH — Comments
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Text style={{ fontSize: 7.5, color: C.muted }}>SSP / CPH Airport</Text>
+                  <Text style={{ fontSize: 6.5, color: C.border }}>·</Text>
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.ink }}>{dateRange}</Text>
+                  <Text style={{ fontSize: 6.5, color: C.border }}>·</Text>
+                  <Text style={{ fontSize: 7.5, color: C.muted }}>
+                    {allVisits.length} {allVisits.length === 1 ? 'report' : 'reports'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={{ fontSize: 6.5, color: C.muted }}>Generated {genStr}</Text>
+            </View>
+          </View>
+
+          {/* Comments body */}
+          <View style={{ paddingHorizontal: PM, paddingTop: 10 }}>
+            {commentsData.map((vc, idx) => (
+              <View key={`${vc.date}-${vc.time}-${idx}`} style={{ marginBottom: 14 }}>
+
+                {/* Visit date / time header */}
+                <View wrap={false} style={{
+                  backgroundColor:   C.sectionBg,
+                  paddingHorizontal: 8,
+                  paddingVertical:   4,
+                  borderRadius:      2,
+                  marginBottom:      6,
+                  flexDirection:     'row',
+                  alignItems:        'center',
+                  gap:               6,
+                }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: C.ink }}>
+                    {fmtDateShort(vc.date)}
+                  </Text>
+                  {vc.time && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={{ fontSize: 7, color: C.border }}>·</Text>
+                      <Text style={{ fontSize: 8, color: C.muted }}>{vc.time}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Section comments */}
+                {vc.sectionComments.map((sc, sci) => (
+                  <View key={`${sc.header}-${sci}`} style={{ marginBottom: 6, paddingLeft: 8 }}>
+                    <Text style={{
+                      fontSize:      6.5,
+                      fontFamily:    'Helvetica-Bold',
+                      color:         C.muted,
+                      letterSpacing: 0.3,
+                      marginBottom:  2,
+                    }}>
+                      {sc.header.toUpperCase()}
+                    </Text>
+                    <Text style={{ fontSize: 8, color: C.ink, lineHeight: 1.45 }}>
+                      {sc.text}
+                    </Text>
+                  </View>
+                ))}
+
+                {/* Overall comments */}
+                {vc.overallComments && (
+                  <View style={{ marginBottom: 4, paddingLeft: 8 }}>
+                    <Text style={{
+                      fontSize:      6.5,
+                      fontFamily:    'Helvetica-Bold',
+                      color:         C.muted,
+                      letterSpacing: 0.3,
+                      marginBottom:  2,
+                    }}>
+                      OVERALL COMMENTS
+                    </Text>
+                    <Text style={{ fontSize: 8, color: C.ink, lineHeight: 1.45 }}>
+                      {vc.overallComments}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Divider between visits */}
+                {idx < commentsData.length - 1 && (
+                  <View style={{ height: 0.5, backgroundColor: C.border, marginTop: 8 }} />
+                )}
+
+              </View>
+            ))}
+          </View>
+
+          {/* Footer */}
+          <View fixed style={{
+            position:          'absolute',
+            bottom:            0, left: 0, right: 0,
+            backgroundColor:   C.white,
+            borderTopWidth:    0.5,
+            borderTopColor:    C.border,
+            paddingVertical:   4,
+            paddingHorizontal: PM,
+            flexDirection:     'row',
+            justifyContent:    'space-between',
+            alignItems:        'center',
+          }}>
+            <Text style={{ fontSize: 6, fontFamily: 'Helvetica-Bold', color: C.red }}>
+              Killer Kockpit
+            </Text>
+            <Text style={{ fontSize: 6, color: C.muted }}>
+              KQC SSP/CPH Comments · {allVisits.length} reports · {dateRange} · Internal use only
+            </Text>
+          </View>
+
+        </Page>
+      )}
     </Document>
   )
 }
