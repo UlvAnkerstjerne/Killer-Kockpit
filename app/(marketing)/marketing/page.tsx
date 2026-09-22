@@ -3,7 +3,10 @@ import {
   getLatestMorningBrief,
   getLastReadyMorningBrief,
 } from '@/lib/actions/marketing/morning-brief'
+import { getPlatformSnapshot } from '@/lib/actions/marketing/platform-snapshot'
+import type { PlatformSnapshotData } from '@/lib/actions/marketing/platform-snapshot'
 import RegenerateButton from './RegenerateButton'
+import PlatformCards from './PlatformCards'
 import type {
   MorningBriefRow,
   MorningBriefSections,
@@ -690,11 +693,12 @@ function LegacyBriefContent({ sections }: { sections: MorningBriefSections }) {
 // Dispatches between v2 (observations) and v1 (legacy) layouts.
 
 function MorningBriefContent({
-  brief, isStale, staleReason,
+  brief, isStale, staleReason, snapshot,
 }: {
   brief: MorningBriefRow
   isStale?: boolean
   staleReason?: string
+  snapshot?: PlatformSnapshotData | null
 }) {
   const sections = brief.sections_json
   // isBriefV2: observations field present (even if []) → v2; absent → v1 legacy
@@ -719,6 +723,9 @@ function MorningBriefContent({
       {sections && isV2 && needsReviewVisible(sections.needs_review.total) && (
         <NeedsReviewBlock needsReview={sections.needs_review} />
       )}
+
+      {/* Platform snapshot cards — always-live data, shown for v2 briefs */}
+      {isV2 && <PlatformCards snapshot={snapshot ?? null} />}
 
       {/* v2 layout — observations are primary content */}
       {sections && isV2 && (
@@ -756,9 +763,10 @@ function StatePanel({ title, detail, action }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function MorningBriefPage() {
-  const [user, latestBrief] = await Promise.all([
+  const [user, latestBrief, snapshot] = await Promise.all([
     getCurrentUser(),
     getLatestMorningBrief(),
+    getPlatformSnapshot(),
   ])
 
   const isAdmin = user?.role === 'SUPER_ADMIN'
@@ -827,6 +835,7 @@ export default async function MorningBriefPage() {
           brief={displayBrief}
           isStale={isStale}
           staleReason={isStale ? staleReason : undefined}
+          snapshot={snapshot}
         />
       )}
 
