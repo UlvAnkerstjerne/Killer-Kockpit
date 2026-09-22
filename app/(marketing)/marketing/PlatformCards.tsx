@@ -4,9 +4,6 @@ import type { PlatformSnapshotData } from '@/lib/actions/marketing/platform-snap
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtCompact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`
-  if (n >= 10_000)    return `${(n / 1_000).toFixed(0)}k`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}k`
   return n.toLocaleString()
 }
 
@@ -22,8 +19,7 @@ function fmtDelta(delta: number | null): { text: string; up: boolean } | null {
 }
 
 function fmtSpend(n: number): string {
-  if (n >= 1000) return `kr. ${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
-  return `kr. ${Math.round(n)}`
+  return `kr. ${Math.round(n).toLocaleString()}`
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -107,15 +103,18 @@ function IconGlobe() {
 
 // ── Change pill ───────────────────────────────────────────────────────────────
 
-function ChangePill({ badge }: { badge: { text: string; up: boolean } }) {
+function ChangePill({ badge, small }: { badge: { text: string; up: boolean }; small?: boolean }) {
   return (
     <span
-      className="inline-flex items-center gap-0.5 text-[11px] shrink-0 leading-none tabular-nums rounded-[8px]"
+      className="inline-flex items-center gap-0.5 shrink-0 tabular-nums"
       style={{
-        fontWeight: 650,
-        padding: '4px 8px',
-        background: badge.up ? '#E5F4EA' : '#F8E7E2',
-        color:      badge.up ? '#2F6D4C' : '#AD3919',
+        fontSize:     small ? '12px' : '13px',
+        lineHeight:   '16px',
+        fontWeight:   700,
+        padding:      small ? '4px 9px' : '5px 10px',
+        borderRadius: '999px',
+        background:   badge.up ? '#E7F3EB' : '#F7E7E2',
+        color:        badge.up ? '#2F6D4C' : '#AD3919',
       }}
     >
       {badge.up ? '↑' : '↓'} {badge.text}
@@ -128,14 +127,15 @@ function ChangePill({ badge }: { badge: { text: string; up: boolean } }) {
 function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'meta_paid'>) {
   const reachBadge     = fmtPct(ig.reach_change_pct)
   const followersBadge = fmtDelta(ig.followers_delta)
-  const spendBadge     = fmtPct(meta_paid.spend_change_pct)
+  const impressionsBadge = fmtPct(meta_paid.impressions_change_pct)
+  const spendBadge       = fmtPct(meta_paid.spend_change_pct)
 
   return (
     <div style={{
       background: '#FFFFFF',
-      border: '1px solid rgba(23,23,23,0.09)',
+      border: '1px solid rgba(23,23,23,0.10)',
       borderRadius: '16px',
-      boxShadow: '0 6px 20px rgba(23,23,23,0.065)',
+      boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
       overflow: 'hidden',
     }}>
 
@@ -145,13 +145,13 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 16px',
-        height: '48px',
-        borderBottom: '1px solid rgba(23,23,23,0.07)',
+        height: '52px',
+        borderBottom: '1px solid rgba(23,23,23,0.08)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
 
-          {/* Instagram gradient badge — 28×28 */}
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          {/* Instagram gradient badge — 30×30 */}
+          <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
             <defs>
               <linearGradient id="ig-badge-grad" x1="0" y1="28" x2="28" y2="0" gradientUnits="userSpaceOnUse">
                 <stop offset="0%"   stopColor="#F9CE34"/>
@@ -159,29 +159,33 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
                 <stop offset="100%" stopColor="#6228D7"/>
               </linearGradient>
             </defs>
-            <rect width="28" height="28" rx="7" fill="url(#ig-badge-grad)"/>
+            <rect width="28" height="28" rx="8" fill="url(#ig-badge-grad)"/>
             <rect x="7" y="7" width="14" height="14" rx="4" stroke="white" strokeWidth="1.5" fill="none"/>
             <circle cx="14" cy="14" r="3.4" stroke="white" strokeWidth="1.5" fill="none"/>
             <circle cx="18.4" cy="9.6" r="1.05" fill="white"/>
           </svg>
 
-          <span style={{ fontSize: '15px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Instagram</span>
+          <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Instagram</span>
         </div>
 
         {/* Right-pointing chevron */}
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(107,103,96,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
 
-      {/* ── Body ── */}
-      <div style={{ padding: '10px 16px 12px' }}>
+      {/* ── Organic metrics ── */}
+      <div style={{ padding: '14px 16px 0' }}>
 
-        {/* Reach — symmetric 8px top+bottom so pills share same right edge and geometry matches Followers */}
+        {/* Reach */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: '#6B6760', lineHeight: '15px', marginBottom: '2px' }}>Reach (7D)</div>
-            <span className="tabular-nums" style={{ fontSize: '24px', fontWeight: 700, color: '#171717', lineHeight: '28px', display: 'block' }}>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Reach (7D)</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
+              </svg>
               {fmtCompact(ig.reach_7d)}
             </span>
           </div>
@@ -190,53 +194,60 @@ function InstagramCard({ ig, meta_paid }: Pick<PlatformSnapshotData, 'ig' | 'met
 
         <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
 
-        {/* Followers — identical geometry to Reach */}
+        {/* Followers — identical geometry */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: '#6B6760', lineHeight: '15px', marginBottom: '2px' }}>Followers</div>
-            <span className="tabular-nums" style={{ fontSize: '24px', fontWeight: 700, color: '#171717', lineHeight: '28px', display: 'block' }}>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Followers</div>
+            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <circle cx="10" cy="7" r="3.5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                <path d="M3.5 17c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+              </svg>
               {ig.followers !== null ? fmtCompact(ig.followers) : '—'}
             </span>
           </div>
           {followersBadge && <ChangePill badge={followersBadge} />}
         </div>
+      </div>
 
-        {/* ── Meta Paid inset ── */}
-        <div style={{
-          marginTop: '10px',
-          background: '#F1EEE8',
-          borderRadius: '11px',
-          padding: '10px 12px',
-        }}>
+      {/* ── Meta Paid inset ── */}
+      <div style={{
+        margin: '12px 16px 16px',
+        background: '#F1EEE8',
+        borderRadius: '12px',
+        padding: '12px 14px',
+      }}>
 
-          {/* Inset header — quieter than organic title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '8px' }}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <path d="M12 3.5v9L6.5 10H4a1.5 1.5 0 01-1.5-1.5v-1A1.5 1.5 0 014 6h2.5L12 3.5z" stroke="#6B6760" strokeWidth="1.3" strokeLinejoin="round" fill="none"/>
-              <path d="M6.2 10.2l-.5 3.3" stroke="#6B6760" strokeWidth="1.3" strokeLinecap="round"/>
-            </svg>
-            <span style={{ fontSize: '12px', fontWeight: 650, color: '#171717' }}>Meta Paid</span>
-          </div>
+        {/* Inset header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <path d="M12 3.5v9L6.5 10H4a1.5 1.5 0 01-1.5-1.5v-1A1.5 1.5 0 014 6h2.5L12 3.5z" stroke="rgba(23,23,23,0.55)" strokeWidth="1.3" strokeLinejoin="round" fill="none"/>
+            <path d="M6.2 10.2l-.5 3.3" stroke="rgba(23,23,23,0.55)" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          <span style={{ fontSize: '12px', lineHeight: '16px', fontWeight: 700, color: '#171717' }}>Meta Paid</span>
+        </div>
 
-          {/* Impressions */}
-          <div style={{ marginBottom: '6px' }}>
-            <div style={{ fontSize: '10px', fontWeight: 500, color: '#6B6760', marginBottom: '2px' }}>Impressions (7D)</div>
-            <span className="tabular-nums" style={{ fontSize: '18px', fontWeight: 700, color: '#171717', lineHeight: '1.15', display: 'block' }}>
+        {/* Impressions */}
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 500, color: 'rgba(23,23,23,0.55)', marginBottom: '2px' }}>Impressions (7D)</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <span className="tabular-nums" style={{ fontSize: '19px', fontWeight: 700, color: '#171717', lineHeight: '1.2', display: 'block' }}>
               {fmtCompact(meta_paid.impressions_7d)}
             </span>
+            {impressionsBadge && <ChangePill badge={impressionsBadge} small />}
           </div>
+        </div>
 
-          <div style={{ height: '1px', background: 'rgba(23,23,23,0.05)', marginBottom: '6px' }} />
+        <div style={{ height: '1px', background: 'rgba(23,23,23,0.06)', marginBottom: '8px' }} />
 
-          {/* Spend */}
-          <div>
-            <div style={{ fontSize: '10px', fontWeight: 500, color: '#6B6760', marginBottom: '2px' }}>Spend (7D)</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-              <span className="tabular-nums" style={{ fontSize: '18px', fontWeight: 700, color: '#171717', lineHeight: '1.15', display: 'block' }}>
-                {fmtSpend(meta_paid.spend_7d)}
-              </span>
-              {spendBadge && <ChangePill badge={spendBadge} />}
-            </div>
+        {/* Spend */}
+        <div>
+          <div style={{ fontSize: '10px', fontWeight: 500, color: 'rgba(23,23,23,0.55)', marginBottom: '2px' }}>Spend (7D)</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <span className="tabular-nums" style={{ fontSize: '19px', fontWeight: 700, color: '#171717', lineHeight: '1.2', display: 'block' }}>
+              {fmtSpend(meta_paid.spend_7d)}
+            </span>
+            {spendBadge && <ChangePill badge={spendBadge} small />}
           </div>
         </div>
       </div>

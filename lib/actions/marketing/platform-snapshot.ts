@@ -36,6 +36,7 @@ export interface PlatformSnapshotData {
   }
   meta_paid: {
     impressions_7d: number
+    impressions_change_pct: number | null
     spend_7d: number
     spend_change_pct: number | null
   }
@@ -146,9 +147,10 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
     const paid     = (paidRes.data ?? []) as Record<string, unknown>[]
     const paidCur  = paid.filter(r => (r.date_start as string) >= d7)
     const paidPrev = paid.filter(r => (r.date_start as string) < d7)
-    const impressions_7d  = sumCol(paidCur,  'impressions')
-    const spend_7d        = sumCol(paidCur,  'spend')
-    const spend_prior     = sumCol(paidPrev, 'spend')
+    const impressions_7d         = sumCol(paidCur,  'impressions')
+    const paid_impressions_prior = sumCol(paidPrev, 'impressions')
+    const spend_7d          = sumCol(paidCur,  'spend')
+    const spend_prior       = sumCol(paidPrev, 'spend')
 
     // ── GBP ───────────────────────────────────────────────────────────────────
     const gbp    = (gbpRes.data ?? []) as Record<string, unknown>[]
@@ -176,6 +178,7 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
       },
       meta_paid: {
         impressions_7d,
+        impressions_change_pct: changePct(impressions_7d, paid_impressions_prior),
         spend_7d,
         spend_change_pct: changePct(spend_7d, spend_prior),
       },
