@@ -169,9 +169,6 @@ function StatusStrip({
           <span className="text-sm text-kk-ink leading-snug">{reason}</span>
         )}
       </div>
-      {summary && (
-        <p className="mt-1 text-sm text-kk-muted leading-snug">{summary}</p>
-      )}
     </div>
   )
 }

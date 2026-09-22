@@ -324,28 +324,28 @@ export interface BriefObservation {
 }
 
 export const MorningBriefAIOutputSchema = z.object({
-  // 2–4 sentence executive summary; summarises the 1–3 most important observations only
-  ai_summary: z.string().min(20).max(800),
+  // Same as overall_reason (kept for DB compat)
+  ai_summary: z.string().min(5).max(200),
 
-  // Per-section assessments — short, direct
-  paid_assessment: z.string().min(10).max(800),
-  organic_assessment: z.string().min(10).max(800),
+  // Per-section assessments — 1–2 sentences each
+  paid_assessment: z.string().min(10).max(400),
+  organic_assessment: z.string().min(10).max(400),
 
   // null when GBP is pending_approval or no data
-  gbp_assessment: z.string().max(300).nullable(),
+  gbp_assessment: z.string().max(200).nullable(),
 
-  // Single sentence explaining the overall status (green/amber/red)
-  overall_reason: z.string().min(5).max(200),
+  // ≤ 18 words explaining the overall status (green/amber/red)
+  overall_reason: z.string().min(5).max(120),
 
   // Actionable observations grounded in the supplied material signal candidates.
   // Target 5–8. Never pad. signal_id must correspond to a supplied candidate id.
   observations: z.array(
     z.object({
       signal_id:          z.string().min(1).max(100),
-      observation:        z.string().min(10).max(300),
-      evidence:           z.string().min(10).max(300),
+      observation:        z.string().min(5).max(100),
+      evidence:           z.string().min(5).max(160),
       interpretation:     z.string().min(10).max(400),
-      recommended_action: z.string().min(10).max(300),
+      recommended_action: z.string().min(5).max(100),
       creative_start:     z.string().max(200).nullable(),
     })
   ).min(0).max(8),

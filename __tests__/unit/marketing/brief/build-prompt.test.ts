@@ -252,7 +252,7 @@ describe('buildBriefUserMessage', () => {
     const msg = buildBriefUserMessage(makeMinimalInput(), 'green', [candidate])
     expect(msg).toContain('ig-reach-drop')
     expect(msg).toContain('IG reach fell 20% vs prior week.')
-    expect(msg).toContain('reach_7d')
+    expect(msg).toContain('Reach')
   })
 
   it('candidate observation is wrapped as DATA to prevent prompt injection', () => {
