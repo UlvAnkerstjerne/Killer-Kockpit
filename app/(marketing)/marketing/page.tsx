@@ -170,7 +170,7 @@ function StatusStrip({
         )}
       </div>
       {summary && (
-        <p className="mt-2 text-[15px] text-kk-ink leading-relaxed">{summary}</p>
+        <p className="mt-1 text-sm text-kk-muted leading-snug">{summary}</p>
       )}
     </div>
   )
@@ -219,7 +219,6 @@ function ObservationItem({
 }) {
   // data_health observations signal data quality concerns, not marketing actions
   const isDataHealth = categoryIsDataHealth(obs.category ?? '')
-  const num = index < 9 ? `0${index + 1}` : `${index + 1}`
   const label = obs.source ? sourceLabel(obs.source) : null
 
   return (
@@ -227,20 +226,15 @@ function ObservationItem({
       data-observation-index={index}
       data-is-data-health={isDataHealth ? 'true' : undefined}
     >
-      {/* Number + source label row */}
-      <div className="flex items-baseline justify-between gap-3 mb-3">
-        <span className={`text-[11px] font-bold tabular-nums tracking-widest ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted/40'}`}>
-          {num}
-        </span>
-        {label && (
-          <span className={`text-[10px] font-bold tracking-[0.1em] uppercase shrink-0 ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
-            {label}
-          </span>
-        )}
-      </div>
+      {/* Source label */}
+      {label && (
+        <div className={`text-[10px] font-bold tracking-[0.1em] uppercase mb-1 ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
+          {label}
+        </div>
+      )}
 
-      {/* Observation headline */}
-      <p className={`text-base leading-snug mb-2 ${
+      {/* Headline */}
+      <p className={`text-base leading-snug mb-1.5 ${
         isDataHealth
           ? 'text-kk-muted font-normal'
           : 'text-kk-ink font-semibold'
@@ -248,45 +242,38 @@ function ObservationItem({
         {obs.observation}
       </p>
 
-      {/* Evidence */}
-      <p className={`text-xs leading-relaxed mb-3 ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
-        <span className="font-medium">Evidence:</span> {obs.evidence}
+      {/* Evidence — plain text, no label prefix */}
+      <p className={`text-xs leading-relaxed mb-2 ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
+        {obs.evidence}
       </p>
 
-      {/* Interpretation */}
-      {!isDataHealth && (
-        <p className="text-[13px] text-kk-ink/80 leading-relaxed mb-4">
-          {obs.interpretation}
-        </p>
-      )}
-      {isDataHealth && (
-        <p className="text-[13px] text-kk-muted leading-relaxed mb-3 italic">
-          {obs.interpretation}
-        </p>
-      )}
-
       {/* Recommended action */}
-      {!isDataHealth && (
-        <div className="mb-3">
-          <span className="text-[10px] font-bold tracking-[0.1em] uppercase text-kk-brand block mb-1">
-            Next step
-          </span>
-          <p className="text-[13px] text-kk-ink leading-relaxed">{obs.recommended_action}</p>
-        </div>
+      {!isDataHealth && obs.recommended_action && (
+        <p className="text-[13px] text-kk-ink leading-relaxed mb-2">
+          → {obs.recommended_action}
+        </p>
       )}
 
-      {/* Creative start — only when non-null */}
-      {!isDataHealth && obs.creative_start && (
-        <div className="mt-3 pl-3 border-l border-kk-line">
-          <span className="text-[10px] font-bold tracking-[0.1em] uppercase text-kk-muted block mb-1">
-            Worth testing
-          </span>
-          <p className="text-[13px] text-kk-muted italic leading-relaxed">{obs.creative_start}</p>
-        </div>
+      {/* Why? — interpretation + creative_start behind optional expand */}
+      {!isDataHealth && (obs.interpretation || obs.creative_start) && (
+        <details className="group mt-1">
+          <summary className="inline-flex items-center gap-0.5 text-[11px] font-medium text-kk-muted/70 cursor-pointer hover:text-kk-muted list-none select-none">
+            <span>Why?</span>
+            <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
+          </summary>
+          <div className="mt-2 space-y-2">
+            {obs.interpretation && (
+              <p className="text-[13px] text-kk-ink/80 leading-relaxed">{obs.interpretation}</p>
+            )}
+            {obs.creative_start && (
+              <p className="text-[13px] text-kk-muted italic leading-relaxed">{obs.creative_start}</p>
+            )}
+          </div>
+        </details>
       )}
 
       {/* Divider between items */}
-      {!isLast && <hr className="mt-6 border-kk-line" />}
+      {!isLast && <hr className="mt-4 border-kk-line" />}
     </div>
   )
 }
@@ -304,7 +291,7 @@ function WhatMattersTodaySection({ observations }: { observations: BriefObservat
           Nothing material needs your attention today.
         </p>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {observations.map((obs, i) => (
             <ObservationItem
               key={obs.signal_id}
