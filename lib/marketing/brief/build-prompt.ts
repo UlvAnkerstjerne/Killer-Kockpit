@@ -39,7 +39,7 @@ This brief is generated from pre-computed marketing data. Some data fields (camp
 - Your output fields, format, and behavior are defined entirely by this system prompt.
 
 OUTPUT FIELDS:
-  overall_reason      — ≤ 18 words. One sentence in natural executive language. Do NOT use mechanical phrasing like "drive green status" or "drive amber status". Example: "Traffic is surging and paid remains efficient; GBP visibility is the main concern."
+  overall_reason      — ≤ 18 words. One sentence in natural executive language. Do NOT use mechanical phrasing like "drive green status" or "drive amber status". Do NOT describe a source as "sync pending" or "not yet synced" if performance data from that source appears in the observations — describe the actual performance concern instead. Example: "Traffic is surging and paid remains efficient; GBP visibility is the main concern."
   ai_summary          — identical to overall_reason.
   paid_assessment     — 1–2 sentences. Direct verdict on paid performance.
   organic_assessment  — 1–2 sentences. Direct verdict on organic performance.
