@@ -288,52 +288,59 @@ function ObservationItem({
           {icon}
         </div>
         {label && (
-          <span className={`text-[10px] font-bold tracking-[0.1em] uppercase ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
+          <span className={`text-[13px] font-bold tracking-[0.06em] uppercase ${isDataHealth ? 'text-kk-muted/60' : 'text-kk-muted'}`}>
             {label}
           </span>
         )}
       </div>
 
       {/* Headline */}
-      <p className={`text-[15px] leading-snug ${isDataHealth ? 'text-kk-muted font-normal' : 'text-kk-ink font-semibold'}`}>
+      <p className={`text-[22px] leading-snug ${isDataHealth ? 'text-kk-muted font-normal' : 'text-kk-ink font-semibold'}`}>
         {obs.observation}
       </p>
 
       {/* Evidence */}
-      <p className={`text-xs leading-relaxed ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
+      <p className={`text-base leading-relaxed ${isDataHealth ? 'text-kk-muted/70' : 'text-kk-muted'}`}>
         {obs.evidence}
       </p>
 
-      {/* Suggested actions */}
-      {obs.recommended_action && (
-        <details className="group">
-          <summary className="inline-flex items-center gap-1 cursor-pointer list-none select-none rounded-full border border-kk-line bg-kk-soft px-3 py-1 text-[11px] font-semibold text-kk-muted hover:bg-kk-line/60 hover:text-kk-ink transition-colors">
-            <span>Suggested actions</span>
-            <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
-          </summary>
-          <div className="mt-2 rounded-lg px-3 py-2.5" style={{ background: '#F5F1EB' }}>
-            <p className="text-[13px] text-kk-ink leading-relaxed">→ {obs.recommended_action}</p>
-          </div>
-        </details>
-      )}
+      {/* Controls row — Why? and Suggested actions on the same line */}
+      {(!isDataHealth && (obs.interpretation || obs.creative_start)) || obs.recommended_action ? (
+        <div className="flex flex-wrap gap-2">
 
-      {/* Why? */}
-      {!isDataHealth && (obs.interpretation || obs.creative_start) && (
-        <details className="group">
-          <summary className="inline-flex items-center gap-1 cursor-pointer list-none select-none rounded-full border border-kk-line bg-kk-soft px-3 py-1 text-[11px] font-semibold text-kk-muted hover:bg-kk-line/60 hover:text-kk-ink transition-colors">
-            <span>Why?</span>
-            <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
-          </summary>
-          <div className="mt-2 space-y-2">
-            {obs.interpretation && (
-              <p className="text-[13px] text-kk-ink/80 leading-relaxed">{obs.interpretation}</p>
-            )}
-            {obs.creative_start && (
-              <p className="text-[13px] text-kk-muted italic leading-relaxed">{obs.creative_start}</p>
-            )}
-          </div>
-        </details>
-      )}
+          {/* Why? */}
+          {!isDataHealth && (obs.interpretation || obs.creative_start) && (
+            <details className="group">
+              <summary className="inline-flex items-center gap-1 cursor-pointer list-none select-none rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 hover:border-blue-300 transition-colors">
+                <span>Why?</span>
+                <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
+              </summary>
+              <div className="mt-2 space-y-2">
+                {obs.interpretation && (
+                  <p className="text-[13px] text-kk-ink/80 leading-relaxed">{obs.interpretation}</p>
+                )}
+                {obs.creative_start && (
+                  <p className="text-[13px] text-kk-muted italic leading-relaxed">{obs.creative_start}</p>
+                )}
+              </div>
+            </details>
+          )}
+
+          {/* Suggested actions */}
+          {obs.recommended_action && (
+            <details className="group">
+              <summary className="inline-flex items-center gap-1 cursor-pointer list-none select-none rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 hover:border-blue-300 transition-colors">
+                <span>Suggested actions</span>
+                <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
+              </summary>
+              <div className="mt-2 rounded-lg px-3 py-2.5" style={{ background: '#F5F1EB' }}>
+                <p className="text-[13px] text-kk-ink leading-relaxed">→ {obs.recommended_action}</p>
+              </div>
+            </details>
+          )}
+
+        </div>
+      ) : null}
     </div>
   )
 }
