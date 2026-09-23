@@ -178,7 +178,8 @@ export async function fetchDriveFileMeta(
  *
  * Strategy by MIME type:
  *   • Google Docs     → export as text/plain via files.export
- *   • Google Sheets   → export as text/csv via files.export
+ *   • Google Sheets   → export as .xlsx via files.export, then parse with SheetJS
+ *                        (text/csv only covers the first sheet; xlsx covers all sheets)
  *   • Google Slides   → export as text/plain via files.export
  *   • Binary files    → download via files.get(alt:media) + extractTextFromBuffer
  *   • Unsupported     → returns { ok: false, error: '...' }
@@ -198,14 +199,37 @@ export async function extractDriveFileContent(
 ): Promise<{ ok: true; text: string; warning?: string } | { ok: false; error: string }> {
   const drive = google.drive({ version: 'v3', auth: oauthClient })
 
-  // ── Google Workspace files — export as plain text ──────────────────────────
-  const GOOGLE_EXPORT_MAP: Record<string, string> = {
+  // ── Google Workspace files — export as extractable format ─────────────────
+  //
+  // Sheets: export as xlsx (not csv) so ALL sheets are included.
+  // text/csv only exports the first/active sheet; xlsx via SheetJS extracts all.
+  const SHEETS_MIME = 'application/vnd.google-apps.spreadsheet'
+  const SHEETS_EXPORT_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+  const GOOGLE_TEXT_EXPORT: Record<string, string> = {
     'application/vnd.google-apps.document':     'text/plain',
-    'application/vnd.google-apps.spreadsheet':  'text/csv',
     'application/vnd.google-apps.presentation': 'text/plain',
   }
 
-  const exportMime = GOOGLE_EXPORT_MAP[mimeType]
+  // Sheets: export as xlsx, then pass to our multi-sheet extractor
+  if (mimeType === SHEETS_MIME) {
+    try {
+      const response = await drive.files.export(
+        { fileId, mimeType: SHEETS_EXPORT_MIME },
+        { responseType: 'arraybuffer' },
+      )
+      const buf = Buffer.from(response.data as ArrayBuffer)
+      const { extractTextFromBuffer } = await import('@/lib/extractors/text')
+      return extractTextFromBuffer(buf, `${fileName}.xlsx`, SHEETS_EXPORT_MIME)
+    } catch (err: unknown) {
+      const status = (err as { code?: number; status?: number })?.code
+        ?? (err as { code?: number; status?: number })?.status
+      if (status === 403) return { ok: false, error: 'Access denied when reading this file.' }
+      return { ok: false, error: `Failed to export Google Sheet: ${(err as Error).message}` }
+    }
+  }
+
+  const exportMime = GOOGLE_TEXT_EXPORT[mimeType]
   if (exportMime) {
     try {
       const response = await drive.files.export(

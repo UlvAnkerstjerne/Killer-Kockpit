@@ -70,7 +70,7 @@ export default function MeetingAttachmentsSection({ meetingId, initialDocs, canM
       <div className="px-5 py-4 border-b border-kk-line flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-kk-ink">Attached Documents</h2>
-          <p className="text-xs text-kk-muted mt-0.5">Brain-readable — .txt .md .csv .rtf .pdf .docx .xlsx · max 5 MB</p>
+          <p className="text-xs text-kk-muted mt-0.5">Brain-readable — .txt .md .csv .rtf .pdf .docx .pptx .xlsx · max 5 MB</p>
         </div>
         {canManage && (
           <label
@@ -84,7 +84,7 @@ export default function MeetingAttachmentsSection({ meetingId, initialDocs, canM
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.md,.csv,.rtf,.pdf,.docx,.doc,.xlsx,.xls"
+              accept=".txt,.md,.csv,.rtf,.pdf,.docx,.pptx,.xlsx,.xls"
               className="sr-only"
               onChange={handleFileChange}
               disabled={isPending}
@@ -97,7 +97,7 @@ export default function MeetingAttachmentsSection({ meetingId, initialDocs, canM
         {isEmpty ? (
           <p className="text-xs text-kk-muted py-1">
             {canManage
-              ? 'No documents attached. Upload a document (.txt, .md, .pdf, .docx, .xlsx…) to make it available to the Brain.'
+              ? 'No documents attached. Upload a document (.txt, .md, .pdf, .docx, .pptx, .xlsx…) to make it available to the Brain.'
               : 'No documents attached.'}
           </p>
         ) : (

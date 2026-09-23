@@ -26,9 +26,10 @@
  * • .csv           — UTF-8 text
  * • .rtf           — RTF markup stripped
  * • .pdf           — text extracted via pdf-parse (no OCR for image-only PDFs)
- * • .docx / .doc   — text extracted via mammoth
+ * • .docx          — text extracted via mammoth (.doc binary format is NOT supported)
+ * • .pptx          — slide text extracted via jszip + xmldom (mammoth transitive deps)
  * • .xlsx / .xls   — sheet rows extracted via SheetJS
- * • .pptx / .ppt   — NOT supported (no suitable library available)
+ * • .doc / .ppt    — NOT supported (legacy binary formats — user must save as .docx/.pptx)
  *
  * Security
  * ────────
@@ -52,7 +53,7 @@ const MAX_BYTES = 5 * 1024 * 1024  // 5 MB (extraction reduces actual stored tex
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.txt', '.md', '.csv', '.rtf',
-  '.pdf', '.docx', '.doc',
+  '.pdf', '.docx', '.pptx',
   '.xlsx', '.xls',
 ])
 
@@ -165,7 +166,7 @@ export async function attachMeetingDocument(
   const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase()
   if (!ACCEPTED_EXTENSIONS.has(ext)) {
     return {
-      error: `Unsupported file type "${ext}". Supported: .txt, .md, .csv, .rtf, .pdf, .docx, .doc, .xlsx, .xls`,
+      error: `Unsupported file type "${ext}". Supported: .txt, .md, .csv, .rtf, .pdf, .docx, .pptx, .xlsx, .xls`,
     }
   }
 

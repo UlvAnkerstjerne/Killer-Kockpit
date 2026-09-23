@@ -10,9 +10,10 @@
  * • .csv / text/csv         — decoded as UTF-8
  * • .rtf / text/rtf         — RTF markup stripped via regex
  * • .pdf / application/pdf  — extracted via pdf-parse (no OCR for scanned pages)
- * • .docx / .doc            — extracted via mammoth
+ * • .docx                   — extracted via mammoth (.doc binary format is NOT supported)
  * • .xlsx / .xls            — sheet rows extracted via xlsx (SheetJS)
- * • .pptx / .ppt            — NOT supported; returns a clear unsupported error
+ * • .pptx                   — text extracted via jszip + xmldom (mammoth transitive deps)
+ * • .ppt / .doc             — NOT supported (legacy binary formats; no practical extraction path)
  *
  * Return shape
  * ────────────
@@ -108,13 +109,19 @@ export async function extractTextFromBuffer(
     }
   }
 
-  // PowerPoint — not supported (would need full ZIP/XML parsing library)
-  if (ext === '.pptx' || ext === '.ppt' ||
-      baseMime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-      baseMime === 'application/vnd.ms-powerpoint') {
+  // Legacy binary PowerPoint (.ppt) — binary format, no practical extraction path
+  if (ext === '.ppt' || baseMime === 'application/vnd.ms-powerpoint') {
     return {
       ok:    false,
-      error: `PowerPoint files (.pptx, .ppt) are not supported. Export the presentation to PDF or paste the text as a .txt file.`,
+      error: `.ppt files use a legacy binary format that cannot be read. Open the file in PowerPoint and save as .pptx or export to .pdf.`,
+    }
+  }
+
+  // Legacy binary Word (.doc) — binary Compound File Binary format, not supported by mammoth
+  if (ext === '.doc' || baseMime === 'application/msword') {
+    return {
+      ok:    false,
+      error: `.doc files use a legacy binary format. Open the file in Word and save as .docx, or export to .pdf.`,
     }
   }
 
@@ -173,11 +180,10 @@ export async function extractTextFromBuffer(
     }
   }
 
-  // ── DOCX / DOC ─────────────────────────────────────────────────────────────
+  // ── DOCX ──────────────────────────────────────────────────────────────────
   if (
-    ext === '.docx' || ext === '.doc' ||
-    baseMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    baseMime === 'application/msword'
+    ext === '.docx' ||
+    baseMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   ) {
     try {
       const mammoth = await import('mammoth')
@@ -188,6 +194,64 @@ export async function extractTextFromBuffer(
       return { ok: true, text: text.slice(0, MAX_EXTRACT_CHARS) }
     } catch (err) {
       return { ok: false, error: `Failed to extract text from Word document: ${(err as Error).message}` }
+    }
+  }
+
+  // ── PPTX ──────────────────────────────────────────────────────────────────
+  // jszip and @xmldom/xmldom are transitive deps from mammoth — no extra install needed.
+  if (
+    ext === '.pptx' ||
+    baseMime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ) {
+    try {
+      const JSZip = (await import('jszip')).default
+      const { DOMParser } = await import('@xmldom/xmldom')
+      const DRAWING_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+
+      const zip = await JSZip.loadAsync(buf)
+
+      // Find slide files and sort numerically (slide1, slide2, …)
+      const slideFiles = Object.keys(zip.files)
+        .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+        .sort((a, b) => {
+          const na = parseInt(a.match(/(\d+)/)?.[1] ?? '0', 10)
+          const nb = parseInt(b.match(/(\d+)/)?.[1] ?? '0', 10)
+          return na - nb
+        })
+
+      if (slideFiles.length === 0) {
+        return { ok: true, text: '', warning: 'PPTX opened but no slide content was found.' }
+      }
+
+      const allLines: string[] = []
+
+      for (let i = 0; i < slideFiles.length; i++) {
+        const xml = await zip.files[slideFiles[i]].async('string')
+        const parser = new DOMParser({
+          errorHandler: { warning: () => {}, error: () => {}, fatalError: () => {} },
+        })
+        const doc = parser.parseFromString(xml, 'text/xml')
+        const pNodes = doc.getElementsByTagNameNS(DRAWING_NS, 'p')
+
+        const slideLines: string[] = []
+        for (let p = 0; p < pNodes.length; p++) {
+          const tNodes = pNodes[p].getElementsByTagNameNS(DRAWING_NS, 't')
+          let lineText = ''
+          for (let t = 0; t < tNodes.length; t++) lineText += tNodes[t].textContent
+          if (lineText.trim()) slideLines.push(lineText.trim())
+        }
+
+        if (slideLines.length > 0) {
+          allLines.push(`[Slide ${i + 1}]`)
+          allLines.push(...slideLines)
+        }
+      }
+
+      const text = allLines.join('\n').trim()
+      if (!text) return { ok: true, text: '', warning: 'PPTX contains no readable text (image-only slides).' }
+      return { ok: true, text: text.slice(0, MAX_EXTRACT_CHARS) }
+    } catch (err) {
+      return { ok: false, error: `Failed to extract text from PowerPoint: ${(err as Error).message}` }
     }
   }
 
@@ -223,7 +287,7 @@ export async function extractTextFromBuffer(
   // ── Unsupported ────────────────────────────────────────────────────────────
   return {
     ok:    false,
-    error: `Unsupported file type "${ext || baseMime}". Supported formats: .txt, .md, .csv, .rtf, .pdf, .docx, .doc, .xlsx, .xls`,
+    error: `Unsupported file type "${ext || baseMime}". Supported formats: .txt, .md, .csv, .rtf, .pdf, .docx, .pptx, .xlsx, .xls`,
   }
 }
 

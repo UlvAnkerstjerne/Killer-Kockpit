@@ -174,16 +174,17 @@ describe('attachment permission boundary', () => {
 // ─── File validation ──────────────────────────────────────────────────────────
 
 describe('attachment file validation', () => {
-  const ACCEPTED_EXTENSIONS = ['.txt', '.md']
-  const MAX_BYTES = 200 * 1024
+  // Mirrors ACCEPTED_EXTENSIONS in lib/actions/meeting-attachments.ts
+  const ACCEPTED_EXTENSIONS = new Set(['.txt', '.md', '.csv', '.rtf', '.pdf', '.docx', '.pptx', '.xlsx', '.xls'])
+  const MAX_BYTES = 5 * 1024 * 1024  // 5 MB
 
   function validateFile(name: string, size: number): string | null {
     const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
-    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-      return `Unsupported file type "${ext}". Please upload a .txt or .md file.`
+    if (!ACCEPTED_EXTENSIONS.has(ext)) {
+      return `Unsupported file type "${ext}". Supported: .txt, .md, .csv, .rtf, .pdf, .docx, .pptx, .xlsx, .xls`
     }
     if (size > MAX_BYTES) {
-      return `File is too large (${Math.round(size / 1024)} KB). Maximum is 200 KB.`
+      return `File is too large (${Math.round(size / 1024 / 1024 * 10) / 10} MB). Maximum is 5 MB.`
     }
     return null
   }
@@ -196,24 +197,51 @@ describe('attachment file validation', () => {
     expect(validateFile('notes.md', 1024)).toBeNull()
   })
 
-  it('rejects .pdf files', () => {
-    expect(validateFile('report.pdf', 1024)).toContain('Unsupported')
+  it('accepts .pdf files', () => {
+    expect(validateFile('report.pdf', 1024)).toBeNull()
   })
 
-  it('rejects .docx files', () => {
-    expect(validateFile('minutes.docx', 1024)).toContain('Unsupported')
+  it('accepts .docx files', () => {
+    expect(validateFile('minutes.docx', 1024)).toBeNull()
   })
 
-  it('rejects files over 200 KB', () => {
+  it('accepts .pptx files', () => {
+    expect(validateFile('deck.pptx', 1024)).toBeNull()
+  })
+
+  it('accepts .xlsx files', () => {
+    expect(validateFile('data.xlsx', 1024)).toBeNull()
+  })
+
+  it('accepts .csv files', () => {
+    expect(validateFile('export.csv', 1024)).toBeNull()
+  })
+
+  it('rejects .doc files (legacy binary Word format)', () => {
+    expect(validateFile('old.doc', 1024)).toContain('Unsupported')
+  })
+
+  it('rejects .ppt files (legacy binary PowerPoint format)', () => {
+    expect(validateFile('old.ppt', 1024)).toContain('Unsupported')
+  })
+
+  it('rejects other binary formats', () => {
+    expect(validateFile('image.jpg', 1024)).toContain('Unsupported')
+    expect(validateFile('archive.zip', 1024)).toContain('Unsupported')
+  })
+
+  it('rejects files over 5 MB', () => {
     expect(validateFile('big.txt', MAX_BYTES + 1)).toContain('too large')
   })
 
-  it('accepts files at exactly 200 KB', () => {
+  it('accepts files at exactly 5 MB', () => {
     expect(validateFile('exact.txt', MAX_BYTES)).toBeNull()
   })
 
   it('is case-insensitive for extensions', () => {
     expect(validateFile('AGENDA.TXT', 1024)).toBeNull()
     expect(validateFile('Notes.MD', 1024)).toBeNull()
+    expect(validateFile('Report.PDF', 1024)).toBeNull()
+    expect(validateFile('Deck.PPTX', 1024)).toBeNull()
   })
 })
