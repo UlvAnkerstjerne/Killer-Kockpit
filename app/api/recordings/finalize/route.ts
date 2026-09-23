@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
   const serviceKey  = process.env.SUPABASE_SECRET_KEY!
 
   const signedReadRes = await fetch(
-    `${supabaseUrl}/storage/v1/object/sign/meeting-recordings/${encodeURIComponent(recording.storage_path as string)}`,
+    `${supabaseUrl}/storage/v1/object/sign/meeting-recordings/${recording.storage_path as string}`,
     {
       method:  'POST',
       headers: {
