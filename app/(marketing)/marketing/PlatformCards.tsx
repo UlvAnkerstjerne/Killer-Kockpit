@@ -1,4 +1,5 @@
 // v2 — redesigned Instagram card
+import Link from 'next/link'
 import type { PlatformSnapshotData } from '@/lib/actions/marketing/platform-snapshot'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -419,94 +420,106 @@ function MetaPaidCard({ meta_paid }: Pick<PlatformSnapshotData, 'meta_paid'>) {
 }
 
 function GbpCard({ gbp }: Pick<PlatformSnapshotData, 'gbp'>) {
+  const reviewsBadge     = fmtDelta(gbp.reviews_delta)
   const impressionsBadge = fmtPct(gbp.impressions_change_pct)
   const directionsBadge  = fmtPct(gbp.directions_change_pct)
 
   return (
-    <div style={{
-      background: '#FFFFFF',
-      border: '1px solid rgba(23,23,23,0.10)',
-      borderRadius: '16px',
-      boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
-      overflow: 'hidden',
-    }}>
+    <Link
+      href="/marketing/google-business-profile"
+      style={{ display: 'block', textDecoration: 'none' }}
+      aria-label="Google Business — view details"
+    >
+      <div
+        style={{
+          background: '#FFFFFF',
+          border: '1px solid rgba(23,23,23,0.10)',
+          borderRadius: '16px',
+          boxShadow: '0 8px 24px rgba(23,23,23,0.07)',
+          overflow: 'hidden',
+          transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
+        }}
+        className="gbp-card-hover"
+      >
 
-      {/* ── Header ── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 16px',
-        height: '52px',
-        borderBottom: '1px solid rgba(23,23,23,0.08)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* ── Header ── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          height: '52px',
+          borderBottom: '1px solid rgba(23,23,23,0.08)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
 
-          {/* GBP badge — 30×30 */}
-          <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-            <rect width="28" height="28" rx="8" fill="#4285F4"/>
-            <path d="M14 7a5 5 0 00-5 5c0 3.75 5 9 5 9s5-5.25 5-9a5 5 0 00-5-5Zm0 6.8a1.8 1.8 0 110-3.6 1.8 1.8 0 010 3.6Z" fill="white"/>
+            {/* GBP badge — 30×30 */}
+            <svg width="30" height="30" viewBox="0 0 28 28" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <rect width="28" height="28" rx="8" fill="#4285F4"/>
+              <path d="M14 7a5 5 0 00-5 5c0 3.75 5 9 5 9s5-5.25 5-9a5 5 0 00-5-5Zm0 6.8a1.8 1.8 0 110-3.6 1.8 1.8 0 010 3.6Z" fill="white"/>
+            </svg>
+
+            <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Google Business</span>
+          </div>
+
+          <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-
-          <span style={{ fontSize: '16px', fontWeight: 700, color: '#171717', lineHeight: '20px' }}>Google Business</span>
         </div>
 
-        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-          <path d="M5 3.5l4 3.5-4 3.5" stroke="rgba(23,23,23,0.40)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </div>
+        {/* ── Metrics ── */}
+        <div style={{ padding: '14px 16px 16px' }}>
 
-      {/* ── Metrics ── */}
-      <div style={{ padding: '14px 16px 16px' }}>
-
-        {/* Impressions */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Impressions (7D)</div>
-            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
-                <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
-                <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
-              </svg>
-              {fmtCompact(gbp.impressions_7d)}
-            </span>
+          {/* Reviews */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Reviews (7D)</div>
+              <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                  <path d="M10 2.5l1.8 3.6 4 .58-2.9 2.83.68 4L10 11.35l-3.58 1.88.68-4L4.2 6.68l4-.58L10 2.5Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+                </svg>
+                {fmtCompact(gbp.reviews_7d)}
+              </span>
+            </div>
+            {reviewsBadge && <ChangePill badge={reviewsBadge} />}
           </div>
-          {impressionsBadge && <ChangePill badge={impressionsBadge} />}
-        </div>
 
-        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+          <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
 
-        {/* Directions */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Directions (7D)</div>
-            <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
-                <path d="M10 2l8 8-8 8-8-8 8-8Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
-                <path d="M10 8v4M8 10h4" stroke="#171717" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
-              {fmtCompact(gbp.directions_7d)}
-            </span>
+          {/* Impressions */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Impressions (7D)</div>
+              <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                  <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                  <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
+                </svg>
+                {fmtCompact(gbp.impressions_7d)}
+              </span>
+            </div>
+            {impressionsBadge && <ChangePill badge={impressionsBadge} />}
           </div>
-          {directionsBadge && <ChangePill badge={directionsBadge} />}
-        </div>
 
-        <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
+          <div style={{ height: '1px', background: 'rgba(23,23,23,0.07)' }} />
 
-        {/* Reviews */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Reviews</div>
-            <span style={{ fontSize: '26px', fontWeight: 700, color: 'rgba(23,23,23,0.25)', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
-                <path d="M10 2.5l1.8 3.6 4 .58-2.9 2.83.68 4L10 11.35l-3.58 1.88.68-4L4.2 6.68l4-.58L10 2.5Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
-              </svg>
-              —
-            </span>
+          {/* Directions */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Directions (7D)</div>
+              <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
+                  <path d="M10 2l8 8-8 8-8-8 8-8Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+                  <path d="M10 8v4M8 10h4" stroke="#171717" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+                {fmtCompact(gbp.directions_7d)}
+              </span>
+            </div>
+            {directionsBadge && <ChangePill badge={directionsBadge} />}
           </div>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 

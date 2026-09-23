@@ -11,8 +11,7 @@
  * marketing data, not per-user) — user identity is verified before access.
  *
  * Windows:
- *   Instagram / Facebook / Meta Paid / GA4 — 7d vs prior 7d
- *   GBP — 28d vs prior 28d (matches existing signal pattern)
+ *   All platforms — 7d vs prior 7d (rolling)
  */
 
 import { getCurrentUser } from '@/lib/auth'
@@ -46,11 +45,12 @@ export interface PlatformSnapshotData {
     clicks_change_pct: number | null
   }
   gbp: {
+    reviews_7d: number
+    reviews_delta: number | null
     impressions_7d: number
     impressions_change_pct: number | null
     directions_7d: number
     directions_change_pct: number | null
-    website_clicks_7d: number
   }
   ga4: {
     sessions_7d: number
@@ -92,7 +92,41 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
     const d28 = daysAgo(28)
     const d56 = daysAgo(56)
 
-    const [ga4Res, igRes, fbRes, paidRes, gbpRes] = await Promise.all([
+    // Find the latest GBP date with complete reporting across ALL active locations.
+    // Recent rows can exist with zeroed metrics before Google finishes reporting.
+    // A date is only "complete" when every active gbp_location has impressions > 0.
+    const { count: activeLocationCount } = await db.from('gbp_locations')
+      .select('id', { count: 'exact', head: true })
+      .eq('active', true)
+    const expectedLocations = activeLocationCount ?? 0
+
+    // Supabase JS doesn't support GROUP BY / HAVING, so fetch recent rows
+    // and find the latest date where all active locations have impressions > 0.
+    const { data: recentGbpDates } = await db.from('gbp_location_metrics')
+      .select('date, location_id, total_impressions')
+      .gte('date', daysAgo(30))
+      .order('date', { ascending: false })
+    const gbpDateMap = new Map<string, number>()
+    for (const row of (recentGbpDates ?? []) as { date: string; location_id: string; total_impressions: number }[]) {
+      if (Number(row.total_impressions) > 0) {
+        gbpDateMap.set(row.date, (gbpDateMap.get(row.date) ?? 0) + 1)
+      }
+    }
+    const gbpLatest = [...gbpDateMap.entries()]
+      .filter(([, count]) => count >= expectedLocations)
+      .sort(([a], [b]) => b.localeCompare(a))[0]?.[0]
+    // Aligned 7-day windows anchored to the latest complete day
+    const gbpEnd   = gbpLatest ?? daysAgo(1)
+    const offsetDate = (iso: string, days: number) => {
+      const d = new Date(iso + 'T12:00:00Z')
+      d.setUTCDate(d.getUTCDate() + days)
+      return d.toISOString().slice(0, 10)
+    }
+    const gbpStart     = offsetDate(gbpEnd, -6)   // 7 inclusive days
+    const gbpPrevEnd   = offsetDate(gbpStart, -1)
+    const gbpPrevStart = offsetDate(gbpPrevEnd, -6)
+
+    const [ga4Res, igRes, fbRes, paidRes, gbpRes, gbpReviewsRes] = await Promise.all([
       db.from('ga4_daily')
         .select('date, sessions, new_users, page_views')
         .gte('date', d14),
@@ -108,8 +142,13 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         .select('date_start, impressions, spend, clicks')
         .gte('date_start', d14),
       db.from('gbp_location_metrics')
-        .select('date, total_impressions, direction_requests, website_clicks')
-        .gte('date', d14),
+        .select('date, total_impressions, direction_requests')
+        .gte('date', gbpPrevStart)
+        .lte('date', gbpEnd),
+      db.from('gbp_reviews')
+        .select('review_created_at')
+        .gte('review_created_at', gbpPrevStart)
+        .lte('review_created_at', gbpEnd + 'T23:59:59'),
     ])
 
     // ── GA4 ──────────────────────────────────────────────────────────────────
@@ -162,15 +201,20 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
     const clicks_7d              = sumCol(paidCur,  'clicks')
     const clicks_prior           = sumCol(paidPrev, 'clicks')
 
-    // ── GBP ───────────────────────────────────────────────────────────────────
+    // ── GBP (aligned to latest complete day) ───────────────────────────────────
     const gbp    = (gbpRes.data ?? []) as Record<string, unknown>[]
-    const gbpCur = gbp.filter(r => (r.date as string) >= d7)
-    const gbpPrev = gbp.filter(r => (r.date as string) < d7)
+    const gbpCur  = gbp.filter(r => (r.date as string) >= gbpStart)
+    const gbpPrev = gbp.filter(r => (r.date as string) < gbpStart)
     const gbp_impressions_7d    = sumCol(gbpCur,  'total_impressions')
     const gbp_impressions_prior = sumCol(gbpPrev, 'total_impressions')
     const directions_7d         = sumCol(gbpCur,  'direction_requests')
     const directions_prior      = sumCol(gbpPrev, 'direction_requests')
-    const website_clicks_7d     = sumCol(gbpCur, 'website_clicks')
+
+    // Reviews: same aligned windows as performance metrics
+    const reviews = (gbpReviewsRes.data ?? []) as Record<string, unknown>[]
+    const reviews_7d    = reviews.filter(r => (r.review_created_at as string).slice(0, 10) >= gbpStart).length
+    const reviews_prior = reviews.filter(r => (r.review_created_at as string).slice(0, 10) < gbpStart).length
+    const reviews_delta = reviews_prior > 0 || reviews_7d > 0 ? reviews_7d - reviews_prior : null
 
     return {
       ig: {
@@ -198,11 +242,12 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         clicks_change_pct: changePct(clicks_7d, clicks_prior),
       },
       gbp: {
+        reviews_7d,
+        reviews_delta,
         impressions_7d: gbp_impressions_7d,
         impressions_change_pct: changePct(gbp_impressions_7d, gbp_impressions_prior),
         directions_7d,
         directions_change_pct: changePct(directions_7d, directions_prior),
-        website_clicks_7d,
       },
       ga4: {
         sessions_7d,
