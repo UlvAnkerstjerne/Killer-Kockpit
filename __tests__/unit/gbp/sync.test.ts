@@ -169,3 +169,15 @@ describe('wildcard location discovery fallback', () => {
     expect(result.unmappedLocations.map(l => l.locationId)).toEqual(expect.arrayContaining(['444', '555']))
   })
 })
+
+it('loads one bounded set of voice examples and reuses it across locations', async () => {
+  const from = vi.spyOn(db, 'from')
+  db.tables.gbp_locations.push({ ...location, id: 'gbp-2', google_location_id: '3', location_id: 'canonical-2' })
+  mocks.locations.mockResolvedValue([{ name: 'locations/2', title: 'Synthetic A' }, { name: 'locations/3', title: 'Synthetic B' }])
+  db.tables.gbp_review_replies = [{ status: 'published', approved_by_user_id: 'admin', approved_at: '2026-09-16T00:00:00Z', draft_text: 'Generic thanks', approved_text: 'Great to hear the falafel hit the spot!', review: { star_rating: 5, review_text: 'Synthetic falafel praise' } }]
+  await runGbpSync(undefined, now)
+  expect(from.mock.calls.filter(([table]) => table === 'gbp_review_replies')).toHaveLength(1)
+  expect(mocks.reviews).toHaveBeenCalledTimes(2)
+  expect(mocks.reviews.mock.calls[0][6]).toBe(mocks.reviews.mock.calls[1][6])
+  expect(mocks.reviews.mock.calls[0][6][0].approvedReply).toContain('falafel')
+})

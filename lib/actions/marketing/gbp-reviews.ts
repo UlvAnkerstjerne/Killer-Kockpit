@@ -20,51 +20,12 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
-import { getGoogleOAuth2Client, hasGbpScope } from '@/lib/google/auth'
-import { publishGbpReviewReply } from '@/lib/google/gbp-client'
+import { assertMarketingRead, assertReviewsApprove } from '@/lib/gbp/review-permissions'
+import { getGbpPublisher, publishClaimedReply } from '@/lib/gbp/review-publish'
+import { revalidatePath } from 'next/cache'
+import { hasGbpScope } from '@/lib/google/auth'
 import { runGbpSync } from '@/lib/gbp/sync'
 import type { ActionResult } from '@/lib/types'
-
-// ── Internal auth helpers ──────────────────────────────────────────────────────
-
-async function assertMarketingRead() {
-  const user = await getCurrentUser()
-  if (!user) return { user: null as null, error: 'Not authenticated.' }
-  if (!canAccessMarketing(user.role, user.marketing_access)) {
-    return { user: null as null, error: 'Marketing access required.' }
-  }
-  const db = createServiceClient()
-  const { data: permRows } = await db
-    .from('user_marketing_permissions')
-    .select('permission')
-    .eq('user_id', user.id)
-  const permissions = (permRows ?? []).map((r) => r.permission as string)
-  const canRead =
-    user.role === 'SUPER_ADMIN' ||
-    permissions.includes('reviews_manage') ||
-    permissions.includes('reviews_approve')
-  if (!canRead) return { user: null as null, error: 'reviews_manage or reviews_approve permission required.' }
-  return { user, error: undefined as undefined }
-}
-
-async function assertReviewsApprove() {
-  const user = await getCurrentUser()
-  if (!user) return { user: null as null, error: 'Not authenticated.' }
-  if (!canAccessMarketing(user.role, user.marketing_access)) {
-    return { user: null as null, error: 'Marketing access required.' }
-  }
-  const db = createServiceClient()
-  const { data: permRows } = await db
-    .from('user_marketing_permissions')
-    .select('permission')
-    .eq('user_id', user.id)
-  const permissions = (permRows ?? []).map((r) => r.permission as import('@/lib/marketing/types').MarketingPermission)
-  if (!hasMarketingPermission(user.role, permissions, 'reviews_approve')) {
-    return { user: null as null, error: 'reviews_approve permission required.' }
-  }
-  return { user, error: undefined as undefined }
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -114,8 +75,8 @@ export interface GbpReplyRow {
 export interface GbpStoreReviewSummary {
   gbpLocationId:  string
   storeShortName: string
-  newReviews7d:   number
-  unanswered:     number
+  newReviews7d:   number | null
+  unanswered:     number | null
   avgRating:      number | null
 }
 
@@ -244,7 +205,7 @@ export async function approveGbpReply(
     return { error: `Cannot approve a reply in status '${existing.status}'.` }
   }
 
-  const { error: updateError } = await db
+  const { data: updatedReply, error: updateError } = await db
     .from('gbp_review_replies')
     .update({
       status:              'approved',
@@ -257,8 +218,11 @@ export async function approveGbpReply(
       publish_error:       null,
     })
     .eq('id', replyId)
+    .is('publish_attempt_id', null)
+    .eq('status', existing.status)
+    .select('id').maybeSingle()
 
-  if (updateError) {
+  if (updateError || !updatedReply) {
     console.error('[approveGbpReply]', updateError)
     return { error: 'Failed to approve reply. Please try again.' }
   }
@@ -298,7 +262,7 @@ export async function rejectGbpReply(
     return { error: `Cannot reject a reply in status '${existing.status}'.` }
   }
 
-  const { error: updateError } = await db
+  const { data: updatedReply, error: updateError } = await db
     .from('gbp_review_replies')
     .update({
       status:              'rejected',
@@ -307,8 +271,11 @@ export async function rejectGbpReply(
       rejected_at:         new Date().toISOString(),
     })
     .eq('id', replyId)
+    .is('publish_attempt_id', null)
+    .eq('status', existing.status)
+    .select('id').maybeSingle()
 
-  if (updateError) {
+  if (updateError || !updatedReply) {
     console.error('[rejectGbpReply]', updateError)
     return { error: 'Failed to reject reply. Please try again.' }
   }
@@ -335,86 +302,19 @@ export async function publishGbpReply(
 
   const db = createServiceClient()
 
-  // Load reply + review in one query
-  const { data: replyRow } = await db
-    .from('gbp_review_replies')
-    .select('id, status, approved_text, review_id')
-    .eq('id', replyId)
-    .single()
-
+  const { data: replyRow } = await db.from('gbp_review_replies')
+    .select('id,status,approved_text').eq('id', replyId).single()
   if (!replyRow) return { error: 'Reply not found.' }
-  if (replyRow.status !== 'approved') {
-    return { error: `Can only publish approved replies. Current status: '${replyRow.status}'.` }
-  }
+  if (replyRow.status !== 'approved') return { error: `Can only publish approved replies. Current status: '${replyRow.status}'.` }
   if (!replyRow.approved_text) return { error: 'No approved text to publish.' }
-
-  const { data: reviewRow } = await db
-    .from('gbp_reviews')
-    .select('google_review_id')
-    .eq('id', replyRow.review_id)
-    .single()
-
-  if (!reviewRow) return { error: 'Review not found.' }
-
-  // Find a GBP-scoped OAuth client
-  const { data: tokenRows } = await db
-    .from('google_oauth_tokens')
-    .select('user_id, scopes')
-
-  const syncUserId = tokenRows?.find(
-    (row) => hasGbpScope((row.scopes as string[]) ?? [])
-  )?.user_id as string | undefined
-
-  if (!syncUserId) {
-    return { error: 'No GBP-connected account found. Connect Google Business Profile first.' }
-  }
-
-  const oauthClient = await getGoogleOAuth2Client(syncUserId)
-  if (!oauthClient) {
-    return { error: 'GBP credentials are no longer valid. Please reconnect.' }
-  }
-
-  const publishResult = await publishGbpReviewReply(
-    oauthClient,
-    reviewRow.google_review_id,
-    replyRow.approved_text,
-  )
-
-  const now = new Date().toISOString()
-
-  if (publishResult.ok) {
-    await db.from('gbp_review_replies').update({
-      status:       'published',
-      published_at: now,
-      publish_error: null,
-    }).eq('id', replyId)
-
-    await db.from('audit_events').insert({
-      actor_user_id: user.id,
-      actor_type:    'human',
-      action:        'marketing.gbp_reply.published',
-      entity_type:   'gbp_review_reply',
-      entity_id:     replyId,
-    })
-
-    return { data: { status: 'published' } }
-  } else {
-    await db.from('gbp_review_replies').update({
-      status:        'publish_failed',
-      publish_error: publishResult.error,
-    }).eq('id', replyId)
-
-    await db.from('audit_events').insert({
-      actor_user_id: user.id,
-      actor_type:    'human',
-      action:        'marketing.gbp_reply.publish_failed',
-      entity_type:   'gbp_review_reply',
-      entity_id:     replyId,
-      after_json:    { error: publishResult.error },
-    })
-
-    return { data: { status: 'publish_failed' } }
-  }
+  const publisher = await getGbpPublisher(db)
+  if (!publisher.ok) return { error: publisher.error }
+  const result = await publishClaimedReply(db, publisher.client, user.id, { replyId, approvedText: replyRow.approved_text }, false)
+  revalidatePath('/marketing')
+  revalidatePath('/marketing/google-business-profile')
+  if (result.status === 'published' || result.status === 'already_published') return { data: { status: 'published' } }
+  if (result.status === 'publish_failed') return { data: { status: 'publish_failed' } }
+  return { error: result.error ?? 'Could not publish reply.' }
 }
 
 // ── getGbpStoreReviewSummary ───────────────────────────────────────────────────
@@ -439,58 +339,22 @@ export async function getGbpStoreReviewSummary(): Promise<GbpStoreReviewSummary[
   )
   if (coreLocations.length === 0) return []
 
-  const locationIds = coreLocations.map((l: { id: string }) => l.id)
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - 7)
-  const cutoffIso = cutoff.toISOString()
-
-  // Fetch all reviews for these locations, paginating to bypass any server-side
-  // row limit (PostgREST max-rows defaults to 1000 on Supabase).
-  type ReviewRow = {
-    location_id: string
-    star_rating: number
-    review_created_at: string
-    existing_reply_text: string | null
-  }
-  const PAGE = 1000
-  const allReviews: ReviewRow[] = []
-  let from = 0
-  for (;;) {
-    const { data } = await db
-      .from('gbp_reviews')
-      .select('location_id, star_rating, review_created_at, existing_reply_text')
-      .in('location_id', locationIds)
-      .range(from, from + PAGE - 1)
-    const rows = (data ?? []) as ReviewRow[]
-    allReviews.push(...rows)
-    if (rows.length < PAGE) break
-    from += PAGE
-  }
-
-  // Aggregate per location
-  const map = new Map<string, { recent: number; unanswered: number; ratingSum: number; count: number }>()
-  for (const loc of coreLocations) {
-    map.set(loc.id, { recent: 0, unanswered: 0, ratingSum: 0, count: 0 })
-  }
-  for (const r of allReviews) {
-    const bucket = map.get(r.location_id)
-    if (!bucket) continue
-    bucket.count++
-    bucket.ratingSum += r.star_rating
-    if (r.review_created_at >= cutoffIso) bucket.recent++
-    if (!r.existing_reply_text) bucket.unanswered++
-  }
-
-  return coreLocations.map((loc: { id: string; store_short_name: string }) => {
-    const b = map.get(loc.id)!
+  // One indexed latest-row lookup per core location. Missing snapshots display
+  // as unavailable until sync, without a permanent review-history fallback.
+  return Promise.all(coreLocations.map(async (loc: { id: string; store_short_name: string }) => {
+    const { data, error } = await db.from('gbp_review_health_daily')
+      .select('average_rating,new_reviews_7d,unanswered_count')
+      .eq('location_id', loc.id)
+      .order('snapshot_date', { ascending: false })
+      .limit(1).maybeSingle()
     return {
-      gbpLocationId:  loc.id,
+      gbpLocationId: loc.id,
       storeShortName: loc.store_short_name,
-      newReviews7d:   b.recent,
-      unanswered:     b.unanswered,
-      avgRating:      b.count > 0 ? Math.round((b.ratingSum / b.count) * 10) / 10 : null,
+      newReviews7d: error ? null : data?.new_reviews_7d ?? null,
+      unanswered: error ? null : data?.unanswered_count ?? null,
+      avgRating: error || data?.average_rating == null ? null : Number(data.average_rating),
     }
-  })
+  }))
 }
 
 // ── getGbpSyncStatus ───────────────────────────────────────────────────────────

@@ -119,13 +119,13 @@ export default function GbpDashboard({
               <div className="space-y-2.5">
                 <div>
                   <div className="text-[10px] font-medium text-kk-muted leading-tight">New reviews (7D)</div>
-                  <div className="text-xl font-bold text-kk-ink tabular-nums">{s.newReviews7d}</div>
+                  <div className="text-xl font-bold text-kk-ink tabular-nums">{s.newReviews7d ?? '—'}</div>
                 </div>
 
                 <div>
                   <div className="text-[10px] font-medium text-kk-muted leading-tight">Unanswered reviews</div>
-                  <div className={`text-xl font-bold tabular-nums ${s.unanswered > 0 ? 'text-kk-bad' : 'text-kk-ink'}`}>
-                    {s.unanswered}
+                  <div className={`text-xl font-bold tabular-nums ${(s.unanswered ?? 0) > 0 ? 'text-kk-bad' : 'text-kk-ink'}`}>
+                    {s.unanswered ?? '—'}
                   </div>
                 </div>
 

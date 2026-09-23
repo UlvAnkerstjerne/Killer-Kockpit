@@ -6,6 +6,7 @@ import { fetchGbpAccounts, fetchGbpLocations, fetchGbpLocationsWildcard, fetchLo
 import { GbpDataError, addDays, dateChunks, dailyPerformanceRows, gbpDateRange, gbpKeywordMonths, googleId, keywordRows, mappingIssues, profileSnapshot, type StoredGbpLocation } from './data'
 import { claimGbpRun, finishGbpRun, readGbpState, writeGbpState, type GbpDb } from './state'
 import { syncLocationReviews } from './reviews-sync'
+import { loadReviewReplyExamples } from './reply-examples'
 export { retryDraftForReview } from './reviews-sync'
 
 export interface LocationSyncResult {
@@ -177,6 +178,7 @@ export async function runGbpSync(syncUserId?: string, now = new Date()): Promise
     if (ambiguous.size) result.errors.push('Ambiguous GBP mappings found; affected profiles were excluded from performance, keyword and review sync.')
     const targets = locations.filter(row => row.active && row.location_id && !ambiguous.has(row.id))
     if (!targets.length) result.errors.push('No active GBP profiles have an unambiguous canonical Kockpit location mapping.')
+    const reviewExamples = await loadReviewReplyExamples(db, now)
     for (const location of targets) {
       const accountId = location.google_account_id, locationId = location.google_location_id
       const key = `${accountId}:${locationId}`
@@ -231,7 +233,7 @@ export async function runGbpSync(syncUserId?: string, now = new Date()): Promise
         return { version: 1, backfillComplete: true, through: months.at(-1) ?? cursor.through }
       })
       await stage('reviews', async (_cursor, lastSuccess) => {
-        const reviews = await syncLocationReviews(db, location, client, lastSuccess, checkDeadline, (reviews, drafts) => { item.reviewsUpserted = reviews; item.draftsGenerated = drafts })
+        const reviews = await syncLocationReviews(db, location, client, lastSuccess, checkDeadline, (reviews, drafts) => { item.reviewsUpserted = reviews; item.draftsGenerated = drafts }, reviewExamples)
         item.reviewsUpserted = reviews.reviewsUpserted; item.draftsGenerated = reviews.draftsGenerated
         return { version: 1, backfillComplete: true, through: startedAt }
       })

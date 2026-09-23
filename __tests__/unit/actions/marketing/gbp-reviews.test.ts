@@ -10,6 +10,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+function successfulUpdate() {
+  const q = { eq: () => q, is: () => q, select: () => q, maybeSingle: async () => ({ data: { id: 'r' }, error: null }) }
+  return q
+}
+
 // ── Hoisted mocks ──────────────────────────────────────────────────────────────
 
 const mocks = vi.hoisted(() => {
@@ -36,12 +41,13 @@ const mocks = vi.hoisted(() => {
     return {
       select: vi.fn().mockReturnValue({ eq: eqMock, like: likeMock, order: orderMock }),
       insert: vi.fn().mockResolvedValue({ error: null }),
-      update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+      update: vi.fn().mockImplementation(successfulUpdate),
       upsert: vi.fn().mockResolvedValue({ error: null }),
     }
   })
 
-  const mockServiceClient = { from: mockFrom }
+  const mockRpc = vi.fn()
+  const mockServiceClient = { from: mockFrom, rpc: mockRpc }
 
   return {
     mockGetCurrentUser,
@@ -51,10 +57,12 @@ const mocks = vi.hoisted(() => {
     mockHasGbpScope,
     mockFrom,
     mockServiceClient,
+    mockRpc,
     tableQueues,
   }
 })
 
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/auth', () => ({ getCurrentUser: mocks.mockGetCurrentUser }))
 vi.mock('@/lib/supabase/server', () => ({
   createServiceClient: vi.fn().mockReturnValue(mocks.mockServiceClient),
@@ -217,7 +225,7 @@ describe('approveGbpReply', () => {
   it('returns { data: { status: approved } } on success', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
 
-    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+    const mockUpdate = vi.fn().mockImplementation(successfulUpdate)
     const mockInsert = vi.fn().mockResolvedValue({ error: null })
 
     mocks.mockFrom
@@ -292,11 +300,11 @@ describe('rejectGbpReply', () => {
             single: vi.fn().mockResolvedValue({ data: { id: 'r', status: 'awaiting_review' }, error: null }),
           }),
         }),
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        update: vi.fn().mockImplementation(successfulUpdate),
         insert: vi.fn(), upsert: vi.fn(),
       }))
       .mockImplementationOnce(() => ({
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        update: vi.fn().mockImplementation(successfulUpdate),
         select: vi.fn(), insert: vi.fn(), upsert: vi.fn(),
       }))
       .mockImplementationOnce(() => ({
@@ -314,202 +322,45 @@ describe('rejectGbpReply', () => {
 // ── publishGbpReply ───────────────────────────────────────────────────────────
 
 describe('publishGbpReply', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('returns error for unauthenticated caller', async () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
+    mocks.mockHasGbpScope.mockReturnValue(true)
+    mocks.mockGetGoogleOAuth2Client.mockResolvedValue({})
+    mocks.mockFrom.mockImplementation((table: string) => {
+      const data = table === 'user_marketing_permissions' ? []
+        : table === 'google_oauth_tokens' ? [{ user_id: 'connected-admin', scopes: ['gbp'] }]
+        : { id: 'reply-id', status: 'approved', approved_text: 'Human approved text' }
+      const q = { select: () => q, eq: () => q, order: () => q, single: () => q,
+        then: (resolve: (value: unknown) => void) => Promise.resolve(resolve({ data, error: null })) }
+      return q
+    })
+    mocks.mockRpc.mockImplementation(async (name: string) => ({ data: name === 'claim_gbp_reply_publish'
+      ? { status: 'claimed', attempt_id: 'attempt', google_review_id: 'accounts/1/locations/2/reviews/A', approved_text: 'Human approved text' } : null, error: null }))
+  })
+  it('rejects an unauthenticated caller', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(null)
     const { publishGbpReply } = await import('@/lib/actions/marketing/gbp-reviews')
     expect((await publishGbpReply('reply-id')).error).toBeTruthy()
+    expect(mocks.mockPublishGbpReviewReply).not.toHaveBeenCalled()
   })
-
-  it('returns error when reply is not in approved status', async () => {
-    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
-    mocks.mockFrom
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { id: 'r', status: 'awaiting_review', approved_text: null, review_id: 'rev-1' },
-              error: null,
-            }),
-          }),
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-
+  it('requires a valid connected account', async () => {
+    mocks.mockGetGoogleOAuth2Client.mockResolvedValue(null)
     const { publishGbpReply } = await import('@/lib/actions/marketing/gbp-reviews')
-    const result = await publishGbpReply('reply-id')
-    expect(result.error).toContain('approved')
+    expect((await publishGbpReply('reply-id')).error).toContain('credentials')
+    expect(mocks.mockPublishGbpReviewReply).not.toHaveBeenCalled()
   })
-
-  it('returns error when no GBP token found', async () => {
-    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
-    mocks.mockHasGbpScope.mockReturnValue(false)
-
-    mocks.mockFrom
-      // permissions
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // gbp_review_replies
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { id: 'r', status: 'approved', approved_text: 'Thanks!', review_id: 'rev-1' },
-              error: null,
-            }),
-          }),
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // gbp_reviews
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { google_review_id: 'accounts/1/locations/2/reviews/A' },
-              error: null,
-            }),
-          }),
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // google_oauth_tokens — none with GBP scope
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockResolvedValue({ data: [], error: null }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-
-    const { publishGbpReply } = await import('@/lib/actions/marketing/gbp-reviews')
-    const result = await publishGbpReply('reply-id')
-    expect(result.error).toContain('GBP')
-  })
-
-  it('returns { data: { status: published } } on successful publish', async () => {
-    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
-    mocks.mockHasGbpScope.mockReturnValue(true)
+  it('uses the approved text through the shared publication transition', async () => {
     mocks.mockPublishGbpReviewReply.mockResolvedValue({ ok: true })
-    mocks.mockGetGoogleOAuth2Client.mockResolvedValue({})
-
-    mocks.mockFrom
-      // permissions
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // gbp_review_replies
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { id: 'r', status: 'approved', approved_text: 'Thanks!', review_id: 'rev-1' },
-              error: null,
-            }),
-          }),
-        }),
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-        insert: vi.fn(), upsert: vi.fn(),
-      }))
-      // gbp_reviews
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { google_review_id: 'accounts/1/locations/2/reviews/A' },
-              error: null,
-            }),
-          }),
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // google_oauth_tokens
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockResolvedValue({
-          data: [{ user_id: 'sync-user', scopes: ['https://www.googleapis.com/auth/business.manage'] }],
-          error: null,
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // gbp_review_replies update (published)
-      .mockImplementationOnce(() => ({
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-        select: vi.fn(), insert: vi.fn(), upsert: vi.fn(),
-      }))
-      // audit_events insert
-      .mockImplementationOnce(() => ({
-        insert: vi.fn().mockResolvedValue({ error: null }),
-        select: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-
     const { publishGbpReply } = await import('@/lib/actions/marketing/gbp-reviews')
-    const result = await publishGbpReply('reply-id')
-    expect(result.error).toBeUndefined()
-    expect((result as { data: { status: string } }).data?.status).toBe('published')
-    expect(mocks.mockPublishGbpReviewReply).toHaveBeenCalledOnce()
+    expect((await publishGbpReply('reply-id')).data?.status).toBe('published')
+    expect(mocks.mockPublishGbpReviewReply).toHaveBeenCalledWith({}, 'accounts/1/locations/2/reviews/A', 'Human approved text')
+    expect(mocks.mockRpc).toHaveBeenCalledWith('claim_gbp_reply_publish', expect.objectContaining({ p_desk_only: false }))
   })
-
-  it('returns { data: { status: publish_failed } } when GBP publish fails', async () => {
-    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN)
-    mocks.mockHasGbpScope.mockReturnValue(true)
-    mocks.mockPublishGbpReviewReply.mockResolvedValue({ ok: false, error: '403 Forbidden' })
-    mocks.mockGetGoogleOAuth2Client.mockResolvedValue({})
-
-    mocks.mockFrom
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { id: 'r', status: 'approved', approved_text: 'Thanks!', review_id: 'rev-1' },
-              error: null,
-            }),
-          }),
-        }),
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-        insert: vi.fn(), upsert: vi.fn(),
-      }))
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { google_review_id: 'accounts/1/locations/2/reviews/A' },
-              error: null,
-            }),
-          }),
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      .mockImplementationOnce(() => ({
-        select: vi.fn().mockResolvedValue({
-          data: [{ user_id: 'sync-user', scopes: ['https://www.googleapis.com/auth/business.manage'] }],
-          error: null,
-        }),
-        insert: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-      // update to publish_failed
-      .mockImplementationOnce(() => ({
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-        select: vi.fn(), insert: vi.fn(), upsert: vi.fn(),
-      }))
-      // audit insert
-      .mockImplementationOnce(() => ({
-        insert: vi.fn().mockResolvedValue({ error: null }),
-        select: vi.fn(), update: vi.fn(), upsert: vi.fn(),
-      }))
-
+  it('retains individual publish-failure behavior', async () => {
+    mocks.mockPublishGbpReviewReply.mockResolvedValue({ ok: false, error: 'Synthetic failure' })
     const { publishGbpReply } = await import('@/lib/actions/marketing/gbp-reviews')
-    const result = await publishGbpReply('reply-id')
-    expect(result.error).toBeUndefined()
-    expect((result as { data: { status: string } }).data?.status).toBe('publish_failed')
+    expect((await publishGbpReply('reply-id')).data?.status).toBe('publish_failed')
   })
 })
 

@@ -52,3 +52,46 @@ describe('existing GBP review policy', () => {
     expect(await retryDraftForReview('review')).toMatchObject({ ok: false, error: 'Location not found.' })
   })
 })
+
+describe('successful-sync snapshot boundary', () => {
+  it('uses metadata already present on the page without another Google call', async () => {
+    const rpc = vi.spyOn(db, 'rpc')
+    mocks.page.mockResolvedValue({ reviews: [], averageRating: 4.57123, totalReviewCount: 3883 })
+    await run()
+    expect(mocks.page).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('capture_gbp_review_health', expect.objectContaining({ p_average_rating: 4.57123, p_total_review_count: 3883 }))
+  })
+  it('never attempts a snapshot when a later Google page fails', async () => {
+    const rpc = vi.spyOn(db, 'rpc')
+    mocks.page.mockResolvedValueOnce({ reviews: [], averageRating: 4.57, totalReviewCount: 3883, nextPageToken: 'second' }).mockRejectedValueOnce(new Error('API failure'))
+    await expect(run()).rejects.toThrow('API failure')
+    expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('interrupted publication reconciliation', () => {
+  it('reconciles an old claimed review beyond the ordinary incremental overlap before permitting retry', async () => {
+    db.tables.gbp_reviews = [{ id: 'review-1', google_review_id: review('r').name, location_id: location.id }]
+    db.tables.gbp_review_replies = [{ id: 'reply-1', review_id: 'review-1', status: 'approved', publish_attempt_id: 'attempt', publish_started_at: '2020-01-01T00:00:00Z' }]
+    mocks.page.mockResolvedValue({ reviews: [{ ...review('r'), updateTime: '2025-01-01T00:00:00Z' }] })
+    await run('2026-09-23T04:45:00Z')
+    expect(db.tables.gbp_review_replies[0]).toMatchObject({ status: 'publish_failed', publish_attempt_id: null, publish_started_at: null })
+  })
+  it('clears an interrupted claim when Google confirms an external reply', async () => {
+    db.tables.gbp_reviews = [{ id: 'review-1', google_review_id: review('r').name, location_id: location.id }]
+    db.tables.gbp_review_replies = [{ id: 'reply-1', review_id: 'review-1', status: 'approved', publish_attempt_id: 'attempt', publish_started_at: '2020-01-01T00:00:00Z' }]
+    mocks.page.mockResolvedValue({ reviews: [review('r', undefined, true)] })
+    await run()
+    expect(db.tables.gbp_review_replies[0]).toMatchObject({ status: 'externally_published', publish_attempt_id: null, publish_started_at: null })
+  })
+})
+
+it('never overwrites a human approval that wins the race with automatic draft generation', async () => {
+  mocks.page.mockResolvedValue({ reviews: [review('r')] })
+  mocks.draft.mockImplementationOnce(async () => {
+    Object.assign(db.tables.gbp_review_replies[0], { status: 'approved', draft_text: 'Earlier draft', approved_text: 'Human correction' })
+    return { ok: true, draft: 'Late AI draft', model: 'synthetic', promptVersion: 'v2' }
+  })
+  await run()
+  expect(db.tables.gbp_review_replies[0]).toMatchObject({ status: 'approved', draft_text: 'Earlier draft', approved_text: 'Human correction' })
+})
