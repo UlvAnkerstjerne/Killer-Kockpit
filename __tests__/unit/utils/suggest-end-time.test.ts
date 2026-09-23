@@ -43,4 +43,15 @@ describe('suggestEndTime', () => {
     expect(result?.startsWith('2026-12-31T')).toBe(true)
     expect(result).toBe('2026-12-31T22:30')
   })
+
+  it('updates suggestion when start changes after end was already suggested', () => {
+    // Simulate: user picks 10:00 → end suggested as 10:30, then changes start to 11:00
+    const first  = suggestEndTime('2026-09-23T10:00')
+    expect(first).toBe('2026-09-23T10:30')
+    // Now start changes to 11:00; suggestEndTime is called again (end was not manually edited)
+    const second = suggestEndTime('2026-09-23T11:00')
+    expect(second).toBe('2026-09-23T11:30')
+    // And it differs from the first suggestion, confirming re-evaluation happens
+    expect(second).not.toBe(first)
+  })
 })

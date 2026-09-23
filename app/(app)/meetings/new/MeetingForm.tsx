@@ -44,6 +44,9 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
   const [agendaItems,  setAgendaItems]  = useState<AgendaItem[]>([])
   const [newAgenda,    setNewAgenda]    = useState('')
 
+  // Whether the user has manually edited the end time (suppresses auto-suggestion)
+  const [endEdited, setEndEdited] = useState(false)
+
   // Submit state
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
@@ -200,9 +203,10 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
             onChange={(e) => {
               const val = e.target.value
               setScheduledStart(val)
-              if (!scheduledEnd) {
+              if (!endEdited) {
                 const suggestion = suggestEndTime(val)
                 if (suggestion) setScheduledEnd(suggestion)
+                else setScheduledEnd('')
               }
             }}
             disabled={submitting}
@@ -216,7 +220,7 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
           <input
             type="datetime-local"
             value={scheduledEnd}
-            onChange={(e) => setScheduledEnd(e.target.value)}
+            onChange={(e) => { setScheduledEnd(e.target.value); setEndEdited(true) }}
             disabled={submitting}
             className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors"
           />
