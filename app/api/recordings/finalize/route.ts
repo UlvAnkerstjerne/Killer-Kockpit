@@ -120,23 +120,13 @@ export async function POST(request: NextRequest) {
   })
 
   // ── Generate short-lived signed READ URL for AssemblyAI ──────────────────
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceKey  = process.env.SUPABASE_SECRET_KEY!
+  // Use the SDK so the service key format is handled correctly.
+  const { data: signedReadData, error: signReadErr } = await db.storage
+    .from('meeting-recordings')
+    .createSignedUrl(recording.storage_path as string, 3600)
 
-  const signedReadRes = await fetch(
-    `${supabaseUrl}/storage/v1/object/sign/meeting-recordings/${recording.storage_path as string}`,
-    {
-      method:  'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({ expiresIn: 3600 }),
-    },
-  )
-
-  if (!signedReadRes.ok) {
-    console.error('[api/recordings/finalize] Failed to generate signed read URL')
+  if (signReadErr || !signedReadData?.signedUrl) {
+    console.error('[api/recordings/finalize] Failed to generate signed read URL:', signReadErr?.message)
     await db
       .from('meeting_recordings')
       .update({ status: 'failed', processing_error: 'Failed to generate signed URL for transcription.' })
@@ -144,8 +134,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to prepare transcription.' }, { status: 500 })
   }
 
-  const { signedURL } = await signedReadRes.json() as { signedURL: string }
-  const audioUrl = `${supabaseUrl}/storage/v1${signedURL}`
+  const audioUrl = signedReadData.signedUrl
 
   // ── Submit to AssemblyAI ──────────────────────────────────────────────────
   const webhookSecret = process.env.ASSEMBLYAI_WEBHOOK_SECRET

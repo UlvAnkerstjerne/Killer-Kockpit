@@ -93,37 +93,18 @@ export async function POST(request: NextRequest) {
   const storagePath = `recordings/${recording.meeting_id}/${recordingId}.${ext}`
 
   // ── Create signed upload URL (service role — never exposed to browser) ────
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceKey  = process.env.SUPABASE_SECRET_KEY!
+  // Use the SDK so the service key format (sb_secret_… or JWT) is handled
+  // correctly regardless of which Supabase key generation is in use.
+  const { data: signedData, error: signErr } = await db.storage
+    .from('meeting-recordings')
+    .createSignedUploadUrl(storagePath, { upsert: true })
 
-  // Correct Supabase Storage endpoint: POST /storage/v1/object/upload/sign/{bucket}/{path}
-  // path goes in the URL; upsert goes in x-upsert header; body carries expiresIn only.
-  const signedRes = await fetch(
-    `${supabaseUrl}/storage/v1/object/upload/sign/meeting-recordings/${storagePath}`,
-    {
-      method:  'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type':  'application/json',
-        'x-upsert':      'true',
-      },
-      body: JSON.stringify({ expiresIn: 1800 }),
-    },
-  )
-
-  if (!signedRes.ok) {
-    const msg = await signedRes.text().catch(() => signedRes.statusText)
-    console.error('[api/recordings/init] Failed to create signed upload URL:', signedRes.status, msg)
+  if (signErr || !signedData?.signedUrl) {
+    console.error('[api/recordings/init] Failed to create signed upload URL:', signErr?.message)
     return NextResponse.json({ error: 'Could not prepare upload. Please retry.' }, { status: 500 })
   }
 
-  // Supabase returns { url: "{bucket}/{path}?token=...", token: "..." }
-  // url is relative to /storage/v1/object/upload/sign/ — build the full PUT URL.
-  const signedData = await signedRes.json() as { url?: string; token?: string }
-
-  const uploadUrl = signedData.url?.startsWith('http')
-    ? signedData.url
-    : `${supabaseUrl}/storage/v1/object/upload/sign/${signedData.url}`
+  const uploadUrl = signedData.signedUrl
 
   // ── Store path on recording row (finalize trusts DB, not client) ──────────
   const durationSeconds = durationMs && durationMs > 0 ? Math.round(durationMs / 1000) : null
