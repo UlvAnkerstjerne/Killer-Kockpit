@@ -38,8 +38,9 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 vi.mock('@/lib/google/auth', () => ({
-  getGoogleOAuth2Client: reconcileMocks.mockGetOAuth2Client,
-  hasMeetScope:          reconcileMocks.mockHasMeetScope,
+  getGoogleOAuth2Client:         reconcileMocks.mockGetOAuth2Client,
+  getManagementCalendarClient:   reconcileMocks.mockGetOAuth2Client,  // system writer = same mock
+  hasMeetScope:                  reconcileMocks.mockHasMeetScope,
 }))
 
 vi.mock('@/lib/google/meet', () => ({

@@ -24,13 +24,14 @@
  *   - sources.external_id prevents duplicate transcript sources.
  *   - actual_end window stops retrying stale meetings eventually.
  *
- * Credential routing: uses calendar_synced_by_user_id's stored OAuth tokens.
- * Meetings where that credential is missing or lacks meetings.space.readonly
- * are skipped (Pass A) or skipped (Pass B) until a user re-syncs.
+ * Credential routing: uses the SYSTEM management-calendar writer credential
+ * (GOOGLE_CALENDAR_WRITER_USER_ID).  Individual user credentials are never
+ * used here.  Meetings are skipped when the system credential is unavailable
+ * or lacks meetings.space.readonly scope.
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
-import { getGoogleOAuth2Client, hasMeetScope } from '@/lib/google/auth'
+import { getManagementCalendarClient, hasMeetScope } from '@/lib/google/auth'
 import { checkConferenceLifecycle } from '@/lib/google/meet'
 import { fetchGoogleMeetTranscript } from '@/lib/google/transcripts'
 import type { Auth } from 'googleapis'
@@ -79,7 +80,7 @@ export async function runMeetingReconcileJob(): Promise<ReconcileJobResult> {
   for (const meeting of (unresolvedMeetings ?? [])) {
     result.checked++
 
-    const oauthClient = await getCredentialWithMeetScope(meeting.calendar_synced_by_user_id as string | null)
+    const oauthClient = await getCredentialWithMeetScope()
     if (!oauthClient) { result.skipped++; continue }
 
     const lifecycle = await checkConferenceLifecycle(oauthClient, meeting.meet_space_name as string)
@@ -138,7 +139,7 @@ export async function runMeetingReconcileJob(): Promise<ReconcileJobResult> {
   for (const meeting of (pendingTranscripts ?? [])) {
     result.checked++
 
-    const oauthClient = await getCredentialWithMeetScope(meeting.calendar_synced_by_user_id as string | null)
+    const oauthClient = await getCredentialWithMeetScope()
     if (!oauthClient) { result.skipped++; continue }
 
     const ts = await attemptAutoTranscript(
@@ -158,11 +159,14 @@ export async function runMeetingReconcileJob(): Promise<ReconcileJobResult> {
 
 // ─── Credential helper ────────────────────────────────────────────────────────
 
+/**
+ * Returns the system management-calendar writer client if it has Meet scope,
+ * otherwise null (meeting will be skipped for this reconcile cycle).
+ */
 async function getCredentialWithMeetScope(
-  credUserId: string | null,
+  _credUserId?: string | null,
 ): Promise<Auth.OAuth2Client | null> {
-  if (!credUserId) return null
-  const client = await getGoogleOAuth2Client(credUserId)
+  const client = await getManagementCalendarClient()
   if (!client) return null
   const scopeString = typeof client.credentials.scope === 'string' ? client.credentials.scope : ''
   if (!hasMeetScope(scopeString.split(' ').filter(Boolean))) return null

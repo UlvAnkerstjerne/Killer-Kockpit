@@ -277,6 +277,35 @@ export async function getGoogleOAuth2Client(userId: string): Promise<Auth.OAuth2
   return client
 }
 
+// ─── Management calendar system writer ────────────────────────────────────
+
+/**
+ * Returns the Kockpit user ID configured as the management-calendar system writer.
+ * Reads GOOGLE_CALENDAR_WRITER_USER_ID from the environment.
+ * Returns null when the variable is not set.
+ */
+export function getManagementCalendarWriterUserId(): string | null {
+  return process.env.GOOGLE_CALENDAR_WRITER_USER_ID?.trim() || null
+}
+
+/**
+ * Returns a fully configured OAuth2Client for the designated system writer that
+ * owns Calendar writes to GOOGLE_MANAGEMENT_CALENDAR_ID.
+ *
+ * The writer is identified by GOOGLE_CALENDAR_WRITER_USER_ID (a Kockpit user ID).
+ * Returns null when:
+ *   - GOOGLE_CALENDAR_WRITER_USER_ID is not set, or
+ *   - no tokens are stored for that user (account not yet connected).
+ *
+ * Never relies on the currently authenticated Kockpit user.
+ * Server-only — do not call from client components.
+ */
+export async function getManagementCalendarClient(): Promise<Auth.OAuth2Client | null> {
+  const userId = getManagementCalendarWriterUserId()
+  if (!userId) return null
+  return getGoogleOAuth2Client(userId)
+}
+
 // ─── Safe connection metadata (UI-safe, no tokens) ───────────────────────
 
 export type GoogleConnectionStatus =

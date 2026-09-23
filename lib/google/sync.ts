@@ -10,14 +10,24 @@
  *
  * Credential routing
  * ──────────────────
- * Calendar events are owned by the user who first pressed "Send to Google
- * Calendar".  Their user ID is persisted in calendar_synced_by_user_id.
- * All subsequent automatic syncs (scheduling changes, attendee changes,
- * cancellation) use that stored credential — not whichever user happened
- * to trigger the Kockpit mutation.  If that connection is gone, we write
- * an actionable error to the meeting row; any authorised editor can take
- * over by clicking "Send to Google Calendar" (patch-before-insert ensures
- * the existing Google event is updated, not duplicated).
+ * ALL Calendar writes for the KK - Upper Management calendar use the
+ * designated SYSTEM management-calendar writer, identified by the
+ * GOOGLE_CALENDAR_WRITER_USER_ID environment variable.
+ *
+ * Individual Kockpit users (e.g. Lydia) do NOT need personal Google Calendar
+ * write permission.  Kockpit's own permission system is the sole gate for
+ * who may create/edit/resync meetings.
+ *
+ *   Manager creates / edits meeting in Kockpit
+ *   → Kockpit verifies Kockpit permissions
+ *   → SYSTEM management-calendar writer writes event to Google Calendar
+ *   → NOT the acting user's personal OAuth credential
+ *
+ * calendar_synced_by_user_id stores the system writer's Kockpit user ID
+ * on each successful sync so that the stored reference reflects the
+ * credential that actually owns the Calendar event.  Existing meetings
+ * that store an individual's user ID will have that field updated on the
+ * next successful resync.
  *
  * Google Meet conference resolution
  * ──────────────────────────────────
@@ -31,7 +41,11 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
-import { getGoogleOAuth2Client, hasMeetScope } from '@/lib/google/auth'
+import {
+  getManagementCalendarClient,
+  getManagementCalendarWriterUserId,
+  hasMeetScope,
+} from '@/lib/google/auth'
 import { syncEventToCalendar, buildCalendarEventId } from '@/lib/google/calendar'
 import { getMeetSpaceName, ensureMeetAutoTranscription } from '@/lib/google/meet'
 
@@ -46,23 +60,34 @@ export type SyncResult =
     }
   | { ok: false; error: string; permissionDenied?: boolean }
 
-// ─── User-triggered sync ──────────────────────────────────────────────────
+// ─── System-credential sync ───────────────────────────────────────────────
 
 /**
- * Syncs a meeting to Google Calendar using the specified user's credentials.
- * Called when a user explicitly clicks "Send to Google Calendar".
- * Persists the user as calendar_synced_by_user_id on success so that
- * subsequent automatic syncs use the same credential.
+ * Syncs a meeting to Google Calendar using the SYSTEM management-calendar
+ * writer credential (GOOGLE_CALENDAR_WRITER_USER_ID), NOT the acting user's
+ * personal OAuth credential.
+ *
+ * Called:
+ *   - When a meeting is first created with a scheduled time.
+ *   - When an authorised editor clicks "Send to Google Calendar" or "Resync".
+ *   - Automatically when scheduling, location, or attendees change.
+ *
+ * On success, persists the system writer's user ID as calendar_synced_by_user_id
+ * so the stored reference accurately reflects which account owns the Calendar event.
  *
  * After a successful Calendar sync, attempts to resolve the Google Meet space
  * name and stores it in meet_space_name.  If Meet resolution is still pending,
  * returns a meetWarning; the Calendar event is preserved regardless.
  *
  * Does NOT throw — all errors are captured and returned in the result.
+ *
+ * @param meetingId    - Kockpit meeting UUID
+ * @param _actorUserId - Kockpit user ID of the person who triggered this sync
+ *                       (used only for context; credentials come from the system writer)
  */
 export async function syncMeetingToCalendarForUser(
   meetingId: string,
-  userId: string
+  _actorUserId?: string | null,
 ): Promise<SyncResult> {
   const serviceClient = createServiceClient()
 
@@ -88,12 +113,20 @@ export async function syncMeetingToCalendarForUser(
     }
   }
 
-  const oauthClient = await getGoogleOAuth2Client(userId)
+  // ── Resolve system management-calendar credential ─────────────────────────
+  const oauthClient = await getManagementCalendarClient()
   if (!oauthClient) {
-    return {
-      ok: false,
-      error: 'Google Calendar is not connected. Please connect in Settings → Google Calendar.',
-    }
+    const writerUserId = getManagementCalendarWriterUserId()
+    const error = writerUserId
+      ? 'Kockpit cannot write to the management calendar. ' +
+        'The system Calendar connection needs attention — contact an admin.'
+      : 'Kockpit Calendar sync is not configured. ' +
+        'An admin must set GOOGLE_CALENDAR_WRITER_USER_ID and connect that account.'
+    await serviceClient
+      .from('meetings')
+      .update({ calendar_sync_status: 'failed', calendar_sync_error: error })
+      .eq('id', meetingId)
+    return { ok: false, error }
   }
 
   const project = Array.isArray(meeting.project)
@@ -136,7 +169,8 @@ export async function syncMeetingToCalendarForUser(
   }
 
   // ── Calendar sync succeeded ───────────────────────────────────────────────
-  // Attempt to resolve the Meet space name and update in the same write when possible.
+  // Store the system writer's user ID as the canonical credential owner.
+  const systemWriterUserId = getManagementCalendarWriterUserId()
 
   const calendarPatch: Record<string, unknown> = {
     calendar_event_id:          result.eventId,
@@ -144,7 +178,7 @@ export async function syncMeetingToCalendarForUser(
     calendar_sync_status:       'synced',
     calendar_sync_error:        null,
     calendar_synced_at:         new Date().toISOString(),
-    calendar_synced_by_user_id: userId,
+    calendar_synced_by_user_id: systemWriterUserId,
   }
 
   let meetWarning: string | undefined
@@ -159,7 +193,6 @@ export async function syncMeetingToCalendarForUser(
       calendarPatch.meet_space_name = spaceName
       effectiveSpaceName = spaceName
     } else {
-      // getMeetSpaceName logs the error; treat as retryable
       meetWarning =
         'Google Meet conference was created but space details could not be retrieved yet. ' +
         'Re-sync this meeting to complete the setup.'
@@ -173,23 +206,19 @@ export async function syncMeetingToCalendarForUser(
   }
 
   // ── Auto-transcription configuration ─────────────────────────────────────
-  // Runs whenever we have a known Meet space — whether newly resolved or already
-  // known from a previous sync.  Safe to repeat (ensureMeetAutoTranscription is
-  // idempotent).  Never rolls back Calendar sync on failure.
-
   if (effectiveSpaceName && !meetWarning) {
     const scopeString =
       typeof oauthClient.credentials.scope === 'string'
         ? oauthClient.credentials.scope
         : ''
-    const userScopes = scopeString.split(' ').filter(Boolean)
+    const systemScopes = scopeString.split(' ').filter(Boolean)
 
-    if (hasMeetScope(userScopes)) {
+    if (hasMeetScope(systemScopes)) {
       const transcriptionResult = await ensureMeetAutoTranscription(oauthClient, effectiveSpaceName)
       if (transcriptionResult === 'permission_denied') {
         meetWarning =
           'Google Meet created, but auto-transcription could not be configured — ' +
-          'insufficient permissions on this Meet space.'
+          'the system Calendar account needs meetings.space.settings permission.'
       } else if (transcriptionResult === 'error') {
         meetWarning =
           'Google Meet created. Auto-transcription configuration failed — ' +
@@ -198,8 +227,8 @@ export async function syncMeetingToCalendarForUser(
       // 'enabled' and 'already_enabled' are both success states — no warning
     } else {
       meetWarning =
-        'Google Meet created. Enable Google Meet in Settings → Google Workspace ' +
-        'to configure automatic transcription.'
+        'Google Meet created. The system Calendar account needs Google Meet scope ' +
+        '(meetings.space.settings + meetings.space.readonly) for automatic transcription.'
     }
   }
 
@@ -211,17 +240,19 @@ export async function syncMeetingToCalendarForUser(
   return { ok: true, eventId: result.eventId, meetWarning }
 }
 
-// ─── Automatic resync (uses stored credential) ────────────────────────────
+// ─── Automatic resync ─────────────────────────────────────────────────────
 
 /**
- * Re-syncs a meeting that already has a Calendar event, using the credential
- * of the user stored in calendar_synced_by_user_id.
+ * Re-syncs a meeting that already has a Calendar event, using the SYSTEM
+ * management-calendar credential.
  *
- * Used for automatic syncs triggered by scheduling or attendee changes —
- * never uses the acting user's credential, which may not exist.
+ * Used for automatic syncs triggered by scheduling, location, or attendee
+ * changes — never uses any individual user's credential.
  *
- * Also completes Meet conference resolution for meetings where the previous
- * sync left meet_space_name null (e.g. conference was still pending).
+ * Existing meetings where calendar_synced_by_user_id points to an individual
+ * user are safe: the next successful resync updates that field to the system
+ * writer's user ID without creating a duplicate event (event IDs are
+ * deterministic from the meeting UUID).
  *
  * Returns { ok: true, eventId: '' } (no-op) if no Calendar event is linked.
  */
@@ -229,37 +260,14 @@ export async function resyncMeetingCalendar(meetingId: string): Promise<SyncResu
   const serviceClient = createServiceClient()
   const { data: row } = await serviceClient
     .from('meetings')
-    .select('calendar_event_id, calendar_synced_by_user_id')
+    .select('calendar_event_id')
     .eq('id', meetingId)
     .single()
 
   if (!row?.calendar_event_id) return { ok: true, eventId: '' }
 
-  const credentialUserId = row.calendar_synced_by_user_id
-  if (!credentialUserId) {
-    const error =
-      'Google Calendar sync failed: no connection on record for this meeting. ' +
-      'Open this meeting and click "Send to Google Calendar" to reconnect.'
-    await serviceClient
-      .from('meetings')
-      .update({ calendar_sync_status: 'failed', calendar_sync_error: error })
-      .eq('id', meetingId)
-    return { ok: false, error }
-  }
-
-  const oauthClient = await getGoogleOAuth2Client(credentialUserId)
-  if (!oauthClient) {
-    const error =
-      'Google Calendar sync failed: the connection used for this meeting has been ' +
-      'disconnected. Any authorised editor can click "Send to Google Calendar" to take over.'
-    await serviceClient
-      .from('meetings')
-      .update({ calendar_sync_status: 'failed', calendar_sync_error: error })
-      .eq('id', meetingId)
-    return { ok: false, error }
-  }
-
-  return syncMeetingToCalendarForUser(meetingId, credentialUserId)
+  // All resyncs use the system management-calendar writer
+  return syncMeetingToCalendarForUser(meetingId)
 }
 
 

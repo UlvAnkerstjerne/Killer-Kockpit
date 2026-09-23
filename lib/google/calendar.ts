@@ -454,8 +454,9 @@ function toCalendarError(err: unknown): CalendarSyncResult {
         ok: false,
         permissionDenied: true,
         error:
-          'You do not have write access to the management calendar. ' +
-          'Ask a Google Calendar admin to grant you "Make changes to events" permission on the shared calendar.',
+          'Kockpit cannot write to the management calendar. ' +
+          'The system Calendar connection needs attention — ' +
+          'ensure the system account has "Make changes to events" permission on the shared calendar.',
       }
     }
     return { ok: false, error: `Calendar access denied: ${message}` }
@@ -464,7 +465,9 @@ function toCalendarError(err: unknown): CalendarSyncResult {
   if (status === 401) {
     return {
       ok: false,
-      error: 'Google Calendar authorisation expired. Please reconnect in Settings → Google Calendar.',
+      error:
+        'Kockpit Calendar connection expired. ' +
+        'The system Calendar connection needs to be renewed — contact an admin.',
     }
   }
 

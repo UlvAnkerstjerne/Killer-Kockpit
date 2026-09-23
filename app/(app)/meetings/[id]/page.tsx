@@ -21,7 +21,7 @@ import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import TranscriptSection from './TranscriptSection'
 import AiDraftSection from './AiDraftSection'
 import InPersonRecordingSection from './InPersonRecordingSection'
-import { getGoogleConnectionStatus, hasDriveScope } from '@/lib/google/auth'
+import { getGoogleConnectionStatus, hasDriveScope, getManagementCalendarWriterUserId } from '@/lib/google/auth'
 import { getEntityDriveFiles } from '@/lib/actions/drive'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { getTranscriptSource } from '@/lib/actions/transcripts'
@@ -42,7 +42,7 @@ export default async function MeetingDetailPage({
 
   const supabase = await createClient()
 
-  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, googleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, recordingsResult, minutesResult] = await Promise.all([
+  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, systemCalendarStatus, userGoogleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, recordingsResult, minutesResult] = await Promise.all([
     supabase
       .from('meetings')
       .select(`
@@ -86,6 +86,14 @@ export default async function MeetingDetailPage({
       .eq('meeting_id', id)
       .order('created_at'),
 
+    // System calendar status — used to gate the Calendar section controls.
+    // We check the system writer's connection, not the viewing user's.
+    (() => {
+      const writerId = getManagementCalendarWriterUserId()
+      return writerId ? getGoogleConnectionStatus(writerId) : Promise.resolve({ connected: false as const })
+    })(),
+
+    // Current user's Google status — used for Drive, Gmail (not Calendar writes).
     getGoogleConnectionStatus(user.id),
 
     supabase
@@ -125,7 +133,7 @@ export default async function MeetingDetailPage({
   // Drive references are managed independently of meeting content — allowed on
   // published meetings but not cancelled ones.
   const canManageDriveRefs  = canManageDriveReferences(user.role, owner?.id ?? null, user.id, meeting.status)
-  const driveEnabled        = googleStatus.connected && hasDriveScope(googleStatus.scopes)
+  const driveEnabled        = userGoogleStatus.connected && hasDriveScope(userGoogleStatus.scopes)
   const canManageTranscriptFile = canManageTranscript(user.role, owner?.id ?? null, user.id, meeting.status)
 
   const agendaItems = (agendaResult.data ?? []) as AgendaItem[]
@@ -376,7 +384,7 @@ export default async function MeetingDetailPage({
               meetingId={id}
               canEdit={canEdit && status !== 'published'}
               hasScheduledTime={!!(meeting.scheduled_start && meeting.scheduled_end)}
-              googleStatus={googleStatus}
+              googleStatus={systemCalendarStatus}
               calendarEventId={meeting.calendar_event_id}
               calendarEventUrl={meeting.calendar_event_url ?? null}
               calendarSyncStatus={(meeting.calendar_sync_status as 'synced' | 'failed' | 'pending' | null) ?? null}

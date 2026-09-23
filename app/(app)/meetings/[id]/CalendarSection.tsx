@@ -35,8 +35,8 @@ export default function CalendarSection({
   const [syncError,   setSyncError]   = useState<string | null>(null)
   const [meetWarning, setMeetWarning] = useState<string | null>(null)
 
-  // Hide if not connected and no event exists (nothing to show)
-  if (!googleStatus.connected && !calendarEventId) return null
+  // Hide if there is nothing to show and user cannot act on it
+  if (!canEdit && !calendarEventId) return null
 
   async function handleSync() {
     setSyncing(true)
@@ -99,9 +99,7 @@ export default function CalendarSection({
               </button>
             )}
             {canEdit && !googleStatus.connected && (
-              <a href="/settings" className="text-xs text-kk-muted hover:text-kk-ink underline transition-colors">
-                Connect
-              </a>
+              <span className="text-xs text-kk-muted italic">Calendar not configured</span>
             )}
             {canEdit && googleStatus.connected && !hasScheduledTime && !isSynced && (
               <span className="text-xs text-kk-muted">Add times to sync</span>

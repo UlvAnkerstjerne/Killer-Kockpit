@@ -30,7 +30,8 @@ export async function disconnectGoogleCalendar(): Promise<ActionResult> {
 
 /**
  * User-triggered: create or update the Google Calendar event for a meeting.
- * Requires the current user to have Google connected and edit permission.
+ * Uses the system management-calendar writer credential — the acting user does
+ * NOT need personal Google Calendar access.
  */
 export async function syncMeetingToCalendar(
   meetingId: string
@@ -38,7 +39,7 @@ export async function syncMeetingToCalendar(
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Verify permission
+  // Verify Kockpit permission — Google Calendar access is not required
   const serviceClient = createServiceClient()
   const { data: meeting } = await serviceClient
     .from('meetings')

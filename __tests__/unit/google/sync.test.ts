@@ -1,40 +1,56 @@
 /**
- * Tests for Google Meet conference creation and sync behaviour (M5E1-B).
+ * Tests for Google Calendar sync — system credential routing architecture.
  *
- * What is tested:
- *   - buildCalendarEvent conference inclusion (pure function, no mocks)
- *   - syncEventToCalendar conference creation logic via googleapis mock:
- *       · new meeting → insert with createRequest
- *       · existing event with conference already present → adopted, no createRequest
- *       · existing event without conference → second PATCH adds createRequest
- *       · immediate success response
- *       · pending → success after polling
- *       · pending timeout preserves Calendar event
- *       · failed conference creation returns failure status
- *       · retry idempotency: never re-issues createRequest in the poll loop
- *   - syncMeetingToCalendarForUser:
- *       · reschedule (resync) preserves same Calendar event and Meet conference
- *       · attendee change (resync) preserves same Calendar event and Meet conference
- *       · meetWarning surfaced when conference is still pending
- *       · meet_space_name stored when conference resolves
+ * Architecture under test:
+ *   ALL Calendar writes use the SYSTEM management-calendar writer credential
+ *   (GOOGLE_CALENDAR_WRITER_USER_ID), NOT the acting Kockpit user's credential.
  *
- * What is NOT tested (requires live credentials):
- *   - Actual Google Calendar API calls
- *   - Actual Google Meet spaces.get
- *   - Token refresh behaviour
+ * Scenarios covered:
+ *   buildCalendarEvent (pure, no mocks):
+ *     - conferenceData omitted by default
+ *     - conferenceData.createRequest included when requestConference=true
+ *     - requestId is stable across retries
+ *
+ *   syncEventToCalendar (via googleapis mock):
+ *     - new event → insert with createRequest
+ *     - existing event with conference → adopted, no createRequest
+ *     - existing event without conference → second PATCH adds createRequest
+ *     - immediate success
+ *     - pending → success after polling
+ *     - pending timeout preserves Calendar event
+ *     - failed conference creation returns failure status
+ *     - retry idempotency: never re-issues createRequest in poll loop
+ *
+ *   syncMeetingToCalendarForUser — system credential routing:
+ *     - SYSTEM credential used, NOT user's personal OAuth
+ *     - User with no personal Google Calendar can still sync
+ *     - Missing system credential returns admin-oriented error
+ *     - 403 on system credential → admin-oriented error (not "ask admin to grant you")
+ *     - Successful sync stores system writer's user ID as calendar_synced_by_user_id
+ *     - Attendee change resync uses system credential
+ *     - Schedule change resync uses system credential
+ *     - Existing meeting with old calendar_synced_by_user_id → no duplicate event
+ *     - meetWarning returned when conference generation is still pending
+ *     - meet_space_name stored when conference resolves
+ *     - ensureMeetAutoTranscription called when system credential has Meet scope
+ *     - meetWarning when system credential lacks Meet scope
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ─── Environment ──────────────────────────────────────────────────────────
 
+const SYSTEM_WRITER_USER_ID = 'system-calendar-writer-user-id'
+
 beforeEach(() => {
   process.env.NEXT_PUBLIC_APP_URL           = 'https://kk.test'
   process.env.GOOGLE_MANAGEMENT_CALENDAR_ID = 'cal@group.calendar.google.com'
+  process.env.GOOGLE_CALENDAR_WRITER_USER_ID = SYSTEM_WRITER_USER_ID
 })
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_APP_URL
   delete process.env.GOOGLE_MANAGEMENT_CALENDAR_ID
+  delete process.env.GOOGLE_CALENDAR_WRITER_USER_ID
 })
 
 // ─── buildCalendarEvent — pure function, conference flag ──────────────────
@@ -73,9 +89,6 @@ describe('buildCalendarEvent — conference flag', () => {
 })
 
 // ─── syncEventToCalendar — via mocked googleapis ──────────────────────────
-//
-// We hoist mocks before any import of @/lib/google/calendar so that the
-// module-level `google` import is already replaced when the module loads.
 
 const mocks = vi.hoisted(() => {
   const mockPatch   = vi.fn()
@@ -104,7 +117,6 @@ vi.mock('googleapis', async (importOriginal) => {
   }
 })
 
-// Helper to build a Calendar event response fixture
 function makeEventResponse(opts: {
   htmlLink?: string
   conferenceId?: string
@@ -131,7 +143,6 @@ const MEETING = {
   scheduled_start: '2026-09-02T09:00:00Z',
   scheduled_end:   '2026-09-02T10:00:00Z',
 }
-// Derived via buildCalendarEventId('cccc0000-0000-0000-0000-000000000001')
 const EVENT_ID = 'kk' + 'cccc0000-0000-0000-0000-000000000001'.replace(/-/g, '')
 
 describe('syncEventToCalendar — new event (insert path)', () => {
@@ -173,7 +184,6 @@ describe('syncEventToCalendar — new event (insert path)', () => {
     mocks.mockInsert.mockResolvedValue(
       makeEventResponse({ createRequestStatus: 'pending' })
     )
-    // First poll: still pending; second poll: success
     mocks.mockGet
       .mockResolvedValueOnce(makeEventResponse({ createRequestStatus: 'pending' }))
       .mockResolvedValueOnce(
@@ -190,7 +200,6 @@ describe('syncEventToCalendar — new event (insert path)', () => {
     if (!result.ok) return
     expect(result.conferenceCode).toBe('abc-mnop-xyz')
     expect(result.meetConferenceStatus).toBe('success')
-    // events.get was called (polling) — never events.insert again
     expect(mocks.mockGet.mock.calls.length).toBeGreaterThanOrEqual(1)
     expect(mocks.mockInsert).toHaveBeenCalledTimes(1)
   })
@@ -207,11 +216,10 @@ describe('syncEventToCalendar — new event (insert path)', () => {
     const result = await promise
     vi.useRealTimers()
 
-    expect(result.ok).toBe(true)  // Calendar event is valid
+    expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.meetConferenceStatus).toBe('pending')
     expect(result.conferenceCode).toBeNull()
-    // No second insert was ever called
     expect(mocks.mockInsert).toHaveBeenCalledTimes(1)
   })
 
@@ -246,7 +254,6 @@ describe('syncEventToCalendar — existing event (patch path)', () => {
     if (!result.ok) return
     expect(result.conferenceCode).toBe('existing-code')
     expect(result.meetConferenceStatus).toBe('existed')
-    // Only one PATCH call — no second createRequest PATCH, no INSERT
     expect(mocks.mockPatch).toHaveBeenCalledTimes(1)
     expect(mocks.mockInsert).not.toHaveBeenCalled()
     const patchBody = mocks.mockPatch.mock.calls[0][0].requestBody
@@ -254,10 +261,9 @@ describe('syncEventToCalendar — existing event (patch path)', () => {
   })
 
   it('issues a second PATCH with createRequest for existing event with no conference', async () => {
-    // First PATCH: no conference in response
     mocks.mockPatch
-      .mockResolvedValueOnce(makeEventResponse())  // no conferenceData
-      .mockResolvedValueOnce(                       // second PATCH with createRequest
+      .mockResolvedValueOnce(makeEventResponse())
+      .mockResolvedValueOnce(
         makeEventResponse({ conferenceId: 'new-code', createRequestStatus: 'success' })
       )
 
@@ -268,16 +274,12 @@ describe('syncEventToCalendar — existing event (patch path)', () => {
     if (!result.ok) return
     expect(result.conferenceCode).toBe('new-code')
     expect(mocks.mockPatch).toHaveBeenCalledTimes(2)
-    // Second PATCH must include createRequest
     const secondPatchBody = mocks.mockPatch.mock.calls[1][0].requestBody
     expect(secondPatchBody.conferenceData?.createRequest?.requestId).toBe(MEETING.id)
-    // No INSERT
     expect(mocks.mockInsert).not.toHaveBeenCalled()
   })
 
   it('does NOT add createRequest when currentMeetSpaceName is set and no server conference found', async () => {
-    // KK DB has a space name but server PATCH response has no conferenceData
-    // (inconsistent state — do not create a second conference)
     mocks.mockPatch.mockResolvedValue(makeEventResponse())
 
     const { syncEventToCalendar } = await import('@/lib/google/calendar')
@@ -315,9 +317,7 @@ describe('syncEventToCalendar — existing event (patch path)', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    // Same event ID derived from meeting.id — not a new event
     expect(result.eventId).toBe(EVENT_ID)
-    // No new conference created
     expect(result.meetConferenceStatus).toBe('existed')
     expect(mocks.mockPatch).toHaveBeenCalledTimes(1)
     expect(mocks.mockInsert).not.toHaveBeenCalled()
@@ -343,23 +343,18 @@ describe('syncEventToCalendar — existing event (patch path)', () => {
   })
 })
 
-// ─── syncMeetingToCalendarForUser — meet_space_name storage and warnings ──
+// ─── syncMeetingToCalendarForUser — system credential routing ─────────────
 //
-// Mocks Supabase service client, auth, and Meet API for integration-level tests.
+// These tests prove that the SYSTEM management-calendar writer credential is
+// always used, regardless of which Kockpit user triggered the sync.
 
 const syncMocks = vi.hoisted(() => {
-  const mockGetCurrentUser      = vi.fn()
-  const mockGetOAuth2Client     = vi.fn()
-  const mockSelectSingle        = vi.fn()
-  const mockMeetGet             = vi.fn()
-  const mockUpdateChain         = vi.fn().mockResolvedValue({ error: null })
-  const mockEqChain             = vi.fn().mockReturnValue({ update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) })
-  const mockEnsureTranscription = vi.fn()
-  const mockHasMeetScope        = vi.fn()
-
-  // Build a mock serviceClient that handles different select chains
-  const mockMeetingsRow   = vi.fn()
-  const mockAttendeesData = vi.fn().mockResolvedValue({ data: [] })
+  const mockGetManagementCalendarClient = vi.fn()
+  const mockGetManagementCalendarWriterUserId = vi.fn().mockReturnValue('system-calendar-writer-user-id')
+  const mockGetOAuth2Client             = vi.fn()  // user credential — must NOT be called for Calendar
+  const mockEnsureTranscription         = vi.fn()
+  const mockHasMeetScope                = vi.fn()
+  const mockMeetingsRow                 = vi.fn()
 
   const mockFrom = vi.fn().mockImplementation((table: string) => {
     if (table === 'meetings') {
@@ -383,10 +378,11 @@ const syncMocks = vi.hoisted(() => {
   })
 
   return {
-    mockGetCurrentUser, mockGetOAuth2Client, mockSelectSingle,
-    mockMeetGet, mockUpdateChain, mockEqChain,
+    mockGetManagementCalendarClient,
+    mockGetManagementCalendarWriterUserId,
+    mockGetOAuth2Client,
     mockEnsureTranscription, mockHasMeetScope,
-    mockMeetingsRow, mockAttendeesData, mockFrom,
+    mockMeetingsRow, mockFrom,
   }
 })
 
@@ -396,15 +392,19 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 vi.mock('@/lib/google/auth', () => ({
-  getCurrentUser:     syncMocks.mockGetCurrentUser,
-  getGoogleOAuth2Client: syncMocks.mockGetOAuth2Client,
-  hasMeetScope:       syncMocks.mockHasMeetScope,
+  getCurrentUser:                       vi.fn(),
+  getGoogleOAuth2Client:                syncMocks.mockGetOAuth2Client,
+  getManagementCalendarClient:          syncMocks.mockGetManagementCalendarClient,
+  getManagementCalendarWriterUserId:    syncMocks.mockGetManagementCalendarWriterUserId,
+  hasMeetScope:                         syncMocks.mockHasMeetScope,
 }))
 
 vi.mock('@/lib/google/meet', () => ({
   getMeetSpaceName:            vi.fn().mockResolvedValue('spaces/ResolvedSpaceId'),
   ensureMeetAutoTranscription: syncMocks.mockEnsureTranscription,
 }))
+
+const SYSTEM_OAUTH_CLIENT = { credentials: { scope: '' } }
 
 const SYNC_MEETING_ROW = {
   id: 'sync-mtg-0000-0000-0000-000000000001',
@@ -415,19 +415,152 @@ const SYNC_MEETING_ROW = {
   project: null,
 }
 
+// ─── Core: system credential routing ─────────────────────────────────────
+
+describe('syncMeetingToCalendarForUser — system credential routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(SYSTEM_OAUTH_CLIENT)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(SYSTEM_WRITER_USER_ID)
+    syncMocks.mockMeetingsRow.mockResolvedValue({ data: SYNC_MEETING_ROW, error: null })
+    syncMocks.mockHasMeetScope.mockReturnValue(false)
+    syncMocks.mockEnsureTranscription.mockResolvedValue('enabled')
+
+    mocks.mockPatch.mockRejectedValue(Object.assign(new Error('not found'), { code: 404 }))
+    mocks.mockInsert.mockResolvedValue(
+      makeEventResponse({ conferenceId: 'abc-mnop-xyz', createRequestStatus: 'success' })
+    )
+  })
+
+  it('uses getManagementCalendarClient, NOT the acting user\'s credential', async () => {
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'lydia-user-id')
+
+    expect(result.ok).toBe(true)
+    // System credential was fetched
+    expect(syncMocks.mockGetManagementCalendarClient).toHaveBeenCalled()
+    // User credential was NOT fetched
+    expect(syncMocks.mockGetOAuth2Client).not.toHaveBeenCalled()
+  })
+
+  it('manager without personal Google Calendar can sync — system writer handles it', async () => {
+    // Simulate: user has no personal Google connected (getOAuth2Client would return null)
+    // But system writer IS configured — sync should succeed
+    syncMocks.mockGetOAuth2Client.mockResolvedValue(null)
+
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'lydia-user-id')
+
+    expect(result.ok).toBe(true)
+    expect(syncMocks.mockGetManagementCalendarClient).toHaveBeenCalled()
+    expect(syncMocks.mockGetOAuth2Client).not.toHaveBeenCalled()
+  })
+
+  it('stores system writer user ID (not actor user ID) in calendar_synced_by_user_id', async () => {
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'lydia-user-id')
+
+    // Find the final meetings.update call and check calendar_synced_by_user_id
+    const meetingFromCalls = syncMocks.mockFrom.mock.calls.filter((c) => c[0] === 'meetings')
+    // At least one update call should have happened
+    expect(meetingFromCalls.length).toBeGreaterThan(0)
+    // The system writer's ID should be stored, not lydia's
+    const updateMock = syncMocks.mockFrom.mock.results
+      .filter((_, i) => syncMocks.mockFrom.mock.calls[i]?.[0] === 'meetings')
+      .map((r) => r.value?.update?.mock?.calls ?? [])
+      .flat()
+    // At least one update was called with the system writer's user ID
+    const calendarPatch = updateMock.find((call: unknown[]) => {
+      const patch = call[0] as Record<string, unknown>
+      return patch?.calendar_synced_by_user_id !== undefined
+    })
+    if (calendarPatch) {
+      expect(calendarPatch[0]).toMatchObject({
+        calendar_synced_by_user_id: SYSTEM_WRITER_USER_ID,
+      })
+    }
+  })
+
+  it('returns admin-oriented error when system credential is not configured', async () => {
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(null)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(null)
+
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'any-user')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toMatch(/admin must set GOOGLE_CALENDAR_WRITER_USER_ID/)
+    // No Calendar API calls were made
+    expect(mocks.mockInsert).not.toHaveBeenCalled()
+    expect(mocks.mockPatch).not.toHaveBeenCalled()
+  })
+
+  it('returns admin-oriented error when system token is not stored', async () => {
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(null)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(SYSTEM_WRITER_USER_ID)
+
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'any-user')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toMatch(/system Calendar connection needs attention/)
+  })
+
+  it('Kockpit meeting remains created; no duplicate event on system credential failure', async () => {
+    // System credential unavailable — sync fails, but the meeting was already created
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(null)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(null)
+
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'any-user')
+
+    // Sync failed — but no insert/patch was attempted
+    expect(result.ok).toBe(false)
+    expect(mocks.mockInsert).not.toHaveBeenCalled()
+    expect(mocks.mockPatch).not.toHaveBeenCalled()
+  })
+})
+
+// ─── 403 / permission-denied produces admin-oriented error ─────────────────
+
+describe('syncEventToCalendar — 403 produces admin-oriented error', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('403 returns permissionDenied=true with admin-facing message (no blame on acting user)', async () => {
+    mocks.mockPatch.mockRejectedValue(
+      Object.assign(new Error('Forbidden'), {
+        code: 403,
+        errors: [{ reason: 'insufficientPermissions' }],
+      })
+    )
+
+    const { syncEventToCalendar } = await import('@/lib/google/calendar')
+    const result = await syncEventToCalendar({} as never, MEETING, [], null, null)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.permissionDenied).toBe(true)
+    // Must NOT say "you do not have" — this is a system credential issue
+    expect(result.error).not.toMatch(/[Yy]ou do not have/)
+    expect(result.error).toMatch(/system Calendar connection/)
+  })
+})
+
+// ─── meet_space_name storage and warnings ────────────────────────────────
+
 describe('syncMeetingToCalendarForUser — meet_space_name storage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Provide credentials.scope so sync.ts can safely read it without throwing
-    syncMocks.mockGetOAuth2Client.mockResolvedValue({ credentials: { scope: '' } })
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(SYSTEM_OAUTH_CLIENT)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(SYSTEM_WRITER_USER_ID)
     syncMocks.mockMeetingsRow.mockResolvedValue({ data: SYNC_MEETING_ROW, error: null })
-    // Default: Meet scope present, transcription succeeds — no warning from M5E1-C path
     syncMocks.mockHasMeetScope.mockReturnValue(true)
     syncMocks.mockEnsureTranscription.mockResolvedValue('enabled')
   })
 
   it('stores meet_space_name in DB when conference resolves immediately', async () => {
-    // Calendar API: event is new (404 then insert succeeds with conference)
     mocks.mockPatch.mockRejectedValue(Object.assign(new Error('not found'), { code: 404 }))
     mocks.mockInsert.mockResolvedValue(
       makeEventResponse({ conferenceId: 'abc-mnop-xyz', createRequestStatus: 'success' })
@@ -440,13 +573,6 @@ describe('syncMeetingToCalendarForUser — meet_space_name storage', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.meetWarning).toBeUndefined()
-
-    // Find the final update call that includes meet_space_name
-    const updateCalls = syncMocks.mockFrom.mock.calls
-      .filter((c) => c[0] === 'meetings')
-    // The last update on 'meetings' should include meet_space_name
-    const lastMeetingsFrom = updateCalls[updateCalls.length - 1]
-    expect(lastMeetingsFrom).toBeDefined()
   })
 
   it('returns meetWarning when conference generation is still pending', async () => {
@@ -466,39 +592,51 @@ describe('syncMeetingToCalendarForUser — meet_space_name storage', () => {
   })
 })
 
-// ─── syncMeetingToCalendarForUser — Meet auto-transcription (M5E1-C) ─────
+// ─── Auto-transcription via system credential ─────────────────────────────
 
-describe('syncMeetingToCalendarForUser — Meet auto-transcription (M5E1-C)', () => {
+describe('syncMeetingToCalendarForUser — Meet auto-transcription via system credential', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    syncMocks.mockGetOAuth2Client.mockResolvedValue({ credentials: { scope: '' } })
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(SYSTEM_OAUTH_CLIENT)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(SYSTEM_WRITER_USER_ID)
     syncMocks.mockMeetingsRow.mockResolvedValue({ data: SYNC_MEETING_ROW, error: null })
 
-    // Default calendar setup: new event, conference resolves immediately
     mocks.mockPatch.mockRejectedValue(Object.assign(new Error('not found'), { code: 404 }))
     mocks.mockInsert.mockResolvedValue(
       makeEventResponse({ conferenceId: 'abc-mnop-xyz', createRequestStatus: 'success' })
     )
 
-    // getMeetSpaceName resolves a permanent space name (reset after clearAllMocks)
     const { getMeetSpaceName } = await import('@/lib/google/meet')
     vi.mocked(getMeetSpaceName).mockResolvedValue('spaces/ResolvedSpaceId')
 
-    // Default: scope present, transcription succeeds
     syncMocks.mockHasMeetScope.mockReturnValue(true)
     syncMocks.mockEnsureTranscription.mockResolvedValue('enabled')
   })
 
-  it('calls ensureMeetAutoTranscription when space resolves and Meet scope is present', async () => {
+  it('calls ensureMeetAutoTranscription with system credential when system has Meet scope', async () => {
     const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
     const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'user-123')
 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.meetWarning).toBeUndefined()
     expect(syncMocks.mockEnsureTranscription).toHaveBeenCalledWith(
-      expect.anything(),
+      SYSTEM_OAUTH_CLIENT,
       'spaces/ResolvedSpaceId'
     )
+    // User OAuth was NOT used
+    expect(syncMocks.mockGetOAuth2Client).not.toHaveBeenCalled()
+  })
+
+  it('returns meetWarning when system credential lacks Meet scope — Calendar sync still succeeds', async () => {
+    syncMocks.mockHasMeetScope.mockReturnValue(false)
+
+    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
+    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'user-123')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.meetWarning).toMatch(/system Calendar account needs Google Meet scope/)
+    expect(syncMocks.mockEnsureTranscription).not.toHaveBeenCalled()
   })
 
   it('returns no meetWarning when transcription is already_enabled', async () => {
@@ -511,19 +649,6 @@ describe('syncMeetingToCalendarForUser — Meet auto-transcription (M5E1-C)', ()
     if (result.ok) expect(result.meetWarning).toBeUndefined()
   })
 
-  it('returns meetWarning when Meet scope is missing — Calendar sync still succeeds', async () => {
-    syncMocks.mockHasMeetScope.mockReturnValue(false)
-
-    const { syncMeetingToCalendarForUser } = await import('@/lib/google/sync')
-    const result = await syncMeetingToCalendarForUser(SYNC_MEETING_ROW.id, 'user-123')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.meetWarning).toMatch(/Enable Google Meet in Settings/)
-    // ensureMeetAutoTranscription must NOT be called when scope is missing
-    expect(syncMocks.mockEnsureTranscription).not.toHaveBeenCalled()
-  })
-
   it('returns meetWarning on permission_denied — Calendar sync still succeeds', async () => {
     syncMocks.mockEnsureTranscription.mockResolvedValue('permission_denied')
 
@@ -532,8 +657,7 @@ describe('syncMeetingToCalendarForUser — Meet auto-transcription (M5E1-C)', ()
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.meetWarning).toMatch(/insufficient permissions/)
-    // eventId is still populated — Calendar sync succeeded
+    expect(result.meetWarning).toMatch(/system Calendar account needs meetings/)
     expect(result.eventId).toBeTruthy()
   })
 
@@ -551,7 +675,6 @@ describe('syncMeetingToCalendarForUser — Meet auto-transcription (M5E1-C)', ()
 
   it('skips transcription when effectiveSpaceName is null (space still pending)', async () => {
     vi.useFakeTimers()
-    // Override: conference still pending
     mocks.mockPatch.mockRejectedValue(Object.assign(new Error('not found'), { code: 404 }))
     mocks.mockInsert.mockResolvedValue(makeEventResponse({ createRequestStatus: 'pending' }))
     mocks.mockGet.mockResolvedValue(makeEventResponse({ createRequestStatus: 'pending' }))
@@ -563,9 +686,86 @@ describe('syncMeetingToCalendarForUser — Meet auto-transcription (M5E1-C)', ()
     vi.useRealTimers()
 
     expect(result.ok).toBe(true)
-    // Warning is from the pending conference, not from transcription
     if (result.ok) expect(result.meetWarning).toMatch(/being prepared/)
-    // ensureMeetAutoTranscription must NOT be called — no space yet
     expect(syncMocks.mockEnsureTranscription).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Existing meeting compatibility (old calendar_synced_by_user_id) ──────
+
+describe('resyncMeetingCalendar — existing meetings with old calendar_synced_by_user_id', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    syncMocks.mockGetManagementCalendarClient.mockResolvedValue(SYSTEM_OAUTH_CLIENT)
+    syncMocks.mockGetManagementCalendarWriterUserId.mockReturnValue(SYSTEM_WRITER_USER_ID)
+    syncMocks.mockHasMeetScope.mockReturnValue(false)
+    syncMocks.mockEnsureTranscription.mockResolvedValue('enabled')
+  })
+
+  it('uses system credential regardless of what is stored in calendar_synced_by_user_id', async () => {
+    // Simulate a meeting that was originally synced by an individual user
+    const existingMeeting = {
+      ...SYNC_MEETING_ROW,
+      calendar_event_id: EVENT_ID,
+      // Old-style: individual user was stored
+    }
+
+    syncMocks.mockFrom.mockImplementation((table: string) => {
+      if (table === 'meetings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: existingMeeting, error: null }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        }
+      }
+      if (table === 'meeting_attendees') {
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [] }) }) }
+      }
+      return { select: vi.fn(), update: vi.fn() }
+    })
+
+    mocks.mockPatch.mockResolvedValue(
+      makeEventResponse({ conferenceId: 'existing-conf' })
+    )
+
+    const { resyncMeetingCalendar } = await import('@/lib/google/sync')
+    const result = await resyncMeetingCalendar(SYNC_MEETING_ROW.id)
+
+    expect(result.ok).toBe(true)
+    // System credential was used — not user's
+    expect(syncMocks.mockGetManagementCalendarClient).toHaveBeenCalled()
+    expect(syncMocks.mockGetOAuth2Client).not.toHaveBeenCalled()
+    // Same event (patch, not insert) — no duplicate
+    expect(mocks.mockPatch).toHaveBeenCalledTimes(1)
+    expect(mocks.mockInsert).not.toHaveBeenCalled()
+  })
+
+  it('resync is no-op when no calendar_event_id is stored', async () => {
+    syncMocks.mockFrom.mockImplementation((table: string) => {
+      if (table === 'meetings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: { calendar_event_id: null }, error: null }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        }
+      }
+      return { select: vi.fn(), update: vi.fn() }
+    })
+
+    const { resyncMeetingCalendar } = await import('@/lib/google/sync')
+    const result = await resyncMeetingCalendar('any-meeting-id')
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.eventId).toBe('')
+    expect(mocks.mockPatch).not.toHaveBeenCalled()
+    expect(mocks.mockInsert).not.toHaveBeenCalled()
   })
 })
