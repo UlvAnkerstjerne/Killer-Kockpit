@@ -444,20 +444,28 @@ export async function getGbpStoreReviewSummary(): Promise<GbpStoreReviewSummary[
   cutoff.setDate(cutoff.getDate() - 7)
   const cutoffIso = cutoff.toISOString()
 
-  // Fetch all reviews for these locations in one query.
-  // Supabase JS defaults to 1000 rows — set an explicit limit to cover all reviews.
-  const { data: reviews } = await db
-    .from('gbp_reviews')
-    .select('location_id, star_rating, review_created_at, existing_reply_text')
-    .in('location_id', locationIds)
-    .limit(10000)
-
-  const allReviews = (reviews ?? []) as {
+  // Fetch all reviews for these locations, paginating to bypass any server-side
+  // row limit (PostgREST max-rows defaults to 1000 on Supabase).
+  type ReviewRow = {
     location_id: string
     star_rating: number
     review_created_at: string
     existing_reply_text: string | null
-  }[]
+  }
+  const PAGE = 1000
+  const allReviews: ReviewRow[] = []
+  let from = 0
+  for (;;) {
+    const { data } = await db
+      .from('gbp_reviews')
+      .select('location_id, star_rating, review_created_at, existing_reply_text')
+      .in('location_id', locationIds)
+      .range(from, from + PAGE - 1)
+    const rows = (data ?? []) as ReviewRow[]
+    allReviews.push(...rows)
+    if (rows.length < PAGE) break
+    from += PAGE
+  }
 
   // Aggregate per location
   const map = new Map<string, { recent: number; unanswered: number; ratingSum: number; count: number }>()
