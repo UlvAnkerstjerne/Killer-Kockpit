@@ -462,13 +462,13 @@ function GbpCard({ gbp }: Pick<PlatformSnapshotData, 'gbp'>) {
         {/* Impressions */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Impressions (28D)</div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Impressions (7D)</div>
             <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
                 <ellipse cx="10" cy="10" rx="8" ry="5" stroke="#171717" strokeWidth="1.6" fill="none"/>
                 <circle cx="10" cy="10" r="2.4" stroke="#171717" strokeWidth="1.6" fill="none"/>
               </svg>
-              {fmtCompact(gbp.impressions_28d)}
+              {fmtCompact(gbp.impressions_7d)}
             </span>
           </div>
           {impressionsBadge && <ChangePill badge={impressionsBadge} />}
@@ -479,13 +479,13 @@ function GbpCard({ gbp }: Pick<PlatformSnapshotData, 'gbp'>) {
         {/* Directions */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', padding: '8px 0' }}>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Directions (28D)</div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(23,23,23,0.58)', lineHeight: '15px', marginBottom: '3px' }}>Directions (7D)</div>
             <span className="tabular-nums" style={{ fontSize: '26px', fontWeight: 700, color: '#171717', lineHeight: '30px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.45 }}>
                 <path d="M10 2l8 8-8 8-8-8 8-8Z" stroke="#171717" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
                 <path d="M10 8v4M8 10h4" stroke="#171717" strokeWidth="1.6" strokeLinecap="round"/>
               </svg>
-              {fmtCompact(gbp.directions_28d)}
+              {fmtCompact(gbp.directions_7d)}
             </span>
           </div>
           {directionsBadge && <ChangePill badge={directionsBadge} />}

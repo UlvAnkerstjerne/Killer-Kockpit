@@ -46,11 +46,11 @@ export interface PlatformSnapshotData {
     clicks_change_pct: number | null
   }
   gbp: {
-    impressions_28d: number
+    impressions_7d: number
     impressions_change_pct: number | null
-    directions_28d: number
+    directions_7d: number
     directions_change_pct: number | null
-    website_clicks_28d: number
+    website_clicks_7d: number
   }
   ga4: {
     sessions_7d: number
@@ -109,7 +109,7 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         .gte('date_start', d14),
       db.from('gbp_location_metrics')
         .select('date, total_impressions, direction_requests, website_clicks')
-        .gte('date', d56),
+        .gte('date', d14),
     ])
 
     // ── GA4 ──────────────────────────────────────────────────────────────────
@@ -164,13 +164,13 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
 
     // ── GBP ───────────────────────────────────────────────────────────────────
     const gbp    = (gbpRes.data ?? []) as Record<string, unknown>[]
-    const gbpCur = gbp.filter(r => (r.date as string) >= d28)
-    const gbpPrev = gbp.filter(r => (r.date as string) < d28)
-    const impressions_28d   = sumCol(gbpCur,  'total_impressions')
-    const impressions_prior = sumCol(gbpPrev, 'total_impressions')
-    const directions_28d   = sumCol(gbpCur,  'direction_requests')
-    const directions_prior = sumCol(gbpPrev, 'direction_requests')
-    const website_clicks_28d = sumCol(gbpCur, 'website_clicks')
+    const gbpCur = gbp.filter(r => (r.date as string) >= d7)
+    const gbpPrev = gbp.filter(r => (r.date as string) < d7)
+    const gbp_impressions_7d    = sumCol(gbpCur,  'total_impressions')
+    const gbp_impressions_prior = sumCol(gbpPrev, 'total_impressions')
+    const directions_7d         = sumCol(gbpCur,  'direction_requests')
+    const directions_prior      = sumCol(gbpPrev, 'direction_requests')
+    const website_clicks_7d     = sumCol(gbpCur, 'website_clicks')
 
     return {
       ig: {
@@ -198,11 +198,11 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshotData | null
         clicks_change_pct: changePct(clicks_7d, clicks_prior),
       },
       gbp: {
-        impressions_28d,
-        impressions_change_pct: changePct(impressions_28d, impressions_prior),
-        directions_28d,
-        directions_change_pct: changePct(directions_28d, directions_prior),
-        website_clicks_28d,
+        impressions_7d: gbp_impressions_7d,
+        impressions_change_pct: changePct(gbp_impressions_7d, gbp_impressions_prior),
+        directions_7d,
+        directions_change_pct: changePct(directions_7d, directions_prior),
+        website_clicks_7d,
       },
       ga4: {
         sessions_7d,
