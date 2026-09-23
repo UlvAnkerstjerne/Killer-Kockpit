@@ -111,6 +111,14 @@ export interface GbpReplyRow {
   publish_error:        string | null
 }
 
+export interface GbpStoreReviewSummary {
+  gbpLocationId:  string
+  storeShortName: string
+  newReviews7d:   number
+  unanswered:     number
+  avgRating:      number | null
+}
+
 export interface GbpSyncStatus {
   integration:     string
   status:          string
@@ -407,6 +415,74 @@ export async function publishGbpReply(
 
     return { data: { status: 'publish_failed' } }
   }
+}
+
+// ── getGbpStoreReviewSummary ───────────────────────────────────────────────────
+// Review-health snapshot for the six core stores (excludes Parken).
+
+const EXCLUDED_SHORT_NAMES = ['Parken']
+
+export async function getGbpStoreReviewSummary(): Promise<GbpStoreReviewSummary[]> {
+  const { error } = await assertMarketingRead()
+  if (error) return []
+
+  const db = createServiceClient()
+
+  // Active locations excluding non-core stores
+  const { data: locations } = await db
+    .from('gbp_locations')
+    .select('id, store_short_name')
+    .eq('active', true)
+    .order('store_name')
+  const coreLocations = (locations ?? []).filter(
+    (l: { id: string; store_short_name: string }) => !EXCLUDED_SHORT_NAMES.includes(l.store_short_name),
+  )
+  if (coreLocations.length === 0) return []
+
+  const locationIds = coreLocations.map((l: { id: string }) => l.id)
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 7)
+  const cutoffIso = cutoff.toISOString()
+
+  // Fetch all reviews for these locations in one query.
+  // Supabase JS defaults to 1000 rows — set an explicit limit to cover all reviews.
+  const { data: reviews } = await db
+    .from('gbp_reviews')
+    .select('location_id, star_rating, review_created_at, existing_reply_text')
+    .in('location_id', locationIds)
+    .limit(10000)
+
+  const allReviews = (reviews ?? []) as {
+    location_id: string
+    star_rating: number
+    review_created_at: string
+    existing_reply_text: string | null
+  }[]
+
+  // Aggregate per location
+  const map = new Map<string, { recent: number; unanswered: number; ratingSum: number; count: number }>()
+  for (const loc of coreLocations) {
+    map.set(loc.id, { recent: 0, unanswered: 0, ratingSum: 0, count: 0 })
+  }
+  for (const r of allReviews) {
+    const bucket = map.get(r.location_id)
+    if (!bucket) continue
+    bucket.count++
+    bucket.ratingSum += r.star_rating
+    if (r.review_created_at >= cutoffIso) bucket.recent++
+    if (!r.existing_reply_text) bucket.unanswered++
+  }
+
+  return coreLocations.map((loc: { id: string; store_short_name: string }) => {
+    const b = map.get(loc.id)!
+    return {
+      gbpLocationId:  loc.id,
+      storeShortName: loc.store_short_name,
+      newReviews7d:   b.recent,
+      unanswered:     b.unanswered,
+      avgRating:      b.count > 0 ? Math.round((b.ratingSum / b.count) * 10) / 10 : null,
+    }
+  })
 }
 
 // ── getGbpSyncStatus ───────────────────────────────────────────────────────────

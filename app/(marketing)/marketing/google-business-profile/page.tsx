@@ -1,4 +1,4 @@
-import { getGbpReviews, getGbpLocations } from '@/lib/actions/marketing/gbp-reviews'
+import { getGbpReviews, getGbpLocations, getGbpStoreReviewSummary } from '@/lib/actions/marketing/gbp-reviews'
 import { getGbpPerformance } from '@/lib/actions/marketing/gbp-performance'
 import GbpDashboard from './GbpDashboard'
 
@@ -13,10 +13,11 @@ export default async function GoogleBusinessProfilePage({
   const locationId = !params.location || params.location === 'all' ? null : params.location
   const days: 28 | 90 = params.period === '90' ? 90 : 28
 
-  const [locations, reviews, performance] = await Promise.all([
+  const [locations, reviews, performance, storeSummaries] = await Promise.all([
     getGbpLocations(),
     getGbpReviews(locationId ?? undefined),
     getGbpPerformance(locationId, days),
+    getGbpStoreReviewSummary(),
   ])
 
   return (
@@ -33,6 +34,7 @@ export default async function GoogleBusinessProfilePage({
         days={days}
         performance={performance}
         reviews={reviews}
+        storeSummaries={storeSummaries}
       />
     </div>
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
-import type { GbpLocationRow, GbpReviewRow } from '@/lib/actions/marketing/gbp-reviews'
+import type { GbpLocationRow, GbpReviewRow, GbpStoreReviewSummary } from '@/lib/actions/marketing/gbp-reviews'
 import type { GbpPerformanceData, GbpKeywordRow } from '@/lib/actions/marketing/gbp-performance'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -12,6 +12,7 @@ interface Props {
   days:               28 | 90
   performance:        GbpPerformanceData
   reviews:            GbpReviewRow[]
+  storeSummaries:     GbpStoreReviewSummary[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ export default function GbpDashboard({
   days,
   performance,
   reviews,
+  storeSummaries,
 }: Props) {
   const router   = useRouter()
   const pathname = usePathname()
@@ -100,6 +102,43 @@ export default function GbpDashboard({
 
   return (
     <div className="space-y-6">
+
+      {/* ── Store review summary cards ─────────────────────────────────── */}
+      {storeSummaries.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          {storeSummaries.map((s) => (
+            <div
+              key={s.gbpLocationId}
+              className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-3.5"
+            >
+              <div className="text-[13px] font-bold text-kk-ink mb-3 truncate">{s.storeShortName}</div>
+
+              <div className="space-y-2.5">
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">New reviews (7D)</div>
+                  <div className="text-xl font-bold text-kk-ink tabular-nums">{s.newReviews7d}</div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Unanswered reviews</div>
+                  <div className={`text-xl font-bold tabular-nums ${s.unanswered > 0 ? 'text-kk-bad' : 'text-kk-ink'}`}>
+                    {s.unanswered}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Current rating</div>
+                  <div className="text-xl font-bold text-kk-ink tabular-nums">
+                    {s.avgRating !== null ? (
+                      <>{s.avgRating.toFixed(1)} <span className="text-sm text-kk-muted/60">★</span></>
+                    ) : '—'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Selectors ───────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
