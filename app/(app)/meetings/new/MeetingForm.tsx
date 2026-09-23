@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createMeetingWithSetup } from '@/lib/actions/meetings'
+import { suggestEndTime } from '@/lib/utils/suggest-end-time'
 
 type User    = { id: string; display_name: string }
 type Project = { id: string; title: string }
@@ -196,7 +197,14 @@ export default function MeetingForm({ currentUserId, canAssign, users, projects 
           <input
             type="datetime-local"
             value={scheduledStart}
-            onChange={(e) => setScheduledStart(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value
+              setScheduledStart(val)
+              if (!scheduledEnd) {
+                const suggestion = suggestEndTime(val)
+                if (suggestion) setScheduledEnd(suggestion)
+              }
+            }}
             disabled={submitting}
             className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink focus:outline-none focus:border-kk-ink transition-colors"
           />
