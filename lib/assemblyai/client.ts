@@ -15,14 +15,14 @@
  * Ordered fallback by language:
  *
  *   language 'da' (Danish)
- *     → speech_model: 'universal-2'
- *       Universal-3 Pro does not support Danish.  Universal-2 covers 99
+ *     → speech_models: ['universal-2']
+ *       Universal-3.5 Pro does not support Danish.  Universal-2 covers 99
  *       languages including Danish at good accuracy with full diarization and
  *       speaker identification support.
  *
  *   language 'detect' or 'en' (auto-detect / English)
- *     → speech_model: 'universal-3-pro'
- *       Universal-3 Pro delivers higher accuracy for supported languages
+ *     → speech_models: ['universal-3-5-pro']
+ *       Universal-3.5 Pro delivers higher accuracy for supported languages
  *       (English, French, German, Spanish, and ~14 others) with diarization
  *       and speaker identification.  Language detection is always enabled for
  *       'detect' mode so AssemblyAI resolves the spoken language itself.
@@ -138,10 +138,10 @@ export async function submitTranscription(
     audioUrl, speakerNames, speakerCount, languageConfig, webhookUrl, webhookSecret,
   } = input
 
-  // Model selection: universal-3-pro for English/auto-detect; universal-2 for Danish.
-  // Universal-3 Pro does not support Danish — use universal-2 when language is fixed to 'da'.
+  // Model selection: universal-3-5-pro for English/auto-detect; universal-2 for Danish.
+  // Universal-3.5 Pro does not support Danish — use universal-2 when language is fixed to 'da'.
   const isDanish = languageConfig.mode === 'fixed' && languageConfig.languageCode === 'da'
-  const speechModel = isDanish ? 'universal-2' : 'universal-3-pro'
+  const speechModel = isDanish ? 'universal-2' : 'universal-3-5-pro'
 
   // Build the request body
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,7 +155,8 @@ export async function submitTranscription(
     webhook_auth_header_name:  'x-assemblyai-webhook-secret',
     webhook_auth_header_value: webhookSecret,
 
-    speech_model: speechModel,
+    // speech_models replaces the deprecated speech_model (single string)
+    speech_models: [speechModel],
   }
 
   // Language

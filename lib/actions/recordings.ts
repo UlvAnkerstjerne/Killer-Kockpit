@@ -273,28 +273,18 @@ export async function retryTranscription(
     return { error: 'No audio file found for this recording.' }
   }
 
-  // Generate a fresh signed URL for the stored audio
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceKey  = process.env.SUPABASE_SECRET_KEY!
+  // Generate a fresh signed URL for the stored audio using the SDK
+  // (raw fetch with the sb_secret_ key format fails with "Invalid Compact JWS")
+  const { data: signedData, error: signErr } = await db.storage
+    .from('meeting-recordings')
+    .createSignedUrl(recording.storage_path as string, 3600)
 
-  const signedUrlRes = await fetch(
-    `${supabaseUrl}/storage/v1/object/sign/meeting-recordings/${encodeURIComponent(recording.storage_path as string)}`,
-    {
-      method:  'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({ expiresIn: 3600 }),
-    },
-  )
-
-  if (!signedUrlRes.ok) {
+  if (signErr || !signedData?.signedUrl) {
+    console.error('[recordings] retryTranscription failed to generate signed URL:', signErr?.message)
     return { error: 'Failed to generate audio URL for retry.' }
   }
 
-  const { signedURL } = await signedUrlRes.json() as { signedURL: string }
-  const audioUrl = `${supabaseUrl}/storage/v1${signedURL}`
+  const audioUrl = signedData.signedUrl
 
   // Re-submit to AssemblyAI
   const webhookSecret = process.env.ASSEMBLYAI_WEBHOOK_SECRET

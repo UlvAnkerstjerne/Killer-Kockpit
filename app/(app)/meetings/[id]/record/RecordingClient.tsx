@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createRecordingSession } from '@/lib/actions/recordings'
+import { createRecordingSession, retryTranscription } from '@/lib/actions/recordings'
 
 // ─── IndexedDB helpers ──────────────────────────────────────────────────────
 //
@@ -114,9 +114,12 @@ export default function RecordingClient({ meetingId, meetingTitle, attendeeNames
   const [langMode,  setLangMode]  = useState<LanguageMode>('detect')
 
   // Recording state
-  const [elapsedMs,      setElapsedMs]      = useState(0)
-  const [uploadMsg,      setUploadMsg]      = useState('')
-  const [showIntroHint,  setShowIntroHint]  = useState(true)
+  const [elapsedMs,       setElapsedMs]       = useState(0)
+  const [uploadMsg,       setUploadMsg]       = useState('')
+  const [showIntroHint,   setShowIntroHint]   = useState(true)
+  // True after the Storage PUT succeeds — retry should call retryTranscription,
+  // not re-upload, when only the transcription submission failed.
+  const [audioUploaded, setAudioUploaded] = useState(false)
 
   // Recovery
   const [orphan, setOrphan] = useState<StoredSession | null>(null)
@@ -206,6 +209,7 @@ export default function RecordingClient({ meetingId, meetingTitle, attendeeNames
     language:    LanguageMode,
   ) => {
     setPhase('uploading')
+    setAudioUploaded(false)
     const byteSize = chunks.reduce((sum, b) => sum + b.size, 0)
 
     // ── Step 1: get signed upload URL ────────────────────────────────────────
@@ -249,6 +253,7 @@ export default function RecordingClient({ meetingId, meetingTitle, attendeeNames
         const msg = await putRes.text().catch(() => putRes.statusText)
         throw new Error(`Storage PUT failed (${putRes.status}): ${msg}`)
       }
+      setAudioUploaded(true)
     } catch (err) {
       // Storage PUT failed — keep IndexedDB intact for retry
       setError(`Upload failed: ${(err as Error).message}. Your recording is saved locally — you can retry.`)
@@ -271,8 +276,8 @@ export default function RecordingClient({ meetingId, meetingTitle, attendeeNames
         throw new Error(body.error ?? `Finalize failed (${finalRes.status})`)
       }
     } catch (err) {
-      // Audio is safely in Storage — retry will regenerate signed URL and re-submit
-      setError(`${(err as Error).message} Your audio is saved.`)
+      // Audio is in Storage — retry transcription without re-uploading
+      setError(`${(err as Error).message}`)
       setPhase('failed')
       return
     }
@@ -383,11 +388,29 @@ export default function RecordingClient({ meetingId, meetingTitle, attendeeNames
     setPhase('pre_recording')
   }
 
-  // ── Retry after failed upload ─────────────────────────────────────────────
+  // ── Retry after failed upload or transcription ────────────────────────────
 
   async function handleRetry() {
     setError(null)
-    // Reload orphaned session from IDB in case the in-memory chunks were lost
+
+    // If the audio upload already succeeded, only the transcription submission
+    // failed — skip re-uploading and call retryTranscription directly.
+    if (audioUploaded && recordingIdRef.current) {
+      setPhase('uploading')
+      setUploadMsg('Retrying transcription submission…')
+      const result = await retryTranscription(recordingIdRef.current)
+      if (result.error) {
+        setError(result.error)
+        setPhase('failed')
+      } else {
+        // Clear local recovery data and navigate away
+        try { await idbDelete(recordingIdRef.current) } catch { /* ignore */ }
+        setPhase('queued')
+      }
+      return
+    }
+
+    // Upload failed — reload chunks from IDB and retry the full upload
     const stored = await idbGetForMeeting(meetingId).catch(() => null)
     const session = stored ?? (chunksRef.current.length > 0 ? {
       recordingId: recordingIdRef.current!,
@@ -663,7 +686,7 @@ export default function RecordingClient({ meetingId, meetingTitle, attendeeNames
             onClick={handleRetry}
             className="flex-1 py-3 bg-kk-ink text-white text-sm font-medium rounded-xl hover:opacity-90 transition-opacity"
           >
-            Retry upload
+            {audioUploaded ? 'Retry transcription' : 'Retry upload'}
           </button>
           <button
             onClick={() => router.push(`/meetings/${meetingId}`)}
