@@ -171,6 +171,92 @@ export async function fetchDriveFileMeta(
   }
 }
 
+// ─── Content extraction ───────────────────────────────────────────────────────
+
+/**
+ * Extracts plain text from a Google Drive file using the user's OAuth client.
+ *
+ * Strategy by MIME type:
+ *   • Google Docs     → export as text/plain via files.export
+ *   • Google Sheets   → export as text/csv via files.export
+ *   • Google Slides   → export as text/plain via files.export
+ *   • Binary files    → download via files.get(alt:media) + extractTextFromBuffer
+ *   • Unsupported     → returns { ok: false, error: '...' }
+ *
+ * Requires drive.readonly scope; does NOT work with drive.metadata.readonly.
+ *
+ * @param oauthClient  Authenticated OAuth2 client for the user
+ * @param fileId       Drive file ID
+ * @param mimeType     MIME type from the file metadata
+ * @param fileName     Original filename (for extension-based fallback detection)
+ */
+export async function extractDriveFileContent(
+  oauthClient: Auth.OAuth2Client,
+  fileId:      string,
+  mimeType:    string,
+  fileName:    string,
+): Promise<{ ok: true; text: string; warning?: string } | { ok: false; error: string }> {
+  const drive = google.drive({ version: 'v3', auth: oauthClient })
+
+  // ── Google Workspace files — export as plain text ──────────────────────────
+  const GOOGLE_EXPORT_MAP: Record<string, string> = {
+    'application/vnd.google-apps.document':     'text/plain',
+    'application/vnd.google-apps.spreadsheet':  'text/csv',
+    'application/vnd.google-apps.presentation': 'text/plain',
+  }
+
+  const exportMime = GOOGLE_EXPORT_MAP[mimeType]
+  if (exportMime) {
+    try {
+      const response = await drive.files.export(
+        { fileId, mimeType: exportMime },
+        { responseType: 'arraybuffer' },
+      )
+      const buf  = Buffer.from(response.data as ArrayBuffer)
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(buf).trim()
+      if (!text) return { ok: true, text: '', warning: 'File exported but contained no text.' }
+      return { ok: true, text }
+    } catch (err: unknown) {
+      const status = (err as { code?: number; status?: number })?.code
+        ?? (err as { code?: number; status?: number })?.status
+      if (status === 403) return { ok: false, error: 'Access denied when reading this file.' }
+      return { ok: false, error: `Failed to export Google file: ${(err as Error).message}` }
+    }
+  }
+
+  // ── Google Forms — not extractable as plain text ───────────────────────────
+  if (mimeType === 'application/vnd.google-apps.form') {
+    return { ok: false, error: 'Google Forms content cannot be extracted.' }
+  }
+
+  // ── Binary files — download and parse ─────────────────────────────────────
+  // Skip MIME types that are clearly not readable as text
+  const SKIP_MIMES = new Set([
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+    'video/mp4', 'video/quicktime', 'audio/mpeg',
+    'application/zip', 'application/x-tar',
+  ])
+  if (SKIP_MIMES.has(mimeType)) {
+    return { ok: false, error: `Files of type "${mimeType}" cannot be read as text.` }
+  }
+
+  try {
+    const response = await drive.files.get(
+      { fileId, alt: 'media', supportsAllDrives: true } as drive_v3.Params$Resource$Files$Get,
+      { responseType: 'arraybuffer' },
+    )
+    const buf = Buffer.from(response.data as ArrayBuffer)
+
+    const { extractTextFromBuffer } = await import('@/lib/extractors/text')
+    return extractTextFromBuffer(buf, fileName, mimeType)
+  } catch (err: unknown) {
+    const status = (err as { code?: number; status?: number })?.code
+      ?? (err as { code?: number; status?: number })?.status
+    if (status === 403) return { ok: false, error: 'Access denied when downloading this file.' }
+    return { ok: false, error: `Failed to download file for text extraction: ${(err as Error).message}` }
+  }
+}
+
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
 /** Returns a short human-readable label for a Drive MIME type. */

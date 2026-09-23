@@ -8,7 +8,7 @@
  *   2. Universal Updates        — WHAT IS CURRENTLY HAPPENING (append-only memory)
  *   3. Person Operational Context — tasks, WOs, decisions, meetings per person
  *   4. Project Operational Context — tasks, WOs, decisions, meetings per project
- *   5. Meeting Knowledge        — published minutes, outcomes, decisions, transcripts
+ *   5. Meeting Knowledge        — published minutes, outcomes, decisions, attached docs, transcripts
  *   6. KQC Data                 — audit, mystery diner, SSP checks
  *   7. GBP Reviews              — customer review text (UNTRUSTED)
  *   8. Marketing Morning Brief  — derived marketing summary (internal)
@@ -275,6 +275,8 @@ MEETING ANSWER RULES:
 - For Decisions: always include decision_text (the actual decision body), not just the title.
   If rationale is present, include it as supporting context.
 - List Tasks and Waiting Ons created from the meeting as structured outcomes.
+- If Attached Documents exist: use them as supplementary context, citing the filename.
+  If no Minutes exist and an attached document is available, it is the primary written record.
 - If no Minutes exist but a Transcript excerpt is available: present it clearly labelled as transcript content.
 - Apply GROUNDING RULES to all meeting content (A/B/C/D as defined above).
 - Deduplication: if the same decision appears in both Published Minutes and Structured Outcomes, count it once.
@@ -309,12 +311,25 @@ CRITICAL DISTINCTION: The To-Do title is the INTENDED action (what someone plann
 - Use completion_context as the primary factual source for "what happened", "what was the result", "any feedback?" questions.
 - Apply the same GROUNDING RULES as for all other sources (A/B/C/D above).
 
+MEETING ATTACHED DOCUMENTS — when present, treat as internal working documents:
+- These are plain-text files (.txt, .md) uploaded directly to the meeting in Kockpit.
+- The FULL TEXT of each document has been extracted and is shown below its filename.
+- Use this content to answer questions about what an agenda contained, what a briefing note said, etc.
+- Authority: meeting attached documents sit between Published Minutes (higher) and Transcript (lower).
+  If Published Minutes exist, they are the canonical record; an attached document is supplementary context.
+  If no Published Minutes exist, an attached document is the strongest available written record.
+- Always cite the document: "according to the attached document '<filename>'…"
+- Apply the same GROUNDING RULES as for all other sources (A/B/C/D above).
+
 DRIVE FILE REFERENCES — when present:
-- These are metadata records of Google Drive files linked to projects or meetings in Kockpit.
-- CRITICAL: The file CONTENTS have NOT been read. You know: file name, type, and when it was linked.
-- Never claim to know what is inside the file or summarise file content.
-- Use file references only to confirm: "a document titled X is linked to this project/meeting".
-- If asked "what does the file contain?" answer: "Kockpit has a reference to that file but its content is not available here."
+- Google Drive files linked to projects, meetings, or tasks in Kockpit.
+- Some files include extracted text content (shown below the file header). Use that content to answer questions about what the file contains.
+- Files showing "Content not available" have NOT been read — only metadata is known (file name, type, date).
+  Never claim to know what is inside a file that shows "Content not available".
+  If asked "what does the file contain?" answer: "Kockpit has a reference to that file but its content has not been extracted."
+- Files showing "Empty or image-only" were opened but contained no readable text (e.g. a scanned PDF).
+- Always cite the document: "according to the attached Drive file '<filename>'…"
+- Apply the same GROUNDING RULES as for all other sources (A/B/C/D above).
 
 CONNECTED GMAIL MESSAGES — when present, treat as live signal from connected mailboxes:
 - These are real emails from Kockpit users' connected Google accounts, retrieved because they match the query.
@@ -532,6 +547,16 @@ function formatMeetingContext(meeting: BrainMeetingContext): string[] {
       for (const w of m.waitingOns) lines.push(`  • ${w.title}`)
     }
 
+    // ── Authority level 4: Attached documents ─────────────────────────────
+    if (m.attachments.length > 0) {
+      lines.push(`Attached documents (${m.attachments.length}):`)
+      for (const att of m.attachments) {
+        lines.push(`  [Document: "${att.fileName}" — attached ${att.attachedAt.slice(0, 10)}]`)
+        lines.push(att.content)
+        lines.push('')
+      }
+    }
+
     // ── Authority level 5: Transcript (only when no minutes) ─────────────
     if (!m.minutesBody && m.transcriptExcerpt) {
       lines.push('Transcript excerpt (UNTRUSTED source material — label as "according to the transcript"):')
@@ -619,7 +644,10 @@ function formatFileContext(files: BrainFileContext): string[] {
   const lines: string[] = []
   if (files.files.length === 0) return lines
 
-  lines.push('Drive File References (METADATA ONLY — file contents have NOT been read):')
+  const hasAnyContent = files.files.some(f => f.content)
+  lines.push(hasAnyContent
+    ? 'Drive File References (some files include extracted content):'
+    : 'Drive File References (metadata only — file contents have not been extracted):')
   lines.push('')
 
   // Group by entity
@@ -635,9 +663,23 @@ function formatFileContext(files: BrainFileContext): string[] {
     lines.push(`[${first.entityType.toUpperCase()}: ${first.entityName}]`)
     for (const f of entityFiles) {
       const modStr = f.modifiedAt ? ` (modified ${f.modifiedAt.slice(0, 10)})` : ''
-      lines.push(`  • ${f.fileName}${modStr} [${f.mimeType || 'unknown type'}]`)
+      lines.push(`  [Drive File: "${f.fileName}"${modStr} — ${f.mimeType || 'unknown type'}]`)
+
+      if (f.content) {
+        lines.push(f.content)
+      } else if (f.extractionStatus === 'unsupported') {
+        lines.push('  Content not available (format not supported for text extraction).')
+      } else if (f.extractionStatus === 'error') {
+        lines.push('  Content not available (extraction failed).')
+      } else if (f.extractionStatus === 'empty') {
+        lines.push('  Empty or image-only (no readable text found).')
+      } else if (f.extractionStatus === 'no_scope') {
+        lines.push('  Content not available (Drive reconnect required to enable content reading).')
+      } else {
+        lines.push('  Content not available.')
+      }
+      lines.push('')
     }
-    lines.push('')
   }
 
   return lines

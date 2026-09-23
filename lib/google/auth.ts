@@ -36,6 +36,8 @@ const TAG_BYTES = 16  // 128-bit auth tag
 export const CALENDAR_SCOPE           = 'https://www.googleapis.com/auth/calendar.events'
 export const GMAIL_SCOPE              = 'https://www.googleapis.com/auth/gmail.readonly'
 export const DRIVE_SCOPE              = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+/** Full Drive read access (superset of drive.metadata.readonly — also reads file content). */
+export const DRIVE_READ_SCOPE         = 'https://www.googleapis.com/auth/drive.readonly'
 export const SHEETS_SCOPE             = 'https://www.googleapis.com/auth/spreadsheets.readonly'
 export const MEET_READONLY_SCOPE      = 'https://www.googleapis.com/auth/meetings.space.readonly'
 export const MEET_SETTINGS_SCOPE      = 'https://www.googleapis.com/auth/meetings.space.settings'
@@ -56,8 +58,20 @@ export function hasGmailScope(scopes: string[]): boolean {
   return scopes.some((s) => s.includes('gmail.readonly'))
 }
 
+/**
+ * True when the user has at least Drive metadata access (drive.metadata.readonly
+ * OR the superset drive.readonly scope).
+ */
 export function hasDriveScope(scopes: string[]): boolean {
-  return scopes.some((s) => s.includes('drive.metadata.readonly'))
+  return scopes.some((s) => s.includes('drive.metadata.readonly') || s.includes('drive.readonly'))
+}
+
+/**
+ * True when the user has full Drive read access (drive.readonly), which allows
+ * downloading file content.  drive.readonly is a superset of drive.metadata.readonly.
+ */
+export function hasDriveReadScope(scopes: string[]): boolean {
+  return scopes.some((s) => s.includes('drive.readonly') && !s.includes('drive.metadata.readonly'))
 }
 
 /**

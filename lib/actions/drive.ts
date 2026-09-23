@@ -28,8 +28,9 @@ import {
   getGoogleOAuth2Client,
   getGoogleConnectionStatus,
   hasDriveScope,
+  hasDriveReadScope,
 } from '@/lib/google/auth'
-import { parseDriveUrl, fetchDriveFileMeta } from '@/lib/google/drive'
+import { parseDriveUrl, fetchDriveFileMeta, extractDriveFileContent } from '@/lib/google/drive'
 import { canEditProject, canManageDriveReferences, canManageTaskDriveReferences } from '@/lib/permissions'
 import { createServiceClient } from '@/lib/supabase/server'
 import { recordAuditEvent } from '@/lib/audit'
@@ -248,8 +249,38 @@ export async function attachDriveFile(
 
   let sourceId: string
 
+  // ── Content extraction (requires drive.readonly scope) ───────────────────
+  const canReadContent = hasDriveReadScope(googleStatus.scopes)
+  let extractedContent: string | null = null
+  let extractionStatus: string = canReadContent ? 'pending' : 'no_scope'
+
+  if (canReadContent) {
+    try {
+      const extracted = await extractDriveFileContent(oauthClient, meta.fileId, meta.mimeType, meta.name)
+      if (extracted.ok) {
+        extractedContent = extracted.text || null
+        extractionStatus = extracted.text ? 'ok' : (extracted.warning ? 'empty' : 'ok')
+      } else {
+        extractionStatus = 'unsupported'
+        console.info('[drive/actions] Content extraction skipped:', extracted.error)
+      }
+    } catch (extractErr) {
+      extractionStatus = 'error'
+      console.error('[drive/actions] Content extraction failed:', (extractErr as Error).message)
+    }
+  }
+
   if (existing) {
     sourceId = existing.id
+    // Update content if we just extracted it (or mark status change)
+    if (canReadContent) {
+      const metaPatch: Record<string, unknown> = {}
+      if (extractedContent !== null)  metaPatch.content           = extractedContent
+      if (extractionStatus)           metaPatch.extraction_status = extractionStatus
+      if (Object.keys(metaPatch).length > 0) {
+        await db.from('sources').update(metaPatch).eq('id', sourceId)
+      }
+    }
   } else {
     const { data: newSource, error: insertErr } = await db
       .from('sources')
@@ -260,12 +291,14 @@ export async function attachDriveFile(
         title:                  meta.name,
         url:                    meta.webViewLink,
         occurred_at:            meta.modifiedTime ?? null,
+        content:                extractedContent,
         metadata: {
-          mime_type:         meta.mimeType,
-          owner_email:       meta.ownerEmail,
-          shared_drive_id:   meta.sharedDriveId,
-          resource_key:      meta.resourceKey,
-          file_name_at_link: meta.name,
+          mime_type:          meta.mimeType,
+          owner_email:        meta.ownerEmail,
+          shared_drive_id:    meta.sharedDriveId,
+          resource_key:       meta.resourceKey,
+          file_name_at_link:  meta.name,
+          extraction_status:  extractionStatus,
         },
       })
       .select('id')

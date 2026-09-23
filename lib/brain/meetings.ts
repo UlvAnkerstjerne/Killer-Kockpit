@@ -26,6 +26,7 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { extractKeywordExcerpt } from '@/lib/extractors/text'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,13 @@ export interface BrainMeetingCorrection {
   createdAt: string   // YYYY-MM-DD
 }
 
+export interface BrainMeetingAttachment {
+  fileName:  string
+  /** Full text content. Truncated to 4 000 chars when included in Brain context. */
+  content:   string
+  attachedAt: string   // ISO timestamp
+}
+
 export interface BrainMeetingRecord {
   id:             string
   title:          string
@@ -75,6 +83,8 @@ export interface BrainMeetingRecord {
   transcriptExcerpt: string | null
   /** Whether a transcript exists for this meeting (even if excerpt was not extracted). */
   hasTranscript:  boolean
+  /** Plain-text documents attached directly to the meeting (agendas, briefing notes, etc.). */
+  attachments:    BrainMeetingAttachment[]
 }
 
 export interface BrainMeetingContext {
@@ -261,7 +271,7 @@ export async function fetchMeetingContext({
   const finalIds = typedMeetings.map(m => m.id)
 
   // Batch fetch related data in parallel
-  const [minutesResult, correctionsResult, outcomesResult] = await Promise.all([
+  const [minutesResult, correctionsResult, outcomesResult, attachmentsResult] = await Promise.all([
     db
       .from('meeting_minutes')
       .select('meeting_id, body, approved_at, version')
@@ -281,13 +291,23 @@ export async function fetchMeetingContext({
       .in('meeting_id', finalIds)
       .eq('status', 'published')
       .order('sort_order', { ascending: true }),
+
+    // Plain-text documents attached to the meeting (agendas, briefing notes, etc.)
+    db
+      .from('entity_sources')
+      .select('entity_id, created_at, source:source_id(file_name, content)')
+      .in('entity_id', finalIds)
+      .eq('entity_type', 'meeting')
+      .eq('relation', 'meeting_attachment')
+      .order('created_at', { ascending: true }),
   ])
 
   // ── Build lookup maps ──────────────────────────────────────────────────────
 
-  type MinutesRow     = { meeting_id: string; body: string; approved_at: string | null; version: number }
-  type CorrectionRow  = { meeting_id: string; body: string; reason: string | null; created_at: string }
-  type OutcomeRow     = { meeting_id: string; kind: string; title: string; payload_json: unknown; status: string; published_entity_id: string | null }
+  type MinutesRow      = { meeting_id: string; body: string; approved_at: string | null; version: number }
+  type CorrectionRow   = { meeting_id: string; body: string; reason: string | null; created_at: string }
+  type OutcomeRow      = { meeting_id: string; kind: string; title: string; payload_json: unknown; status: string; published_entity_id: string | null }
+  type AttachmentRow   = { entity_id: string; created_at: string; source: { file_name: string | null; content: string | null } | { file_name: string | null; content: string | null }[] | null }
 
   // Minutes: take first per meeting (highest version, because ordered desc)
   const minutesMap = new Map<string, MinutesRow>()
@@ -300,6 +320,22 @@ export async function fetchMeetingContext({
   for (const c of (correctionsResult.data as CorrectionRow[] | null) ?? []) {
     if (!correctionsByMeeting.has(c.meeting_id)) correctionsByMeeting.set(c.meeting_id, [])
     correctionsByMeeting.get(c.meeting_id)!.push(c)
+  }
+
+  // Attachments: group by meeting
+  const attachmentsByMeeting = new Map<string, BrainMeetingAttachment[]>()
+  for (const row of (attachmentsResult.data as AttachmentRow[] | null) ?? []) {
+    const src = Array.isArray(row.source) ? row.source[0] : row.source
+    if (!src || !src.content) continue
+    // Use keyword-based excerpt extraction so long documents remain searchable
+    const excerpt = extractKeywordExcerpt(src.content, [...keywords, ...entityNames], 4_000)
+    const att: BrainMeetingAttachment = {
+      fileName:  src.file_name ?? 'document',
+      content:   excerpt,
+      attachedAt: row.created_at,
+    }
+    if (!attachmentsByMeeting.has(row.entity_id)) attachmentsByMeeting.set(row.entity_id, [])
+    attachmentsByMeeting.get(row.entity_id)!.push(att)
   }
 
   // Outcomes: group by meeting; collect decision entity IDs for full-body lookup
@@ -423,6 +459,7 @@ export async function fetchMeetingContext({
       waitingOns,
       transcriptExcerpt: transcriptMap.get(m.id) ?? null,
       hasTranscript:  !!m.transcript_source_id,
+      attachments:    attachmentsByMeeting.get(m.id) ?? [],
     }
   })
 }

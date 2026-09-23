@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { createClient } from '@/lib/supabase/server'
-import { buildOAuth2Client, DRIVE_SCOPE } from '@/lib/google/auth'
+import { buildOAuth2Client, DRIVE_READ_SCOPE } from '@/lib/google/auth'
 import { getAppOrigin } from '@/lib/app-url'
 
 const STATE_COOKIE         = 'google_oauth_state'
@@ -11,12 +11,13 @@ const STATE_COOKIE_MAX_AGE = 600 // 10 minutes
 /**
  * GET /api/google/connect/drive
  *
- * Initiates an incremental Google OAuth flow to add Drive metadata read access
+ * Initiates an incremental Google OAuth flow to add Drive read access
  * alongside any existing Calendar and Gmail grants.
  *
- * Scope: drive.metadata.readonly — reads file metadata (name, MIME type,
- * webViewLink, modifiedTime, owners) for files the user can access.
- * Never requests content read, write, or listing scopes.
+ * Scope: drive.readonly — reads file metadata AND content for files the user
+ * can access.  This is the superset of drive.metadata.readonly, so users who
+ * previously connected with the narrower scope should reconnect to gain content
+ * extraction for attached Drive files.  Read-only — never writes to Drive.
  *
  * Uses include_granted_scopes=true so Google merges this scope with any
  * previously granted scopes (Calendar, Gmail) on the same client.
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
   const authUrl = client.generateAuthUrl({
     access_type:            'offline',
     prompt:                 'consent',
-    scope:                  [DRIVE_SCOPE],
+    scope:                  [DRIVE_READ_SCOPE],
     include_granted_scopes: true, // merge with existing Calendar + Gmail scopes
     state,
   })

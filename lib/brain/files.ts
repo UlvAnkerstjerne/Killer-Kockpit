@@ -1,16 +1,17 @@
 /**
  * lib/brain/files.ts
  *
- * Brain Drive file metadata retrieval layer.
+ * Brain Drive file retrieval layer.
  *
  * fetchBrainFileContext({ entityRefs })
  * ─────────────────────────────────────
  * Fetches Google Drive file references linked to Kockpit entities
  * (projects, meetings, tasks) via the entity_sources / sources tables.
  *
- * IMPORTANT: Only file METADATA is exposed (name, type, URL, modification
- * date). The Brain has NOT read file contents. The AI system prompt
- * explicitly instructs the model to never claim content was read.
+ * When a Drive file has had its content extracted (sources.content is non-null),
+ * that content is included in the Brain context so the AI can answer questions
+ * about file contents.  When content is absent (older files, or users with only
+ * drive.metadata.readonly scope), only metadata is surfaced.
  *
  * Security:
  *  - Uses createServiceClient (Brain is management-gated at the action layer).
@@ -23,14 +24,18 @@ import { createServiceClient } from '@/lib/supabase/server'
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface BrainFileItem {
-  sourceId:    string
-  fileName:    string
-  mimeType:    string
-  webViewLink: string
-  modifiedAt:  string | null   // ISO date string
-  entityType:  'project' | 'meeting' | 'task'
-  entityId:    string
-  entityName:  string
+  sourceId:         string
+  fileName:         string
+  mimeType:         string
+  webViewLink:      string
+  modifiedAt:       string | null   // ISO date string
+  entityType:       'project' | 'meeting' | 'task'
+  entityId:         string
+  entityName:       string
+  /** Extracted plain-text content, if available. Null = not yet extracted or unsupported. */
+  content:          string | null
+  /** 'ok' | 'unsupported' | 'error' | 'empty' | 'no_scope' | 'pending' | null */
+  extractionStatus: string | null
 }
 
 export interface BrainFileContext {
@@ -69,7 +74,8 @@ export async function fetchBrainFileContext({
           title,
           url,
           occurred_at,
-          metadata
+          metadata,
+          content
         )
       `)
       .in('entity_id', entityIds)
@@ -98,19 +104,22 @@ export async function fetchBrainFileContext({
         url: string | null
         occurred_at: string | null
         metadata: Record<string, unknown> | null
+        content: string | null
       }
 
       const meta = (srcTyped.metadata ?? {}) as Record<string, unknown>
 
       files.push({
-        sourceId:    srcTyped.id,
-        fileName:    (srcTyped.title as string) ?? 'Untitled file',
-        mimeType:    (meta.mime_type as string) ?? '',
-        webViewLink: (srcTyped.url as string) ?? '',
-        modifiedAt:  srcTyped.occurred_at ?? null,
-        entityType:  ref.entityType,
-        entityId:    ref.entityId,
-        entityName:  ref.entityName,
+        sourceId:         srcTyped.id,
+        fileName:         (srcTyped.title as string) ?? 'Untitled file',
+        mimeType:         (meta.mime_type as string) ?? '',
+        webViewLink:      (srcTyped.url as string) ?? '',
+        modifiedAt:       srcTyped.occurred_at ?? null,
+        entityType:       ref.entityType,
+        entityId:         ref.entityId,
+        entityName:       ref.entityName,
+        content:          srcTyped.content ?? null,
+        extractionStatus: (meta.extraction_status as string | null) ?? null,
       })
     }
 
