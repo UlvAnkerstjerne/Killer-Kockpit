@@ -304,17 +304,23 @@ function ObservationItem({
         {obs.evidence}
       </p>
 
-      {/* Recommended action */}
-      {!isDataHealth && obs.recommended_action && (
-        <p className="text-[13px] text-kk-ink leading-relaxed">
-          → {obs.recommended_action}
-        </p>
+      {/* Suggested actions */}
+      {obs.recommended_action && (
+        <details className="group">
+          <summary className="inline-flex items-center gap-1 cursor-pointer list-none select-none rounded-full border border-kk-line bg-kk-soft px-3 py-1 text-[11px] font-semibold text-kk-muted hover:bg-kk-line/60 hover:text-kk-ink transition-colors">
+            <span>Suggested actions</span>
+            <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
+          </summary>
+          <div className="mt-2 rounded-lg px-3 py-2.5" style={{ background: '#F5F1EB' }}>
+            <p className="text-[13px] text-kk-ink leading-relaxed">→ {obs.recommended_action}</p>
+          </div>
+        </details>
       )}
 
       {/* Why? */}
       {!isDataHealth && (obs.interpretation || obs.creative_start) && (
         <details className="group">
-          <summary className="inline-flex items-center gap-0.5 text-[11px] font-medium text-kk-muted/70 cursor-pointer hover:text-kk-muted list-none select-none">
+          <summary className="inline-flex items-center gap-1 cursor-pointer list-none select-none rounded-full border border-kk-line bg-kk-soft px-3 py-1 text-[11px] font-semibold text-kk-muted hover:bg-kk-line/60 hover:text-kk-ink transition-colors">
             <span>Why?</span>
             <span className="transition-transform group-open:rotate-180 inline-block"><IconChevronDown /></span>
           </summary>
