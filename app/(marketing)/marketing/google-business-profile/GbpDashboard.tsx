@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import type { GbpLocationRow, GbpReviewRow, GbpStoreReviewSummary } from '@/lib/actions/marketing/gbp-reviews'
 import type { GbpPerformanceData, GbpKeywordRow } from '@/lib/actions/marketing/gbp-performance'
@@ -107,9 +108,11 @@ export default function GbpDashboard({
       {storeSummaries.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
           {storeSummaries.map((s) => (
-            <div
+            <Link
               key={s.gbpLocationId}
-              className="bg-kk-panel border border-kk-line rounded-2xl px-4 py-3.5"
+              href={`${pathname}?location=${s.gbpLocationId}`}
+              className="block bg-kk-panel border border-kk-line rounded-2xl px-4 py-3.5 no-underline transition-shadow transition-[border-color] duration-150 hover:border-kk-muted/30 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-ink"
+              aria-label={`${s.storeShortName} — view details`}
             >
               <div className="text-[13px] font-bold text-kk-ink mb-3 truncate">{s.storeShortName}</div>
 
@@ -135,7 +138,7 @@ export default function GbpDashboard({
                   </div>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
