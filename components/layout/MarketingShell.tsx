@@ -20,6 +20,7 @@ const MARKETING_NAV = [
   { href: '/marketing/needs-review',            label: 'Needs Review',           exact: false },
   { href: '/marketing/paid',                    label: 'Paid',                   exact: false },
   { href: '/marketing/organic',                 label: 'Organic',                exact: false },
+  { href: '/marketing/brain',                   label: 'Marketing Brain',        exact: false },
   { href: '/marketing/google',                  label: 'Google',                 exact: false },
   { href: '/marketing/google-business-profile', label: 'Google Business Profile', exact: false },
   { href: '/marketing/content',                 label: 'Content',                exact: false },
@@ -42,7 +43,7 @@ export default function MarketingShell({
 }) {
   const pathname = usePathname()
   const router = useRouter()
-  const isPaid = pathname === '/marketing/paid'
+  const usesResponsiveShell = pathname === '/marketing/paid' || pathname === '/marketing/brain'
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -58,8 +59,8 @@ export default function MarketingShell({
     .slice(0, 2)
 
   return (
-    <div className={isPaid ? 'flex min-h-screen flex-col md:flex-row' : 'flex min-h-screen'}>
-      {isPaid ? (
+    <div className={usesResponsiveShell ? 'flex min-h-screen flex-col md:flex-row' : 'flex min-h-screen'}>
+      {usesResponsiveShell ? (
         <header className="border-b border-kk-line bg-kk-sidebar px-4 py-3 md:hidden">
           <div className="flex items-center justify-between gap-4">
             <Link href="/marketing" className="font-brand text-lg text-kk-brand">KILLER KOCKPIT</Link>
@@ -76,7 +77,7 @@ export default function MarketingShell({
         </header>
       ) : null}
       {/* Sidebar */}
-      <aside className={`w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen ${isPaid ? 'hidden md:flex' : 'flex'}`}>
+      <aside className={`w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen ${usesResponsiveShell ? 'hidden md:flex' : 'flex'}`}>
         {/* Wordmark */}
         <div className="px-5 pt-5 pb-4">
           <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
@@ -143,7 +144,7 @@ export default function MarketingShell({
       </aside>
 
       {/* Main area — no CaptureBar in Marketing M0 */}
-      <main className={isPaid ? 'min-w-0 flex-1 p-4 sm:p-6 lg:p-7 max-w-7xl w-full mx-auto' : 'flex-1 p-7 max-w-7xl w-full mx-auto'}>
+      <main className={usesResponsiveShell ? 'min-w-0 flex-1 p-4 sm:p-6 lg:p-7 max-w-7xl w-full mx-auto' : 'flex-1 p-7 max-w-7xl w-full mx-auto'}>
         {children}
       </main>
     </div>
