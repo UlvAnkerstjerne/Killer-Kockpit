@@ -111,8 +111,8 @@ export default function CaptureBar({
           {todayCaptureAction}
         </div>
       ) : (
-        <div className="border-b border-kk-line bg-kk-bg overflow-x-auto">
-          <div className="flex items-center gap-2 px-7 py-3 min-w-max">
+        <div className="border-b border-kk-line bg-kk-bg">
+          <div className="flex items-center gap-2 px-4 py-3 flex-wrap md:px-7 md:flex-nowrap">
             {createActions}
             {defaultCaptureAction}
           </div>
