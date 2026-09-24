@@ -192,6 +192,7 @@ export default function TaskActionButtons({
                     startTransition(async () => {
                       const result = await approveTask(taskId)
                       if (result.error) setError(result.error)
+                      else router.replace(returnTo ?? '/tasks')
                     })
                   }}
                   disabled={isPending}
@@ -364,6 +365,7 @@ export default function TaskActionButtons({
               startTransition(async () => {
                 const result = await completeTask(taskId)
                 if (result.error) setError(result.error)
+                else router.replace(returnTo ?? '/tasks')
               })
             }}
             disabled={isPending}
