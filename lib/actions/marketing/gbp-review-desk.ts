@@ -69,7 +69,8 @@ export async function retryGbpReviewDeskDraft(reviewId: string): Promise<ActionR
   const db = createServiceClient()
   const { data: state } = await db.from('gbp_review_session_state').select('started_at').eq('user_id', user.id).maybeSingle()
   if (!state) return { error: 'Open Google Reviews before retrying a draft.' }
-  const cutoff = new Date(Date.parse(state.started_at) - 7 * 86400_000).toISOString()
+  // Allow retrying drafts for any unanswered review (no time limit)
+  const cutoff = new Date(0).toISOString()
   const { data: review } = await db.from('gbp_reviews').select('id').eq('id', reviewId)
     .gte('review_created_at', cutoff).is('existing_reply_text', null).maybeSingle()
   if (!review) return { error: 'Review is outside your current queue or already answered.' }

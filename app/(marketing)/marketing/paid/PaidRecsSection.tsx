@@ -8,7 +8,7 @@ import type { PaidRecommendationRow } from '@/lib/marketing/paid-recs/types'
 function urgencyBadge(urgency: string) {
   const styles: Record<string, string> = {
     high:   'bg-red-100 text-red-700',
-    medium: 'bg-amber-100 text-amber-700',
+    medium: 'bg-kk-bad-bg text-kk-bad',
     low:    'bg-kk-line text-kk-muted',
   }
   return (

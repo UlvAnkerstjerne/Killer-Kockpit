@@ -31,19 +31,15 @@ export default function RegenerateButton() {
       <button
         onClick={handleClick}
         disabled={state === 'loading'}
-        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-kk-line bg-kk-panel text-sm text-kk-ink hover:bg-kk-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        title={state === 'loading' ? 'Regenerating…' : 'Regenerate Morning Brief'}
+        className="group relative disabled:cursor-not-allowed"
       >
-        {state === 'loading' ? (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="animate-spin shrink-0" aria-hidden="true">
-            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="22 10"/>
-          </svg>
-        ) : (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0" aria-hidden="true">
-            <path d="M12 7a5 5 0 1 1-1.46-3.54" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" fill="none"/>
-            <path d="M10.5 3.5H13v2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-          </svg>
-        )}
-        {state === 'loading' ? 'Regenerating…' : 'Regenerate'}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/kk-regenerate.png"
+          alt="Regenerate"
+          className={`h-44 w-auto mix-blend-multiply transition-transform group-hover:scale-110 group-active:scale-95 ${state === 'loading' ? 'animate-pulse opacity-60' : ''}`}
+        />
       </button>
       {state === 'error' && errorMsg && (
         <span className="text-xs text-kk-bad">{errorMsg}</span>

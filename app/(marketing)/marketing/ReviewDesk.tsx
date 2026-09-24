@@ -109,6 +109,29 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
                   <textarea id={`reply-${row.id}`} value={edit.text} rows={3} maxLength={4096} readOnly={!desk.canApprove} disabled={pending || locked}
                     onChange={event => patch(row, { text: event.target.value })}
                     className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-sm leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
+                  {desk.canApprove && !locked && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {['😊', '🙏', '❤️', '🔥', '👏', '💪', '🌯', '🧆', '⭐', '🙌'].map(emoji => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          disabled={pending}
+                          onClick={() => {
+                            const ta = document.getElementById(`reply-${row.id}`) as HTMLTextAreaElement | null
+                            const pos = ta?.selectionStart ?? edit.text.length
+                            const before = edit.text.slice(0, pos)
+                            const after = edit.text.slice(pos)
+                            patch(row, { text: before + emoji + after })
+                            setTimeout(() => { if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = pos + emoji.length } }, 0)
+                          }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md text-base hover:bg-kk-soft transition-colors disabled:opacity-50"
+                          aria-label={`Insert ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {row.draft_text && edit.text !== row.draft_text && <details className="mt-1 text-xs text-kk-muted"><summary className="cursor-pointer">Original AI draft</summary><p className="mt-2 whitespace-pre-wrap break-words">{row.draft_text}</p></details>}
                 </div>
               )}
@@ -118,7 +141,20 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
           )
         })}
       </div>
-      {desk.nextCursor ? <button type="button" onClick={loadMore} disabled={pending} className="mt-4 text-sm font-medium text-kk-brand hover:underline disabled:opacity-50">Load more reviews</button> : null}
+      {desk.nextCursor ? (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={pending}
+            className="rounded-xl border border-kk-line bg-kk-panel px-6 py-3 text-sm font-semibold text-kk-ink hover:bg-kk-soft transition-colors disabled:opacity-50"
+          >
+            {pending ? 'Loading…' : 'Load more reviews'}
+          </button>
+        </div>
+      ) : desk.reviews.length > 0 ? (
+        <p className="mt-4 text-center text-xs text-kk-muted">All queued reviews loaded.</p>
+      ) : null}
       {desk.canApprove && desk.reviews.length > 0 ? <div className="mt-5 flex flex-wrap items-center gap-3">
         <button type="button" onClick={publish} disabled={pending || selected.length === 0 || selected.length > 50 || hasInvalidText}
           className="rounded-xl bg-kk-brand px-5 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">

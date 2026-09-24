@@ -235,15 +235,19 @@ function StatusStrip({
 // Surfaced near the top of the brief when there is actionable review work.
 
 function NeedsReviewBlock({ needsReview }: { needsReview: MorningBriefSections['needs_review'] }) {
-  if (!needsReviewVisible(needsReview.total)) return null
+  // GBP review replies are handled by the ReviewDesk below — only surface
+  // non-review items (paid recommendations, content approvals) here.
+  const nonReviewItems = needsReview.items.filter(item => item.kind !== 'review_reply')
+  const nonReviewTotal = nonReviewItems.reduce((a, item) => a + item.count, 0)
+  if (nonReviewTotal === 0) return null
   return (
     <div className="flex items-start justify-between gap-4 px-4 py-3 border-l-2 border-kk-brand bg-kk-bad-bg rounded-r-xl">
       <div className="min-w-0">
         <div className="text-xs font-bold tracking-[0.08em] uppercase text-kk-brand mb-1">
-          Needs Review — {needsReview.total} item{needsReview.total !== 1 ? 's' : ''} awaiting approval
+          Needs Review — {nonReviewTotal} item{nonReviewTotal !== 1 ? 's' : ''} awaiting approval
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-          {needsReview.items.map((item, i) => (
+          {nonReviewItems.map((item, i) => (
             <span key={i} className="text-xs text-kk-muted">
               {item.count} {item.label}
             </span>
@@ -352,7 +356,7 @@ function ObservationItem({
 function WhatMattersTodaySection({ observations }: { observations: BriefObservation[] }) {
   return (
     <div>
-      <h2 className="text-3xl font-black tracking-tight text-kk-ink mb-5">
+      <h2 className="text-5xl font-black tracking-tight text-kk-ink leading-none mb-5">
         What&apos;s happening?
       </h2>
       {observations.length === 0 ? (
@@ -880,7 +884,7 @@ export default async function MorningBriefPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-7">
         <div>
-          <h1 className="text-4xl font-black tracking-tight text-kk-ink leading-tight">Morning Brief</h1>
+          <h1 className="text-8xl font-black tracking-tight text-kk-ink leading-none">Morning Brief</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-sm font-semibold text-kk-ink">{headerDate}</span>
             {displayBrief?.generated_at && (
