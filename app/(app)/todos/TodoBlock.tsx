@@ -380,7 +380,7 @@ export default function TodoBlock({
       </div>
 
       {/* Quick-add form */}
-      <form onSubmit={handleCreate} className="px-4 py-2 border-b-2 border-[#171717] flex items-center gap-2">
+      <form onSubmit={handleCreate} className="px-4 py-2.5 border-b-2 border-[#171717] flex items-center gap-2">
         <input
           ref={inputRef}
           type="text"
@@ -388,7 +388,7 @@ export default function TodoBlock({
           onChange={e => setTitle(e.target.value)}
           placeholder="Add a to-do…"
           maxLength={200}
-          className="flex-1 text-sm bg-transparent outline-none text-kk-ink placeholder:text-kk-muted"
+          className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none transition-colors"
           disabled={isPending}
         />
         <select
