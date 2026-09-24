@@ -224,10 +224,16 @@ export async function fetchIgAccountDailyInsights(
   function parseInsightsBody(settled: PromiseSettledResult<unknown>, label: string) {
     if (settled.status === 'fulfilled') {
       const data = (settled.value as {
-        data?: Array<{ name: string; values: Array<{ value: number }> }>
+        data?: Array<{
+          name: string
+          values?: Array<{ value: number }>
+          total_value?: { value: number }
+        }>
       }).data ?? []
       for (const item of data) {
-        const val = item.values?.[0]?.value ?? null
+        // v26: total_value metrics return { total_value: { value: N } }
+        // Legacy period metrics return { values: [{ value: N }] }
+        const val = item.total_value?.value ?? item.values?.[0]?.value ?? null
         if (val === null) continue
         if (STRUCTURED_IG_ACCOUNT_METRICS.has(item.name)) {
           (result as Record<string, unknown>)[item.name] = val
