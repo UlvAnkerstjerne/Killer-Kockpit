@@ -272,14 +272,24 @@ export async function attachDriveFile(
 
   if (existing) {
     sourceId = existing.id
-    // Update content if we just extracted it (or mark status change)
+    // Update content + extraction_status when we just ran extraction.
+    // extraction_status lives inside sources.metadata (JSONB), not as a top-level column.
     if (canReadContent) {
-      const metaPatch: Record<string, unknown> = {}
-      if (extractedContent !== null)  metaPatch.content           = extractedContent
-      if (extractionStatus)           metaPatch.extraction_status = extractionStatus
-      if (Object.keys(metaPatch).length > 0) {
-        await db.from('sources').update(metaPatch).eq('id', sourceId)
+      const { data: srcRow } = await db
+        .from('sources')
+        .select('metadata')
+        .eq('id', sourceId)
+        .single()
+
+      const mergedMeta = {
+        ...(srcRow?.metadata as Record<string, unknown> ?? {}),
+        extraction_status: extractionStatus,
       }
+
+      const patch: Record<string, unknown> = { metadata: mergedMeta }
+      if (extractedContent !== null) patch.content = extractedContent
+
+      await db.from('sources').update(patch).eq('id', sourceId)
     }
   } else {
     const { data: newSource, error: insertErr } = await db

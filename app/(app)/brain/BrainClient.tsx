@@ -604,6 +604,31 @@ function RecordLinks({ result }: { result: BrainAnswer }) {
 
 // ─── Answer renderer ──────────────────────────────────────────────────────────
 
+/** Parses markdown-style links [text](url) into React elements. */
+function renderInlineLinks(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g
+  let last = 0
+  let match: RegExpExecArray | null
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index))
+    parts.push(
+      <a
+        key={match.index}
+        href={match[2]}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 underline hover:text-blue-800 transition-colors"
+      >
+        {match[1]}
+      </a>,
+    )
+    last = match.index + match[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
 function AnswerText({ text }: { text: string }) {
   const lines = text.split('\n')
   return (
@@ -616,14 +641,14 @@ function AnswerText({ text }: { text: string }) {
             <div key={i} className="flex gap-2">
               <span className="text-kk-muted shrink-0 mt-0.5">•</span>
               <span className="text-sm text-kk-ink leading-relaxed">
-                {line.trim().replace(/^[•\-\*]\s*/, '')}
+                {renderInlineLinks(line.trim().replace(/^[•\-\*]\s*/, ''))}
               </span>
             </div>
           )
         }
         return (
           <p key={i} className="text-sm text-kk-ink leading-relaxed">
-            {line}
+            {renderInlineLinks(line)}
           </p>
         )
       })}

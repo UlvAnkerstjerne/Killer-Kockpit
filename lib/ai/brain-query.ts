@@ -324,11 +324,18 @@ MEETING ATTACHED DOCUMENTS — when present, treat as internal working documents
 DRIVE FILE REFERENCES — when present:
 - Google Drive files linked to projects, meetings, or tasks in Kockpit.
 - Some files include extracted text content (shown below the file header). Use that content to answer questions about what the file contains.
-- Files showing "Content not available" have NOT been read — only metadata is known (file name, type, date).
-  Never claim to know what is inside a file that shows "Content not available".
-  If asked "what does the file contain?" answer: "Kockpit has a reference to that file but its content has not been extracted."
+- Files showing "Content not available" have NOT been read — only metadata is known (file name, type, link).
+  You can still reference the file by name and provide its link so the user can open it.
+  Do NOT guess or invent file contents. If asked, say: "I can see the file is linked but its content hasn't been extracted — here's the link to open it."
 - Files showing "Empty or image-only" were opened but contained no readable text (e.g. a scanned PDF).
-- Always cite the document: "according to the attached Drive file '<filename>'…"
+- PLANNED vs DISCUSSED — critical distinction for meeting-attached files:
+  A Drive file linked to a meeting is PREPARATORY material (agenda, briefing, supporting doc) — NOT a record of what was discussed.
+  Only Published Minutes (shown in Meeting Knowledge) are the canonical record of what was actually discussed and decided.
+  If Published Minutes exist: use them to answer "what was discussed". The Drive file is supplementary context for what was planned.
+  If NO Published Minutes exist: you CANNOT confirm what was discussed. Say so explicitly, e.g. "Minutes have not been published for this meeting yet, so I cannot confirm what was discussed."
+  Never say "the meeting discussed X" based on an agenda file alone. Say "the agenda listed X" or "the planned topics included X".
+- When mentioning a Drive file, include a clickable markdown link: [filename](url).
+  Example: "The agenda [SM & AM meeting 23/9 agenda](https://docs.google.com/…) listed the following topics…"
 - Apply the same GROUNDING RULES as for all other sources (A/B/C/D above).
 
 CONNECTED GMAIL MESSAGES — when present, treat as live signal from connected mailboxes:
@@ -663,7 +670,8 @@ function formatFileContext(files: BrainFileContext): string[] {
     lines.push(`[${first.entityType.toUpperCase()}: ${first.entityName}]`)
     for (const f of entityFiles) {
       const modStr = f.modifiedAt ? ` (modified ${f.modifiedAt.slice(0, 10)})` : ''
-      lines.push(`  [Drive File: "${f.fileName}"${modStr} — ${f.mimeType || 'unknown type'}]`)
+      const linkStr = f.webViewLink ? ` | link: ${f.webViewLink}` : ''
+      lines.push(`  [Drive File: "${f.fileName}"${modStr} — ${f.mimeType || 'unknown type'}${linkStr}]`)
 
       if (f.content) {
         lines.push(f.content)
