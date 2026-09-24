@@ -642,7 +642,7 @@ function CampaignBreakdown({ rows }: { rows: AdsConversionBreakdownRow[] }) {
     <div className="mt-1">
       <button
         onClick={() => setOpen(!open)}
-        className="text-[10px] text-kk-muted hover:text-kk-ink transition-colors"
+        className="text-[10px] text-kk-muted hover:text-kk-ink transition-colors underline underline-offset-2 decoration-kk-line hover:decoration-kk-muted"
       >
         {open ? '▾' : '▸'} Result breakdown
       </button>
@@ -723,7 +723,7 @@ function GoogleAdsSection({
             <div className="px-5 pt-4 pb-3 grid grid-cols-3 sm:grid-cols-6 gap-2 border-b border-kk-line">
               <AdsKpiCard label="Spend" value={`${fmtDkk(kpis.spend)} kr`} cur={kpis.spend} pri={kpis.spendPrior} />
               <AdsKpiCard label={kpis.resultLabel} value={fmt(Math.round(kpis.conversions))} cur={kpis.conversions} pri={kpis.convPrior} />
-              <AdsKpiCard label={`Cost / ${kpis.resultLabel.toLowerCase().slice(0, 8)}`} value={kpis.costPerResult !== null ? `${fmtCpr(kpis.costPerResult)} kr` : '—'} cur={kpis.costPerResult} pri={kpis.cprPrior} lowerBetter />
+              <AdsKpiCard label={`Cost / ${kpis.resultLabel.toLowerCase()}`} value={kpis.costPerResult !== null ? `${fmtCpr(kpis.costPerResult)} kr` : '—'} cur={kpis.costPerResult} pri={kpis.cprPrior} lowerBetter />
               <AdsKpiCard label="Clicks" value={fmt(kpis.clicks)} cur={kpis.clicks} pri={kpis.clicksPrior} />
               <AdsKpiCard label="Impressions" value={fmt(kpis.impressions)} cur={kpis.impressions} pri={kpis.imprPrior} />
               <AdsKpiCard label="CTR" value={`${ctr.toFixed(2)}%`} cur={kpis.ctr} pri={kpis.ctrPrior} />
