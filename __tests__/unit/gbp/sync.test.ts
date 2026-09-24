@@ -174,7 +174,9 @@ it('loads one bounded set of voice examples and reuses it across locations', asy
   const from = vi.spyOn(db, 'from')
   db.tables.gbp_locations.push({ ...location, id: 'gbp-2', google_location_id: '3', location_id: 'canonical-2' })
   mocks.locations.mockResolvedValue([{ name: 'locations/2', title: 'Synthetic A' }, { name: 'locations/3', title: 'Synthetic B' }])
+  db.tables.app_users[0].email = 'ulv@killerkebab.com'
   db.tables.gbp_review_replies = [{ status: 'published', approved_by_user_id: 'admin', approved_at: '2026-09-16T00:00:00Z', draft_text: 'Generic thanks', approved_text: 'Great to hear the falafel hit the spot!', review: { star_rating: 5, review_text: 'Synthetic falafel praise' } }]
+  db.tables.gbp_review_replies.push({ ...db.tables.gbp_review_replies[0], approved_text: 'Thanks for coming by!' })
   await runGbpSync(undefined, now)
   expect(from.mock.calls.filter(([table]) => table === 'gbp_review_replies')).toHaveLength(1)
   expect(mocks.reviews).toHaveBeenCalledTimes(2)

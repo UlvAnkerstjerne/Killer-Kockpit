@@ -12,7 +12,7 @@ Three migration files, to apply in this order:
 
 1. `20260923194341_gbp_review_health_daily.sql`: daily health table keyed by `(location_id, snapshot_date)`, unrounded numeric Google rating, Google count, capture timestamp, recent and unanswered counts; aggregate/upsert RPC.
 2. `20260923194557_gbp_review_desk.sql`: per-user session state; two publication-claim fields on existing replies; indexes for the queue and pending publications; bounded queue, approval/claim, and completion RPCs.
-3. `20260923200449_gbp_reply_voice_examples.sql`: partial index on recent human-approved replies.
+3. `20260923200449_gbp_reply_voice_examples.sql`: partial index on approver ID and recent approved/published replies.
 
 New tables have RLS enabled, explicit service-role grants and no direct anonymous/authenticated access. New functions are `SECURITY INVOKER`, with execution revoked from public/browser roles and granted only to `service_role`. No migration has been applied to a connected database. Tests execute them in isolated in-memory PostgreSQL.
 
@@ -52,24 +52,34 @@ Prompt version is `v2`. Replies are warm, direct, short, specific and conversati
 
 Danish and English match the review. Other clear languages retain the prior matching convention, with English when uncertain. Product/location wording is contextual, normally at most one phrase of each kind; no search-ranking guarantees.
 
-Once per sync, a bounded query loads the 24 most recent human-approved/published replies from the past 90 days. Up to six short examples are selected, preferring edits where `draft_text` differs from `approved_text`. Examples include bounded review/rating context, original draft and final wording. All authorized human approvers contribute; Ulv's edits are included through that same approval trail. This is in-context adaptation, not model retraining. Missing examples or example-query failures do not block drafting.
+Once per sync, the server resolves the active `app_users` record whose email is exactly `ulv@killerkebab.com`, matching the existing email-based actor lookup. Reply approvals reference that record's `id`, not its `auth_user_id`. A bounded query filters by Ulv's ID before selecting his 24 most recent approved/published replies from the past 90 days. Up to six short examples are selected, preferring edits where `draft_text` differs from `approved_text`. Examples include bounded review/rating context, original draft and final wording. Other approvers are excluded, including other admins. Fewer than two usable Ulv examples, a missing/inactive identity or a query error leave drafting on the base brand context; there is no fallback to other writers. This is in-context adaptation, not model retraining.
 
 Review text and names—including review text attached to examples—remain untrusted data. Examples cannot override system rules or establish facts about a different reviewer. No tools or secrets are provided to the drafting model by this feature.
 
 ## Page-load impact
 
-The desk fetch runs alongside existing Morning Brief inputs. Its own query is bounded and indexed, with no Google or AI requests on render. The summary cards no longer page through thousands of reviews. Sync adds SQL aggregates and one small example query, reused across all locations; only interrupted-publication recovery can require an exceptional full location traversal. Existing unrelated Morning Brief/platform queries are unchanged.
+The desk fetch runs alongside existing Morning Brief inputs. Its own query is bounded and indexed, with no Google or AI requests on render. The summary cards no longer page through thousands of reviews. Sync adds SQL aggregates, one indexed identity lookup and one bounded example query, reused across all locations; only interrupted-publication recovery can require an exceptional full location traversal. Existing unrelated Morning Brief/platform queries are unchanged.
 
 ## Verification
 
 - Focused tests cover Google metadata, failure boundaries, real SQL upserts/counts with 3,883 synthetic reviews, calendar dates, precision, grants/RLS, queue boundaries/pagination, permission enforcement, three-success batches, partial failures, local state/audits, uncertain claims, individual workflow, voice rules and bounded/reused examples.
 - Real component and app styles were inspected in the browser with synthetic fixtures. Inline edit, original-draft disclosure, missing-draft retry, include/exclude counts, partial-success removal, retained failed text and excluded rows were verified. No production reviewer content or live Google/AI calls were used.
 - Full-suite status and final commit ID are recorded in the task's final report. Five failures in `__tests__/unit/api/gbp/sync.test.ts` reproduce unchanged in a clean export of `origin/main`. Their fixtures expect an older sync response contract; they were not changed here.
-- Local TypeScript/build verification uses `NODE_OPTIONS=--max-old-space-size=8192`, because the default 2 GB Node heap ran out during checking. This is process-local; no project/deployment settings were changed.
+- The final hardening pass successfully ran `npm run build` with `NODE_OPTIONS` unset. No deployment memory change is needed. PGlite is a dev dependency referenced only by tests; it is absent from production output traces. The existing broad TypeScript include pattern also checks test files, but no build-memory regression was demonstrated, so build/TypeScript/Railway configuration is unchanged.
+
+## Migration release verification
+
+The release test replays every preceding repository migration through `20260923110000_meeting_attachment_source_type.sql`, matching `origin/main` at `c5dd80c696673de355a4ede4e438bc661537891a`. SQL files execute unchanged in in-memory PGlite with pgcrypto. Supabase roles/auth helpers are modeled locally; two historical seed migrations receive synthetic prerequisite users and an audit template. This verifies the versioned main schema, not out-of-band production drift.
+
+All three release migrations then apply in timestamp order: health, desk, voice index. The desk completion function depends on the health table. The test preserves all existing table rows, including every reply status, exercises the real app-user/approval/audit foreign keys and role enum, rejects invalid claim pairs and snapshot/session values, and executes all four new functions as service_role. Broad modeled Supabase default grants are explicitly revoked for browser roles; both new tables have RLS and no browser policies. The approver-first voice index matches the Ulv-only bounded lookup.
+
+The release adds two tables, two nullable claim columns, constraints, functions and indexes. It does not delete or rewrite existing content. Existing replies satisfy the new pair constraint because both new columns start null. DDL and ordinary index creation take locks and may briefly delay writes; schedule the release accordingly. A transaction rollback before use was verified to remove the new DDL while preserving existing rows.
+
+For rollback after use, keep the additive schema and retained audit/session/snapshot data. Pause publication and reconcile outstanding claims with Google before restoring older application workers, which do not understand the claim protocol. Dropping claim/state columns can discard recovery evidence; Google replies already published cannot be undone by a database rollback. No production migration, data change or deployment was performed during verification.
 
 ## Required before production
 
-1. Review the branch and these three migrations. Decide whether examples should remain shared among authorized approvers or be restricted if more people start replying.
+1. Review the branch and these three migrations. Adaptive voice is restricted to Ulv's approvals.
 2. Apply the migration files in order through the normal approved database release process. They are additive and must precede deploying the application changes.
 3. Deploy the reviewed branch through the normal release process only after explicit approval. No new environment variables, OAuth scopes or cron changes are required.
 4. Run or await the existing GBP sync. Verify snapshots for the mapped locations and inspect sync errors before relying on the card values. An absent snapshot stays unavailable until successful sync.
