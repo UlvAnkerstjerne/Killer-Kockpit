@@ -17,12 +17,14 @@ import AttendeeSection from './AttendeeSection'
 import CorrectionsSection from './CorrectionsSection'
 import CalendarSection from './CalendarSection'
 import RelatedFilesSection from '@/components/drive/RelatedFilesSection'
+import MeetingAttachmentsSection from './MeetingAttachmentsSection'
 import LinkedEmailsSection from '@/components/ui/LinkedEmailsSection'
 import TranscriptSection from './TranscriptSection'
 import AiDraftSection from './AiDraftSection'
 import InPersonRecordingSection from './InPersonRecordingSection'
 import { getGoogleConnectionStatus, hasDriveScope, getManagementCalendarWriterUserId } from '@/lib/google/auth'
 import { getEntityDriveFiles } from '@/lib/actions/drive'
+import { getMeetingAttachments } from '@/lib/actions/meeting-attachments'
 import { getEntityGmailSources } from '@/lib/actions/gmail'
 import { getTranscriptSource } from '@/lib/actions/transcripts'
 import { getLatestDraft } from '@/lib/actions/ai-drafts'
@@ -42,7 +44,7 @@ export default async function MeetingDetailPage({
 
   const supabase = await createClient()
 
-  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, systemCalendarStatus, userGoogleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, recordingsResult, minutesResult] = await Promise.all([
+  const [meetingResult, agendaResult, outcomesResult, attendeesResult, usersResult, correctionsResult, systemCalendarStatus, userGoogleStatus, projectsResult, driveFiles, gmailSourcesResult, transcriptSource, latestDraft, recordingsResult, minutesResult, attachmentsResult] = await Promise.all([
     supabase
       .from('meetings')
       .select(`
@@ -119,6 +121,9 @@ export default async function MeetingDetailPage({
       .order('version', { ascending: false })
       .limit(1)
       .maybeSingle(),
+
+    // Plain-text documents attached to this meeting (Brain-readable).
+    getMeetingAttachments(id),
   ])
 
   const meeting = meetingResult.data
@@ -147,6 +152,7 @@ export default async function MeetingDetailPage({
   const canonicalMinutes = minutesResult.data as MeetingMinutes | null
   const gmailSources     = gmailSourcesResult.data ?? []
   const recordings       = recordingsResult.data ?? []
+  const meetingAttachments = attachmentsResult ?? []
 
   const corrections = (correctionsResult.data ?? []) as unknown as {
     id: string; body: string; reason: string | null; author_id: string | null;
@@ -406,6 +412,13 @@ export default async function MeetingDetailPage({
             initialFiles={driveFiles}
             canManage={canManageDriveRefs}
             driveEnabled={driveEnabled}
+          />
+
+          {/* Brain-readable attached documents */}
+          <MeetingAttachmentsSection
+            meetingId={id}
+            initialDocs={meetingAttachments}
+            canManage={canManageDriveRefs}
           />
 
           {/* Related emails */}
