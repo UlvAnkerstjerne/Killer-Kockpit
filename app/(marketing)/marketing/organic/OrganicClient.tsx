@@ -21,7 +21,12 @@ function fmtGrowth(n: number): string {
 }
 
 function fmtDate(iso: string): string {
-  return new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  // Handle both date-only ("2026-09-17") and timestamp ("2026-09-17 14:30:04+00")
+  const d = iso.length <= 10
+    ? new Date(iso + 'T12:00:00Z')
+    : new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
 function pctDelta(cur: number, pri: number): number | null {
@@ -207,20 +212,22 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
             </div>
           </div>
 
-          <div className="px-5 pt-4 pb-3 grid grid-cols-2 sm:grid-cols-3 gap-2 border-b border-kk-line">
+          <div className="px-5 pt-4 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 border-b border-kk-line">
             <KpiCard
               label="Followers"
               value={igOverview.followers !== null ? fmt(igOverview.followers) : '—'}
-              sub={igOverview.followerGrowth !== null ? (
-                <span className={['text-xs font-semibold', igOverview.followerGrowth >= 0 ? 'text-kk-good' : 'text-kk-bad'].join(' ')}>
-                  {fmtGrowth(igOverview.followerGrowth)} this period
-                </span>
-              ) : undefined}
             />
             <KpiCard
               label="Reach"
               value={fmt(igOverview.reach)}
               sub={<DeltaBadge cur={igOverview.reach} pri={igOverview.reachPrior} />}
+            />
+            <KpiCard
+              label="Engaged Users"
+              value={igOverview.engagedUsers !== null ? fmt(igOverview.engagedUsers) : '—'}
+              sub={igOverview.engagedUsers !== null && igOverview.engagedPrior !== null ? (
+                <DeltaBadge cur={igOverview.engagedUsers} pri={igOverview.engagedPrior} />
+              ) : undefined}
             />
             <KpiCard
               label="Follower Growth"
@@ -310,16 +317,13 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
             <KpiCard
               label="Page Fans"
               value={fbOverview.fans !== null ? fmt(fbOverview.fans) : '—'}
-              sub={fbOverview.fanGrowth !== null ? (
-                <span className={['text-xs font-semibold', fbOverview.fanGrowth >= 0 ? 'text-kk-good' : 'text-kk-bad'].join(' ')}>
-                  {fmtGrowth(fbOverview.fanGrowth)} this period
-                </span>
-              ) : undefined}
             />
             <KpiCard
-              label="Views"
-              value={fmt(fbOverview.views)}
-              sub={<DeltaBadge cur={fbOverview.views} pri={fbOverview.viewsPrior} />}
+              label="Reach"
+              value={fbOverview.reach !== null ? fmt(fbOverview.reach) : '—'}
+              sub={fbOverview.reach !== null && fbOverview.reachPrior !== null ? (
+                <DeltaBadge cur={fbOverview.reach} pri={fbOverview.reachPrior} />
+              ) : undefined}
             />
             <KpiCard
               label="Engaged Users"

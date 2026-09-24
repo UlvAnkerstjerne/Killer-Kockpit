@@ -66,11 +66,11 @@ async function fetchAllPages<T>(
 
 export async function getOrganicPerformance(): Promise<OrganicData> {
   const EMPTY: OrganicData = {
-    igOverview7: { reach: 0, reachPrior: 0, followerGrowth: null, followerGrowthPrior: null, followers: null },
-    igOverview28: { reach: 0, reachPrior: 0, followerGrowth: null, followerGrowthPrior: null, followers: null },
+    igOverview7: { reach: 0, reachPrior: 0, engagedUsers: null, engagedPrior: null, followerGrowth: null, followerGrowthPrior: null, followers: null },
+    igOverview28: { reach: 0, reachPrior: 0, engagedUsers: null, engagedPrior: null, followerGrowth: null, followerGrowthPrior: null, followers: null },
     igDaily: [], posts7: [], posts28: [], insights7: [], insights28: [],
-    fbOverview7: { views: 0, viewsPrior: 0, engagedUsers: 0, engagedPrior: 0, fanGrowth: null, fanGrowthPrior: null, fans: null },
-    fbOverview28: { views: 0, viewsPrior: 0, engagedUsers: 0, engagedPrior: 0, fanGrowth: null, fanGrowthPrior: null, fans: null },
+    fbOverview7: { reach: null, reachPrior: null, views: 0, viewsPrior: 0, engagedUsers: 0, engagedPrior: 0, fanGrowth: null, fanGrowthPrior: null, fans: null },
+    fbOverview28: { reach: null, reachPrior: null, views: 0, viewsPrior: 0, engagedUsers: 0, engagedPrior: 0, fanGrowth: null, fanGrowthPrior: null, fans: null },
     fbDaily: [], hasData: false,
   }
 

@@ -172,6 +172,7 @@ describe('generateInsights', () => {
 
   const defaultOverview: IgOverview = {
     reach: 1000, reachPrior: 1000,
+    engagedUsers: null, engagedPrior: null,
     followerGrowth: 10, followerGrowthPrior: 10,
     followers: 5000,
   }
@@ -195,6 +196,7 @@ describe('generateInsights', () => {
   it('generates reach-up-growth-down insight', () => {
     const overview: IgOverview = {
       reach: 2000, reachPrior: 1000,
+      engagedUsers: null, engagedPrior: null,
       followerGrowth: 5, followerGrowthPrior: 15,
       followers: 5000,
     }
@@ -258,6 +260,7 @@ describe('generateInsights', () => {
     ]
     const overview: IgOverview = {
       reach: 1000, reachPrior: 1000,
+      engagedUsers: null, engagedPrior: null,
       followerGrowth: 10, followerGrowthPrior: 10,
       followers: 5000,
     }
@@ -311,5 +314,73 @@ describe('sortPosts', () => {
   it('sorts by saves (highest first)', () => {
     const result = sortPosts(posts, 'saves')
     expect(result.map(p => p.id)).toEqual(['c', 'a', 'b'])
+  })
+})
+
+describe('date boundary growth', () => {
+  it('IG follower growth uses first and last date in window, not array index', () => {
+    // Gap at Sep 14 should not affect growth calculation
+    const daily = [
+      makeDaily('2026-09-13', 100, 1000),
+      // Sep 14 missing
+      makeDaily('2026-09-15', 100, 1010),
+      makeDaily('2026-09-16', 100, 1020),
+    ]
+    const result = computeIgOverview(daily, '2026-09-13', '2026-09-16', '2026-09-06', '2026-09-09')
+    expect(result.followerGrowth).toBe(20) // 1020 - 1000, not shifted by missing day
+  })
+
+  it('FB fan growth uses first and last date in window', () => {
+    const fb = [
+      makeFbDaily('2026-09-17', 100, 50, 4178),
+      makeFbDaily('2026-09-20', 100, 50, 4274),
+      makeFbDaily('2026-09-23', 100, 50, 5220),
+    ]
+    const result = computeFbOverview(fb, '2026-09-17', '2026-09-23', '2026-09-10', '2026-09-16')
+    expect(result.fanGrowth).toBe(1042) // 5220 - 4178
+  })
+
+  it('missing rows do not silently shift growth windows', () => {
+    // Only rows for Sep 20 and Sep 22 — Sep 21 missing
+    const daily = [
+      makeDaily('2026-09-20', 100, 2000),
+      makeDaily('2026-09-22', 100, 2010),
+    ]
+    const result = computeIgOverview(daily, '2026-09-20', '2026-09-23', '2026-09-13', '2026-09-16')
+    // Growth uses Sep 20 and Sep 22 (the actual rows in the window)
+    expect(result.followerGrowth).toBe(10)
+  })
+})
+
+describe('IG engaged users null safety', () => {
+  it('returns null when accounts_engaged is all null', () => {
+    const daily = [
+      makeDaily('2026-09-20', 100, 1000),
+      makeDaily('2026-09-21', 200, 1010),
+    ]
+    const result = computeIgOverview(daily, '2026-09-20', '2026-09-21', '2026-09-10', '2026-09-11')
+    expect(result.engagedUsers).toBeNull()
+    expect(result.engagedPrior).toBeNull()
+  })
+
+  it('sums accounts_engaged when data is available', () => {
+    const daily: IgDailyRow[] = [
+      { date: '2026-09-20', reach: 100, followers_count: 1000, accounts_engaged: 50, profile_views: null },
+      { date: '2026-09-21', reach: 100, followers_count: 1000, accounts_engaged: 60, profile_views: null },
+    ]
+    const result = computeIgOverview(daily, '2026-09-20', '2026-09-21', '2026-09-10', '2026-09-11')
+    expect(result.engagedUsers).toBe(110)
+  })
+})
+
+describe('FB reach vs views', () => {
+  it('returns null reach when fb reach data is all null', () => {
+    const fb = [
+      makeFbDaily('2026-09-20', 500, 200, 5000),
+      makeFbDaily('2026-09-21', 600, 250, 5010),
+    ]
+    const result = computeFbOverview(fb, '2026-09-20', '2026-09-21', '2026-09-10', '2026-09-11')
+    expect(result.reach).toBeNull()
+    expect(result.views).toBe(1100) // views still works
   })
 })

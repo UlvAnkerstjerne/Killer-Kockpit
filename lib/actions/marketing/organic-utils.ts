@@ -45,12 +45,16 @@ export interface FbDailyRow {
 export interface IgOverview {
   reach:            number
   reachPrior:       number
+  engagedUsers:     number | null
+  engagedPrior:     number | null
   followerGrowth:   number | null
   followerGrowthPrior: number | null
   followers:        number | null
 }
 
 export interface FbOverview {
+  reach:            number | null
+  reachPrior:       number | null
   views:            number
   viewsPrior:       number
   engagedUsers:     number
@@ -98,6 +102,14 @@ export function computeIgOverview(
   const reach = cur.reduce((a, r) => a + (r.reach ?? 0), 0)
   const reachPrior = pri.reduce((a, r) => a + (r.reach ?? 0), 0)
 
+  // Engaged users: sum if any non-null values exist, otherwise null
+  const curEngaged = cur.filter(r => r.accounts_engaged != null)
+  const priEngaged = pri.filter(r => r.accounts_engaged != null)
+  const engagedUsers = curEngaged.length > 0
+    ? curEngaged.reduce((a, r) => a + r.accounts_engaged!, 0) : null
+  const engagedPrior = priEngaged.length > 0
+    ? priEngaged.reduce((a, r) => a + r.accounts_engaged!, 0) : null
+
   // Follower growth = last day followers - first day followers in the window
   const followerGrowth = computeFollowerGrowth(cur)
   const followerGrowthPrior = computeFollowerGrowth(pri)
@@ -105,7 +117,7 @@ export function computeIgOverview(
   const sorted = [...cur].sort((a, b) => b.date.localeCompare(a.date))
   const followers = sorted[0]?.followers_count ?? null
 
-  return { reach, reachPrior, followerGrowth, followerGrowthPrior, followers }
+  return { reach, reachPrior, engagedUsers, engagedPrior, followerGrowth, followerGrowthPrior, followers }
 }
 
 export function computeFollowerGrowth(rows: IgDailyRow[]): number | null {
@@ -126,6 +138,12 @@ export function computeFbOverview(
   const cur = filterByDate(daily, curStart, curEnd)
   const pri = filterByDate(daily, priStart, priEnd)
 
+  // Reach: null if no rows have reach data
+  const curReach = cur.filter(r => r.reach != null)
+  const priReach = pri.filter(r => r.reach != null)
+  const reach = curReach.length > 0 ? curReach.reduce((a, r) => a + r.reach!, 0) : null
+  const reachPrior = priReach.length > 0 ? priReach.reduce((a, r) => a + r.reach!, 0) : null
+
   const views = cur.reduce((a, r) => a + (r.views ?? 0), 0)
   const viewsPrior = pri.reduce((a, r) => a + (r.views ?? 0), 0)
   const engagedUsers = cur.reduce((a, r) => a + (r.engaged_users ?? 0), 0)
@@ -137,7 +155,7 @@ export function computeFbOverview(
   const sorted = [...cur].sort((a, b) => b.date.localeCompare(a.date))
   const fans = sorted[0]?.fan_count ?? null
 
-  return { views, viewsPrior, engagedUsers, engagedPrior, fanGrowth, fanGrowthPrior, fans }
+  return { reach, reachPrior, views, viewsPrior, engagedUsers, engagedPrior, fanGrowth, fanGrowthPrior, fans }
 }
 
 function computeFanGrowth(rows: FbDailyRow[]): number | null {
