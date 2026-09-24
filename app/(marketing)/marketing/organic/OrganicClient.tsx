@@ -162,6 +162,11 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
   const [period, setPeriod] = useState<7 | 28>(7)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
 
+  type FbMetric = 'reach' | 'engaged_users'
+  // Default to reach if any FB row has reach data, otherwise engaged_users
+  const fbHasReach = data.fbDaily.some(r => r.reach != null)
+  const [fbMetric, setFbMetric] = useState<FbMetric>(fbHasReach ? 'reach' : 'engaged_users')
+
   const igOverview = period === 7 ? data.igOverview7 : data.igOverview28
   const fbOverview = period === 7 ? data.fbOverview7 : data.fbOverview28
   const rawPosts   = period === 7 ? data.posts7 : data.posts28
@@ -176,6 +181,16 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
     .filter(r => r.date >= curStart && r.date <= curEnd)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map(r => ({ date: r.date, value: r.reach ?? 0 }))
+
+  // FB trend chart data
+  const fbTrendRows = data.fbDaily
+    .filter(r => r.date >= curStart && r.date <= curEnd)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(r => ({
+      date: r.date,
+      value: fbMetric === 'reach' ? (r.reach ?? 0) : (r.engaged_users ?? 0),
+    }))
+  const fbMetricLabel = fbMetric === 'reach' ? 'Reach' : 'Engaged Users'
 
   return (
     <div>
@@ -339,6 +354,33 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
                 </span>
               ) : undefined}
             />
+          </div>
+
+          {/* FB Trend */}
+          <div className="px-5 py-4 border-t border-kk-line">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted">
+                Daily {fbMetricLabel} — {period} days
+              </div>
+              <div className="flex items-center gap-1">
+                {([
+                  { key: 'reach' as FbMetric, label: 'Reach' },
+                  { key: 'engaged_users' as FbMetric, label: 'Engaged' },
+                ] as const).map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setFbMetric(tab.key)}
+                    className={[
+                      'px-2 py-0.5 rounded text-[10px] font-semibold transition-colors',
+                      fbMetric === tab.key ? 'bg-kk-ink text-white' : 'text-kk-muted hover:text-kk-ink',
+                    ].join(' ')}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <MiniBarChart rows={fbTrendRows} fmtVal={fmt} />
           </div>
         </section>
 
