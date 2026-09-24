@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { getGoogleConnectionStatus } from '@/lib/google/auth'
+import { getGoogleAdsPerformance } from '@/lib/actions/marketing/google-ads'
 import GoogleAdsConnection from '@/components/google/GoogleAdsConnection'
 import GooglePageClient, {
   type GscBreakdownRow,
@@ -221,6 +222,12 @@ export default async function GooglePage() {
     ),
   ])
 
+  // ── Google Ads ──────────────────────────────────────────────────────────────
+  const [ads28, ads90] = await Promise.all([
+    getGoogleAdsPerformance(28),
+    getGoogleAdsPerformance(90),
+  ])
+
   // Aggregate organic sessions by date (multiple sources per date with medium=organic)
   const orgMap = new Map<string, number>()
   for (const row of orgRes.data ?? []) {
@@ -270,6 +277,8 @@ export default async function GooglePage() {
       sources90={sources90}
       landingPages28={landingPages28}
       landingPages90={landingPages90}
+      ads28={ads28}
+      ads90={ads90}
     />
     </>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { GoogleAdsData, AdsCampaignRow, AdsConversionBreakdownRow } from '@/lib/actions/marketing/google-ads-utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -621,6 +622,270 @@ function Ga4BreakdownTable({
   )
 }
 
+// ── Google Ads helpers ────────────────────────────────────────────────────────
+
+function fmtDkk(n: number): string {
+  return Math.round(n).toLocaleString('da-DK')
+}
+
+function fmtCpr(n: number | null): string {
+  if (n === null) return '—'
+  return fmtDkk(n)
+}
+
+// ── CampaignBreakdown ────────────────────────────────────────────────────────
+
+function CampaignBreakdown({ rows }: { rows: AdsConversionBreakdownRow[] }) {
+  const [open, setOpen] = useState(false)
+  if (rows.length <= 1) return null
+  return (
+    <div className="mt-1">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-[10px] text-kk-muted hover:text-kk-ink transition-colors"
+      >
+        {open ? '▾' : '▸'} Result breakdown
+      </button>
+      {open && (
+        <div className="mt-1 space-y-0.5">
+          {rows.map(r => (
+            <div key={r.actionName} className="flex items-center justify-between text-[10px] text-kk-muted">
+              <span className="truncate mr-2">{r.actionName}</span>
+              <span className="tabular-nums shrink-0">{Math.round(r.conversions)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Google Ads Section ───────────────────────────────────────────────────────
+
+function GoogleAdsSection({
+  ads,
+  period,
+  chartType,
+  onChartTypeChange,
+  chartMetric,
+  onChartMetricChange,
+  hoverIdx,
+  onHoverChange,
+}: {
+  ads: GoogleAdsData
+  period: 28 | 90
+  chartType: ChartType
+  onChartTypeChange: (v: ChartType) => void
+  chartMetric: 'spend' | 'conversions' | 'cpr'
+  onChartMetricChange: (v: 'spend' | 'conversions' | 'cpr') => void
+  hoverIdx: number | null
+  onHoverChange: (idx: number | null) => void
+}) {
+  const { kpis, campaigns, daily, currency, hasData } = ads
+
+  const chartRows = daily.map(d => ({
+    date: d.date,
+    value: chartMetric === 'spend' ? d.spend
+         : chartMetric === 'conversions' ? d.conversions
+         : d.conversions > 0 ? d.spend / d.conversions : 0,
+  }))
+
+  const chartFmt = chartMetric === 'spend' ? (v: number) => fmtDkk(v) + ' kr'
+    : chartMetric === 'cpr' ? (v: number) => fmtDkk(v) + ' kr'
+    : (v: number) => fmt(Math.round(v))
+
+  const chartLabel = chartMetric === 'spend' ? 'Spend'
+    : chartMetric === 'conversions' ? kpis.resultLabel
+    : `Cost / ${kpis.resultLabel.toLowerCase()}`
+
+  const hoverRow = hoverIdx != null && hoverIdx < chartRows.length ? chartRows[hoverIdx] : null
+
+  const ctr = kpis.ctr
+
+  return (
+    <>
+      <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+        <div className="bg-[#DDD9D1] px-5 py-3 flex items-center justify-between border-b border-black/10">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-kk-ink">Google Ads</span>
+            <span className="text-xs text-kk-muted">KILLER Ads · {currency}</span>
+          </div>
+          {hasData && <ChartToggle value={chartType} onChange={onChartTypeChange} />}
+        </div>
+
+        {!hasData ? (
+          <div className="px-5 py-5">
+            <span className="text-sm text-kk-muted">No Google Ads data in the last {period} days.</span>
+          </div>
+        ) : (
+          <>
+            {/* KPI cards */}
+            <div className="px-5 pt-4 pb-3 grid grid-cols-3 sm:grid-cols-6 gap-2 border-b border-kk-line">
+              <AdsKpiCard label="Spend" value={`${fmtDkk(kpis.spend)} kr`} cur={kpis.spend} pri={kpis.spendPrior} />
+              <AdsKpiCard label={kpis.resultLabel} value={fmt(Math.round(kpis.conversions))} cur={kpis.conversions} pri={kpis.convPrior} />
+              <AdsKpiCard label={`Cost / ${kpis.resultLabel.toLowerCase().slice(0, 8)}`} value={kpis.costPerResult !== null ? `${fmtCpr(kpis.costPerResult)} kr` : '—'} cur={kpis.costPerResult} pri={kpis.cprPrior} lowerBetter />
+              <AdsKpiCard label="Clicks" value={fmt(kpis.clicks)} cur={kpis.clicks} pri={kpis.clicksPrior} />
+              <AdsKpiCard label="Impressions" value={fmt(kpis.impressions)} cur={kpis.impressions} pri={kpis.imprPrior} />
+              <AdsKpiCard label="CTR" value={`${ctr.toFixed(2)}%`} cur={kpis.ctr} pri={kpis.ctrPrior} />
+            </div>
+
+            {/* Chart metric selector + chart */}
+            <div className="px-5 py-4">
+              <div className="flex items-center justify-between mb-2 ml-8">
+                {hoverRow ? (
+                  <span className="text-[11px] font-semibold text-kk-ink tabular-nums">
+                    {fmtDate(hoverRow.date)} · {chartFmt(hoverRow.value)}
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    {(['spend', 'conversions', 'cpr'] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => onChartMetricChange(m)}
+                        className={[
+                          'px-2 py-0.5 rounded text-[10px] font-semibold transition-colors',
+                          chartMetric === m ? 'bg-kk-ink text-white' : 'text-kk-muted hover:text-kk-ink',
+                        ].join(' ')}
+                      >
+                        {m === 'spend' ? 'Spend' : m === 'conversions' ? 'Results' : 'Cost / Result'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <DeltaBadge
+                  cur={chartMetric === 'spend' ? kpis.spend : chartMetric === 'conversions' ? kpis.conversions : (kpis.costPerResult ?? 0)}
+                  pri={chartMetric === 'spend' ? kpis.spendPrior : chartMetric === 'conversions' ? kpis.convPrior : (kpis.cprPrior ?? 0)}
+                  lowerBetter={chartMetric === 'cpr'}
+                />
+              </div>
+              <MiniChart
+                rows={chartRows}
+                type={chartType}
+                gid="ads-grad"
+                compact
+                fmtVal={chartFmt}
+                hoverIdx={hoverIdx}
+                onHoverChange={onHoverChange}
+              />
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Campaign table */}
+      {campaigns.length > 0 && (
+        <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+          <div className="bg-[#DDD9D1] px-5 py-2.5 border-b border-black/10">
+            <span className="text-sm font-semibold text-kk-ink">Campaigns</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm table-fixed">
+              <colgroup>
+                <col />
+                <col className="w-16" />
+                <col className="w-16" />
+                <col className="w-24" />
+                <col className="w-20" />
+                <col className="w-20" />
+                <col className="w-16" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-kk-line">
+                  <th className="text-left py-2 px-5 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Campaign</th>
+                  <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Status</th>
+                  <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Type</th>
+                  <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Result</th>
+                  <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Cost / Res.</th>
+                  <th className="text-right py-2 px-2 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Spend</th>
+                  <th className="text-right py-2 px-2 pr-5 text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted">Clicks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {campaigns.map((c, i) => (
+                  <CampaignTableRow key={c.campaignId} campaign={c} isLast={i === campaigns.length - 1} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
+  )
+}
+
+function AdsKpiCard({
+  label,
+  value,
+  cur,
+  pri,
+  lowerBetter = false,
+}: {
+  label: string
+  value: string
+  cur: number | null
+  pri: number | null
+  lowerBetter?: boolean
+}) {
+  return (
+    <div className="bg-kk-soft border border-kk-line rounded-lg px-3 py-2.5 text-left">
+      <div className="text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted mb-1 truncate">{label}</div>
+      <div className="text-lg font-black text-kk-ink leading-none tabular-nums truncate">{value}</div>
+      {cur !== null && pri !== null && (
+        <div className="mt-1">
+          <DeltaBadge cur={cur} pri={pri} lowerBetter={lowerBetter} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+const CHANNEL_SHORT: Record<string, string> = {
+  SEARCH: 'Search',
+  PERFORMANCE_MAX: 'P-Max',
+  DISPLAY: 'Display',
+  VIDEO: 'Video',
+  SHOPPING: 'Shopping',
+  SMART: 'Smart',
+}
+
+const STATUS_SHORT: Record<string, string> = {
+  ENABLED: 'Active',
+  PAUSED: 'Paused',
+  REMOVED: 'Removed',
+}
+
+function CampaignTableRow({ campaign: c, isLast }: { campaign: AdsCampaignRow; isLast: boolean }) {
+  const resultCount = Math.round(c.conversions)
+  return (
+    <tr className={!isLast ? 'border-b border-kk-line' : ''}>
+      <td className="py-2 px-5">
+        <div className="font-medium text-kk-ink truncate">{c.name}</div>
+        <CampaignBreakdown rows={c.breakdown} />
+      </td>
+      <td className="py-2 px-2 text-right">
+        <span className={`text-xs ${c.status === 'ENABLED' ? 'text-kk-good' : 'text-kk-muted'}`}>
+          {STATUS_SHORT[c.status] ?? c.status}
+        </span>
+      </td>
+      <td className="py-2 px-2 text-right text-xs text-kk-muted">
+        {CHANNEL_SHORT[c.channelType] ?? c.channelType}
+      </td>
+      <td className="py-2 px-2 text-right tabular-nums text-kk-ink font-medium">
+        {resultCount > 0 ? `${resultCount} ${c.resultLabel}` : '—'}
+      </td>
+      <td className="py-2 px-2 text-right tabular-nums text-kk-muted">
+        {c.costPerResult !== null ? `${fmtCpr(c.costPerResult)} kr` : '—'}
+      </td>
+      <td className="py-2 px-2 text-right tabular-nums text-kk-ink font-medium">
+        {fmtDkk(c.spend)} kr
+      </td>
+      <td className="py-2 px-2 pr-5 text-right tabular-nums text-kk-muted">
+        {fmt(c.clicks)}
+      </td>
+    </tr>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function GooglePageClient({
@@ -635,6 +900,8 @@ export default function GooglePageClient({
   sources90,
   landingPages28,
   landingPages90,
+  ads28,
+  ads90,
 }: {
   gscRows: GscRow[]
   ga4Rows: Ga4Row[]
@@ -647,6 +914,8 @@ export default function GooglePageClient({
   sources90:      Ga4BreakdownRow[]
   landingPages28: Ga4BreakdownRow[]
   landingPages90: Ga4BreakdownRow[]
+  ads28: GoogleAdsData
+  ads90: GoogleAdsData
 }) {
   const [period,    setPeriod]    = useState<28 | 90>(28)
   const [scMetric,  setScMetric]  = useState<ScMetric>('impressions')
@@ -654,9 +923,14 @@ export default function GooglePageClient({
   const [ga4Metric, setGa4Metric] = useState<Ga4Metric>('sessions')
   const [ga4Chart,  setGa4Chart]  = useState<ChartType>('line')
 
+  type AdsChartMetric = 'spend' | 'conversions' | 'cpr'
+  const [adsChartMetric, setAdsChartMetric] = useState<AdsChartMetric>('spend')
+  const [adsChart,       setAdsChart]       = useState<ChartType>('bar')
+
   // Hover indices (managed here so the label row can update in-place)
-  const [scHover,  setScHover]  = useState<number | null>(null)
-  const [ga4Hover, setGa4Hover] = useState<number | null>(null)
+  const [scHover,   setScHover]   = useState<number | null>(null)
+  const [ga4Hover,  setGa4Hover]  = useState<number | null>(null)
+  const [adsHover,  setAdsHover]  = useState<number | null>(null)
 
   // Period windows
   const curEnd   = daysAgoStr(1)
@@ -829,9 +1103,9 @@ export default function GooglePageClient({
       {/* Header + period selector */}
       <div className="mb-6 flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-kk-ink">Google</h1>
+          <h1 className="text-2xl font-black tracking-tight text-kk-ink">Google Performance</h1>
           <p className="text-sm text-kk-muted mt-0.5">
-            Marketing · Search Console &amp; Analytics
+            Ads · Search Console · Analytics
           </p>
         </div>
         <div className="flex items-center gap-1 bg-kk-panel border border-kk-line rounded-lg p-1">
@@ -853,6 +1127,18 @@ export default function GooglePageClient({
       </div>
 
       <div className="space-y-4">
+
+        {/* ── Google Ads ───────────────────────────────────────────────────── */}
+        <GoogleAdsSection
+          ads={period === 28 ? ads28 : ads90}
+          period={period}
+          chartType={adsChart}
+          onChartTypeChange={setAdsChart}
+          chartMetric={adsChartMetric}
+          onChartMetricChange={setAdsChartMetric}
+          hoverIdx={adsHover}
+          onHoverChange={setAdsHover}
+        />
 
         {/* ── Search Console overview ───────────────────────────────────────── */}
         <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
