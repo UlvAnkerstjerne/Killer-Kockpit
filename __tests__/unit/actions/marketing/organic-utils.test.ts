@@ -192,28 +192,6 @@ describe('generateInsights', () => {
     expect(insights.some(i => i.text.includes('Reels'))).toBe(true)
   })
 
-  it('generates share concentration insight', () => {
-    const posts = [
-      makeContextPost({ id: 'p1', shares: 50 }),
-      makeContextPost({ id: 'p2', shares: 30 }),
-      makeContextPost({ id: 'p3', shares: 10 }),
-      makeContextPost({ id: 'p4', shares: 5 }),
-      makeContextPost({ id: 'p5', shares: 5 }),
-    ]
-    const insights = generateInsights(posts, defaultOverview)
-    expect(insights.some(i => i.text.includes('shares'))).toBe(true)
-  })
-
-  it('skips share insight when total shares too low', () => {
-    const posts = [
-      makeContextPost({ id: 'p1', shares: 1 }),
-      makeContextPost({ id: 'p2', shares: 1 }),
-      makeContextPost({ id: 'p3', shares: 1 }),
-    ]
-    const insights = generateInsights(posts, defaultOverview)
-    expect(insights.every(i => !i.text.includes('shares'))).toBe(true)
-  })
-
   it('generates reach-up-growth-down insight', () => {
     const overview: IgOverview = {
       reach: 2000, reachPrior: 1000,
@@ -227,6 +205,64 @@ describe('generateInsights', () => {
     ]
     const insights = generateInsights(posts, overview)
     expect(insights.some(i => i.text.includes('Reach is up'))).toBe(true)
+  })
+
+  it('3 posts cannot trigger share concentration (tautological)', () => {
+    const posts = [
+      makeContextPost({ id: 'p1', shares: 50 }),
+      makeContextPost({ id: 'p2', shares: 30 }),
+      makeContextPost({ id: 'p3', shares: 20 }),
+    ]
+    const insights = generateInsights(posts, defaultOverview)
+    expect(insights.every(i => !i.text.includes('shares'))).toBe(true)
+  })
+
+  it('5+ posts can trigger share concentration when genuinely high', () => {
+    const posts = [
+      makeContextPost({ id: 'p1', shares: 50 }),
+      makeContextPost({ id: 'p2', shares: 30 }),
+      makeContextPost({ id: 'p3', shares: 10 }),
+      makeContextPost({ id: 'p4', shares: 5 }),
+      makeContextPost({ id: 'p5', shares: 5 }),
+    ]
+    const insights = generateInsights(posts, defaultOverview)
+    expect(insights.some(i => i.text.includes('shares'))).toBe(true)
+  })
+
+  it('2 video + 1 static does NOT trigger format comparison', () => {
+    const posts = [
+      makeContextPost({ id: 'v1', media_type: 'VIDEO', exposure: 5000 }),
+      makeContextPost({ id: 'v2', media_type: 'VIDEO', exposure: 4000 }),
+      makeContextPost({ id: 's1', media_type: 'CAROUSEL_ALBUM', exposure: 100 }),
+    ]
+    const insights = generateInsights(posts, defaultOverview)
+    expect(insights.every(i => !i.text.includes('Reels') && !i.text.includes('Static'))).toBe(true)
+  })
+
+  it('2 video + 2 static triggers format comparison when medians differ enough', () => {
+    const posts = [
+      makeContextPost({ id: 'v1', media_type: 'VIDEO', exposure: 5000 }),
+      makeContextPost({ id: 'v2', media_type: 'VIDEO', exposure: 4000 }),
+      makeContextPost({ id: 's1', media_type: 'IMAGE', exposure: 500 }),
+      makeContextPost({ id: 's2', media_type: 'IMAGE', exposure: 600 }),
+    ]
+    const insights = generateInsights(posts, defaultOverview)
+    expect(insights.some(i => i.text.includes('Reels'))).toBe(true)
+  })
+
+  it('sparse data produces no false insight', () => {
+    const posts = [
+      makeContextPost({ id: 'p1', shares: 1, saved: 1, media_type: 'IMAGE', exposure: 100 }),
+      makeContextPost({ id: 'p2', shares: 1, saved: 1, media_type: 'IMAGE', exposure: 110 }),
+      makeContextPost({ id: 'p3', shares: 1, saved: 1, media_type: 'IMAGE', exposure: 105 }),
+    ]
+    const overview: IgOverview = {
+      reach: 1000, reachPrior: 1000,
+      followerGrowth: 10, followerGrowthPrior: 10,
+      followers: 5000,
+    }
+    const insights = generateInsights(posts, overview)
+    expect(insights).toEqual([])
   })
 
   it('insight threshold: no reel-vs-static when ratio is close to 1', () => {

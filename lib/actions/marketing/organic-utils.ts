@@ -198,6 +198,7 @@ export function addPostContext(posts: IgPostRow[], allPosts: IgPostRow[]): PostW
 // ── "What's working" insights ─────────────────────────────────────────────────
 
 const MIN_POSTS_FOR_INSIGHT = 3
+const MIN_POSTS_FOR_CONCENTRATION = 5  // top-3-of-3 is tautological
 
 export function generateInsights(
   posts: PostWithContext[],
@@ -227,9 +228,9 @@ export function generateInsights(
     }
   }
 
-  // 2. Share concentration
+  // 2. Share concentration (need enough posts so top-3 is meaningful)
   const totalShares = posts.reduce((a, p) => a + (p.shares ?? 0), 0)
-  if (totalShares >= 5) {
+  if (totalShares >= 5 && posts.length >= MIN_POSTS_FOR_CONCENTRATION) {
     const sorted = [...posts].sort((a, b) => (b.shares ?? 0) - (a.shares ?? 0))
     const top3Shares = sorted.slice(0, 3).reduce((a, p) => a + (p.shares ?? 0), 0)
     const pct = (top3Shares / totalShares) * 100
@@ -240,9 +241,9 @@ export function generateInsights(
     }
   }
 
-  // 3. Save concentration
+  // 3. Save concentration (same minimum as shares)
   const totalSaves = posts.reduce((a, p) => a + (p.saved ?? 0), 0)
-  if (totalSaves >= 5) {
+  if (totalSaves >= 5 && posts.length >= MIN_POSTS_FOR_CONCENTRATION) {
     const sorted = [...posts].sort((a, b) => (b.saved ?? 0) - (a.saved ?? 0))
     const top3Saves = sorted.slice(0, 3).reduce((a, p) => a + (p.saved ?? 0), 0)
     const pct = (top3Saves / totalSaves) * 100
