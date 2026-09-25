@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
 import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource, BrainReviewSource, BrainBriefSource, BrainFileSource, BrainTodoSource } from '@/lib/actions/brain'
@@ -719,19 +720,97 @@ export default function BrainClient({ initialQuestion }: { initialQuestion?: str
 
   const isEmpty = !result && !isLoading && !error
 
-  return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
+  const hasSources = result && (result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0 || result.reviewSources.length > 0 || result.briefSources.length > 0 || result.fileSources.length > 0 || result.todoSources.length > 0)
 
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-kk-ink tracking-tight">Kockpit Brain</h1>
-        <p className="text-sm text-kk-muted mt-1">
+  const sourceCount = result
+    ? result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length + result.reviewSources.length + result.briefSources.length + result.fileSources.length + result.todoSources.length
+    : 0
+
+  // Speech bubble content: idle suggestions, loading spinner, error, or answer
+  const bubbleContent = (() => {
+    if (isLoading) {
+      return (
+        <div className="flex items-center gap-2.5 text-sm text-kk-muted py-2">
+          <span className="w-4 h-4 border-2 border-kk-ink/20 border-t-kk-ink rounded-full animate-spin shrink-0" />
+          Searching Kockpit memory…
+        </div>
+      )
+    }
+    if (error) {
+      return (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {error}
+        </div>
+      )
+    }
+    if (result) {
+      return (
+        <>
+          {answeredQuestion && (
+            <p className="text-xs text-kk-muted mb-3">
+              Answering: <em className="not-italic text-kk-ink/60">{answeredQuestion}</em>
+            </p>
+          )}
+          <AnswerText text={result.answer} />
+          <RecordLinks result={result} />
+        </>
+      )
+    }
+    // Idle — show suggestions
+    return (
+      <div>
+        <p className="text-sm text-kk-muted mb-3">
           Ask anything. Answers come only from what Kockpit actually knows.
         </p>
+        <p className="text-[10px] text-kk-muted mb-2 font-bold uppercase tracking-[0.12em]">Try asking</p>
+        <div className="flex flex-wrap gap-2">
+          {SUGGESTIONS.map(s => (
+            <button
+              key={s}
+              onClick={() => handleSuggestion(s)}
+              className="text-xs px-3 py-1.5 rounded-full border border-kk-line bg-white text-kk-ink/70 hover:text-kk-ink hover:border-kk-ink/30 transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  })()
+
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4">
+
+      {/* Kebab + speech bubble */}
+      <div className="flex flex-col md:flex-row items-start gap-4 md:gap-0">
+        {/* Kebab character */}
+        <div className="shrink-0 w-32 md:w-44 mx-auto md:mx-0">
+          <Image
+            src="/kk-mascot.png"
+            alt="Kockpit Brain kebab"
+            width={580}
+            height={650}
+            className="w-full mix-blend-multiply"
+            priority
+          />
+        </div>
+
+        {/* Speech bubble */}
+        <div className="relative flex-1 min-w-0">
+          {/* Bubble tail — pointing left on desktop, pointing up on mobile */}
+          <div className="hidden md:block absolute -left-3 top-8 w-0 h-0 border-t-[10px] border-t-transparent border-b-[10px] border-b-transparent border-r-[12px] border-r-kk-line" />
+          <div className="hidden md:block absolute -left-[10px] top-8 w-0 h-0 border-t-[10px] border-t-transparent border-b-[10px] border-b-transparent border-r-[12px] border-r-white" />
+          <div className="md:hidden absolute -top-3 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[12px] border-b-kk-line" />
+          <div className="md:hidden absolute -top-[10px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[12px] border-b-white" />
+
+          <div className="border border-kk-line rounded-2xl bg-white p-5">
+            {bubbleContent}
+          </div>
+        </div>
       </div>
 
       {/* Input */}
-      <div>
+      <div className="mt-6">
         <textarea
           ref={textareaRef}
           value={question}
@@ -754,103 +833,53 @@ export default function BrainClient({ initialQuestion }: { initialQuestion?: str
         </div>
       </div>
 
-      {/* Suggestions (shown when idle) */}
-      {isEmpty && (
-        <div className="mt-6">
-          <p className="text-xs text-kk-muted mb-2 font-medium uppercase tracking-wide">Try asking</p>
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map(s => (
-              <button
-                key={s}
-                onClick={() => handleSuggestion(s)}
-                className="text-xs px-3 py-1.5 rounded-full border border-kk-line bg-white text-kk-ink/70 hover:text-kk-ink hover:border-kk-ink/30 transition-colors"
-              >
-                {s}
-              </button>
+      {/* Sources — shown below the bubble when there's an answer */}
+      {hasSources && (
+        <div className="mt-8">
+          <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
+            Sources ({sourceCount})
+          </h2>
+          <div className="space-y-2">
+            {result.profileSources.map(s => (
+              <ProfileSourceCard key={`${s.entity_type}-${s.entity_id}`} source={s} />
+            ))}
+            {result.operationalSources.map(s => (
+              <OperationalSourceCard key={`${s.kind}-${s.id}`} source={s} />
+            ))}
+            {result.meetingSources.map(s => (
+              <MeetingSourceCard key={`meeting-${s.id}`} source={s} />
+            ))}
+            {result.decisionSources.map(s => (
+              <DecisionSourceCard key={`decision-${s.id}`} source={s} />
+            ))}
+            {result.auditSources.map(s => (
+              <AuditSourceCard key={`audit-${s.locationId}`} source={s} />
+            ))}
+            {result.dinerSources.map(s => (
+              <DinerSourceCard key={`diner-${s.locationId}`} source={s} />
+            ))}
+            {result.sspSource && (
+              <SSPSourceCard source={result.sspSource} />
+            )}
+            {result.reviewSources.map(s => (
+              <ReviewSourceCard key={`review-${s.locationName}`} source={s} />
+            ))}
+            {result.briefSources.map(s => (
+              <MorningBriefSourceCard key={`brief-${s.briefDate}`} source={s} />
+            ))}
+            {result.fileSources.map(s => (
+              <FileSourceCard key={`file-${s.sourceId}`} source={s} />
+            ))}
+            {result.todoSources.map(s => (
+              <TodoSourceCard key={`todo-${s.id}`} source={s} />
+            ))}
+            {result.sources.map(s => (
+              <SourceCard key={s.updateId} source={s} />
+            ))}
+            {result.emailSources.map(s => (
+              <EmailSourceCard key={s.threadId} source={s} />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Loading state */}
-      {isLoading && (
-        <div className="mt-8 flex items-center gap-2.5 text-sm text-kk-muted">
-          <span className="w-4 h-4 border-2 border-kk-ink/20 border-t-kk-ink rounded-full animate-spin shrink-0" />
-          Searching Kockpit memory…
-        </div>
-      )}
-
-      {/* Error state */}
-      {error && (
-        <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {/* Answer + sources */}
-      {result && (
-        <div className="mt-8">
-          {answeredQuestion && (
-            <p className="text-xs text-kk-muted mb-3">
-              Answering: <em className="not-italic text-kk-ink/60">{answeredQuestion}</em>
-            </p>
-          )}
-
-          {/* Answer */}
-          <div className="mb-6">
-            <AnswerText text={result.answer} />
-            <RecordLinks result={result} />
-          </div>
-
-          {/* Sources */}
-          {(result.profileSources.length > 0 || result.operationalSources.length > 0 || result.sources.length > 0 || result.emailSources.length > 0 || result.auditSources.length > 0 || result.dinerSources.length > 0 || result.sspSource || result.meetingSources.length > 0 || result.decisionSources.length > 0 || result.reviewSources.length > 0 || result.briefSources.length > 0 || result.fileSources.length > 0 || result.todoSources.length > 0) && (
-            <div>
-              <h2 className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-3">
-                Sources ({result.profileSources.length + result.operationalSources.length + result.sources.length + result.emailSources.length + result.auditSources.length + result.dinerSources.length + (result.sspSource ? 1 : 0) + result.meetingSources.length + result.decisionSources.length + result.reviewSources.length + result.briefSources.length + result.fileSources.length + result.todoSources.length})
-              </h2>
-              <div className="space-y-2">
-                {result.profileSources.map(s => (
-                  <ProfileSourceCard key={`${s.entity_type}-${s.entity_id}`} source={s} />
-                ))}
-                {result.operationalSources.map(s => (
-                  <OperationalSourceCard key={`${s.kind}-${s.id}`} source={s} />
-                ))}
-                {result.meetingSources.map(s => (
-                  <MeetingSourceCard key={`meeting-${s.id}`} source={s} />
-                ))}
-                {result.decisionSources.map(s => (
-                  <DecisionSourceCard key={`decision-${s.id}`} source={s} />
-                ))}
-                {result.auditSources.map(s => (
-                  <AuditSourceCard key={`audit-${s.locationId}`} source={s} />
-                ))}
-                {result.dinerSources.map(s => (
-                  <DinerSourceCard key={`diner-${s.locationId}`} source={s} />
-                ))}
-                {result.sspSource && (
-                  <SSPSourceCard source={result.sspSource} />
-                )}
-                {result.reviewSources.map(s => (
-                  <ReviewSourceCard key={`review-${s.locationName}`} source={s} />
-                ))}
-                {result.briefSources.map(s => (
-                  <MorningBriefSourceCard key={`brief-${s.briefDate}`} source={s} />
-                ))}
-                {result.fileSources.map(s => (
-                  <FileSourceCard key={`file-${s.sourceId}`} source={s} />
-                ))}
-                {result.todoSources.map(s => (
-                  <TodoSourceCard key={`todo-${s.id}`} source={s} />
-                ))}
-                {result.sources.map(s => (
-                  <SourceCard key={s.updateId} source={s} />
-                ))}
-                {result.emailSources.map(s => (
-                  <EmailSourceCard key={s.threadId} source={s} />
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
