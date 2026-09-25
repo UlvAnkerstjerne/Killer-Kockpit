@@ -11,10 +11,20 @@ export default async function OperationalAuditPage() {
   if (!user) redirect('/login')
   if (!canAccessQualityCheck(user.role)) redirect('/today')
 
-  const [{ submissions, templateConfig }, locations] = await Promise.all([
+  const [auditResult, locations] = await Promise.all([
     getOperationalAuditSubmissions(),
     getActiveLocations(),
   ])
+
+  const { submissions, templateConfig, error: auditError } = auditResult
+
+  // Diagnostic: log exactly what this user sees (remove after diagnosis)
+  console.log('[audit/page] user=%s role=%s submissions=%d templateConfig=%s error=%s ids=%s',
+    user.id, user.role, submissions.length,
+    templateConfig ? 'yes' : 'null',
+    auditError ?? 'none',
+    submissions.map(s => `${s.id.slice(0,8)}:${s.status}`).join(',') || '(empty)',
+  )
 
   return <AuditLanding submissions={submissions} locations={locations} templateConfig={templateConfig} />
 }

@@ -103,6 +103,7 @@ export async function getAuditSubmissionsByKey(auditKey: string): Promise<{
     .single()
 
   if (tErr || !published) {
+    console.error('[audit/submissions] published template lookup FAILED for %s: %s', auditKey, tErr?.message ?? 'no data')
     return { submissions: [], templateId: null, templateConfig: null, scoringConfig: DEFAULT_SCORING_CONFIG, error: 'no_published_template' }
   }
 
@@ -114,14 +115,19 @@ export async function getAuditSubmissionsByKey(auditKey: string): Promise<{
 
   const scoringConfig = parseScoringConfig(published.scoring_config as Record<string, unknown> | null)
 
-  // Get ALL template IDs for this audit_key (published + retired)
-  const { data: allTemplates } = await supabase
+  // Get ALL template IDs for this audit_key (published + retired + draft)
+  const { data: allTemplates, error: tplErr } = await supabase
     .from('audit_templates')
     .select('id')
     .eq('audit_key', auditKey)
 
+  if (tplErr) {
+    console.error(`[audit/submissions] Failed to load templates for ${auditKey}:`, tplErr.message)
+  }
+
   const templateIds = (allTemplates ?? []).map(t => t.id as string)
   if (templateIds.length === 0) {
+    console.warn(`[audit/submissions] No templates found for ${auditKey} — returning empty`)
     return { submissions: [], templateId: published.id, templateConfig, scoringConfig, error: null }
   }
 
@@ -137,7 +143,11 @@ export async function getAuditSubmissionsByKey(auditKey: string): Promise<{
     .in('template_id', templateIds)
     .order('created_at', { ascending: false })
 
+  console.log('[audit/submissions] key=%s templateIds=%s rawRows=%d',
+    auditKey, templateIds.join(','), data?.length ?? 0)
+
   if (error) {
+    console.error('[audit/submissions] submission query FAILED for %s: %s', auditKey, error.message)
     return { submissions: [], templateId: published.id, templateConfig, scoringConfig, error: error.message }
   }
 
