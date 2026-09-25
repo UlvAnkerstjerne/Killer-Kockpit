@@ -5,10 +5,16 @@ import BrainClient from './BrainClient'
 
 export const metadata = { title: 'Kockpit Brain' }
 
-export default async function BrainPage() {
+export default async function BrainPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
   if (!canAccessManagementView(user.role)) redirect('/')
 
-  return <BrainClient />
+  const { q } = await searchParams
+
+  return <BrainClient initialQuestion={q} />
 }

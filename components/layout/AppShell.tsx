@@ -12,6 +12,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 import NotificationBell from './NotificationBell'
 import RecentlyOpened from '@/components/nav/RecentlyOpened'
 import { GlobalSearchTrigger, GlobalSearchModal } from '@/components/search/GlobalSearch'
+import BrainButton from './BrainButton'
 
 // ─── Inline nav icons (simple SVG, no external dep) ──────────────────────────
 
@@ -438,6 +439,11 @@ export default function AppShell({
             priority
           />
         </div>
+        {managementAllowed && (
+          <div className="px-3 pb-1 shrink-0">
+            <BrainButton />
+          </div>
+        )}
         <NavContent onOpenSearch={() => setSearchOpen(true)} />
         <SidebarFooter onSignOut={handleSignOut} />
       </aside>
@@ -489,6 +495,11 @@ export default function AppShell({
               <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </button>
+          {managementAllowed && (
+            <div className="ml-auto">
+              <BrainButton />
+            </div>
+          )}
         </div>
 
         {pathname !== '/today' && <CaptureBar user={user} currentView={currentView} />}

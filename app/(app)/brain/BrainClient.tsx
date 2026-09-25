@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { askBrain } from '@/lib/actions/brain'
 import type { BrainAnswer, BrainSource, BrainProfileSource, BrainOperationalSource, BrainEmailSource, BrainAuditSource, BrainDinerSource, BrainSSPSource, BrainMeetingSource, BrainDecisionSource, BrainReviewSource, BrainBriefSource, BrainFileSource, BrainTodoSource } from '@/lib/actions/brain'
@@ -667,13 +667,22 @@ const SUGGESTIONS = [
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function BrainClient() {
-  const [question, setQuestion]               = useState('')
+export default function BrainClient({ initialQuestion }: { initialQuestion?: string }) {
+  const [question, setQuestion]               = useState(initialQuestion ?? '')
   const [isLoading, setIsLoading]             = useState(false)
   const [error, setError]                     = useState<string | null>(null)
   const [result, setResult]                   = useState<BrainAnswer | null>(null)
   const [answeredQuestion, setAnsweredQuestion] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const didAutoSubmit = useRef(false)
+
+  useEffect(() => {
+    if (initialQuestion?.trim() && !didAutoSubmit.current) {
+      didAutoSubmit.current = true
+      submit(initialQuestion)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function submit(q: string) {
     const trimmed = q.trim()
