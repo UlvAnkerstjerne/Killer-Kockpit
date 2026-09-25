@@ -64,8 +64,8 @@ export default async function TasksPage({
   ]
 
   return (
-    <div>
-      <div className="flex items-start justify-between mb-6">
+    <div className="-m-4 p-4 min-h-screen bg-kraft-light">
+      <div className="flex items-start justify-between mb-5">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-kk-ink">Tasks</h1>
           <p className="text-sm text-kk-muted mt-0.5">
@@ -74,14 +74,14 @@ export default async function TasksPage({
         </div>
         <Link
           href="/tasks/new"
-          className="px-4 py-2 bg-kk-ink text-white text-sm font-medium rounded-xl hover:opacity-90 transition-opacity"
+          className="px-4 py-2 bg-[#171717] text-kraft-light text-sm font-medium rounded-lg hover:opacity-80 transition-opacity [box-shadow:3px_3px_0_#555555]"
         >
           New task
         </Link>
       </div>
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 mb-4 bg-white border border-kk-line rounded-xl p-1 w-fit">
+      <div className="flex gap-1 mb-4">
         {STATUS_FILTERS.map(({ label, value }) => (
           <Link
             key={value}
@@ -89,8 +89,8 @@ export default async function TasksPage({
             className={[
               'text-xs px-3 py-1.5 rounded-lg transition-colors',
               (statusFilter || '') === value
-                ? 'bg-kk-ink text-white font-medium'
-                : 'text-kk-muted hover:text-kk-ink',
+                ? 'bg-[#171717] text-kraft-light font-semibold'
+                : 'text-kk-muted hover:bg-[#B7A486]/25 hover:text-kk-ink',
             ].join(' ')}
           >
             {label}
@@ -98,16 +98,16 @@ export default async function TasksPage({
         ))}
       </div>
 
-      <div className="bg-kk-panel border border-kk-line rounded-2xl">
-        {!tasks || tasks.length === 0 ? (
-          <EmptyState
-            title="No tasks"
-            description={view === 'personal' ? 'Tasks assigned to you appear here.' : 'No tasks match this filter.'}
-          />
-        ) : (
-          <TaskList tasks={tasks} currentUser={user} allUsers={allUsers} showProject={true} />
-        )}
-      </div>
+      {!tasks || tasks.length === 0 ? (
+        <div className="bg-kraft-light border-2 border-[#171717] rounded-lg px-6 py-14 text-center [box-shadow:4px_4px_0_#555555]">
+          <div className="text-sm font-semibold text-kk-ink mb-1">No tasks</div>
+          <div className="text-sm text-kk-muted">
+            {view === 'personal' ? 'Tasks assigned to you appear here.' : 'No tasks match this filter.'}
+          </div>
+        </div>
+      ) : (
+        <TaskList tasks={tasks} currentUser={user} allUsers={allUsers} showProject={true} />
+      )}
     </div>
   )
 }
