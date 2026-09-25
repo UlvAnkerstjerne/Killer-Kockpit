@@ -2,7 +2,8 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { startAudit, BUSYNESS_OPTIONS } from '@/lib/actions/audit'
+import { startAudit } from '@/lib/actions/audit'
+import { BUSYNESS_OPTIONS } from '@/lib/audit/constants'
 import type { ActiveLocation, AuditTemplateConfig } from '@/lib/audit/submissions'
 
 interface Props {

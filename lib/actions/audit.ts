@@ -341,8 +341,7 @@ export async function fetchStoreAuditMatrix(locationId: string): Promise<StoreAu
   return { ok: true, consistent, inconsistencyNote, checkpoints: matrixCheckpoints, columns }
 }
 
-export const BUSYNESS_OPTIONS = ['Full rush', 'Busy', 'Chill', 'Slow', 'Dead'] as const
-export type Busyness = typeof BUSYNESS_OPTIONS[number]
+import { BUSYNESS_OPTIONS } from '@/lib/audit/constants'
 
 export async function startAudit(
   locationId: string,

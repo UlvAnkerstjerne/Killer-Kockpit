@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
-import { upsertAuditResponse, updateResponseComment, upsertSectionComment, updateAuditFinalField, BUSYNESS_OPTIONS } from '@/lib/actions/audit'
+import { upsertAuditResponse, updateResponseComment, upsertSectionComment, updateAuditFinalField } from '@/lib/actions/audit'
+import { BUSYNESS_OPTIONS } from '@/lib/audit/constants'
 import type { ScoringConfig } from '@/lib/audit/submissions'
 import { useSaveState } from '@/lib/hooks/useSaveState'
 import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
