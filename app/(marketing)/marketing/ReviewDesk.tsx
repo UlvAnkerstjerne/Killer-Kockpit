@@ -15,15 +15,17 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
   const [edits, setEdits] = useState<Record<string, Edit>>({})
   const [feedback, setFeedback] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
-  const [starFilter, setStarFilter] = useState<number | null>(null)
+  type Filter = number | 'saved' | null
+  const [activeFilter, setActiveFilter] = useState<Filter>(null)
   const [snoozed, setSnoozed] = useState<Set<string>>(new Set())
-  const [showSnoozed, setShowSnoozed] = useState(false)
   const editFor = (row: ReviewDeskItem) => edits[row.id] ?? initialEdit(row)
   function snooze(id: string) { setSnoozed(prev => new Set(prev).add(id)) }
   function unsnooze(id: string) { setSnoozed(prev => { const next = new Set(prev); next.delete(id); return next }) }
   const activeReviews = desk.reviews.filter(row => !snoozed.has(row.id))
   const snoozedReviews = desk.reviews.filter(row => snoozed.has(row.id))
-  const filteredReviews = starFilter !== null ? activeReviews.filter(row => row.star_rating === starFilter) : activeReviews
+  const filteredReviews = activeFilter === 'saved' ? snoozedReviews
+    : activeFilter !== null ? activeReviews.filter(row => row.star_rating === activeFilter)
+    : activeReviews
   const selected = filteredReviews.filter(row => row.reply_id && !row.publish_started_at && editFor(row).included)
   const hasInvalidText = selected.some(row => !editFor(row).text.trim() || editFor(row).text.length > 4096)
   function patch(row: ReviewDeskItem, change: Partial<Edit>) {
@@ -87,8 +89,8 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
         <div className="mb-3 flex flex-wrap items-center gap-1">
           <button
             type="button"
-            onClick={() => setStarFilter(null)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${starFilter === null ? 'bg-kk-brand text-white' : 'text-kk-muted hover:bg-kk-soft hover:text-kk-ink'}`}
+            onClick={() => setActiveFilter(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeFilter === null ? 'bg-kk-brand text-white' : 'text-kk-muted hover:bg-kk-soft hover:text-kk-ink'}`}
           >
             All
           </button>
@@ -98,13 +100,22 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
               <button
                 key={stars}
                 type="button"
-                onClick={() => setStarFilter(starFilter === stars ? null : stars)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${starFilter === stars ? 'bg-kk-brand text-white' : 'text-kk-muted hover:bg-kk-soft hover:text-kk-ink'}`}
+                onClick={() => setActiveFilter(activeFilter === stars ? null : stars)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeFilter === stars ? 'bg-kk-brand text-white' : 'text-kk-muted hover:bg-kk-soft hover:text-kk-ink'}`}
               >
                 {'★'.repeat(stars)} <span className="tabular-nums">({count})</span>
               </button>
             )
           })}
+          {snoozed.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveFilter(activeFilter === 'saved' ? null : 'saved')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeFilter === 'saved' ? 'bg-kk-bad text-white' : 'text-kk-bad bg-kk-bad-bg hover:bg-kk-bad-cell'}`}
+            >
+              Saved for later <span className="tabular-nums">({snoozed.size})</span>
+            </button>
+          )}
         </div>
       )}
       <div className="space-y-3">
@@ -115,18 +126,22 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
           return (
             <article key={row.id} className="rounded-2xl border border-kk-line bg-kk-panel p-4 sm:p-5">
               <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-kk-muted">
-                  <span className="font-semibold text-kk-ink">{row.store_short_name}</span>
-                  <span className="text-amber-600" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
-                  <span>{row.reviewer_name ?? 'Anonymous'}</span>
-                  <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-kk-muted">
+                  <span className="text-lg font-bold text-kk-ink flex items-center gap-1.5"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-kk-muted"><path d="M2 6.5V14h12V6.5M1 3h14v3.5H1V3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M6 10h4v4H6v-4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>{row.store_short_name}</span>
+                  <span className="text-lg text-amber-500" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
                   {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {!locked && (
-                    <button type="button" onClick={() => snooze(row.id)} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors">
-                      Save for later
-                    </button>
+                    snoozed.has(row.id) ? (
+                      <button type="button" onClick={() => unsnooze(row.id)} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-brand hover:bg-kk-bad-bg transition-colors">
+                        Move back
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => snooze(row.id)} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors">
+                        Save for later
+                      </button>
+                    )
                   )}
                   {desk.canApprove && <label className="flex items-center gap-2 text-xs text-kk-muted">
                     <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
@@ -134,9 +149,16 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
                   </label>}
                 </div>
               </div>
-              <p className={`mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
-                {row.review_text?.trim() || 'Rating only — no written comment.'}
-              </p>
+              <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-kk-muted mb-2">
+                  <span className="font-medium text-kk-ink">{row.reviewer_name ?? 'Anonymous'}</span>
+                  <span>{'\u00B7'}</span>
+                  <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
+                </div>
+                <p className={`whitespace-pre-wrap break-words text-base leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
+                  {row.review_text?.trim() || 'Rating only — no written comment.'}
+                </p>
+              </div>
               {draftPending ? (
                 <div className="mt-3 flex items-center gap-3 text-sm text-kk-muted">
                   <span>Draft pending</span>
@@ -144,10 +166,10 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
                 </div>
               ) : (
                 <div className="mt-3">
-                  <label htmlFor={`reply-${row.id}`} className="mb-1 block text-xs font-medium text-kk-muted">{desk.canApprove ? 'Reply to publish' : 'Prepared reply'}</label>
+                  <label htmlFor={`reply-${row.id}`} className="mb-1 block text-sm font-medium text-kk-muted">{desk.canApprove ? 'Reply to publish' : 'Prepared reply'}</label>
                   <textarea id={`reply-${row.id}`} value={edit.text} rows={3} maxLength={4096} readOnly={!desk.canApprove} disabled={pending || locked}
                     onChange={event => patch(row, { text: event.target.value })}
-                    className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-sm leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
+                    className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-base leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
                   {desk.canApprove && !locked && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {['😊', '🙏', '❤️', '🔥', '👏', '💪', '🌯', '🧆', '⭐', '🙌'].map(emoji => (
@@ -201,39 +223,6 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
         </button>
         <span className="text-xs text-kk-muted">{selected.length > 50 ? 'Select up to 50 replies per batch.' : 'Publishing approves and sends the selected replies to Google.'}</span>
       </div> : null}
-      {snoozed.size > 0 && (
-        <div className="mt-6 border-t border-kk-line pt-4">
-          <button
-            type="button"
-            onClick={() => setShowSnoozed(!showSnoozed)}
-            className="flex items-center gap-2 text-sm font-semibold text-kk-muted hover:text-kk-ink transition-colors"
-          >
-            <span>{showSnoozed ? '\u25BE' : '\u25B8'}</span>
-            Saved for later ({snoozed.size})
-          </button>
-          {showSnoozed && (
-            <div className="mt-3 space-y-2">
-              {snoozedReviews.map(row => (
-                <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl border border-kk-line bg-kk-soft px-4 py-2.5">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-kk-muted">
-                    <span className="font-semibold text-kk-ink">{row.store_short_name}</span>
-                    <span className="text-amber-600">{'★'.repeat(row.star_rating)}</span>
-                    <span>{row.reviewer_name ?? 'Anonymous'}</span>
-                    {row.review_text && <span className="truncate max-w-48">{row.review_text}</span>}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => unsnooze(row.id)}
-                    className="shrink-0 text-xs font-medium text-kk-brand hover:underline"
-                  >
-                    Move back
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </section>
   )
 }
