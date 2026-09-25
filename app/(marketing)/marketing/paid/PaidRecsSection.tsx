@@ -76,9 +76,19 @@ function PaidRecCard({
             <div className="text-xs text-kk-muted mt-0.5">{platformLabel} {'\u00B7'} {rec.campaign_name ?? 'Account-level'}</div>
           </div>
         </div>
-        {rec.status === 'approved' && (
+        {rec.status === 'approved' && rec.execution_status === 'in_motion' && (
+          <span className="shrink-0 text-[10px] font-semibold text-blue-700 bg-blue-50 rounded-full px-2 py-0.5">
+            In motion
+          </span>
+        )}
+        {rec.status === 'approved' && rec.execution_status === 'completed' && (
           <span className="shrink-0 text-[10px] font-semibold text-kk-good bg-kk-good-bg rounded-full px-2 py-0.5">
-            Approved
+            Completed
+          </span>
+        )}
+        {rec.status === 'approved' && (rec.execution_status === 'failed' || rec.execution_status === 'needs_attention') && (
+          <span className="shrink-0 text-[10px] font-semibold text-kk-bad bg-kk-bad-bg rounded-full px-2 py-0.5">
+            {rec.execution_status === 'failed' ? 'Failed' : 'Needs attention'}
           </span>
         )}
       </div>
@@ -104,7 +114,7 @@ function PaidRecCard({
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions — needs_review */}
       {rec.status === 'needs_review' && canAction && (
         <div className="flex gap-2 px-5 py-3 border-t border-kk-line bg-kk-soft/50">
           <button
@@ -112,7 +122,7 @@ function PaidRecCard({
             disabled={isPending}
             className="rounded-full bg-kk-brand px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            Approve
+            {isPending ? 'Starting\u2026' : 'Approve & start'}
           </button>
           <button
             onClick={handleDismiss}
@@ -124,9 +134,74 @@ function PaidRecCard({
         </div>
       )}
 
-      {rec.status === 'approved' && rec.reviewed_at && (
-        <div className="px-5 py-2 border-t border-kk-line text-[10px] text-kk-muted">
-          Approved {new Date(rec.reviewed_at).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}
+      {/* Execution status — in_motion / completed / failed / needs_attention */}
+      {rec.execution_status && rec.execution_status !== 'pending_approval' && (
+        <div className="px-5 py-3 border-t border-kk-line space-y-2">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
+              rec.execution_status === 'in_motion' ? 'bg-blue-50 text-blue-700'
+              : rec.execution_status === 'completed' ? 'bg-kk-good-bg text-kk-good'
+              : rec.execution_status === 'failed' ? 'bg-red-50 text-red-700'
+              : 'bg-kk-bad-bg text-kk-bad'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                rec.execution_status === 'in_motion' ? 'bg-blue-500 animate-pulse'
+                : rec.execution_status === 'completed' ? 'bg-green-500'
+                : 'bg-red-500'
+              }`} />
+              {rec.execution_status === 'in_motion' ? 'In motion'
+                : rec.execution_status === 'completed' ? 'Completed'
+                : rec.execution_status === 'failed' ? 'Failed'
+                : 'Needs attention'}
+            </span>
+            {rec.execution_started_at && (
+              <span className="text-[10px] text-kk-muted">
+                Started {new Date(rec.execution_started_at).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short' })}
+              </span>
+            )}
+          </div>
+
+          {/* Linked task */}
+          {rec.linked_task_id && (
+            <a
+              href={`/tasks/${rec.linked_task_id}`}
+              className="flex items-center gap-1.5 text-xs font-medium text-kk-brand hover:underline"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0">
+                <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M5 8l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              {String((rec.execution_result as Record<string, unknown>)?.task_title ?? 'View linked task')}
+            </a>
+          )}
+
+          {/* Monitoring */}
+          {rec.execution_result?.monitoring && (() => {
+            const m = rec.execution_result.monitoring
+            const monitorEnd = m.monitor_end
+            const outcome = m.outcome
+            const isActive = rec.execution_status === 'in_motion'
+            return (
+              <div className="flex items-center gap-3 text-xs text-kk-muted">
+                <span>Monitoring until {new Date(monitorEnd).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short' })}</span>
+                {outcome && (
+                  <span className={`font-semibold ${
+                    outcome === 'improved' ? 'text-kk-good'
+                    : outcome === 'needs_attention' ? 'text-kk-bad'
+                    : 'text-kk-muted'
+                  }`}>
+                    {outcome === 'improved' ? 'Improved' : outcome === 'needs_attention' ? 'Needs attention' : 'Unchanged'}
+                  </span>
+                )}
+                {isActive && !outcome && <span className="text-blue-600">Monitoring active</span>}
+              </div>
+            )
+          })()}
+
+          {/* Error */}
+          {rec.execution_result?.error && (
+            <p className="text-xs text-kk-bad">{rec.execution_result.error}</p>
+          )}
         </div>
       )}
     </div>

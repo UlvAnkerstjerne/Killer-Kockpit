@@ -10,6 +10,7 @@
 
 import { NextResponse } from 'next/server'
 import { generatePaidRecommendations } from '@/lib/marketing/paid-recs/generate'
+import { resolveCompletedMonitoring } from '@/lib/marketing/paid-recs/monitor'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,9 +21,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
+    // Resolve any monitoring windows that have ended before generating new recs
+    const resolved = await resolveCompletedMonitoring()
     const result = await generatePaidRecommendations()
     const status = result.ok ? 200 : 500
-    return NextResponse.json(result, { status })
+    return NextResponse.json({ ...result, monitoringResolved: resolved }, { status })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[api/paid-recommendations/generate] Unhandled error:', message)

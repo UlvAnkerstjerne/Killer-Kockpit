@@ -26,6 +26,33 @@ export type PaidRecUrgency = 'high' | 'medium' | 'low'
 
 export type PaidRecStatus = 'needs_review' | 'approved' | 'dismissed'
 
+export type PaidRecExecutionType = 'create_task' | 'monitor' | 'create_task_and_monitor' | 'platform_action'
+export type PaidRecExecutionStatus = 'pending_approval' | 'in_motion' | 'completed' | 'failed' | 'needs_attention'
+
+export interface PaidRecMonitoringResult {
+  monitor_start: string
+  monitor_end: string
+  campaign_id: string
+  platform: PaidRecPlatform
+  baseline: { spend_7d: number | null; result_count_7d: number | null; cpr_7d: number | null }
+  latest?: { spend_7d: number | null; result_count_7d: number | null; cpr_7d: number | null }
+  outcome?: 'improved' | 'unchanged' | 'needs_attention'
+}
+
+export interface PaidRecExecutionResult {
+  monitoring?: PaidRecMonitoringResult
+  task_title?: string
+  error?: string
+}
+
+/** Maps signal_type to the execution plan. */
+export const SIGNAL_EXECUTION_MAP: Record<PaidRecSignalType, PaidRecExecutionType> = {
+  spend_no_results:   'create_task_and_monitor',
+  cpr_worsening:      'create_task_and_monitor',
+  cpr_improving:      'monitor',
+  strong_performance: 'monitor',
+}
+
 // ─── Signal ───────────────────────────────────────────────────────────────────
 
 /** Aggregated 7-day window metrics for one campaign. */
@@ -100,4 +127,10 @@ export interface PaidRecommendationRow {
   prompt_version: string | null
   generated_at: string
   created_at: string
+  execution_type: PaidRecExecutionType | null
+  execution_status: PaidRecExecutionStatus
+  execution_started_at: string | null
+  execution_completed_at: string | null
+  execution_result: PaidRecExecutionResult | null
+  linked_task_id: string | null
 }

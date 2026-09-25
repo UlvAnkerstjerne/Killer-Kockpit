@@ -30,7 +30,8 @@ import {
   type GoogleCampaignInput,
 } from './signals'
 import { callPaidRecommendationsAI, PAID_REC_PROMPT_VERSION } from '@/lib/ai/paid-recommendations'
-import type { PaidRecSignal } from './types'
+import type { PaidRecSignal, PaidRecSignalType } from './types'
+import { SIGNAL_EXECUTION_MAP } from './types'
 
 // ─── Date ranges ──────────────────────────────────────────────────────────────
 
@@ -216,6 +217,8 @@ async function insertRecommendations(
       recommended_action:    rec.recommended_action,
       urgency:               rec.urgency,
       status:                'needs_review' as const,
+      execution_type:        SIGNAL_EXECUTION_MAP[(signal?.signal_type ?? 'spend_no_results') as PaidRecSignalType] ?? 'monitor',
+      execution_status:      'pending_approval' as const,
       ai_model:              model,
       prompt_version:        PAID_REC_PROMPT_VERSION,
       generated_at:          generatedAt,
@@ -273,27 +276,41 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     return { ok: true, signalCount: 0, recommendationCount: 0, skipped: true }
   }
 
+  // 2b. Suppress signals for campaigns that already have an in-motion recommendation
+  const { data: inMotionRecs } = await db
+    .from('paid_recommendations')
+    .select('platform, campaign_id')
+    .eq('execution_status', 'in_motion')
+  const inMotionKeys = new Set(
+    (inMotionRecs ?? []).map((r: { platform: string; campaign_id: string }) => `${r.platform}:${r.campaign_id}`),
+  )
+  const filteredSignals = signals.filter(s => !inMotionKeys.has(`${s.platform}:${s.campaign_id}`))
+  if (filteredSignals.length === 0) {
+    console.log('[paid-recs/generate] All signals suppressed — campaigns already in motion.')
+    return { ok: true, signalCount: signals.length, recommendationCount: 0, skipped: true }
+  }
+
   // 3. Call AI
-  const aiResult = await callPaidRecommendationsAI(signals, now)
+  const aiResult = await callPaidRecommendationsAI(filteredSignals, now)
   if (!aiResult.ok) {
     console.error('[paid-recs/generate] AI call failed:', aiResult.errorDetail)
-    return { ok: false, signalCount: signals.length, recommendationCount: 0, skipped: false, error: aiResult.error }
+    return { ok: false, signalCount: filteredSignals.length, recommendationCount: 0, skipped: false, error: aiResult.error }
   }
 
   const { recommendations } = aiResult.output
   const model = aiResult.model
 
-  // 4. Persist: clear old needs_review, insert new
+  // 4. Persist: clear old needs_review (but not those with in-motion siblings), insert new
   try {
     await clearNeedsReview(db)
-    await insertRecommendations(db, signals, aiResult, model, generatedAt)
+    await insertRecommendations(db, filteredSignals, aiResult, model, generatedAt)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     console.error('[paid-recs/generate] DB write failed:', msg)
     return { ok: false, signalCount: signals.length, recommendationCount: 0, skipped: false, error: msg }
   }
 
-  console.log(`[paid-recs/generate] Generated ${recommendations.length} recommendation(s) from ${signals.length} signal(s).`)
+  console.log(`[paid-recs/generate] Generated ${recommendations.length} recommendation(s) from ${filteredSignals.length} signal(s) (${signals.length - filteredSignals.length} suppressed).`)
   return {
     ok: true,
     signalCount: signals.length,
