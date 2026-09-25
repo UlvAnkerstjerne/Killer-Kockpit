@@ -27,19 +27,21 @@ export default function RegenerateButton() {
   }
 
   return (
-    <div className="flex items-center gap-3 shrink-0">
+    <div className="flex flex-col items-center gap-1 shrink-0">
       <button
         onClick={handleClick}
         disabled={state === 'loading'}
-        title={state === 'loading' ? 'Regenerating…' : 'Regenerate Morning Brief'}
-        className="group relative disabled:cursor-not-allowed"
+        className="group flex flex-col items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/kk-regenerate.png"
-          alt="Regenerate"
-          className={`h-44 w-auto mix-blend-multiply transition-transform group-hover:scale-110 group-active:scale-95 ${state === 'loading' ? 'animate-pulse opacity-60' : ''}`}
+          alt=""
+          className={`h-44 w-auto mix-blend-multiply transition-transform group-hover:scale-110 group-active:scale-95 ${state === 'loading' ? 'animate-spin-slow opacity-60' : ''}`}
         />
+        <span className={`text-xs font-semibold ${state === 'loading' ? 'text-kk-muted' : 'text-kk-brand group-hover:underline'}`}>
+          {state === 'loading' ? 'Regenerating\u2026' : 'Regenerate'}
+        </span>
       </button>
       {state === 'error' && errorMsg && (
         <span className="text-xs text-kk-bad">{errorMsg}</span>

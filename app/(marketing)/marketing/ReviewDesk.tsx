@@ -15,8 +15,16 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
   const [edits, setEdits] = useState<Record<string, Edit>>({})
   const [feedback, setFeedback] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const [starFilter, setStarFilter] = useState<number | null>(null)
+  const [snoozed, setSnoozed] = useState<Set<string>>(new Set())
+  const [showSnoozed, setShowSnoozed] = useState(false)
   const editFor = (row: ReviewDeskItem) => edits[row.id] ?? initialEdit(row)
-  const selected = desk.reviews.filter(row => row.reply_id && !row.publish_started_at && editFor(row).included)
+  function snooze(id: string) { setSnoozed(prev => new Set(prev).add(id)) }
+  function unsnooze(id: string) { setSnoozed(prev => { const next = new Set(prev); next.delete(id); return next }) }
+  const activeReviews = desk.reviews.filter(row => !snoozed.has(row.id))
+  const snoozedReviews = desk.reviews.filter(row => snoozed.has(row.id))
+  const filteredReviews = starFilter !== null ? activeReviews.filter(row => row.star_rating === starFilter) : activeReviews
+  const selected = filteredReviews.filter(row => row.reply_id && !row.publish_started_at && editFor(row).included)
   const hasInvalidText = selected.some(row => !editFor(row).text.trim() || editFor(row).text.length > 4096)
   function patch(row: ReviewDeskItem, change: Partial<Edit>) {
     setEdits(previous => ({ ...previous, [row.id]: { ...(previous[row.id] ?? initialEdit(row)), ...change } }))
@@ -75,8 +83,32 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
       {desk.error ? <p role="alert" className="text-sm text-kk-bad">{desk.error}</p> : null}
       {feedback ? <p role="status" className="mb-4 text-sm text-kk-ink">{feedback}</p> : null}
       {!desk.error && desk.reviews.length === 0 ? <p className="text-sm text-kk-muted">All caught up. New reviews will appear here after syncing.</p> : null}
+      {desk.reviews.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setStarFilter(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${starFilter === null ? 'bg-kk-brand text-white' : 'text-kk-muted hover:bg-kk-soft hover:text-kk-ink'}`}
+          >
+            All
+          </button>
+          {[5, 4, 3, 2, 1].map(stars => {
+            const count = activeReviews.filter(r => r.star_rating === stars).length
+            return (
+              <button
+                key={stars}
+                type="button"
+                onClick={() => setStarFilter(starFilter === stars ? null : stars)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${starFilter === stars ? 'bg-kk-brand text-white' : 'text-kk-muted hover:bg-kk-soft hover:text-kk-ink'}`}
+              >
+                {'★'.repeat(stars)} <span className="tabular-nums">({count})</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
       <div className="space-y-3">
-        {desk.reviews.map(row => {
+        {filteredReviews.map(row => {
           const edit = editFor(row)
           const draftPending = !row.reply_id || row.status === 'new' || !(row.approved_text?.trim() || row.draft_text?.trim())
           const locked = !!row.publish_started_at
@@ -90,10 +122,17 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
                   <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
                   {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
                 </div>
-                {desk.canApprove && <label className="flex shrink-0 items-center gap-2 text-xs text-kk-muted">
-                  <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
-                  Include
-                </label>}
+                <div className="flex shrink-0 items-center gap-2">
+                  {!locked && (
+                    <button type="button" onClick={() => snooze(row.id)} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors">
+                      Save for later
+                    </button>
+                  )}
+                  {desk.canApprove && <label className="flex items-center gap-2 text-xs text-kk-muted">
+                    <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
+                    Include
+                  </label>}
+                </div>
               </div>
               <p className={`mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
                 {row.review_text?.trim() || 'Rating only — no written comment.'}
@@ -162,6 +201,39 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
         </button>
         <span className="text-xs text-kk-muted">{selected.length > 50 ? 'Select up to 50 replies per batch.' : 'Publishing approves and sends the selected replies to Google.'}</span>
       </div> : null}
+      {snoozed.size > 0 && (
+        <div className="mt-6 border-t border-kk-line pt-4">
+          <button
+            type="button"
+            onClick={() => setShowSnoozed(!showSnoozed)}
+            className="flex items-center gap-2 text-sm font-semibold text-kk-muted hover:text-kk-ink transition-colors"
+          >
+            <span>{showSnoozed ? '\u25BE' : '\u25B8'}</span>
+            Saved for later ({snoozed.size})
+          </button>
+          {showSnoozed && (
+            <div className="mt-3 space-y-2">
+              {snoozedReviews.map(row => (
+                <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl border border-kk-line bg-kk-soft px-4 py-2.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-kk-muted">
+                    <span className="font-semibold text-kk-ink">{row.store_short_name}</span>
+                    <span className="text-amber-600">{'★'.repeat(row.star_rating)}</span>
+                    <span>{row.reviewer_name ?? 'Anonymous'}</span>
+                    {row.review_text && <span className="truncate max-w-48">{row.review_text}</span>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => unsnooze(row.id)}
+                    className="shrink-0 text-xs font-medium text-kk-brand hover:underline"
+                  >
+                    Move back
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   )
 }
