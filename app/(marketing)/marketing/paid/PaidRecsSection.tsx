@@ -5,17 +5,19 @@ import { useRouter } from 'next/navigation'
 import { approvePaidRecommendation, dismissPaidRecommendation } from '@/lib/actions/marketing/paid-recommendations'
 import type { PaidRecommendationRow } from '@/lib/marketing/paid-recs/types'
 
-function urgencyBadge(urgency: string) {
-  const styles: Record<string, string> = {
-    high:   'bg-red-100 text-red-700',
-    medium: 'bg-kk-bad-bg text-kk-bad',
-    low:    'bg-kk-line text-kk-muted',
-  }
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${styles[urgency] ?? styles.low}`}>
-      {urgency}
-    </span>
-  )
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const URGENCY_CFG: Record<string, { bg: string; text: string; dot: string }> = {
+  high:   { bg: 'bg-red-50',    text: 'text-red-700',    dot: 'bg-red-500' },
+  medium: { bg: 'bg-kk-bad-bg', text: 'text-kk-bad',     dot: 'bg-kk-brand' },
+  low:    { bg: 'bg-kk-soft',   text: 'text-kk-muted',   dot: 'bg-kk-muted' },
+}
+
+const SIGNAL_ICONS: Record<string, string> = {
+  spend_no_results:   '\u26A0',
+  cpr_worsening:      '\u2198',
+  cpr_improving:      '\u2197',
+  strong_performance: '\u2B50',
 }
 
 function signalLabel(type: string): string {
@@ -27,12 +29,7 @@ function signalLabel(type: string): string {
   } as Record<string, string>)[type] ?? type
 }
 
-function formatCpr(value: number | null, currency: string | null, resultLabel: string | null): string {
-  if (value === null) return '—'
-  const curr = currency ?? 'DKK'
-  const label = resultLabel === 'Impressions' ? '/1k impr.' : '/result'
-  return `${value.toLocaleString('da-DK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ${curr}${label}`
-}
+// ── Card ─────────────────────────────────────────────────────────────────────
 
 function PaidRecCard({
   rec,
@@ -59,64 +56,84 @@ function PaidRecCard({
   }
 
   const platformLabel = rec.platform === 'meta' ? 'Meta' : 'Google Ads'
+  const urgency = URGENCY_CFG[rec.urgency] ?? URGENCY_CFG.low
+  const icon = SIGNAL_ICONS[rec.signal_type] ?? '\u2022'
 
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl px-5 py-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-kk-muted">{platformLabel}</span>
-            <span className="text-xs text-kk-muted">·</span>
-            <span className="text-xs text-kk-muted">{signalLabel(rec.signal_type)}</span>
-            <span className="text-xs text-kk-muted">·</span>
-            {urgencyBadge(rec.urgency)}
+    <div className="bg-white border border-kk-line rounded-2xl overflow-hidden" style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}>
+      {/* Header */}
+      <div className={`px-5 py-3 flex items-center justify-between gap-3 ${urgency.bg}`}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-4xl">{icon}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-kk-ink">{signalLabel(rec.signal_type)}</span>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${urgency.bg} ${urgency.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${urgency.dot}`} />
+                {rec.urgency}
+              </span>
+            </div>
+            <div className="text-xs text-kk-muted mt-0.5">{platformLabel} {'\u00B7'} {rec.campaign_name ?? 'Account-level'}</div>
           </div>
-          <p className="text-sm font-medium text-kk-ink mt-1">{rec.what_changed}</p>
+        </div>
+        {rec.status === 'approved' && (
+          <span className="shrink-0 text-[10px] font-semibold text-kk-good bg-kk-good-bg rounded-full px-2 py-0.5">
+            Approved
+          </span>
+        )}
+      </div>
+
+      {/* What changed */}
+      <div className="px-5 py-3 border-b border-kk-line">
+        <p className="text-base font-semibold text-kk-ink leading-snug">{rec.what_changed}</p>
+      </div>
+
+      {/* Detail sub-cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-kk-line">
+        <div className="px-4 py-3">
+          <div className="text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted mb-1">Evidence</div>
+          <p className="text-sm text-kk-ink leading-relaxed">{rec.evidence}</p>
+        </div>
+        <div className="px-4 py-3">
+          <div className="text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted mb-1">Interpretation</div>
+          <p className="text-sm text-kk-ink leading-relaxed">{rec.interpretation}</p>
+        </div>
+        <div className="px-4 py-3">
+          <div className="text-[10px] font-bold tracking-[0.07em] uppercase text-kk-muted mb-1">Recommended action</div>
+          <p className="text-sm font-medium text-kk-ink leading-relaxed">{rec.recommended_action}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-        <div>
-          <div className="text-kk-muted mb-0.5">Evidence</div>
-          <div className="text-kk-ink">{rec.evidence}</div>
-        </div>
-        <div>
-          <div className="text-kk-muted mb-0.5">Interpretation</div>
-          <div className="text-kk-ink">{rec.interpretation}</div>
-        </div>
-        <div>
-          <div className="text-kk-muted mb-0.5">Recommended action</div>
-          <div className="text-kk-ink font-medium">{rec.recommended_action}</div>
-        </div>
-      </div>
-
+      {/* Actions */}
       {rec.status === 'needs_review' && canAction && (
-        <div className="flex gap-2 pt-1">
+        <div className="flex gap-2 px-5 py-3 border-t border-kk-line bg-kk-soft/50">
           <button
             onClick={handleApprove}
             disabled={isPending}
-            className="rounded-lg bg-kk-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className="rounded-full bg-kk-brand px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             Approve
           </button>
           <button
             onClick={handleDismiss}
             disabled={isPending}
-            className="rounded-lg border border-kk-line px-3 py-1.5 text-xs font-medium text-kk-muted hover:bg-kk-line/30 disabled:opacity-50 transition-colors"
+            className="rounded-full border border-kk-line bg-white px-4 py-1.5 text-xs font-semibold text-kk-muted hover:bg-kk-soft hover:text-kk-ink disabled:opacity-50 transition-colors"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {rec.status === 'approved' && (
-        <div className="text-xs text-kk-muted">
-          Approved{rec.reviewed_at ? ` · ${new Date(rec.reviewed_at).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen' })}` : ''}
+      {rec.status === 'approved' && rec.reviewed_at && (
+        <div className="px-5 py-2 border-t border-kk-line text-[10px] text-kk-muted">
+          Approved {new Date(rec.reviewed_at).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}
         </div>
       )}
     </div>
   )
 }
+
+// ── Section ──────────────────────────────────────────────────────────────────
 
 export default function PaidRecsSection({
   recommendations,
@@ -131,8 +148,15 @@ export default function PaidRecsSection({
   const approved = recommendations.filter(r => r.status === 'approved')
 
   return (
-    <div className="mb-8 space-y-3">
-      <h2 className="text-base font-semibold text-kk-ink">Recommendations</h2>
+    <div className="mb-8">
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-xl font-black tracking-tight text-kk-ink">Recommendations</h2>
+        {pending.length > 0 && (
+          <span className="rounded-full bg-kk-brand px-2 py-0.5 text-[10px] font-bold text-white tabular-nums">
+            {pending.length}
+          </span>
+        )}
+      </div>
 
       {pending.length > 0 && (
         <div className="space-y-3">
@@ -143,9 +167,9 @@ export default function PaidRecsSection({
       )}
 
       {approved.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-3 mt-4">
           {pending.length > 0 && (
-            <div className="text-xs text-kk-muted pt-2">Recently approved</div>
+            <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide">Recently approved</div>
           )}
           {approved.map(rec => (
             <PaidRecCard key={rec.id} rec={rec} canAction={false} />
