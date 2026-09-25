@@ -15,6 +15,7 @@ export type NotificationType =
   | 'kkc.result'
   | 'diner.result'
   | 'audit.followup.overdue'
+  | 'todo.completed'
 
 /**
  * Derives a concise human-readable notification message.
@@ -98,6 +99,12 @@ export function formatNotificationMessage(
       const parts = [`Overdue follow-up — ${loc}`]
       if (rf !== undefined) parts.push(`${rf} red flag${rf === 1 ? '' : 's'}`)
       return parts.join(' · ')
+    }
+
+    case 'todo.completed': {
+      const who = (metadata?.completed_by as string | undefined) ?? actor
+      const what = (metadata?.title as string | undefined) ?? 'a to-do'
+      return `${who} completed "${what}"`
     }
   }
 }

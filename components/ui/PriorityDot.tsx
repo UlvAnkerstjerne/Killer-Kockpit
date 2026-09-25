@@ -19,12 +19,13 @@ export const PRIORITY_CONFIG: Record<number, { label: string; dot: string }> = {
   4: { label: 'Background', dot: 'bg-stone-400' },
 }
 
-export function PriorityDot({ priority }: { priority: number }) {
+export function PriorityDot({ priority, size = 'sm' }: { priority: number; size?: 'sm' | 'md' }) {
   const config = PRIORITY_CONFIG[priority]
   if (!config) return null
+  const sizeCls = size === 'md' ? 'w-3 h-3' : 'w-2 h-2'
   return (
     <span
-      className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`}
+      className={`${sizeCls} rounded-full shrink-0 ${config.dot}`}
       title={config.label}
       aria-label={config.label}
     />

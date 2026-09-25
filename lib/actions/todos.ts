@@ -109,6 +109,9 @@ export async function completeTodo(id: string, context: string): Promise<ActionR
     return { error: 'Failed to complete to-do. Please try again.' }
   }
 
+  // Fire notification if someone is subscribed
+  void notifyTodoCompleted(id, user.id).catch(err => console.error('[completeTodo:notify]', err))
+
   revalidatePath('/today')
   revalidatePath('/todos')
   return {}
@@ -149,6 +152,9 @@ export async function completeRecurringTodo(id: string, context: string): Promis
     console.error('[completeRecurringTodo]', error)
     return { error: 'Failed to complete to-do. Please try again.' }
   }
+
+  // Fire notification if someone is subscribed
+  void notifyTodoCompleted(id, user.id).catch(err => console.error('[completeRecurringTodo:notify]', err))
 
   revalidatePath('/today')
   revalidatePath('/todos')
@@ -495,4 +501,63 @@ export async function upgradeTodoToTask(
   revalidatePath('/tasks')
 
   return { data: { taskId: taskId as string } }
+}
+
+// ---------------------------------------------------------------------------
+// setTodoNotify — set or clear who gets notified when this todo is completed
+// ---------------------------------------------------------------------------
+
+export async function setTodoNotify(todoId: string, notifyUserId: string | null): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('todos')
+    .update({ notify_user_id: notifyUserId })
+    .eq('id', todoId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('[setTodoNotify]', error)
+    return { error: 'Failed to update notification setting.' }
+  }
+
+  revalidatePath('/today')
+  revalidatePath('/todos')
+  return {}
+}
+
+// ---------------------------------------------------------------------------
+// notifyTodoCompleted — fire notification to subscribed user (fire-and-forget)
+// ---------------------------------------------------------------------------
+
+async function notifyTodoCompleted(todoId: string, completedByUserId: string): Promise<void> {
+  const db = createServiceClient()
+
+  // Load the todo to check notify_user_id and get title
+  const { data: todo } = await db
+    .from('todos')
+    .select('id, title, notify_user_id, user_id')
+    .eq('id', todoId)
+    .single()
+
+  if (!todo?.notify_user_id) return
+
+  // Load completer's name for the notification
+  const { data: completer } = await db
+    .from('app_users')
+    .select('display_name')
+    .eq('id', completedByUserId)
+    .single()
+
+  const completerName = completer?.display_name ?? 'Someone'
+
+  await db.rpc('create_system_notification', {
+    p_type:              'todo.completed',
+    p_entity_type:       'todo',
+    p_entity_id:         todoId,
+    p_recipient_user_id: todo.notify_user_id,
+    p_metadata:          { title: todo.title, completed_by: completerName },
+  })
 }

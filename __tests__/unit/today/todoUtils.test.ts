@@ -37,6 +37,7 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
     completion_context: null,
     completed_by_user_id: null,
     sort_order: null,
+    notify_user_id: null,
     ...overrides,
   }
 }

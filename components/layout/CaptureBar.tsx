@@ -46,32 +46,32 @@ export default function CaptureBar({
     <>
       <button
         onClick={() => setOpen('task')}
-        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+        className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
       >
         + Task
       </button>
       <button
         onClick={() => setOpen('project')}
-        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+        className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
       >
         + Project
       </button>
       <button
         onClick={() => setOpen('waiting-on')}
-        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+        className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
       >
         + Waiting On
       </button>
       <button
         onClick={() => router.push('/meetings/new')}
-        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+        className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
       >
         + Meeting
       </button>
       {canDecide ? (
         <button
           onClick={() => setOpen('decision')}
-          className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+          className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
         >
           + Decision
         </button>
@@ -79,7 +79,7 @@ export default function CaptureBar({
         <button
           disabled
           title="Coming in a later milestone"
-          className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md cursor-not-allowed opacity-50 font-medium [box-shadow:3px_3px_0_#555555]"
+          className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md cursor-not-allowed opacity-50 font-medium [box-shadow:3px_3px_0_#555555]"
         >
           + Note
         </button>
@@ -90,7 +90,7 @@ export default function CaptureBar({
   const defaultCaptureAction = canCapture ? (
     <button
       onClick={() => setCaptureOpen(true)}
-      className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+      className="text-sm px-3.5 py-1.5 bg-kraft-light text-[#171717] rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
       title="Quick Capture (⌘⇧C)"
     >
       + Capture
@@ -119,7 +119,7 @@ export default function CaptureBar({
           {todayCaptureAction}
         </div>
       ) : (
-        <div className="border-b border-kk-line bg-kk-bg">
+        <div className="border-b border-[#171717] bg-[#171717]">
           <div className="flex items-center gap-2 px-4 py-3 flex-wrap md:px-7 md:flex-nowrap">
             {createActions}
             {defaultCaptureAction}

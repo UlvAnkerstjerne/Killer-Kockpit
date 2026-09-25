@@ -131,7 +131,7 @@ function SortablePageTodoShell({ id, children }: { id: string; children: React.R
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className={`group flex items-stretch${isDragging ? ' opacity-50 z-10 relative bg-kk-panel shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-kk-ink/10' : ''}`}
+      className={`group flex items-stretch bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:3px_3px_0_#555555]${isDragging ? ' opacity-50 z-10 relative ring-1 ring-kk-ink/10' : ''}`}
     >
       {/* Drag affordance (decorative only — whole row is draggable) */}
       <div
@@ -405,10 +405,10 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-lg">
 
       {/* ── Create form ─────────────────────────────────────────────────────── */}
-      <div className="bg-kk-panel border border-kk-line rounded-2xl">
+      <div className="bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:4px_4px_0_#555555]">
 
         {/* Main row: title + priority + add */}
         <form onSubmit={handleCreate} className="px-5 py-3.5 flex items-center gap-3">
@@ -419,13 +419,13 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
             onChange={e => setTitle(e.target.value)}
             placeholder="Add a to-do…"
             maxLength={200}
-            className="flex-1 text-sm bg-transparent outline-none text-kk-ink placeholder:text-kk-muted"
+            className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-1.5 outline-none text-kk-ink placeholder:text-kk-muted"
             disabled={isPending}
           />
           <select
             value={priority}
             onChange={e => setPriority(Number(e.target.value) as 1 | 2 | 3 | 4)}
-            className="text-xs text-kk-muted bg-transparent border border-kk-line rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
+            className="text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
             disabled={isPending}
             aria-label="Priority"
           >
@@ -437,14 +437,14 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
           <button
             type="submit"
             disabled={!title.trim() || isPending}
-            className="text-xs px-3 py-1.5 bg-kk-ink text-white rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0"
+            className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0 [box-shadow:3px_3px_0_#555555]"
           >
             Add
           </button>
         </form>
 
         {/* Repeat + notes toggle row */}
-        <div className="px-5 pb-3 flex items-center gap-3 flex-wrap border-t border-kk-line/50">
+        <div className="px-5 pb-3 flex items-center gap-3 flex-wrap border-t border-[#171717]/20">
           {/* Repeat select */}
           <div className="flex items-center gap-1.5 mt-2">
             <span className="text-[10px] text-kk-muted">↻</span>
@@ -524,49 +524,92 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
           >
         {localOpenTodos.map(todo => (
           <SortablePageTodoShell key={todo.id} id={todo.id}>
-            <div className="flex-1 min-w-0 px-4 py-3">
-            <div className="flex items-start gap-3">
-              {/* Complete checkbox — opens context box */}
+            <div className="flex-1 min-w-0 px-4 py-2">
+            {/* Main row — checkbox, dot, title, recurrence, priority, actions — all centered */}
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => openCompletionBox(todo)}
                 disabled={isPending || completionLoading}
-                className="mt-0.5 w-4 h-4 rounded border border-kk-line hover:border-kk-good hover:bg-kk-good-bg transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center"
+                className="w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light hover:bg-[#171717] hover:text-kraft-light transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center [box-shadow:2px_2px_0_#555555] active:translate-x-px active:translate-y-px active:[box-shadow:1px_1px_0_#555555] group/check"
                 title="Mark complete"
                 aria-label="Mark complete"
-              />
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-0 group-hover/check:opacity-100 transition-opacity" aria-hidden="true">
+                  <path d="M1.5 5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                {/* Title row */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <PriorityDot priority={todo.priority} />
-                  {editingTitleId === todo.id ? (
-                    <input
-                      type="text"
-                      value={editingTitleText}
-                      onChange={(e) => setEditingTitleText(e.target.value)}
-                      onBlur={() => handleTitleSave(todo.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.currentTarget.blur() }
-                        if (e.key === 'Escape') { setEditingTitleId(null) }
-                      }}
-                      maxLength={200}
-                      className="flex-1 text-sm font-semibold text-kk-ink bg-kk-soft rounded px-2 py-0.5 outline-none"
-                      // eslint-disable-next-line jsx-a11y/no-autofocus
-                      autoFocus
-                    />
-                  ) : (
-                    <span
-                      className="text-sm font-semibold text-kk-ink truncate cursor-text hover:text-kk-ink/70 transition-colors"
-                      onClick={() => startTitleEdit(todo)}
-                      title="Click to edit title"
-                    >
-                      {todo.title}
-                    </span>
-                  )}
-                </div>
+              <PriorityDot priority={todo.priority} size="md" />
 
-                {/* Scheduled date (non-recurring only) */}
+              {editingTitleId === todo.id ? (
+                <input
+                  type="text"
+                  value={editingTitleText}
+                  onChange={(e) => setEditingTitleText(e.target.value)}
+                  onBlur={() => handleTitleSave(todo.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.currentTarget.blur() }
+                    if (e.key === 'Escape') { setEditingTitleId(null) }
+                  }}
+                  maxLength={200}
+                  className="flex-1 text-base font-semibold text-kk-ink bg-kk-soft rounded px-2 py-0.5 outline-none min-w-0"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className="text-base font-semibold text-kk-ink truncate cursor-text hover:text-kk-ink/70 transition-colors flex-1 min-w-0"
+                  onClick={() => startTitleEdit(todo)}
+                  title="Click to edit title"
+                >
+                  {todo.title}
+                </span>
+              )}
+
+              {todo.recurrence_rule ? (
+                <button
+                  onClick={() => startRepeatEdit(todo)}
+                  className="text-[10px] text-kk-brand/60 hover:text-kk-brand transition-colors shrink-0"
+                  title="Edit recurrence"
+                >
+                  ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                </button>
+              ) : (
+                <button
+                  onClick={() => startRepeatEdit(todo)}
+                  className="text-[10px] text-kk-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0"
+                  title="Set recurrence"
+                >
+                  ↻
+                </button>
+              )}
+
+              <span className="text-xs font-medium text-kk-muted shrink-0">
+                {PRIORITY_CONFIG[todo.priority]?.label}
+              </span>
+
+              <button
+                onClick={() => startUpgrade(todo)}
+                disabled={isPending || upgradeLoading}
+                className="text-[10px] text-kk-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-kk-brand transition-all disabled:opacity-0 shrink-0"
+                title="Upgrade to Task"
+              >
+                → Task
+              </button>
+              <button
+                onClick={() => handleAction(() => cancelTodo(todo.id))}
+                disabled={isPending}
+                className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
+                title="Cancel"
+                aria-label="Cancel"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Sub-content — date, notes, edit panels */}
+            <div className="ml-8 mt-0.5">
+              {/* Scheduled date (non-recurring only) */}
                 {!todo.recurrence_rule && (
                   editingScheduledId === todo.id ? (
                     <input
@@ -603,8 +646,8 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                   )
                 )}
 
-                {/* Recurrence row — editable */}
-                {editingRepeatId === todo.id ? (
+                {/* Recurrence edit panel */}
+                {editingRepeatId === todo.id && (
                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                     <select
                       value={editRepeatRule}
@@ -629,7 +672,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                     )}
                     <button
                       onClick={() => handleRepeatSave(todo.id)}
-                      className="text-xs px-2 py-0.5 bg-kk-ink text-white rounded transition-opacity hover:opacity-80"
+                      className="text-xs px-2 py-0.5 bg-[#171717] text-kraft-light rounded transition-opacity hover:opacity-80"
                     >
                       ✓
                     </button>
@@ -640,22 +683,6 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                       ×
                     </button>
                   </div>
-                ) : todo.recurrence_rule ? (
-                  <button
-                    onClick={() => startRepeatEdit(todo)}
-                    className="mt-0.5 text-[10px] text-kk-brand/60 hover:text-kk-brand transition-colors text-left"
-                    title="Edit recurrence"
-                  >
-                    ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => startRepeatEdit(todo)}
-                    className="mt-0.5 text-[10px] text-kk-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-                    title="Set recurrence"
-                  >
-                    ↻ repeat
-                  </button>
                 )}
 
                 {/* Inline note */}
@@ -686,31 +713,6 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                     + note
                   </button>
                 )}
-              </div>
-
-              {/* Right meta */}
-              <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                <span className="text-[10px] text-kk-muted">
-                  {PRIORITY_CONFIG[todo.priority]?.label}
-                </span>
-                <button
-                  onClick={() => startUpgrade(todo)}
-                  disabled={isPending || upgradeLoading}
-                  className="text-[10px] text-kk-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-kk-brand transition-all disabled:opacity-0 shrink-0"
-                  title="Upgrade to Task"
-                >
-                  → Task
-                </button>
-                <button
-                  onClick={() => handleAction(() => cancelTodo(todo.id))}
-                  disabled={isPending}
-                  className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0"
-                  title="Cancel"
-                  aria-label="Cancel"
-                >
-                  ×
-                </button>
-              </div>
             </div>
 
             {/* Completion context box */}
@@ -745,7 +747,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                     type="button"
                     onClick={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
                     disabled={!completionContextText.trim() || completionLoading}
-                    className="text-xs px-3 py-1.5 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
+                    className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity [box-shadow:2px_2px_0_#555555]"
                   >
                     {completionLoading ? 'Saving…' : 'Done'}
                   </button>
@@ -858,7 +860,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                     type="button"
                     onClick={handleUpgrade}
                     disabled={!upgradeTitle.trim() || upgradeLoading}
-                    className="text-xs px-3 py-1.5 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
+                    className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity [box-shadow:2px_2px_0_#555555]"
                   >
                     {upgradeLoading ? 'Creating…' : 'Upgrade to Task'}
                   </button>
@@ -884,7 +886,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
       {completedTodos.length > 0 && (
         <Section title="Completed" count={completedTodos.length}>
           {completedTodos.map(todo => (
-            <div key={todo.id} className="px-5 py-3 group opacity-70">
+            <div key={todo.id} className="bg-kraft-light border-2 border-[#171717]/40 rounded-lg px-4 py-3 group opacity-70 [box-shadow:2px_2px_0_#999]">
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 w-4 h-4 rounded border border-kk-good bg-kk-good-bg shrink-0 flex items-center justify-center">
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -932,7 +934,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
       {cancelledTodos.length > 0 && (
         <Section title="Cancelled" count={cancelledTodos.length}>
           {cancelledTodos.map(todo => (
-            <div key={todo.id} className="flex items-center gap-3 px-5 py-3 group opacity-50">
+            <div key={todo.id} className="flex items-center gap-3 bg-kraft-light border-2 border-[#171717]/30 rounded-lg px-4 py-3 group opacity-50 [box-shadow:2px_2px_0_#999]">
               <div className="w-4 h-4 rounded border border-kk-line shrink-0" />
               <div className="flex-1 min-w-0">
                 <span className="text-sm text-kk-muted line-through truncate block">{todo.title}</span>
@@ -981,19 +983,19 @@ function Section({
   children?: React.ReactNode
 }) {
   return (
-    <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-kk-line">
-        <h2 className="text-sm font-semibold text-kk-ink">
+    <div>
+      <div className="mb-2">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-kraft-light">
           {title}
           {count > 0 && (
-            <span className="text-kk-muted font-normal ml-1">· {count}</span>
+            <span className="text-kraft-dark font-normal ml-1">· {count}</span>
           )}
         </h2>
       </div>
       {count === 0 && emptyText ? (
-        <div className="px-5 py-3 text-sm text-kk-muted">{emptyText}</div>
+        <div className="bg-kraft-light border-2 border-[#171717] rounded-lg px-5 py-3 text-sm text-kk-muted [box-shadow:3px_3px_0_#555555]">{emptyText}</div>
       ) : (
-        <div className="divide-y divide-kk-line">{children}</div>
+        <div className="space-y-2">{children}</div>
       )}
     </div>
   )

@@ -309,6 +309,8 @@ export interface Todo {
   completed_by_user_id: string | null
   /** Manual display order. NULL = never reordered (sorts to top). Lower = higher in list. */
   sort_order: number | null
+  /** User to notify when this todo is completed. NULL = no notification. */
+  notify_user_id: string | null
 }
 
 /** Todo enriched with owner display name — used for the Team visibility view. */
