@@ -4,6 +4,10 @@ import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 
+/**
+ * Wraps the sidebar mascot image. When clicked, opens a question popover.
+ * Enter navigates to /brain?q=… and auto-submits the question there.
+ */
 export default function BrainButton() {
   const [open, setOpen] = useState(false)
   const [question, setQuestion] = useState('')
@@ -11,15 +15,12 @@ export default function BrainButton() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Focus textarea when popover opens
   useEffect(() => {
     if (open) {
-      // Small delay to let the popover render
       requestAnimationFrame(() => textareaRef.current?.focus())
     }
   }, [open])
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return
     function handleClick(e: MouseEvent) {
@@ -31,7 +32,6 @@ export default function BrainButton() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return
     function handleKey(e: KeyboardEvent) {
@@ -53,24 +53,25 @@ export default function BrainButton() {
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative flex justify-center pt-0 pb-2 shrink-0">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-[#B7A486]/25 transition-colors"
+        className="cursor-pointer"
         aria-label="Ask Kockpit Brain"
         title="Ask Kockpit Brain"
       >
         <Image
           src="/kk-mascot.png"
-          alt="Ask Brain"
-          width={28}
-          height={32}
-          className="mix-blend-multiply"
+          alt="Killer Kebab mascot — click to ask Brain"
+          width={580}
+          height={650}
+          className="w-4/5 mx-auto mix-blend-multiply hover:scale-[1.03] transition-transform"
+          priority
         />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-72 md:w-80 bg-white border border-kk-line rounded-xl shadow-lg p-3">
+        <div className="absolute left-3 right-3 top-full mt-1 z-50 bg-white border border-kk-line rounded-xl shadow-lg p-3">
           <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-kk-muted mb-2">
             Ask Kockpit Brain
           </p>

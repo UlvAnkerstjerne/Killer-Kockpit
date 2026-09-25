@@ -428,20 +428,19 @@ export default function AppShell({
 
       {/* ── Desktop sidebar (hidden on mobile) ── */}
       <aside className="hidden md:flex md:w-56 md:shrink-0 bg-kraft-light border-r border-[#171717]/20 flex-col sticky top-0 h-screen">
-        {/* Mascot */}
-        <div className="flex justify-center pt-0 pb-2 shrink-0">
-          <Image
-            src="/kk-mascot.png"
-            alt="Killer Kebab mascot"
-            width={580}
-            height={650}
-            className="w-4/5 mix-blend-multiply"
-            priority
-          />
-        </div>
-        {managementAllowed && (
-          <div className="px-3 pb-1 shrink-0">
-            <BrainButton />
+        {/* Mascot — clickable Brain shortcut for management users */}
+        {managementAllowed ? (
+          <BrainButton />
+        ) : (
+          <div className="flex justify-center pt-0 pb-2 shrink-0">
+            <Image
+              src="/kk-mascot.png"
+              alt="Killer Kebab mascot"
+              width={580}
+              height={650}
+              className="w-4/5 mix-blend-multiply"
+              priority
+            />
           </div>
         )}
         <NavContent onOpenSearch={() => setSearchOpen(true)} />
@@ -495,11 +494,6 @@ export default function AppShell({
               <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </button>
-          {managementAllowed && (
-            <div className="ml-auto">
-              <BrainButton />
-            </div>
-          )}
         </div>
 
         {pathname !== '/today' && <CaptureBar user={user} currentView={currentView} />}
