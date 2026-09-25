@@ -85,8 +85,7 @@ export default function TaskForm({
       if (mode === 'create' && result.data?.id) {
         router.push(`/tasks/${result.data.id}`)
       } else {
-        setSaved(true)
-        setTimeout(() => setSaved(false), 3000)
+        router.push('/today')
       }
     })
   }
