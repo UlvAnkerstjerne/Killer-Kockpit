@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import type { AppUser, ViewMode } from '@/lib/types'
 import { canCreateDecision, canAccessManagementView } from '@/lib/permissions'
 import QuickCreateModal from './QuickCreateModal'
@@ -16,6 +17,7 @@ export default function CaptureBar({
   currentView?: ViewMode
   inline?: boolean
 }) {
+  const router = useRouter()
   const [open, setOpen] = useState<CaptureType | null>(null)
   const [captureOpen, setCaptureOpen] = useState(false)
   const canDecide = canCreateDecision(user.role)
@@ -59,6 +61,12 @@ export default function CaptureBar({
         className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
       >
         + Waiting On
+      </button>
+      <button
+        onClick={() => router.push('/meetings/new')}
+        className="text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+      >
+        + Meeting
       </button>
       {canDecide ? (
         <button
