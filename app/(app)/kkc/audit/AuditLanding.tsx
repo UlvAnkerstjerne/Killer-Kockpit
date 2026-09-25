@@ -303,9 +303,10 @@ function AuditTable({ rows, showLocation }: { rows: AuditSubmissionRow[]; showLo
       </div>
       <div className="divide-y divide-kk-line">
         {rows.map(s => (
-          <div
+          <Link
             key={s.id}
-            className={`grid grid-cols-1 md:${cols} gap-x-4 gap-y-1 px-4 py-3 items-center hover:bg-kk-soft transition-colors`}
+            href={`/kkc/audit/${s.id}`}
+            className={`block grid grid-cols-1 md:${cols} gap-x-4 gap-y-1 px-4 py-3 items-center hover:bg-kk-soft transition-colors`}
           >
             {showLocation && (
               <div className="font-semibold text-sm text-kk-ink truncate">{s.location_name}</div>
@@ -350,7 +351,7 @@ function AuditTable({ rows, showLocation }: { rows: AuditSubmissionRow[]; showLo
                 <span className="text-xs text-kk-muted">—</span>
               )}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>
