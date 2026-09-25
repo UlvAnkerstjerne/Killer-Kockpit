@@ -318,3 +318,35 @@ export async function reopenTask(taskId: string): Promise<ActionResult> {
   if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
   return {}
 }
+
+export async function binTask(taskId: string): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: current, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, owner_user_id, created_by_user_id, project_id')
+    .eq('id', taskId)
+    .single()
+
+  if (fetchError || !current) return { error: 'Task not found.' }
+
+  if (!canUpdateTaskStatus(user.role, current.created_by_user_id, current.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to bin this task.' }
+  }
+
+  // Set archived_at without changing status — task disappears from active views
+  const { error } = await supabase
+    .from('tasks')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', taskId)
+
+  if (error) return { error: 'Failed to bin task.' }
+
+  revalidatePath('/tasks')
+  revalidatePath(`/tasks/${taskId}`)
+  revalidatePath('/today')
+  if (current.project_id) revalidatePath(`/projects/${current.project_id}`)
+  return {}
+}

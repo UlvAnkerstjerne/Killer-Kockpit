@@ -10,6 +10,7 @@ import {
   submitTaskForReview,
   approveTask,
   sendTaskBack,
+  binTask,
 } from '@/lib/actions/tasks'
 import type { TaskStatus } from '@/lib/types'
 
@@ -57,13 +58,39 @@ export default function TaskActionButtons({
   const [error, setError] = useState<string | null>(null)
   const [showSendBack, setShowSendBack] = useState(false)
   const [reviewNote, setReviewNote] = useState('')
+  const [confirmBin, setConfirmBin] = useState(false)
 
   const isTerminal = currentStatus === 'done' || currentStatus === 'cancelled'
+  const canAct = userIsResponsible || userIsRequester || isSuperAdmin
+
+  function handleBin() {
+    if (!confirmBin) {
+      setConfirmBin(true)
+      setTimeout(() => setConfirmBin(false), 3000)
+      return
+    }
+    setError(null)
+    startTransition(async () => {
+      const result = await binTask(taskId)
+      if (result.error) { setError(result.error); setConfirmBin(false) }
+      else router.replace(returnTo ?? '/tasks')
+    })
+  }
+
+  const binButton = canAct ? (
+    <button
+      onClick={handleBin}
+      disabled={isPending}
+      className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-lg hover:border-kk-bad hover:text-kk-bad transition-colors disabled:opacity-40"
+    >
+      {isPending && confirmBin ? 'Binning…' : confirmBin ? 'Bin this task?' : 'Bin'}
+    </button>
+  ) : null
 
   // ── Terminal state ────────────────────────────────────────────────────────
 
   if (isTerminal) {
-    if (!userIsRequester && !userIsResponsible && !isSuperAdmin) return null
+    if (!canAct) return null
 
     const reopenBtn = (
       <button
@@ -77,24 +104,29 @@ export default function TaskActionButtons({
         disabled={isPending}
         className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-lg disabled:opacity-40 hover:text-kk-ink hover:border-kk-ink transition-colors"
       >
-        {isPending ? '…' : 'Reopen task'}
+        {isPending && !confirmBin ? '…' : 'Reopen task'}
       </button>
     )
 
     if (userIsRequester || userIsResponsible) {
       return (
         <div>
-          {reopenBtn}
+          <div className="flex gap-2 flex-wrap">
+            {reopenBtn}
+            {binButton}
+          </div>
           {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
         </div>
       )
     }
 
-    // Unrelated SUPER_ADMIN — reopen is an administrative override
     return (
       <div>
         <p className="text-[10px] font-semibold text-kk-muted uppercase tracking-wide mb-2">Admin actions</p>
-        {reopenBtn}
+        <div className="flex gap-2 flex-wrap">
+          {reopenBtn}
+          {binButton}
+        </div>
         {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
       </div>
     )
@@ -129,6 +161,7 @@ export default function TaskActionButtons({
               >
                 Send back
               </button>
+              {binButton}
             </div>
           ) : (
             <div className="space-y-2">
@@ -168,16 +201,16 @@ export default function TaskActionButtons({
         </div>
       )
     }
-    // Responsible person: task is with the requester — nothing to act on
     if (userIsResponsible) {
       return (
-        <p className="text-xs text-kk-muted">
-          Awaiting review by the owner.
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-kk-muted">Awaiting review by the owner.</p>
+          {binButton}
+          {error && <p className="text-xs text-kk-bad">{error}</p>}
+        </div>
       )
     }
 
-    // SUPER_ADMIN who is neither requester nor responsible — secondary admin override
     if (isSuperAdmin) {
       return (
         <div className="space-y-3">
@@ -207,6 +240,7 @@ export default function TaskActionButtons({
                 >
                   Send back
                 </button>
+                {binButton}
               </div>
             ) : (
               <div className="space-y-2">
@@ -252,16 +286,9 @@ export default function TaskActionButtons({
   }
 
   // ── Active state ──────────────────────────────────────────────────────────
-  //
-  // Relationship matrix — no SUPER_ADMIN leakage into normal workflow:
-  //   self-assigned (owner == creator == me)  → Mark done + transitions
-  //   delegated responsible                   → Done — send for review + transitions
-  //   delegated requester                     → waiting message (no mutations)
-  //   unrelated SUPER_ADMIN                   → ADMIN ACTIONS section only
 
   const transitions = STATUS_TRANSITIONS[currentStatus] || []
 
-  // Renders the status-transition buttons (Start, Block, Cancel…) shared across cases.
   const renderTransitions = () => transitions.map((t) => (
     <button
       key={t.value}
@@ -292,7 +319,6 @@ export default function TaskActionButtons({
     </button>
   ))
 
-  // Self-assigned: I am both requester and responsible — mark done directly.
   if (isSelfAssigned && userIsResponsible) {
     return (
       <div>
@@ -309,16 +335,16 @@ export default function TaskActionButtons({
             disabled={isPending}
             className="px-3 py-1.5 bg-kk-ink text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:opacity-90 transition-opacity"
           >
-            {isPending ? '…' : 'Mark done'}
+            {isPending && !confirmBin ? '…' : 'Mark done'}
           </button>
           {renderTransitions()}
+          {binButton}
         </div>
         {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
       </div>
     )
   }
 
-  // Delegated responsible: I own the work; submit it for review.
   if (userIsResponsible) {
     return (
       <div>
@@ -338,22 +364,23 @@ export default function TaskActionButtons({
             {isPending ? 'Sending…' : 'Done — send for review'}
           </button>
           {renderTransitions()}
+          {binButton}
         </div>
         {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
       </div>
     )
   }
 
-  // Delegated requester: I requested the work; wait for the responsible to submit.
   if (userIsRequester) {
     return (
-      <p className="text-xs text-kk-muted">
-        Waiting for the responsible person to submit for review.
-      </p>
+      <div className="space-y-2">
+        <p className="text-xs text-kk-muted">Waiting for the responsible person to submit for review.</p>
+        {binButton}
+        {error && <p className="text-xs text-kk-bad">{error}</p>}
+      </div>
     )
   }
 
-  // Unrelated SUPER_ADMIN: all mutation controls grouped under ADMIN ACTIONS.
   if (isSuperAdmin) {
     return (
       <div>
@@ -371,9 +398,10 @@ export default function TaskActionButtons({
             disabled={isPending}
             className="px-3 py-1.5 border border-kk-line text-xs text-kk-muted rounded-lg disabled:opacity-40 hover:text-kk-ink hover:border-kk-ink transition-colors"
           >
-            {isPending ? '…' : 'Mark done'}
+            {isPending && !confirmBin ? '…' : 'Mark done'}
           </button>
           {renderTransitions()}
+          {binButton}
         </div>
         {error && <p className="text-xs text-kk-bad mt-2">{error}</p>}
       </div>
