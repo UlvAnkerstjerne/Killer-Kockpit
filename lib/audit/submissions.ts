@@ -77,31 +77,13 @@ export async function getOperationalAuditSubmissions(): Promise<{
   templateConfig: AuditTemplateConfig | null
   error: string | null
 }> {
-  const supabase = await createClient()
-
-  const { data: template, error: tErr } = await supabase
-    .from('audit_templates')
-    .select('id, requires_busyness, requires_failure_context, requires_manager_on_duty')
-    .eq('audit_key', 'operational_audit')
-    .eq('status', 'published')
-    .single()
-
-  if (tErr || !template) {
-    return { submissions: [], templateId: null, templateConfig: null, error: 'no_published_template' }
-  }
-
-  const templateConfig: AuditTemplateConfig = {
-    requiresBusyness:       template.requires_busyness as boolean,
-    requiresFailureContext: template.requires_failure_context as boolean,
-    requiresManagerOnDuty:  template.requires_manager_on_duty as boolean,
-  }
-
-  const result = await getAuditSubmissionsByTemplateId(supabase, template.id)
-  return { ...result, templateConfig }
+  return getAuditSubmissionsByKey('operational_audit')
 }
 
 /**
- * Generic: fetch submissions for any published template by audit_key.
+ * Fetch submissions across ALL template versions for a given audit_key.
+ * Historical submissions referencing retired templates are included.
+ * The templateConfig and scoringConfig come from the currently published version.
  */
 export async function getAuditSubmissionsByKey(auditKey: string): Promise<{
   submissions: AuditSubmissionRow[]
@@ -112,33 +94,38 @@ export async function getAuditSubmissionsByKey(auditKey: string): Promise<{
 }> {
   const supabase = await createClient()
 
-  const { data: template, error: tErr } = await supabase
+  // Get the published template for config (used by new audits + UI config)
+  const { data: published, error: tErr } = await supabase
     .from('audit_templates')
     .select('id, requires_busyness, requires_failure_context, requires_manager_on_duty, scoring_config')
     .eq('audit_key', auditKey)
     .eq('status', 'published')
     .single()
 
-  if (tErr || !template) {
+  if (tErr || !published) {
     return { submissions: [], templateId: null, templateConfig: null, scoringConfig: DEFAULT_SCORING_CONFIG, error: 'no_published_template' }
   }
 
   const templateConfig: AuditTemplateConfig = {
-    requiresBusyness:       template.requires_busyness as boolean,
-    requiresFailureContext: template.requires_failure_context as boolean,
-    requiresManagerOnDuty:  template.requires_manager_on_duty as boolean,
+    requiresBusyness:       published.requires_busyness as boolean,
+    requiresFailureContext: published.requires_failure_context as boolean,
+    requiresManagerOnDuty:  published.requires_manager_on_duty as boolean,
   }
 
-  const scoringConfig = parseScoringConfig(template.scoring_config as Record<string, unknown> | null)
+  const scoringConfig = parseScoringConfig(published.scoring_config as Record<string, unknown> | null)
 
-  const result = await getAuditSubmissionsByTemplateId(supabase, template.id)
-  return { ...result, templateConfig, scoringConfig }
-}
+  // Get ALL template IDs for this audit_key (published + retired)
+  const { data: allTemplates } = await supabase
+    .from('audit_templates')
+    .select('id')
+    .eq('audit_key', auditKey)
 
-async function getAuditSubmissionsByTemplateId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  templateId: string,
-) {
+  const templateIds = (allTemplates ?? []).map(t => t.id as string)
+  if (templateIds.length === 0) {
+    return { submissions: [], templateId: published.id, templateConfig, scoringConfig, error: null }
+  }
+
+  // Fetch submissions across all versions
   const { data, error } = await supabase
     .from('audit_submissions')
     .select(`
@@ -147,11 +134,11 @@ async function getAuditSubmissionsByTemplateId(
       locations!location_id ( name ),
       app_users!auditor_user_id ( display_name )
     `)
-    .eq('template_id', templateId)
+    .in('template_id', templateIds)
     .order('created_at', { ascending: false })
 
   if (error) {
-    return { submissions: [] as AuditSubmissionRow[], templateId, error: error.message }
+    return { submissions: [], templateId: published.id, templateConfig, scoringConfig, error: error.message }
   }
 
   const submissions: AuditSubmissionRow[] = (data ?? []).map((row: Record<string, unknown>) => ({
@@ -171,5 +158,5 @@ async function getAuditSubmissionsByTemplateId(
     auditor_name: (row.app_users as { display_name: string } | null)?.display_name ?? '—',
   }))
 
-  return { submissions, templateId, error: null }
+  return { submissions, templateId: published.id, templateConfig, scoringConfig, error: null }
 }
