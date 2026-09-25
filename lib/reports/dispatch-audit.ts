@@ -48,6 +48,8 @@ interface SubmissionData {
   red_flag_count:    unknown
   audit_status:      unknown
   submitted_at:      unknown
+  visited_at:        unknown
+  busyness:          unknown
   locations:         unknown
   app_users:         unknown
 }
@@ -59,13 +61,20 @@ function extractSubmissionFields(submission: SubmissionData) {
   const corePct      = Math.round((submission.core_score_pct as number | null) ?? 0)
   const redFlagCount = (submission.red_flag_count as number | null) ?? 0
   const auditStatus  = (submission.audit_status as string | null) ?? ''
-  const dateStr      = submission.submitted_at
-    ? new Date(submission.submitted_at as string).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric',
-      })
+  const busyness     = (submission.busyness as string | null) ?? null
+  const visitDate    = submission.visited_at
+    ? new Date(submission.visited_at as string)
+    : submission.submitted_at
+    ? new Date(submission.submitted_at as string)
+    : null
+  const dateStr = visitDate
+    ? visitDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '—'
+  const timeStr = visitDate
+    ? visitDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : '—'
 
-  return { locationName, auditorName, overallPct, corePct, redFlagCount, auditStatus, dateStr }
+  return { locationName, auditorName, overallPct, corePct, redFlagCount, auditStatus, busyness, dateStr, timeStr }
 }
 
 // ─── Core: process all channels for one submission ────────────────────────────
@@ -93,7 +102,8 @@ export async function processAuditDelivery(
   const { data: submission, error } = await db
     .from('audit_submissions')
     .select(`
-      id, score_pct, core_score_pct, red_flag_count, audit_status, submitted_at,
+      id, score_pct, core_score_pct, red_flag_count, audit_status,
+      submitted_at, visited_at, busyness,
       locations!location_id ( name ),
       app_users!auditor_user_id ( display_name )
     `)
@@ -110,7 +120,7 @@ export async function processAuditDelivery(
     return outcomes
   }
 
-  const { locationName, auditorName, overallPct, corePct, redFlagCount, auditStatus, dateStr } =
+  const { locationName, auditorName, overallPct, corePct, redFlagCount, auditStatus, busyness, dateStr, timeStr } =
     extractSubmissionFields(submission as SubmissionData)
 
   const metadata = {
@@ -143,6 +153,8 @@ export async function processAuditDelivery(
       locationName,
       auditorName,
       date:          dateStr,
+      time:          timeStr,
+      busyness,
       overallPct,
       corePct,
       redFlagCount,

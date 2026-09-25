@@ -2,21 +2,27 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { startAudit } from '@/lib/actions/audit'
-import type { ActiveLocation } from '@/lib/audit/submissions'
+import { startAudit, BUSYNESS_OPTIONS } from '@/lib/actions/audit'
+import type { ActiveLocation, AuditTemplateConfig } from '@/lib/audit/submissions'
 
 interface Props {
   locations: ActiveLocation[]
+  templateConfig: AuditTemplateConfig | null
+  auditKey?: string
   onClose: () => void
 }
 
-export default function StartAuditModal({ locations, onClose }: Props) {
+export default function StartAuditModal({ locations, templateConfig, auditKey = 'operational_audit', onClose }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [locationId, setLocationId] = useState('')
   const [managerOnDuty, setManagerOnDuty] = useState('')
+  const [busyness, setBusyness] = useState('')
   const [error, setError] = useState<string | null>(null)
   const modRef = useRef<HTMLDivElement>(null)
+
+  const showBusyness = templateConfig?.requiresBusyness ?? false
+  const modRequired  = templateConfig?.requiresManagerOnDuty ?? true
 
   // Close on Escape
   useEffect(() => {
@@ -32,10 +38,11 @@ export default function StartAuditModal({ locations, onClose }: Props) {
     setError(null)
 
     if (!locationId) { setError('Please select a location.'); return }
-    if (!managerOnDuty.trim()) { setError('Manager on Duty is required.'); return }
+    if (modRequired && !managerOnDuty.trim()) { setError('Manager on Duty is required.'); return }
+    if (showBusyness && !busyness) { setError('Busyness is required.'); return }
 
     startTransition(async () => {
-      const result = await startAudit(locationId, managerOnDuty)
+      const result = await startAudit(locationId, managerOnDuty, busyness || null, auditKey)
       if (result.error) {
         setError(result.error)
         return
@@ -43,6 +50,11 @@ export default function StartAuditModal({ locations, onClose }: Props) {
       router.push(`/kkc/audit/${result.data!.submissionId}`)
     })
   }
+
+  const canSubmit = !isPending
+    && !!locationId
+    && (!modRequired || !!managerOnDuty.trim())
+    && (!showBusyness || !!busyness)
 
   return (
     <div
@@ -99,20 +111,43 @@ export default function StartAuditModal({ locations, onClose }: Props) {
           <div>
             <label htmlFor="audit-mod" className="block text-xs font-semibold text-kk-ink mb-1.5">
               Manager on Duty
+              {!modRequired && <span className="ml-1 font-normal text-kk-muted">(optional)</span>}
             </label>
             <input
               id="audit-mod"
               type="text"
               value={managerOnDuty}
               onChange={e => setManagerOnDuty(e.target.value)}
-              placeholder="Full name"
+              placeholder={modRequired ? 'Full name' : 'Full name (if known)'}
               maxLength={100}
               disabled={isPending}
               className="w-full text-sm bg-white border border-kk-line rounded-xl px-3 py-2.5 outline-none focus:border-kk-ink transition-colors text-kk-ink placeholder:text-kk-muted disabled:opacity-50"
-              required
+              required={modRequired}
               autoFocus
             />
           </div>
+
+          {/* Busyness — only shown when template requires it */}
+          {showBusyness && (
+            <div>
+              <label htmlFor="audit-busyness" className="block text-xs font-semibold text-kk-ink mb-1.5">
+                Busyness
+              </label>
+              <select
+                id="audit-busyness"
+                value={busyness}
+                onChange={e => setBusyness(e.target.value)}
+                disabled={isPending}
+                className="w-full text-sm bg-white border border-kk-line rounded-xl px-3 py-2.5 outline-none focus:border-kk-ink transition-colors text-kk-ink disabled:opacity-50"
+                required
+              >
+                <option value="">Select busyness…</option>
+                {BUSYNESS_OPTIONS.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Auditor note */}
           <p className="text-xs text-kk-muted">
@@ -136,7 +171,7 @@ export default function StartAuditModal({ locations, onClose }: Props) {
             </button>
             <button
               type="submit"
-              disabled={isPending || !locationId || !managerOnDuty.trim()}
+              disabled={!canSubmit}
               className="flex-1 py-2.5 text-sm bg-kk-ink text-white font-semibold rounded-xl disabled:opacity-40 hover:opacity-80 transition-opacity"
             >
               {isPending ? 'Starting…' : 'Start audit'}

@@ -1,5 +1,7 @@
 // Server component — no state needed
 
+import type { ScoringConfig } from '@/lib/audit/submissions'
+
 const STATUS_LABEL: Record<string, string> = {
   GREEN:       'Green',
   LIGHT_GREEN: 'Light Green',
@@ -27,27 +29,50 @@ interface Props {
   auditStatus:            string | null
   scorePct:               number | null
   coreScorePct:           number | null
+  coreScoreFail:          number | null
   redFlagCount:           number | null
   managerWarningRequired: boolean
   submittedAt:            string | null
+  visitedAt:              string | null
+  busyness:               string | null
+  locationName:           string
+  scoringConfig:          ScoringConfig
 }
 
 export default function AuditResultBanner({
   auditStatus,
   scorePct,
   coreScorePct,
+  coreScoreFail,
   redFlagCount,
   managerWarningRequired,
   submittedAt,
+  visitedAt,
+  busyness,
+  locationName,
+  scoringConfig,
 }: Props) {
   const statusCls = auditStatus ? (STATUS_RING_CLS[auditStatus] ?? 'bg-kk-soft border-kk-line text-kk-muted') : ''
   const statusLabel = auditStatus ? (STATUS_LABEL[auditStatus] ?? auditStatus) : '—'
+
+  const visitDate = visitedAt ? new Date(visitedAt) : null
+  const visitDateStr = visitDate
+    ? visitDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null
+  const visitTimeStr = visitDate
+    ? visitDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : null
 
   const submittedStr = submittedAt
     ? new Date(submittedAt).toLocaleDateString('en-GB', {
         day: 'numeric', month: 'short', year: 'numeric',
       })
     : null
+
+  // For protocols with Red Flags (Operational Audit): show red_flag_count
+  // For protocols without (Airport): show core_score_fail as "Critical Failures"
+  const failMetricValue = scoringConfig.hasRedFlags ? redFlagCount : coreScoreFail
+  const failMetricLabel = scoringConfig.secondaryFailLabel
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -63,10 +88,16 @@ export default function AuditResultBanner({
                 <span className="text-xl font-bold">{statusLabel}</span>
               </div>
             </div>
-            {submittedStr && (
-              <p className="text-xs opacity-60 shrink-0">{submittedStr}</p>
-            )}
+            <div className="text-right shrink-0">
+              {submittedStr && (
+                <p className="text-xs opacity-60">{submittedStr}</p>
+              )}
+            </div>
           </div>
+          {/* Visit context line */}
+          <p className="text-xs opacity-60 mt-2">
+            {[locationName, visitDateStr, visitTimeStr, busyness].filter(Boolean).join(' · ')}
+          </p>
         </div>
 
         {/* Scores */}
@@ -82,7 +113,7 @@ export default function AuditResultBanner({
             )}
           </div>
           <div className="text-center">
-            <p className="text-xs font-semibold opacity-60 mb-0.5">Core Standards</p>
+            <p className="text-xs font-semibold opacity-60 mb-0.5">{scoringConfig.secondaryLabel}</p>
             {coreScorePct !== null ? (
               <p className={`text-2xl font-bold tabular-nums ${SCORE_CLS(coreScorePct)}`}>
                 {coreScorePct.toFixed(0)}%
@@ -92,18 +123,18 @@ export default function AuditResultBanner({
             )}
           </div>
           <div className="text-center">
-            <p className="text-xs font-semibold opacity-60 mb-0.5">Red Flags</p>
-            <p className={`text-2xl font-bold tabular-nums ${redFlagCount ? 'text-kk-bad' : 'inherit'}`}>
-              {redFlagCount ?? '—'}
+            <p className="text-xs font-semibold opacity-60 mb-0.5">{failMetricLabel}</p>
+            <p className={`text-2xl font-bold tabular-nums ${failMetricValue ? 'text-kk-bad' : 'inherit'}`}>
+              {failMetricValue ?? '—'}
             </p>
           </div>
         </div>
 
-        {/* Manager warning */}
-        {managerWarningRequired && (
+        {/* Manager warning — only for protocols with Red Flags */}
+        {scoringConfig.hasRedFlags && managerWarningRequired && (
           <div className="mx-5 mb-4 px-3 py-2.5 bg-kk-bad-bg border border-kk-bad/30 rounded-lg">
             <p className="text-xs font-bold text-kk-bad">
-              Store Manager notification required — 2 or more Red Flags recorded.
+              Store Manager notification required — 2 or more {scoringConfig.secondaryFailShort} recorded.
             </p>
           </div>
         )}

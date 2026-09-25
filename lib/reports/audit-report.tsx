@@ -20,16 +20,24 @@ export interface AuditReportTopAction {
   deadline:   string | null
 }
 
+export interface AuditReportFailedCheckpoint {
+  title:   string
+  comment: string | null
+}
+
 export interface AuditReportInput {
   submissionId:         string
   locationName:         string
   auditorName:          string
   date:                 string    // pre-formatted, e.g. "10 Sep 2026"
+  time:                 string    // pre-formatted, e.g. "12:37"
+  busyness:             string | null
   overallPct:           number
   corePct:              number
   redFlagCount:         number
   auditStatus:          string    // e.g. "GREEN", "YELLOW"
   topActions:           AuditReportTopAction[]
+  failedCheckpoints:    AuditReportFailedCheckpoint[]
   finalDoneWell:        string | null
   finalFocusNext:       string | null
   finalOverallComments: string | null
@@ -246,14 +254,38 @@ const s = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     color:      C.red,
   },
+  failRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: C.soft,
+    paddingVertical:   6,
+    paddingHorizontal: 10,
+  },
+  failTitle: {
+    fontSize:   8.5,
+    fontFamily: 'Helvetica-Bold',
+    color:      C.bad,
+    marginBottom: 2,
+  },
+  failContext: {
+    fontSize:   8.5,
+    color:      C.ink,
+    lineHeight: 1.5,
+  },
+  failBadge: {
+    fontSize:      7,
+    fontFamily:    'Helvetica-Bold',
+    color:         C.bad,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 })
 
 // ─── Document ─────────────────────────────────────────────────────────────────
 
 export function AuditReportDocument({ input }: { input: AuditReportInput }) {
   const {
-    locationName, auditorName, date, overallPct, corePct, redFlagCount,
-    auditStatus, topActions, finalDoneWell, finalFocusNext, finalOverallComments,
+    locationName, auditorName, date, time, busyness, overallPct, corePct, redFlagCount,
+    auditStatus, topActions, failedCheckpoints, finalDoneWell, finalFocusNext, finalOverallComments,
     generatedAt,
   } = input
 
@@ -275,7 +307,8 @@ export function AuditReportDocument({ input }: { input: AuditReportInput }) {
               <Text style={s.headerLocation}>{locationName}</Text>
             </View>
             <View style={s.headerRight}>
-              <Text style={s.headerDate}>{date}</Text>
+              <Text style={s.headerDate}>{date} · {time}</Text>
+              {busyness && <Text style={s.headerAuditor}>{busyness}</Text>}
               <Text style={s.headerAuditor}>Auditor: {auditorName}</Text>
             </View>
           </View>
@@ -330,6 +363,32 @@ export function AuditReportDocument({ input }: { input: AuditReportInput }) {
                       </Text>
                     )}
                   </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* ── Failed checkpoints with context ── */}
+          {failedCheckpoints.length > 0 && (
+            <View style={s.sectionCard}>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionTitle}>Failed Checkpoints</Text>
+              </View>
+              {failedCheckpoints.map((fc, i) => (
+                <View
+                  key={i}
+                  style={[
+                    s.failRow,
+                    i === failedCheckpoints.length - 1 ? { borderBottomWidth: 0 } : {},
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <Text style={s.failBadge}>Unacceptable</Text>
+                  </View>
+                  <Text style={s.failTitle}>{fc.title}</Text>
+                  {fc.comment ? (
+                    <Text style={s.failContext}>{fc.comment}</Text>
+                  ) : null}
                 </View>
               ))}
             </View>

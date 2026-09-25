@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { getCurrentUser } from '@/lib/auth'
 import { canAccessQualityCheck } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/server'
+import { parseScoringConfig } from '@/lib/audit/submissions'
+import type { ScoringConfig } from '@/lib/audit/submissions'
 import AuditQuestionnaire from './AuditQuestionnaire'
 import AuditTopActions from './AuditTopActions'
 import AuditFinalFields from './AuditFinalFields'
@@ -31,11 +33,12 @@ export default async function AuditSubmissionPage({ params }: Props) {
   const { data: submission, error } = await supabase
     .from('audit_submissions')
     .select(`
-      id, status, manager_on_duty, created_at, auditor_user_id, template_id,
+      id, status, manager_on_duty, created_at, visited_at, busyness,
+      auditor_user_id, template_id,
       final_done_well, final_focus_next, final_overall_comments,
       final_mod_informed, final_corrective_action,
       follow_up_requested, follow_up_date,
-      score_pct, core_score_pct, red_flag_count,
+      score_pct, core_score_pct, core_score_fail, red_flag_count,
       audit_status, manager_warning_required, submitted_at,
       locations!location_id ( name ),
       app_users!auditor_user_id ( display_name )
@@ -47,6 +50,16 @@ export default async function AuditSubmissionPage({ params }: Props) {
 
   const locationName = (submission.locations as unknown as { name: string } | null)?.name ?? '—'
   const auditorName  = (submission.app_users as unknown as { display_name: string } | null)?.display_name ?? '—'
+
+  // Load template config
+  const { data: templateRow } = await supabase
+    .from('audit_templates')
+    .select('requires_busyness, requires_failure_context, requires_manager_on_duty, scoring_config')
+    .eq('id', submission.template_id)
+    .single()
+
+  const requiresFailureContext = (templateRow?.requires_failure_context as boolean) ?? false
+  const scoringConfig: ScoringConfig = parseScoringConfig(templateRow?.scoring_config as Record<string, unknown> | null)
 
   // Load checkpoints for this template
   const { data: checkpointRows } = await supabase
@@ -61,7 +74,7 @@ export default async function AuditSubmissionPage({ params }: Props) {
   const [{ data: responseRows }, { data: commentRows }, { data: topActionRows }] = await Promise.all([
     supabase
       .from('audit_responses')
-      .select('checkpoint_id, result')
+      .select('checkpoint_id, result, comment')
       .eq('submission_id', id),
     supabase
       .from('audit_section_comments')
@@ -77,6 +90,7 @@ export default async function AuditSubmissionPage({ params }: Props) {
   const initialResponses: SavedResponse[] = (responseRows ?? []).map(r => ({
     checkpoint_id: r.checkpoint_id,
     result: r.result as SavedResponse['result'],
+    comment: (r.comment as string | null) ?? null,
   }))
 
   const initialSectionComments: Record<string, string> = {}
@@ -113,9 +127,14 @@ export default async function AuditSubmissionPage({ params }: Props) {
             auditStatus={submission.audit_status as string | null}
             scorePct={submission.score_pct as number | null}
             coreScorePct={submission.core_score_pct as number | null}
+            coreScoreFail={(submission as Record<string, unknown>).core_score_fail as number | null}
             redFlagCount={submission.red_flag_count as number | null}
             managerWarningRequired={submission.manager_warning_required ?? false}
             submittedAt={submission.submitted_at as string | null}
+            visitedAt={(submission.visited_at as string | null) ?? submission.created_at}
+            busyness={submission.busyness as string | null}
+            locationName={locationName}
+            scoringConfig={scoringConfig}
           />
           <div className="flex justify-end">
             <SendReportButton system="audit" submissionId={id} />
@@ -133,7 +152,12 @@ export default async function AuditSubmissionPage({ params }: Props) {
         locationName={locationName}
         auditorName={auditorName}
         managerOnDuty={submission.manager_on_duty}
-        startedAt={submission.created_at}
+        busyness={submission.busyness as string | null}
+        startedAt={submission.visited_at ?? submission.created_at}
+        requiresFailureContext={requiresFailureContext}
+        requiresBusyness={(templateRow?.requires_busyness as boolean) ?? false}
+        requiresManagerOnDuty={(templateRow?.requires_manager_on_duty as boolean) ?? true}
+        scoringConfig={scoringConfig}
       />
 
       <AuditTopActions
@@ -160,7 +184,7 @@ export default async function AuditSubmissionPage({ params }: Props) {
 
       {/* Submit bar — only for the auditor's own in-progress audit */}
       {!isReadOnly && (
-        <AuditSubmitBar submissionId={id} />
+        <AuditSubmitBar submissionId={id} requiresFailureContext={requiresFailureContext} />
       )}
     </div>
   )

@@ -10,6 +10,42 @@ export async function upsertAuditResponse(
   submissionId: string,
   checkpointId: string,
   result: 'pass' | 'fail' | 'na',
+  comment?: string | null,
+): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+  if (!canAccessQualityCheck(user.role)) return { error: 'Not authorised' }
+
+  const supabase = await createClient()
+
+  const row: Record<string, unknown> = {
+    submission_id: submissionId,
+    checkpoint_id: checkpointId,
+    result,
+  }
+  // Clear comment when switching away from fail
+  if (comment !== undefined) {
+    row.comment = comment
+  } else if (result !== 'fail') {
+    row.comment = null
+  }
+
+  const { error } = await supabase
+    .from('audit_responses')
+    .upsert(row, { onConflict: 'submission_id,checkpoint_id' })
+
+  if (error) {
+    console.error('[audit] upsertAuditResponse error:', error)
+    return { error: error.message }
+  }
+
+  return {}
+}
+
+export async function updateResponseComment(
+  submissionId: string,
+  checkpointId: string,
+  comment: string,
 ): Promise<ActionResult> {
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
@@ -19,13 +55,12 @@ export async function upsertAuditResponse(
 
   const { error } = await supabase
     .from('audit_responses')
-    .upsert(
-      { submission_id: submissionId, checkpoint_id: checkpointId, result },
-      { onConflict: 'submission_id,checkpoint_id' },
-    )
+    .update({ comment })
+    .eq('submission_id', submissionId)
+    .eq('checkpoint_id', checkpointId)
 
   if (error) {
-    console.error('[audit] upsertAuditResponse error:', error)
+    console.error('[audit] updateResponseComment error:', error)
     return { error: error.message }
   }
 
@@ -41,6 +76,8 @@ export type AuditFinalFieldPatch =
   | { field: 'final_corrective_action'; value: string }
   | { field: 'follow_up_requested';    value: boolean }
   | { field: 'follow_up_date';         value: string | null }
+  | { field: 'busyness';               value: string }
+  | { field: 'manager_on_duty';        value: string }
 
 export async function submitAudit(
   submissionId: string,
@@ -304,17 +341,24 @@ export async function fetchStoreAuditMatrix(locationId: string): Promise<StoreAu
   return { ok: true, consistent, inconsistencyNote, checkpoints: matrixCheckpoints, columns }
 }
 
+export const BUSYNESS_OPTIONS = ['Full rush', 'Busy', 'Chill', 'Slow', 'Dead'] as const
+export type Busyness = typeof BUSYNESS_OPTIONS[number]
+
 export async function startAudit(
   locationId: string,
   managerOnDuty: string,
+  busyness: string | null,
+  auditKey: string = 'operational_audit',
 ): Promise<ActionResult<{ submissionId: string }>> {
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }
   if (!canAccessQualityCheck(user.role)) return { error: 'Not authorised' }
 
   const trimmed = managerOnDuty.trim()
-  if (!trimmed) return { error: 'Manager on Duty is required' }
   if (!locationId) return { error: 'Location is required' }
+  if (busyness && !(BUSYNESS_OPTIONS as readonly string[]).includes(busyness)) {
+    return { error: 'Invalid busyness value' }
+  }
 
   const supabase = await createClient()
 
@@ -322,11 +366,11 @@ export async function startAudit(
   const { data: template, error: tErr } = await supabase
     .from('audit_templates')
     .select('id')
-    .eq('audit_key', 'operational_audit')
+    .eq('audit_key', auditKey)
     .eq('status', 'published')
     .single()
 
-  if (tErr || !template) return { error: 'No published Operational Audit template found' }
+  if (tErr || !template) return { error: `No published template found for ${auditKey}` }
 
   // Verify location is active (belt-and-suspenders — RLS already filters, but
   // we want a clear error message rather than a silent empty result)
@@ -340,13 +384,16 @@ export async function startAudit(
   if (!location.active) return { error: 'Only active locations may be audited' }
 
   // Create the submission — auditor is always the current user
+  const visitedAt = new Date().toISOString()
   const { data: submission, error: sErr } = await supabase
     .from('audit_submissions')
     .insert({
       template_id: template.id,
       location_id: locationId,
       auditor_user_id: user.id,
-      manager_on_duty: trimmed,
+      manager_on_duty: trimmed || null,
+      busyness: busyness || null,
+      visited_at: visitedAt,
       status: 'in_progress',
     })
     .select('id')

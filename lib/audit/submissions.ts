@@ -2,6 +2,43 @@ import { createClient } from '@/lib/supabase/server'
 
 export type AuditHealthStatus = 'GREEN' | 'LIGHT_GREEN' | 'YELLOW' | 'ORANGE' | 'RED'
 
+/** Protocol-level config read from the published audit_template. */
+export interface AuditTemplateConfig {
+  requiresBusyness:        boolean
+  requiresFailureContext:  boolean
+  requiresManagerOnDuty:   boolean
+}
+
+/** Protocol-specific scoring labels and behaviour from scoring_config JSONB. */
+export interface ScoringConfig {
+  secondaryLabel:     string   // "Core Standards" | "Critical"
+  secondaryShort:     string   // "Core" | "Critical"
+  secondaryFailLabel: string   // "Red Flags" | "Critical Failures"
+  secondaryFailShort: string   // "RF" | "CF"
+  hasRedFlags:        boolean  // true for Operational Audit, false for Airport
+  rfOverridesStatus:  boolean  // true for Operational Audit
+  rfBadgeStyle:       string   // "red_flag" | "critical"
+}
+
+const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  secondaryLabel: 'Core Standards', secondaryShort: 'Core',
+  secondaryFailLabel: 'Red Flags', secondaryFailShort: 'RF',
+  hasRedFlags: true, rfOverridesStatus: true, rfBadgeStyle: 'red_flag',
+}
+
+export function parseScoringConfig(raw: Record<string, unknown> | null): ScoringConfig {
+  if (!raw) return DEFAULT_SCORING_CONFIG
+  return {
+    secondaryLabel:     (raw.secondary_label as string)      ?? DEFAULT_SCORING_CONFIG.secondaryLabel,
+    secondaryShort:     (raw.secondary_short as string)      ?? DEFAULT_SCORING_CONFIG.secondaryShort,
+    secondaryFailLabel: (raw.secondary_fail_label as string) ?? DEFAULT_SCORING_CONFIG.secondaryFailLabel,
+    secondaryFailShort: (raw.secondary_fail_short as string) ?? DEFAULT_SCORING_CONFIG.secondaryFailShort,
+    hasRedFlags:        (raw.has_red_flags as boolean)        ?? DEFAULT_SCORING_CONFIG.hasRedFlags,
+    rfOverridesStatus:  (raw.rf_overrides_status as boolean)  ?? DEFAULT_SCORING_CONFIG.rfOverridesStatus,
+    rfBadgeStyle:       (raw.rf_badge_style as string)       ?? DEFAULT_SCORING_CONFIG.rfBadgeStyle,
+  }
+}
+
 export interface ActiveLocation {
   id: string
   name: string
@@ -22,9 +59,12 @@ export interface AuditSubmissionRow {
   status: 'in_progress' | 'submitted'
   score_pct: number | null
   core_score_pct: number | null
+  core_score_fail: number | null
   red_flag_count: number | null
   audit_status: AuditHealthStatus | null
   created_at: string
+  visited_at: string | null
+  busyness: string | null
   submitted_at: string | null
   location_id: string
   location_name: string
@@ -34,34 +74,84 @@ export interface AuditSubmissionRow {
 export async function getOperationalAuditSubmissions(): Promise<{
   submissions: AuditSubmissionRow[]
   templateId: string | null
+  templateConfig: AuditTemplateConfig | null
   error: string | null
 }> {
   const supabase = await createClient()
 
   const { data: template, error: tErr } = await supabase
     .from('audit_templates')
-    .select('id')
+    .select('id, requires_busyness, requires_failure_context, requires_manager_on_duty')
     .eq('audit_key', 'operational_audit')
     .eq('status', 'published')
     .single()
 
   if (tErr || !template) {
-    return { submissions: [], templateId: null, error: 'no_published_template' }
+    return { submissions: [], templateId: null, templateConfig: null, error: 'no_published_template' }
   }
 
+  const templateConfig: AuditTemplateConfig = {
+    requiresBusyness:       template.requires_busyness as boolean,
+    requiresFailureContext: template.requires_failure_context as boolean,
+    requiresManagerOnDuty:  template.requires_manager_on_duty as boolean,
+  }
+
+  const result = await getAuditSubmissionsByTemplateId(supabase, template.id)
+  return { ...result, templateConfig }
+}
+
+/**
+ * Generic: fetch submissions for any published template by audit_key.
+ */
+export async function getAuditSubmissionsByKey(auditKey: string): Promise<{
+  submissions: AuditSubmissionRow[]
+  templateId: string | null
+  templateConfig: AuditTemplateConfig | null
+  scoringConfig: ScoringConfig
+  error: string | null
+}> {
+  const supabase = await createClient()
+
+  const { data: template, error: tErr } = await supabase
+    .from('audit_templates')
+    .select('id, requires_busyness, requires_failure_context, requires_manager_on_duty, scoring_config')
+    .eq('audit_key', auditKey)
+    .eq('status', 'published')
+    .single()
+
+  if (tErr || !template) {
+    return { submissions: [], templateId: null, templateConfig: null, scoringConfig: DEFAULT_SCORING_CONFIG, error: 'no_published_template' }
+  }
+
+  const templateConfig: AuditTemplateConfig = {
+    requiresBusyness:       template.requires_busyness as boolean,
+    requiresFailureContext: template.requires_failure_context as boolean,
+    requiresManagerOnDuty:  template.requires_manager_on_duty as boolean,
+  }
+
+  const scoringConfig = parseScoringConfig(template.scoring_config as Record<string, unknown> | null)
+
+  const result = await getAuditSubmissionsByTemplateId(supabase, template.id)
+  return { ...result, templateConfig, scoringConfig }
+}
+
+async function getAuditSubmissionsByTemplateId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  templateId: string,
+) {
   const { data, error } = await supabase
     .from('audit_submissions')
     .select(`
-      id, status, score_pct, core_score_pct, red_flag_count, audit_status,
-      created_at, submitted_at, location_id,
+      id, status, score_pct, core_score_pct, core_score_fail, red_flag_count, audit_status,
+      created_at, visited_at, busyness, submitted_at, location_id,
       locations!location_id ( name ),
       app_users!auditor_user_id ( display_name )
     `)
-    .eq('template_id', template.id)
+    .eq('template_id', templateId)
     .order('created_at', { ascending: false })
 
   if (error) {
-    return { submissions: [], templateId: template.id, error: error.message }
+    return { submissions: [] as AuditSubmissionRow[], templateId, error: error.message }
   }
 
   const submissions: AuditSubmissionRow[] = (data ?? []).map((row: Record<string, unknown>) => ({
@@ -69,14 +159,17 @@ export async function getOperationalAuditSubmissions(): Promise<{
     status: row.status as AuditSubmissionRow['status'],
     score_pct: row.score_pct as number | null,
     core_score_pct: row.core_score_pct as number | null,
+    core_score_fail: row.core_score_fail as number | null,
     red_flag_count: row.red_flag_count as number | null,
     audit_status: row.audit_status as AuditHealthStatus | null,
     created_at: row.created_at as string,
+    visited_at: row.visited_at as string | null,
+    busyness: row.busyness as string | null,
     submitted_at: row.submitted_at as string | null,
     location_id: row.location_id as string,
     location_name: (row.locations as { name: string } | null)?.name ?? '—',
     auditor_name: (row.app_users as { display_name: string } | null)?.display_name ?? '—',
   }))
 
-  return { submissions, templateId: template.id, error: null }
+  return { submissions, templateId, error: null }
 }

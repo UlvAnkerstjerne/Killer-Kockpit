@@ -21,6 +21,8 @@ export interface AuditEmailInput {
   locationName:   string
   auditorName:    string
   date:           string  // pre-formatted, e.g. "10 Sep 2026"
+  time:           string  // pre-formatted, e.g. "12:37"
+  busyness:       string | null
   overallPct:     number
   corePct:        number
   redFlagCount:   number
@@ -85,10 +87,10 @@ function buildSubject(locationName: string, date: string): string {
 }
 
 function buildPlainBody(input: AuditEmailInput, auditUrl: string): string {
-  const { locationName, auditorName, date, overallPct, corePct, redFlagCount, auditStatus } = input
+  const { locationName, auditorName, date, time, busyness, overallPct, corePct, redFlagCount, auditStatus } = input
   return [
     `Audit — ${locationName}`,
-    `Date: ${date}`,
+    `Date: ${date} · ${time}${busyness ? ` · ${busyness}` : ''}`,
     `Auditor: ${auditorName}`,
     '',
     `Overall score:  ${overallPct}%`,
@@ -104,7 +106,7 @@ function buildPlainBody(input: AuditEmailInput, auditUrl: string): string {
 }
 
 function buildHtmlBody(input: AuditEmailInput, auditUrl: string): string {
-  const { locationName, auditorName, date, overallPct, corePct, redFlagCount, auditStatus } = input
+  const { locationName, auditorName, date, time, busyness, overallPct, corePct, redFlagCount, auditStatus } = input
   const rfColor = redFlagCount > 0 ? BAD : GOOD
 
   return `<!DOCTYPE html>
@@ -131,7 +133,7 @@ function buildHtmlBody(input: AuditEmailInput, auditUrl: string): string {
               <tr>
                 <td style="padding-right:16px">
                   <p style="margin:0 0 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:${MUTED}">Date</p>
-                  <p style="margin:0;font-size:14px;font-weight:700">${date}</p>
+                  <p style="margin:0;font-size:14px;font-weight:700">${date} · ${time}${busyness ? ` · ${busyness}` : ''}</p>
                 </td>
                 <td>
                   <p style="margin:0 0 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:${MUTED}">Auditor</p>

@@ -11,10 +11,10 @@ export default async function OperationalAuditPage() {
   if (!user) redirect('/login')
   if (!canAccessQualityCheck(user.role)) redirect('/today')
 
-  const [{ submissions }, locations] = await Promise.all([
+  const [{ submissions, templateConfig }, locations] = await Promise.all([
     getOperationalAuditSubmissions(),
     getActiveLocations(),
   ])
 
-  return <AuditLanding submissions={submissions} locations={locations} />
+  return <AuditLanding submissions={submissions} locations={locations} templateConfig={templateConfig} />
 }

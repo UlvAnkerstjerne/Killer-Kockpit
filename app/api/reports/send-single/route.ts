@@ -75,7 +75,8 @@ async function sendAudit(
   const { data: sub } = await db
     .from('audit_submissions')
     .select(`
-      id, score_pct, core_score_pct, red_flag_count, audit_status, submitted_at,
+      id, score_pct, core_score_pct, red_flag_count, audit_status,
+      submitted_at, visited_at, busyness,
       final_done_well, final_focus_next, final_overall_comments,
       locations!location_id ( name ),
       app_users!auditor_user_id ( display_name )
@@ -86,11 +87,16 @@ async function sendAudit(
 
   if (!sub) return { ok: false, error: 'Audit not found or not submitted' }
 
-  const { data: topActionRows } = await db
-    .from('audit_top_actions')
-    .select('sort_order, action, owner, deadline')
-    .eq('submission_id', submissionId)
-    .order('sort_order', { ascending: true })
+  const [{ data: topActionRows }, { data: failedRows }] = await Promise.all([
+    db.from('audit_top_actions')
+      .select('sort_order, action, owner, deadline')
+      .eq('submission_id', submissionId)
+      .order('sort_order', { ascending: true }),
+    db.from('audit_responses')
+      .select('comment, audit_checkpoints!checkpoint_id ( title, sort_order )')
+      .eq('submission_id', submissionId)
+      .eq('result', 'fail'),
+  ])
 
   const locationName = (sub.locations as unknown as { name: string } | null)?.name ?? '—'
   const auditorName  = (sub.app_users as unknown as { display_name: string } | null)?.display_name ?? '—'
@@ -98,11 +104,24 @@ async function sendAudit(
   const corePct      = Math.round((sub.core_score_pct as number | null) ?? 0)
   const redFlagCount = (sub.red_flag_count as number | null) ?? 0
   const auditStatus  = (sub.audit_status as string | null) ?? ''
-  const date         = sub.submitted_at
-    ? new Date(sub.submitted_at as string).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric',
-      })
+  const busyness     = (sub.busyness as string | null) ?? null
+  const visitDate    = (sub.visited_at ?? sub.submitted_at)
+    ? new Date((sub.visited_at ?? sub.submitted_at) as string)
+    : null
+  const date         = visitDate
+    ? visitDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : '—'
+  const time         = visitDate
+    ? visitDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : '—'
+
+  const failedCheckpoints = (failedRows ?? [])
+    .map(r => ({
+      title:      ((r.audit_checkpoints as unknown as { title: string; sort_order: number } | null)?.title) ?? '—',
+      sort_order: ((r.audit_checkpoints as unknown as { title: string; sort_order: number } | null)?.sort_order) ?? 0,
+      comment:    (r.comment as string | null) ?? null,
+    }))
+    .sort((a, b) => a.sort_order - b.sort_order)
 
   let pdfBuf: Buffer
   try {
@@ -111,6 +130,8 @@ async function sendAudit(
       locationName,
       auditorName,
       date,
+      time,
+      busyness,
       overallPct,
       corePct,
       redFlagCount,
@@ -121,6 +142,7 @@ async function sendAudit(
         owner:      a.owner as string | null,
         deadline:   a.deadline as string | null,
       })),
+      failedCheckpoints,
       finalDoneWell:        (sub.final_done_well as string | null) ?? null,
       finalFocusNext:       (sub.final_focus_next as string | null) ?? null,
       finalOverallComments: (sub.final_overall_comments as string | null) ?? null,

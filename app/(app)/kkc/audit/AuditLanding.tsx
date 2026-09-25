@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
-import type { AuditSubmissionRow, AuditHealthStatus, ActiveLocation } from '@/lib/audit/submissions'
+import type { AuditSubmissionRow, AuditHealthStatus, ActiveLocation, AuditTemplateConfig } from '@/lib/audit/submissions'
 import type { MatrixCheckpoint, MatrixColumn, StoreAuditMatrixResult } from '@/lib/actions/audit'
 import { fetchStoreAuditMatrix } from '@/lib/actions/audit'
 import StartAuditModal from './StartAuditModal'
@@ -96,7 +96,8 @@ function StoreCard({ short, submission, selected, onClick }: StoreCardProps) {
             )}
           </div>
           <div className="pt-0.5 text-[11px] text-kk-muted">
-            {formatDate(submission.submitted_at ?? submission.created_at)}
+            {formatDate(submission.visited_at ?? submission.submitted_at ?? submission.created_at)}
+            {submission.busyness && <span className="ml-1">· {submission.busyness}</span>}
           </div>
         </div>
       ) : (
@@ -125,6 +126,7 @@ function formatDate(iso: string) {
 interface Props {
   submissions: AuditSubmissionRow[]
   locations: ActiveLocation[]
+  templateConfig: AuditTemplateConfig | null
 }
 
 // ── Score trend (audit) ────────────────────────────────────────────────────────
@@ -311,7 +313,8 @@ function AuditTable({ rows, showLocation }: { rows: AuditSubmissionRow[]; showLo
             <div className="text-sm text-kk-muted truncate">{s.auditor_name}</div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-kk-muted">
-                {formatDate(s.submitted_at ?? s.created_at)}
+                {formatDate(s.visited_at ?? s.submitted_at ?? s.created_at)}
+                {s.busyness && <span className="ml-1 text-[11px]">· {s.busyness}</span>}
               </span>
               {s.status === 'in_progress' && (
                 <span className="md:hidden inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-kk-soft text-kk-muted border border-kk-line">
@@ -611,7 +614,7 @@ function AuditCheckpointMatrix({ checkpoints, columns }: { checkpoints: MatrixCh
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function AuditLanding({ submissions, locations }: Props) {
+export default function AuditLanding({ submissions, locations, templateConfig }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
   const [matrixData, setMatrixData] = useState<StoreAuditMatrixResult | null>(null)
@@ -792,6 +795,7 @@ export default function AuditLanding({ submissions, locations }: Props) {
       {showModal && (
         <StartAuditModal
           locations={locations}
+          templateConfig={templateConfig}
           onClose={() => setShowModal(false)}
         />
       )}

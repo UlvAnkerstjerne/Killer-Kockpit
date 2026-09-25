@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
-import { upsertAuditResponse, upsertSectionComment } from '@/lib/actions/audit'
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
+import { upsertAuditResponse, updateResponseComment, upsertSectionComment, updateAuditFinalField, BUSYNESS_OPTIONS } from '@/lib/actions/audit'
+import type { ScoringConfig } from '@/lib/audit/submissions'
 import { useSaveState } from '@/lib/hooks/useSaveState'
 import { SaveStatusIndicator } from '@/components/ui/SaveStatusIndicator'
 
@@ -21,6 +22,7 @@ export type AuditResult = 'pass' | 'fail' | 'na'
 export interface SavedResponse {
   checkpoint_id: string
   result: AuditResult
+  comment: string | null
 }
 
 interface Props {
@@ -32,7 +34,12 @@ interface Props {
   locationName: string
   auditorName: string
   managerOnDuty: string | null
+  busyness: string | null
   startedAt: string
+  requiresFailureContext: boolean
+  requiresBusyness: boolean
+  requiresManagerOnDuty: boolean
+  scoringConfig: ScoringConfig
 }
 
 // ── Answer button config ───────────────────────────────────────────────────────
@@ -54,15 +61,21 @@ const ANSWER_SELECTED_CLS: Record<AuditResult, string> = {
 function CheckpointRow({
   cp,
   current,
+  comment,
   isReadOnly,
   isPending,
   onChange,
+  onCommentChange,
+  scoringConfig,
 }: {
   cp: Checkpoint
   current: AuditResult | null
+  comment: string
   isReadOnly: boolean
   isPending: boolean
   onChange: (id: string, result: AuditResult) => void
+  onCommentChange: (id: string, comment: string) => void
+  scoringConfig: ScoringConfig
 }) {
   return (
     <div className={`py-2 px-4 ${
@@ -78,14 +91,14 @@ function CheckpointRow({
         {/* Text + classification badges */}
         <div className="flex items-baseline gap-1.5 flex-1 min-w-0 mb-2 sm:mb-0">
           <p className="text-sm text-kk-ink leading-snug">{cp.title}</p>
-          {cp.is_red_flag && (
+          {cp.is_red_flag && scoringConfig.hasRedFlags && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-kk-bad-bg text-kk-bad border border-kk-bad/30 leading-none shrink-0">
-              RF
+              {scoringConfig.secondaryFailShort}
             </span>
           )}
           {cp.is_core_standard && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 leading-none shrink-0">
-              Core
+              {scoringConfig.secondaryShort}
             </span>
           )}
         </div>
@@ -115,6 +128,32 @@ function CheckpointRow({
           })}
         </div>
       </div>
+
+      {/* Inline context / comment for Unacceptable checkpoints */}
+      {current === 'fail' && (
+        isReadOnly ? (
+          comment ? (
+            <div className="mt-2 ml-0.5">
+              <p className="text-[11px] font-semibold text-kk-bad uppercase tracking-[0.07em] mb-0.5">Context</p>
+              <p className="text-sm text-kk-ink whitespace-pre-wrap">{comment}</p>
+            </div>
+          ) : null
+        ) : (
+          <div className="mt-2 ml-0.5">
+            <label className="block text-[11px] font-semibold text-kk-bad uppercase tracking-[0.07em] mb-1">
+              Context / Comment <span className="text-kk-bad">*</span>
+            </label>
+            <textarea
+              value={comment}
+              onChange={e => onCommentChange(cp.id, e.target.value)}
+              rows={2}
+              placeholder="Explain what was observed and why this was judged Unacceptable…"
+              className="w-full text-sm text-kk-ink bg-kk-bad-bg/40 border border-kk-bad/30 rounded-lg px-3 py-2 resize-none placeholder:text-kk-muted/60 focus:outline-none focus:ring-1 focus:ring-kk-bad/40 focus:border-kk-bad/50 transition-colors"
+              data-fail-context={cp.id}
+            />
+          </div>
+        )
+      )}
     </div>
   )
 }
@@ -195,6 +234,109 @@ function SectionCommentBox({
   )
 }
 
+// ── Visit fields editor (for drafts missing required visit-level data) ────────
+
+function VisitFieldsEditor({
+  submissionId,
+  initialBusyness,
+  initialManagerOnDuty,
+  requiresBusyness,
+  requiresManagerOnDuty,
+}: {
+  submissionId: string
+  initialBusyness: string | null
+  initialManagerOnDuty: string | null
+  requiresBusyness: boolean
+  requiresManagerOnDuty: boolean
+}) {
+  const [busynessVal, setBusynessVal] = useState(initialBusyness ?? '')
+  const [modVal, setModVal] = useState(initialManagerOnDuty ?? '')
+  const save = useSaveState()
+  const modTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showBusyness = requiresBusyness && !initialBusyness
+  const showMod = requiresManagerOnDuty && !initialManagerOnDuty
+
+  if (!showBusyness && !showMod) return null
+
+  async function handleBusynessChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value
+    setBusynessVal(val)
+    if (!val) return
+    save.start()
+    const res = await updateAuditFinalField(submissionId, { field: 'busyness', value: val })
+    if (res?.error) save.fail(res.error)
+    else save.ok()
+  }
+
+  async function persistMod(text: string) {
+    save.start()
+    const res = await updateAuditFinalField(submissionId, { field: 'manager_on_duty', value: text })
+    if (res?.error) save.fail(res.error)
+    else save.ok()
+  }
+
+  function handleModChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const text = e.target.value
+    setModVal(text)
+    if (modTimerRef.current) clearTimeout(modTimerRef.current)
+    modTimerRef.current = setTimeout(() => persistMod(text), DEBOUNCE_MS)
+  }
+
+  function handleModBlur() {
+    if (modTimerRef.current) { clearTimeout(modTimerRef.current); modTimerRef.current = null }
+    persistMod(modVal)
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-kk-line space-y-3">
+      <p className="text-[11px] font-semibold text-kk-bad uppercase tracking-[0.07em]">
+        Required visit information
+        <span className="ml-2 normal-case font-normal">
+          <SaveStatusIndicator status={save.status} errorMsg={save.errorMsg} />
+        </span>
+      </p>
+
+      {showBusyness && (
+        <div>
+          <label htmlFor="visit-busyness" className="block text-xs font-semibold text-kk-ink mb-1">
+            Busyness <span className="text-kk-bad">*</span>
+          </label>
+          <select
+            id="visit-busyness"
+            value={busynessVal}
+            onChange={handleBusynessChange}
+            className="w-full text-sm bg-white border border-kk-line rounded-lg px-3 py-2 outline-none focus:border-kk-ink transition-colors text-kk-ink"
+          >
+            <option value="">Select busyness…</option>
+            {BUSYNESS_OPTIONS.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {showMod && (
+        <div>
+          <label htmlFor="visit-mod" className="block text-xs font-semibold text-kk-ink mb-1">
+            Manager on Duty <span className="text-kk-bad">*</span>
+          </label>
+          <input
+            id="visit-mod"
+            type="text"
+            value={modVal}
+            onChange={handleModChange}
+            onBlur={handleModBlur}
+            placeholder="Full name"
+            maxLength={100}
+            className="w-full text-sm bg-white border border-kk-line rounded-lg px-3 py-2 outline-none focus:border-kk-ink transition-colors text-kk-ink placeholder:text-kk-muted"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function AuditQuestionnaire({
@@ -206,7 +348,12 @@ export default function AuditQuestionnaire({
   locationName,
   auditorName,
   managerOnDuty,
+  busyness,
   startedAt,
+  requiresFailureContext,
+  requiresBusyness,
+  requiresManagerOnDuty,
+  scoringConfig,
 }: Props) {
   const [isPending, startTransition] = useTransition()
 
@@ -216,6 +363,31 @@ export default function AuditQuestionnaire({
     for (const r of initialResponses) m.set(r.checkpoint_id, r.result)
     return m
   })
+
+  // Local comment state for checkpoint context
+  const [comments, setComments] = useState<Map<string, string>>(() => {
+    const m = new Map<string, string>()
+    for (const r of initialResponses) {
+      if (r.comment) m.set(r.checkpoint_id, r.comment)
+    }
+    return m
+  })
+
+  // Debounced comment persistence
+  const commentTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+
+  const persistComment = useCallback(async (checkpointId: string, text: string) => {
+    await updateResponseComment(submissionId, checkpointId, text)
+  }, [submissionId])
+
+  const handleCommentChange = useCallback((checkpointId: string, text: string) => {
+    setComments(prev => new Map(prev).set(checkpointId, text))
+    const existing = commentTimers.current.get(checkpointId)
+    if (existing) clearTimeout(existing)
+    commentTimers.current.set(checkpointId, setTimeout(() => {
+      persistComment(checkpointId, text)
+    }, DEBOUNCE_MS))
+  }, [persistComment])
 
   // Group checkpoints by section, preserving display order
   const sections = useMemo(() => {
@@ -230,9 +402,24 @@ export default function AuditQuestionnaire({
   const answeredCount = responses.size
   const totalCount    = checkpoints.length
 
+  // Count fail responses missing context (for submission sentinel)
+  // Only counts when the template requires failure context
+  const failsMissingContext = useMemo(() => {
+    if (!requiresFailureContext) return 0
+    let count = 0
+    for (const [cpId, result] of responses) {
+      if (result === 'fail' && !(comments.get(cpId) ?? '').trim()) count++
+    }
+    return count
+  }, [responses, comments, requiresFailureContext])
+
   function handleChange(checkpointId: string, result: AuditResult) {
     // Optimistic update
     setResponses(prev => new Map(prev).set(checkpointId, result))
+    // Clear comment when switching away from fail
+    if (result !== 'fail') {
+      setComments(prev => { const n = new Map(prev); n.delete(checkpointId); return n })
+    }
     // Persist
     startTransition(async () => {
       const res = await upsertAuditResponse(submissionId, checkpointId, result)
@@ -247,8 +434,12 @@ export default function AuditQuestionnaire({
     })
   }
 
-  const dateStr = new Date(startedAt).toLocaleDateString('en-GB', {
+  const visitDate = new Date(startedAt)
+  const dateStr = visitDate.toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
+  })
+  const timeStr = visitDate.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit',
   })
 
   return (
@@ -274,8 +465,21 @@ export default function AuditQuestionnaire({
           <span className="text-kk-muted">Manager on Duty</span>
           <span className="text-kk-ink font-medium text-right">{managerOnDuty ?? '—'}</span>
           <span className="text-kk-muted">Date</span>
-          <span className="text-kk-ink font-medium text-right">{dateStr}</span>
+          <span className="text-kk-ink font-medium text-right">{dateStr} · {timeStr}</span>
+          <span className="text-kk-muted">Busyness</span>
+          <span className="text-kk-ink font-medium text-right">{busyness ?? '—'}</span>
         </div>
+
+        {/* Editable visit fields for in-progress audits missing required data */}
+        {!isReadOnly && (
+          <VisitFieldsEditor
+            submissionId={submissionId}
+            initialBusyness={busyness}
+            initialManagerOnDuty={managerOnDuty}
+            requiresBusyness={requiresBusyness}
+            requiresManagerOnDuty={requiresManagerOnDuty}
+          />
+        )}
       </div>
 
       {/* Progress */}
@@ -299,12 +503,14 @@ export default function AuditQuestionnaire({
         <div className="flex gap-4 mt-2.5 text-[11px] text-kk-muted">
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded border border-amber-200 bg-amber-50" />
-            Core Standard
+            {scoringConfig.secondaryLabel}
           </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded border border-kk-bad/30 bg-kk-bad-bg" />
-            Red Flag
-          </span>
+          {scoringConfig.hasRedFlags && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded border border-kk-bad/30 bg-kk-bad-bg" />
+              {scoringConfig.secondaryFailLabel}
+            </span>
+          )}
         </div>
       </div>
 
@@ -331,9 +537,12 @@ export default function AuditQuestionnaire({
                   key={cp.id}
                   cp={cp}
                   current={responses.get(cp.id) ?? null}
+                  comment={comments.get(cp.id) ?? ''}
                   isReadOnly={isReadOnly}
                   isPending={isPending}
                   onChange={handleChange}
+                  onCommentChange={handleCommentChange}
+                  scoringConfig={scoringConfig}
                 />
               ))}
             </div>
@@ -350,6 +559,13 @@ export default function AuditQuestionnaire({
           </div>
         )
       })}
+
+      {/* Hidden sentinel for AuditSubmitBar to detect missing context on fail responses */}
+      <div
+        id="audit-missing-context-sentinel"
+        data-missing={String(failsMissingContext)}
+        hidden
+      />
     </div>
   )
 }

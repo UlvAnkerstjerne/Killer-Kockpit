@@ -6,7 +6,7 @@ import { submitAudit } from '@/lib/actions/audit'
 
 type Phase = 'idle' | 'preparing' | 'confirming' | 'submitting'
 
-export default function AuditSubmitBar({ submissionId }: { submissionId: string }) {
+export default function AuditSubmitBar({ submissionId, requiresFailureContext }: { submissionId: string; requiresFailureContext: boolean }) {
   const router = useRouter()
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -28,6 +28,19 @@ export default function AuditSubmitBar({ submissionId }: { submissionId: string 
       )
       setPhase('idle')
       return
+    }
+
+    // Check for Unacceptable checkpoints missing context (only when template requires it)
+    if (requiresFailureContext) {
+      const contextSentinel = document.getElementById('audit-missing-context-sentinel')
+      const missingCount = parseInt(contextSentinel?.dataset.missing ?? '0', 10)
+      if (missingCount > 0) {
+        setError(
+          `${missingCount} Unacceptable checkpoint${missingCount > 1 ? 's' : ''} missing context. Every Unacceptable rating requires a Context / Comment before submission.`,
+        )
+        setPhase('idle')
+        return
+      }
     }
 
     // Allow the 800 ms debounce + a network round-trip to settle
