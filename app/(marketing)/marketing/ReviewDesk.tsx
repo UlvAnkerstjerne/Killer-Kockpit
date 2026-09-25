@@ -172,6 +172,9 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
             <article key={row.id} className="rounded-2xl border border-kk-line bg-kk-panel p-4 sm:p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-kk-muted">
+                  {desk.canApprove && <label className="flex items-center gap-1.5 shrink-0">
+                    <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
+                  </label>}
                   <span className="text-lg font-bold text-kk-ink flex items-center gap-1.5"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-kk-muted"><path d="M2 6.5V14h12V6.5M1 3h14v3.5H1V3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M6 10h4v4H6v-4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>{row.store_short_name}</span>
                   <span className="text-lg text-amber-500" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
                   {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
@@ -188,10 +191,6 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
                       </button>
                     )
                   )}
-                  {desk.canApprove && <label className="flex items-center gap-2 text-xs text-kk-muted">
-                    <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
-                    Include
-                  </label>}
                 </div>
               </div>
               <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
