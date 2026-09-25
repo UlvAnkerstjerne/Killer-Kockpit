@@ -114,6 +114,16 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
         {desk.reviews.length > 0 && (
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <p className="text-sm text-kk-muted">Check the drafts, edit where needed, and publish the selected replies.</p>
+            {desk.nextCursor && (
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={pending}
+                className="rounded-full border border-kk-line bg-kk-panel px-3.5 py-1.5 text-xs font-semibold text-kk-ink hover:bg-kk-soft transition-colors disabled:opacity-50"
+              >
+                {pending ? 'Loading\u2026' : 'Load more reviews'}
+              </button>
+            )}
             {pendingDrafts.length > 0 && desk.canApprove && (
               <button
                 type="button"
