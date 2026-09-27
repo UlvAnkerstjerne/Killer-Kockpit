@@ -175,7 +175,7 @@ export default function GoogleConnectionCard({
               )}
             </div>
 
-            {userRole === 'SUPER_ADMIN' && <GoogleAdsConnection enabled={status.googleAdsEnabled} />}
+            {userRole === 'SUPER_ADMIN' && <GoogleAdsConnection enabled={status.googleAdsEnabled} isSuperAdmin />}
 
             <div className="text-xs text-kk-muted">
               Token expires:{' '}

@@ -3,9 +3,12 @@
 import { useState } from 'react'
 import type { GoogleAdsProbeResult } from '@/lib/google/ads-types'
 
-export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
+export default function GoogleAdsConnection({ enabled, isSuperAdmin }: { enabled: boolean; isSuperAdmin?: boolean }) {
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<GoogleAdsProbeResult | null>(null)
+
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; error?: string; campaigns?: { id: string; name: string }[]; dailyRows?: number } | null>(null)
 
   async function testAccess() {
     setTesting(true)
@@ -20,6 +23,19 @@ export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
     }
   }
 
+  async function syncNow() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const response = await fetch('/api/google/ads/sync', { cache: 'no-store' })
+      setSyncResult(await response.json())
+    } catch {
+      setSyncResult({ ok: false, error: 'Sync request failed. Please try again.' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-kk-line bg-kk-soft p-4" aria-label="Google Ads connection">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -30,10 +46,18 @@ export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
           </p>
         </div>
         {enabled ? (
-          <button type="button" onClick={testAccess} disabled={testing}
-            className="rounded-lg bg-kk-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
-            {testing ? 'Testing…' : 'Test access'}
-          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={testAccess} disabled={testing || syncing}
+              className="rounded-lg bg-kk-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+              {testing ? 'Testing\u2026' : 'Test access'}
+            </button>
+            {isSuperAdmin && (
+              <button type="button" onClick={syncNow} disabled={syncing || testing}
+                className="rounded-lg border border-kk-line bg-white px-3 py-2 text-xs font-semibold text-kk-ink disabled:opacity-50">
+                {syncing ? 'Syncing\u2026' : 'Sync now'}
+              </button>
+            )}
+          </div>
         ) : (
           <a href="/api/google/connect/ads" className="rounded-lg bg-kk-ink px-3 py-2 text-xs font-semibold text-white">
             Enable Google Ads
@@ -42,7 +66,7 @@ export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
       </div>
       {!enabled && (
         <p className="mt-3 text-xs text-kk-muted">
-          Google’s permission includes editing access. Kockpit only reads Ads data. Your existing Google connections are preserved.
+          {"Google's permission includes editing access. Kockpit only reads Ads data. Your existing Google connections are preserved."}
         </p>
       )}
       <div aria-live="polite">
@@ -52,7 +76,7 @@ export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
             {result.customerIds.length ? (
               <p className="mt-1 break-words">Accessible account IDs: {result.customerIds.map(id => `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}`).join(', ')}</p>
             ) : (
-              <p className="mt-1">Google accepted the connection but returned no directly accessible Ads accounts. Check this Google account’s access in Google Ads.</p>
+              <p className="mt-1">{"Google accepted the connection but returned no directly accessible Ads accounts. Check this Google account's access in Google Ads."}</p>
             )}
             <p className="mt-1 text-kk-muted">Checked {new Date(result.checkedAt).toLocaleString('en-GB')}.</p>
           </div>
@@ -70,6 +94,16 @@ export default function GoogleAdsConnection({ enabled }: { enabled: boolean }) {
             {result.reconnectRequired && (
               <a href="/api/google/connect/ads" className="mt-2 inline-block underline">Reconnect Google Ads</a>
             )}
+          </div>
+        ))}
+        {syncResult && (syncResult.ok ? (
+          <div className="mt-3 text-xs text-kk-good">
+            <p className="font-semibold">Synced successfully.</p>
+            {syncResult.campaigns && <p className="mt-1">{syncResult.campaigns.length} campaigns, {syncResult.dailyRows ?? 0} daily rows.</p>}
+          </div>
+        ) : (
+          <div className="mt-3 text-xs text-kk-bad">
+            <p>{syncResult.error ?? 'Sync failed.'}</p>
           </div>
         ))}
       </div>
