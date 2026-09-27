@@ -27,7 +27,32 @@ export type PaidRecUrgency = 'high' | 'medium' | 'low'
 export type PaidRecStatus = 'needs_review' | 'approved' | 'dismissed'
 
 export type PaidRecExecutionType = 'create_task' | 'monitor' | 'create_task_and_monitor' | 'platform_action'
-export type PaidRecExecutionStatus = 'pending_approval' | 'in_motion' | 'completed' | 'failed' | 'needs_attention'
+export type PaidRecExecutionStatus = 'pending_approval' | 'executing' | 'in_motion' | 'completed' | 'failed' | 'needs_attention'
+
+const id = z.string().regex(/^\d{1,30}$/)
+const money = z.number().positive().finite()
+const base = { currency: z.string().regex(/^[A-Z]{3}$/), current_daily_budget: money, target_daily_budget: money }
+
+/** Trusted plans are compiled server-side. They are never copied verbatim from AI output. */
+export const PaidRecExecutionPlanSchema = z.discriminatedUnion('action_type', [
+  z.object({ action_type: z.literal('meta_pause_campaign'), platform: z.literal('meta'), target_type: z.literal('campaign'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), expected_current_status: z.literal('ACTIVE') }).strict(),
+  z.object({ action_type: z.literal('meta_resume_campaign'), platform: z.literal('meta'), target_type: z.literal('campaign'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), expected_current_status: z.literal('PAUSED') }).strict(),
+  z.object({ action_type: z.literal('meta_set_campaign_budget'), platform: z.literal('meta'), target_type: z.literal('campaign'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), ...base }).strict(),
+  z.object({ action_type: z.literal('meta_set_adset_budget'), platform: z.literal('meta'), target_type: z.literal('adset'), target_id: id, campaign_id: id, ad_account_id: z.string().regex(/^act_\d+$/), ...base }).strict(),
+  z.object({ action_type: z.literal('google_pause_campaign'), platform: z.literal('google'), customer_id: z.string().regex(/^\d{10}$/), campaign_id: id, expected_current_status: z.literal('ENABLED') }).strict(),
+  z.object({ action_type: z.literal('google_resume_campaign'), platform: z.literal('google'), customer_id: z.string().regex(/^\d{10}$/), campaign_id: id, expected_current_status: z.literal('PAUSED') }).strict(),
+  z.object({ action_type: z.literal('google_set_campaign_budget'), platform: z.literal('google'), customer_id: z.string().regex(/^\d{10}$/), campaign_id: id, campaign_budget_resource_name: z.string().regex(/^customers\/\d{10}\/campaignBudgets\/\d+$/), shared_budget: z.literal(false), ...base }).strict(),
+  z.object({ action_type: z.literal('monitor_only'), platform: z.enum(['meta', 'google']), campaign_id: id }).strict(),
+  z.object({ action_type: z.literal('run_tracking_diagnostic'), platform: z.enum(['meta', 'google']), campaign_id: id }).strict(),
+  z.object({ action_type: z.literal('create_task'), platform: z.enum(['meta', 'google']), campaign_id: id, reason: z.string().min(10).max(300) }).strict(),
+])
+export type PaidRecExecutionPlan = z.infer<typeof PaidRecExecutionPlanSchema>
+
+export const PaidRecActionIntentSchema = z.discriminatedUnion('action_type', [
+  z.object({ action_type: z.enum(['pause_campaign', 'resume_campaign', 'monitor_only', 'run_tracking_diagnostic']), target_id: id }),
+  z.object({ action_type: z.literal('set_daily_budget'), target_id: id, target_type: z.enum(['campaign', 'adset']), target_daily_budget: money }),
+  z.object({ action_type: z.literal('create_task'), target_id: id, reason: z.string().min(10).max(300) }),
+])
 
 export interface PaidRecMonitoringResult {
   monitor_start: string
@@ -43,6 +68,11 @@ export interface PaidRecExecutionResult {
   monitoring?: PaidRecMonitoringResult
   task_title?: string
   error?: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  platform_request_id?: string
+  recovery?: { mutation_may_have_succeeded: boolean; verify_before_retry: boolean }
+  tracking_diagnostic?: { diagnosed: boolean; fixed: false; likely_break?: string; explanation?: string; reason?: string; evidence?: Record<string, unknown>; next_steps?: string[] }
 }
 
 /** Maps signal_type to the execution plan. */
@@ -92,6 +122,7 @@ export const PaidRecAIOutputSchema = z.object({
     interpretation:     z.string().min(10).max(300),
     recommended_action: z.string().min(10).max(300),
     urgency:            z.enum(['high', 'medium', 'low']),
+    action_intent:      PaidRecActionIntentSchema.optional(),
   })).max(5),
 })
 
@@ -133,4 +164,6 @@ export interface PaidRecommendationRow {
   execution_completed_at: string | null
   execution_result: PaidRecExecutionResult | null
   linked_task_id: string | null
+  execution_plan: PaidRecExecutionPlan | null
+  execution_plan_version: string | null
 }

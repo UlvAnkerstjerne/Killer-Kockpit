@@ -94,11 +94,12 @@ describe('determineOutcome', () => {
 
 describe('duplicate suppression', () => {
   // Extracted filter logic from generate.ts — mirrors the suppression step
+  // Suppresses while: executing or in_motion. Allows again at terminal states.
   function filterSuppressed(
     signals: Array<{ platform: string; campaign_id: string }>,
-    inMotionKeys: Set<string>,
+    activeExecKeys: Set<string>,
   ) {
-    return signals.filter(s => !inMotionKeys.has(`${s.platform}:${s.campaign_id}`))
+    return signals.filter(s => !activeExecKeys.has(`${s.platform}:${s.campaign_id}`))
   }
 
   it('11. in_motion campaign key is filtered out', () => {
@@ -106,19 +107,49 @@ describe('duplicate suppression', () => {
       { platform: 'meta', campaign_id: 'c1' },
       { platform: 'meta', campaign_id: 'c2' },
     ]
-    const inMotionKeys = new Set(['meta:c1'])
-    const result = filterSuppressed(signals, inMotionKeys)
+    const activeExecKeys = new Set(['meta:c1'])
+    const result = filterSuppressed(signals, activeExecKeys)
+    expect(result).toHaveLength(1)
+    expect(result[0].campaign_id).toBe('c2')
+  })
+
+  it('11b. executing campaign key is filtered out', () => {
+    const signals = [
+      { platform: 'meta', campaign_id: 'c1' },
+      { platform: 'google', campaign_id: 'c2' },
+    ]
+    // c1 is in 'executing' state (claim in progress)
+    const activeExecKeys = new Set(['meta:c1'])
+    const result = filterSuppressed(signals, activeExecKeys)
     expect(result).toHaveLength(1)
     expect(result[0].campaign_id).toBe('c2')
   })
 
   it('12. completed campaign key is NOT filtered out', () => {
-    // completed campaigns are not in the inMotionKeys set
+    // completed campaigns are not in the activeExecKeys set
     const signals = [
       { platform: 'meta', campaign_id: 'c1' },
     ]
-    const inMotionKeys = new Set<string>()  // c1 was completed, not in set
-    const result = filterSuppressed(signals, inMotionKeys)
+    const activeExecKeys = new Set<string>()  // c1 was completed, not in set
+    const result = filterSuppressed(signals, activeExecKeys)
+    expect(result).toHaveLength(1)
+  })
+
+  it('12b. failed campaign key is NOT filtered out', () => {
+    const signals = [
+      { platform: 'meta', campaign_id: 'c1' },
+    ]
+    const activeExecKeys = new Set<string>()  // c1 failed, not in active set
+    const result = filterSuppressed(signals, activeExecKeys)
+    expect(result).toHaveLength(1)
+  })
+
+  it('12c. needs_attention campaign key is NOT filtered out', () => {
+    const signals = [
+      { platform: 'google', campaign_id: 'c3' },
+    ]
+    const activeExecKeys = new Set<string>()  // c3 needs_attention, not in active set
+    const result = filterSuppressed(signals, activeExecKeys)
     expect(result).toHaveLength(1)
   })
 })

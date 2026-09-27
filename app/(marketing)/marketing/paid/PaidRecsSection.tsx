@@ -29,6 +29,38 @@ function signalLabel(type: string): string {
   } as Record<string, string>)[type] ?? type
 }
 
+function actionLabel(rec: PaidRecommendationRow): string {
+  const p = rec.execution_plan
+  if (!p) return 'Manual review required'
+  if (p.action_type.includes('pause_campaign')) return `Pause ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
+  if (p.action_type.includes('resume_campaign')) return `Resume ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
+  if ('target_daily_budget' in p) return `Change daily budget: ${p.current_daily_budget} ${p.currency} → ${p.target_daily_budget} ${p.currency}`
+  if (p.action_type === 'run_tracking_diagnostic') return 'Run tracking diagnostic'
+  if (p.action_type === 'monitor_only') return 'Start monitoring'
+  if (p.action_type === 'create_task') return 'Create manual follow-up task'
+  return 'Action cannot be automated yet'
+}
+
+function approveButtonLabel(rec: PaidRecommendationRow): string {
+  if (rec.execution_type === 'platform_action') return 'Approve & execute'
+  if (rec.execution_plan?.action_type === 'run_tracking_diagnostic') return 'Run diagnostic'
+  return 'Approve & start'
+}
+
+/** True when the plan is fully validated and Kockpit can actually perform it safely. */
+function isExecutable(rec: PaidRecommendationRow): boolean {
+  if (!rec.execution_plan) return false
+  // monitor_only has no real mutation — it just starts a monitoring window
+  if (rec.execution_plan.action_type === 'monitor_only') return true
+  // create_task creates a follow-up task
+  if (rec.execution_plan.action_type === 'create_task') return true
+  // run_tracking_diagnostic runs a real diagnostic from synced data
+  if (rec.execution_plan.action_type === 'run_tracking_diagnostic') return true
+  // Platform actions are executable
+  if (rec.execution_type === 'platform_action') return true
+  return false
+}
+
 // ── Card ─────────────────────────────────────────────────────────────────────
 
 function PaidRecCard({
@@ -83,7 +115,7 @@ function PaidRecCard({
         )}
         {rec.status === 'approved' && rec.execution_status === 'completed' && (
           <span className="shrink-0 text-[10px] font-semibold text-kk-good bg-kk-good-bg rounded-full px-2 py-0.5">
-            Completed
+            {rec.execution_result?.tracking_diagnostic ? 'Diagnostic complete' : 'Completed'}
           </span>
         )}
         {rec.status === 'approved' && (rec.execution_status === 'failed' || rec.execution_status === 'needs_attention') && (
@@ -115,15 +147,28 @@ function PaidRecCard({
       </div>
 
       {/* Actions — needs_review */}
-      {rec.status === 'needs_review' && canAction && (
+      {rec.status === 'needs_review' && canAction && isExecutable(rec) && (
         <div className="flex gap-2 px-5 py-3 border-t border-kk-line bg-kk-soft/50">
+          <span className="mr-auto text-xs font-semibold text-kk-ink self-center">Authorizes: {actionLabel(rec)}</span>
           <button
             onClick={handleApprove}
             disabled={isPending}
             className="rounded-full bg-kk-brand px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            {isPending ? 'Starting\u2026' : 'Approve & start'}
+            {isPending ? 'Executing\u2026' : approveButtonLabel(rec)}
           </button>
+          <button
+            onClick={handleDismiss}
+            disabled={isPending}
+            className="rounded-full border border-kk-line bg-white px-4 py-1.5 text-xs font-semibold text-kk-muted hover:bg-kk-soft hover:text-kk-ink disabled:opacity-50 transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      {rec.status === 'needs_review' && canAction && !isExecutable(rec) && (
+        <div className="flex gap-2 px-5 py-3 border-t border-kk-line bg-kk-soft/50">
+          <span className="mr-auto text-xs font-medium text-kk-muted self-center">{rec.execution_plan ? 'Action cannot be automated yet' : 'Manual review required'}</span>
           <button
             onClick={handleDismiss}
             disabled={isPending}
@@ -177,23 +222,41 @@ function PaidRecCard({
 
           {/* Monitoring */}
           {rec.execution_result?.monitoring && (() => {
-            const m = rec.execution_result.monitoring
-            const monitorEnd = m.monitor_end
-            const outcome = m.outcome
-            const isActive = rec.execution_status === 'in_motion'
+            const m = rec.execution_result!.monitoring!
             return (
               <div className="flex items-center gap-3 text-xs text-kk-muted">
-                <span>Monitoring until {new Date(monitorEnd).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short' })}</span>
-                {outcome && (
-                  <span className={`font-semibold ${
-                    outcome === 'improved' ? 'text-kk-good'
-                    : outcome === 'needs_attention' ? 'text-kk-bad'
-                    : 'text-kk-muted'
-                  }`}>
-                    {outcome === 'improved' ? 'Improved' : outcome === 'needs_attention' ? 'Needs attention' : 'Unchanged'}
+                <span>Monitoring until {new Date(m.monitor_end).toLocaleDateString('da-DK', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short' })}</span>
+                {m.outcome ? (
+                  <span className={`font-semibold ${m.outcome === 'improved' ? 'text-kk-good' : m.outcome === 'needs_attention' ? 'text-kk-bad' : 'text-kk-muted'}`}>
+                    {m.outcome === 'improved' ? 'Improved' : m.outcome === 'needs_attention' ? 'Needs attention' : 'Unchanged'}
                   </span>
-                )}
-                {isActive && !outcome && <span className="text-blue-600">Monitoring active</span>}
+                ) : rec.execution_status === 'in_motion' ? (
+                  <span className="text-blue-600">Monitoring active</span>
+                ) : null}
+              </div>
+            )
+          })()}
+
+          {/* Diagnostic result */}
+          {rec.execution_result?.tracking_diagnostic && (() => {
+            const diag = rec.execution_result!.tracking_diagnostic!
+            if (!diag.diagnosed) return <p className="text-xs text-kk-muted">Diagnostic unavailable: {diag.reason}</p>
+            const breakLabels: Record<string, string> = {
+              no_traffic: 'No traffic detected',
+              traffic_no_platform_conversion: 'Traffic but no conversions',
+              traffic_with_ga4_activity: 'Likely tracking mismatch',
+              conversion_exists_outside_platform: 'Conversion tracking gap',
+              insufficient_evidence: 'Insufficient evidence',
+            }
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase text-kk-muted">Diagnostic complete</span>
+                  <span className={`text-xs font-semibold ${['traffic_with_ga4_activity', 'conversion_exists_outside_platform', 'traffic_no_platform_conversion'].includes(diag.likely_break ?? '') ? 'text-kk-bad' : 'text-kk-muted'}`}>
+                    {breakLabels[diag.likely_break ?? ''] ?? diag.likely_break}
+                  </span>
+                </div>
+                <p className="text-xs text-kk-muted leading-relaxed">{diag.explanation}</p>
               </div>
             )
           })()}

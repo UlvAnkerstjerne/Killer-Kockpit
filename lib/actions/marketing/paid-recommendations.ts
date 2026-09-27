@@ -66,13 +66,13 @@ export async function approvePaidRecommendation(
       status:               'approved',
       reviewed_at:          now,
       reviewed_by_user_id:  user.id,
-      execution_status:     'in_motion',
+      execution_status:     'executing',
       execution_started_at: now,
     })
     .eq('id', id)
     .eq('status', 'needs_review')
     .eq('execution_status', 'pending_approval')
-    .select('id, execution_type, signal_type, platform, campaign_id, campaign_name, what_changed, evidence, interpretation, recommended_action, urgency, spend_7d, result_count_7d, cpr_7d')
+    .select('id, execution_type, execution_plan, signal_type, platform, campaign_id, campaign_name, what_changed, evidence, interpretation, recommended_action, urgency, spend_7d, result_count_7d, cpr_7d, currency')
     .maybeSingle()
 
   if (claimError) {
@@ -89,8 +89,85 @@ export async function approvePaidRecommendation(
   const executionResult: Record<string, unknown> = {}
   let linkedTaskId: string | null = null
 
-  // 2a. Create Task if needed
-  if (executionType === 'create_task' || executionType === 'create_task_and_monitor') {
+  await db.from('paid_recommendation_execution_events').insert({ recommendation_id: id, actor_user_id: user.id, phase: 'claimed' })
+
+  // Direct platform actions never create a Task. The stored plan is validated again,
+  // live state is read before mutation, and live state is read back afterward.
+  if (executionType === 'platform_action') {
+    const { executeTrustedPlan } = await import('@/lib/marketing/paid-recs/executor')
+    const { PaidRecExecutionPlanSchema } = await import('@/lib/marketing/paid-recs/types')
+    const plan = PaidRecExecutionPlanSchema.safeParse(claimed.execution_plan)
+    if (!plan.success) {
+      await db.from('paid_recommendations').update({ execution_status: 'needs_attention', execution_result: { error: 'Trusted execution plan is missing or invalid.' } }).eq('id', id)
+      return { ok: false, error: 'This recommendation requires manual review.' }
+    }
+    let adapter
+    if (plan.data.platform === 'meta') {
+      const { metaMutationAdapter } = await import('@/lib/marketing/paid-recs/platform-adapters')
+      adapter = metaMutationAdapter(String(claimed.currency ?? 'DKK'))
+    } else {
+      const { getGoogleOAuth2Client } = await import('@/lib/google/auth')
+      const client = await getGoogleOAuth2Client(user.id)
+      if (!client) {
+        await db.from('paid_recommendations').update({ execution_status: 'needs_attention', execution_result: { error: 'Google Ads authorization is unavailable.' } }).eq('id', id)
+        return { ok: false, error: 'Google Ads authorization is unavailable.' }
+      }
+      const { googleMutationAdapter } = await import('@/lib/marketing/paid-recs/platform-adapters')
+      adapter = googleMutationAdapter(client, String(claimed.currency ?? 'DKK'))
+    }
+    await db.from('paid_recommendation_execution_events').insert({ recommendation_id: id, actor_user_id: user.id, phase: 'prepared' })
+    const result = await executeTrustedPlan(plan.data, adapter)
+    if (!result.ok) {
+      await db.from('paid_recommendations').update({ execution_status: result.status, execution_result: { error: result.reason, before: result.before, after: result.after, recovery: { mutation_may_have_succeeded: !!result.uncertain, verify_before_retry: !!result.uncertain } } }).eq('id', id)
+      await db.from('paid_recommendation_execution_events').insert({ recommendation_id: id, actor_user_id: user.id, phase: result.status, detail: { reason: result.reason, uncertain: !!result.uncertain } })
+      return { ok: false, error: result.reason }
+    }
+    const monitorEnd = new Date(Date.now() + 5 * 86400000).toISOString()
+    const directResult = { before: result.before, after: result.after, platform_request_id: result.requestId, monitoring: { monitor_start: now, monitor_end: monitorEnd, campaign_id: claimed.campaign_id, platform: claimed.platform, baseline: { spend_7d: claimed.spend_7d, result_count_7d: claimed.result_count_7d, cpr_7d: claimed.cpr_7d } } }
+    const { error: persistError } = await db.from('paid_recommendations').update({ execution_status: 'in_motion', execution_result: directResult }).eq('id', id)
+    await db.from('paid_recommendation_execution_events').insert({ recommendation_id: id, actor_user_id: user.id, phase: persistError ? 'needs_attention' : 'verified', detail: persistError ? { reason: 'Database persistence failed after verified mutation.' } : { before: result.before, after: result.after } })
+    if (persistError) return { ok: false, error: 'Change verified, but recording it failed. Do not retry; contact an administrator.' }
+    return { ok: true }
+  }
+
+  // 2a. Run tracking diagnostic if this is a diagnostic plan
+  const planObj = claimed.execution_plan as Record<string, unknown> | null
+  const isDiagnostic = planObj?.action_type === 'run_tracking_diagnostic'
+
+  type DiagOutput = Awaited<ReturnType<typeof import('@/lib/marketing/paid-recs/tracking-diagnostic').runTrackingDiagnostic>>
+  let diagnosticResult: DiagOutput | null = null
+  if (isDiagnostic) {
+    try {
+      const { runTrackingDiagnostic } = await import('@/lib/marketing/paid-recs/tracking-diagnostic')
+      diagnosticResult = await runTrackingDiagnostic({
+        platform: claimed.platform as 'meta' | 'google',
+        campaignId: claimed.campaign_id as string,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      console.error('[paid-recs] Tracking diagnostic failed:', msg)
+      diagnosticResult = { diagnosed: false, fixed: false, reason: `Diagnostic error: ${msg}` }
+    }
+    executionResult.tracking_diagnostic = diagnosticResult
+  }
+
+  // Determine whether the diagnostic result requires manual intervention (→ Task).
+  // Task is only created when evidence shows a likely tracking problem humans must fix.
+  // no_traffic: campaign delivery issue, not a tracking fix → no Task
+  // insufficient_evidence: nothing actionable → no Task
+  // traffic_with_ga4_activity / traffic_no_platform_conversion / conversion_exists_outside_platform:
+  //   likely tracking mismatch → create Task with diagnostic evidence
+  const diagnosticRequiresTask = diagnosticResult?.diagnosed === true
+    && ['traffic_with_ga4_activity', 'traffic_no_platform_conversion', 'conversion_exists_outside_platform'].includes(diagnosticResult.likely_break)
+
+  // For diagnostic plans, only create a Task when manual intervention is required.
+  // For non-diagnostic create_task plans, always create the Task.
+  const shouldCreateTask = isDiagnostic
+    ? diagnosticRequiresTask
+    : (executionType === 'create_task' || executionType === 'create_task_and_monitor')
+
+  // 2b. Create Task if needed
+  if (shouldCreateTask) {
     try {
       const platformLabel = claimed.platform === 'meta' ? 'Meta' : 'Google Ads'
       const signalVerbs: Record<string, string> = {
@@ -104,7 +181,7 @@ export async function approvePaidRecommendation(
         ? (claimed.campaign_name as string).slice(0, 47) + '...'
         : claimed.campaign_name as string
       const taskTitle = `${verb} — ${shortCampaign}`
-      const taskDescription = [
+      const descriptionParts = [
         `**${platformLabel} · ${claimed.campaign_name}**`,
         '',
         `**What changed:** ${claimed.what_changed}`,
@@ -114,9 +191,43 @@ export async function approvePaidRecommendation(
         `**Interpretation:** ${claimed.interpretation}`,
         '',
         `**Recommended action:** ${claimed.recommended_action}`,
-        '',
-        `_Created automatically from a paid recommendation._`,
-      ].join('\n')
+      ]
+
+      // Append diagnostic results if available
+      if (diagnosticResult?.diagnosed) {
+        descriptionParts.push(
+          '',
+          '---',
+          '',
+          '**Automated tracking diagnostic (read-only — not a fix)**',
+          '',
+          `**Likely break:** ${diagnosticResult.likely_break.replace(/_/g, ' ')}`,
+          '',
+          `**Explanation:** ${diagnosticResult.explanation}`,
+          '',
+          '**Evidence gathered:**',
+          `- Platform clicks: ${diagnosticResult.evidence.platformClicks ?? 'N/A'}`,
+          `- Platform spend: ${diagnosticResult.evidence.platformSpend ?? 'N/A'}`,
+          `- Platform conversions: ${diagnosticResult.evidence.platformConversions ?? 'N/A'}`,
+          `- GA4 paid sessions: ${diagnosticResult.evidence.ga4PaidSessions ?? 'N/A'}`,
+          `- GA4 total sessions: ${diagnosticResult.evidence.ga4TotalSessions ?? 'N/A'}`,
+          '',
+          '**Recommended next steps:**',
+          ...diagnosticResult.next_steps.map(s => `- ${s}`),
+          '',
+          '_This is an automated diagnosis based on synced data. Manual investigation and fix is required._',
+        )
+      } else if (diagnosticResult && !diagnosticResult.diagnosed) {
+        descriptionParts.push(
+          '',
+          '---',
+          '',
+          `**Tracking diagnostic unavailable:** ${diagnosticResult.reason}`,
+        )
+      }
+
+      descriptionParts.push('', `_Created automatically from a paid recommendation._`)
+      const taskDescription = descriptionParts.join('\n')
 
       // Due date based on urgency
       const urgencyDays: Record<string, number> = { high: 0, medium: 1, low: 3 }
@@ -155,7 +266,7 @@ export async function approvePaidRecommendation(
     }
   }
 
-  // 2b. Start monitoring if needed
+  // 2c. Start monitoring if needed
   if (executionType === 'monitor' || executionType === 'create_task_and_monitor') {
     const monitorStart = now
     const monitorEnd = new Date()
@@ -172,6 +283,18 @@ export async function approvePaidRecommendation(
         cpr_7d: claimed.cpr_7d,
       },
     }
+  }
+
+  if (executionType === 'monitor' || executionType === 'create_task_and_monitor') {
+    await db.from('paid_recommendations').update({ execution_status: 'in_motion' }).eq('id', id)
+  } else if (isDiagnostic && !diagnosticRequiresTask) {
+    // Diagnostic completed without needing a Task.
+    // If the diagnostic was unavailable, mark needs_attention for manual review.
+    const diagStatus = diagnosticResult?.diagnosed ? 'completed' : 'needs_attention'
+    await db.from('paid_recommendations').update({ execution_status: diagStatus, execution_completed_at: new Date().toISOString() }).eq('id', id)
+  } else {
+    // Task-only: complete once the Task exists.
+    await db.from('paid_recommendations').update({ execution_status: 'completed', execution_completed_at: new Date().toISOString() }).eq('id', id)
   }
 
   // 3. Store execution result and linked task

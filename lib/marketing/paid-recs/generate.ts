@@ -30,8 +30,9 @@ import {
   type GoogleCampaignInput,
 } from './signals'
 import { callPaidRecommendationsAI, PAID_REC_PROMPT_VERSION } from '@/lib/ai/paid-recommendations'
-import type { PaidRecSignal, PaidRecSignalType } from './types'
-import { SIGNAL_EXECUTION_MAP } from './types'
+import type { PaidRecSignal } from './types'
+import { compileExecutionPlan, type SyncedTarget, type ConfiguredAccounts } from './compile-plan'
+import { GOOGLE_ADS_CUSTOMER_ID } from '@/lib/google/ads-sync'
 
 // ─── Date ranges ──────────────────────────────────────────────────────────────
 
@@ -191,12 +192,17 @@ async function insertRecommendations(
   aiResult: Awaited<ReturnType<typeof callPaidRecommendationsAI>>,
   model: string,
   generatedAt: string,
+  targets: Map<string, SyncedTarget>,
+  configuredAccounts: ConfiguredAccounts,
 ): Promise<void> {
   if (!aiResult.ok) return
 
   const signalByCampaignId = new Map(signals.map(s => [s.campaign_id, s]))
   const rows = aiResult.output.recommendations.map(rec => {
     const signal = signalByCampaignId.get(rec.campaign_id)
+    const compiled = rec.action_intent ? compileExecutionPlan(rec.action_intent, targets.get(`${rec.platform}:${rec.campaign_id}`) ?? {
+      platform: rec.platform, campaignId: '', accountId: '', status: '', currency: '',
+    }, configuredAccounts) : { ok: false as const, reason: 'No structured action intent.' }
     return {
       platform:              rec.platform,
       campaign_id:           rec.campaign_id,
@@ -217,7 +223,11 @@ async function insertRecommendations(
       recommended_action:    rec.recommended_action,
       urgency:               rec.urgency,
       status:                'needs_review' as const,
-      execution_type:        SIGNAL_EXECUTION_MAP[(signal?.signal_type ?? 'spend_no_results') as PaidRecSignalType] ?? 'monitor',
+      execution_type:        compiled.ok
+        ? (['create_task', 'run_tracking_diagnostic'].includes(compiled.plan.action_type) ? 'create_task' : compiled.plan.action_type === 'monitor_only' ? 'monitor' : 'platform_action')
+        : null,
+      execution_plan:        compiled.ok ? compiled.plan : null,
+      execution_plan_version: compiled.ok ? 'v1' : null,
       execution_status:      'pending_approval' as const,
       ai_model:              model,
       prompt_version:        PAID_REC_PROMPT_VERSION,
@@ -276,17 +286,19 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     return { ok: true, signalCount: 0, recommendationCount: 0, skipped: true }
   }
 
-  // 2b. Suppress signals for campaigns that already have an in-motion recommendation
-  const { data: inMotionRecs } = await db
+  // 2b. Suppress signals for campaigns that already have an active execution
+  //     Suppress while: executing (claim in progress) or in_motion (monitoring/running)
+  //     Allow again once terminal: completed, failed, needs_attention
+  const { data: activeExecRecs } = await db
     .from('paid_recommendations')
     .select('platform, campaign_id')
-    .eq('execution_status', 'in_motion')
-  const inMotionKeys = new Set(
-    (inMotionRecs ?? []).map((r: { platform: string; campaign_id: string }) => `${r.platform}:${r.campaign_id}`),
+    .in('execution_status', ['executing', 'in_motion'])
+  const activeExecKeys = new Set(
+    (activeExecRecs ?? []).map((r: { platform: string; campaign_id: string }) => `${r.platform}:${r.campaign_id}`),
   )
-  const filteredSignals = signals.filter(s => !inMotionKeys.has(`${s.platform}:${s.campaign_id}`))
+  const filteredSignals = signals.filter(s => !activeExecKeys.has(`${s.platform}:${s.campaign_id}`))
   if (filteredSignals.length === 0) {
-    console.log('[paid-recs/generate] All signals suppressed — campaigns already in motion.')
+    console.log('[paid-recs/generate] All signals suppressed — campaigns already executing or in motion.')
     return { ok: true, signalCount: signals.length, recommendationCount: 0, skipped: true }
   }
 
@@ -303,7 +315,17 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
   // 4. Persist: clear old needs_review (but not those with in-motion siblings), insert new
   try {
     await clearNeedsReview(db)
-    await insertRecommendations(db, filteredSignals, aiResult, model, generatedAt)
+    const targets = new Map<string, SyncedTarget>()
+    for (const input of metaInputs) targets.set(`meta:${input.campaign.id}`, { platform: 'meta', campaignId: input.campaign.id, accountId: input.campaign.ad_account_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget ? Number(input.campaign.daily_budget) : null })
+    for (const input of googleInputs) targets.set(`google:${input.campaign.campaign_id}`, { platform: 'google', campaignId: input.campaign.campaign_id, accountId: input.campaign.customer_id, status: input.campaign.status, currency: input.campaign.currency })
+    // Resolve configured account IDs from canonical server-side config.
+    // Meta: META_AD_ACCOUNT_ID env var (same as sync uses).
+    // Google: GOOGLE_ADS_CUSTOMER_ID constant from ads-sync.ts (single source of truth).
+    const configuredAccounts: ConfiguredAccounts = {
+      metaAdAccountId: process.env.META_AD_ACCOUNT_ID,
+      googleCustomerId: GOOGLE_ADS_CUSTOMER_ID || undefined,
+    }
+    await insertRecommendations(db, filteredSignals, aiResult, model, generatedAt, targets, configuredAccounts)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     console.error('[paid-recs/generate] DB write failed:', msg)

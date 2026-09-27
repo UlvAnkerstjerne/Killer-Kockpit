@@ -144,6 +144,39 @@ async function graphFetch(path: string, params: Record<string, string> = {}): Pr
   return body
 }
 
+async function graphWrite(path: string, body: URLSearchParams): Promise<{ success: boolean }> {
+  if (!/^\d{1,30}$/.test(path)) throw new MetaApiError('Invalid Meta object ID')
+  const headers = getMetaAuthHeaders()
+  if (!headers) throw new MetaApiError('META_SYSTEM_USER_TOKEN not configured')
+  const res = await fetch(`${META_GRAPH_BASE_URL}/${path}`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+  checkRateLimit(res.headers)
+  const json = await res.json() as { success?: boolean; error?: { message?: string; code?: number; type?: string } }
+  if (!res.ok || json.error || json.success !== true) throw new MetaApiError(json.error?.message ?? `HTTP ${res.status}`, json.error?.code, json.error?.type)
+  return { success: true }
+}
+
+export async function fetchMetaCampaignState(id: string): Promise<{ id: string; status: string; daily_budget: string | null }> {
+  if (!/^\d{1,30}$/.test(id)) throw new MetaApiError('Invalid Meta campaign ID')
+  const row = await graphFetch(id, { fields: 'id,status,daily_budget' }) as { id: string; status: string; daily_budget?: string }
+  return { id: row.id, status: row.status, daily_budget: row.daily_budget ?? null }
+}
+
+export async function fetchMetaAdSetState(id: string): Promise<{ id: string; status: string; daily_budget: string | null; campaign_id: string }> {
+  if (!/^\d{1,30}$/.test(id)) throw new MetaApiError('Invalid Meta ad set ID')
+  const row = await graphFetch(id, { fields: 'id,status,daily_budget,campaign_id' }) as { id: string; status: string; daily_budget?: string; campaign_id: string }
+  return { id: row.id, status: row.status, daily_budget: row.daily_budget ?? null, campaign_id: row.campaign_id }
+}
+
+export async function updateMetaCampaignStatus(id: string, status: 'ACTIVE' | 'PAUSED') { return graphWrite(id, new URLSearchParams({ status })) }
+export async function updateMetaCampaignBudget(id: string, dailyBudgetMinor: number) {
+  if (!Number.isSafeInteger(dailyBudgetMinor) || dailyBudgetMinor <= 0) throw new MetaApiError('Invalid Meta daily budget')
+  return graphWrite(id, new URLSearchParams({ daily_budget: String(dailyBudgetMinor) }))
+}
+export async function updateMetaAdSetBudget(id: string, dailyBudgetMinor: number) {
+  if (!Number.isSafeInteger(dailyBudgetMinor) || dailyBudgetMinor <= 0) throw new MetaApiError('Invalid Meta daily budget')
+  return graphWrite(id, new URLSearchParams({ daily_budget: String(dailyBudgetMinor) }))
+}
+
 // ── Pagination helper ──────────────────────────────────────────────────────────
 
 async function fetchAllPages<T>(
