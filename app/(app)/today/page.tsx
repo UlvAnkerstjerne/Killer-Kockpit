@@ -7,8 +7,9 @@ import {
   copenhagenMidnightUTC,
   getDueState,
   sortWorkItems,
+  formatCopenhagenWeekRange,
 } from '@/lib/today/weekUtils'
-import { sortOpenTodos, filterTodosForToday } from '@/lib/today/todoUtils'
+import { sortOpenTodos, filterCompletedThisWeek, filterTodosForToday } from '@/lib/today/todoUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
@@ -107,6 +108,14 @@ function IconWorkWeek() {
     </svg>
   )
 }
+function IconCompleted() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5 8l2.5 2.5L11 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
 function IconTodo() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -132,6 +141,30 @@ function IconMeeting() {
     </svg>
   )
 }
+function IconGlance() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 12h2V8H2v4zM7 12h2V5H7v7zM12 12h2V2h-2v10z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconReview() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5.5 8.5l2 2 3-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function IconReturned() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 8h8a3 3 0 000-6H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M5.5 5.5L3 8l2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
 // ─── Dashboard card shell ────────────────────────────────────────────────────
 
 function DashCard({
@@ -198,14 +231,16 @@ export default async function TodayPage({
   // All reads fire in parallel
   const [
     unfinishedTasksRes,
+    completedTasksRes,
     allOpenWOsRes,
+    fulfilledWOsRes,
     todayMeetingsRes,
     weekMeetingsRes,
     draftMeetingsRes,
     openTodosRes,
+    completedWeekTodosRes,
     pendingReviewTasksRes,
     returnedTasksRes,
-    expectedSubmissionsRes,
     activeProjectsRes,
   ] = await Promise.all([
 
@@ -226,6 +261,23 @@ export default async function TodayPage({
           .is('archived_at', null)
     ),
 
+    // Tasks completed this week
+    (isManagementView
+      ? supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .gte('completed_at', weekStartISO)
+          .lt('completed_at', weekEndISO)
+          .eq('status', 'done')
+          .is('archived_at', null)
+      : supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .eq('owner_user_id', user.id)
+          .gte('completed_at', weekStartISO)
+          .lt('completed_at', weekEndISO)
+          .eq('status', 'done')
+          .is('archived_at', null)
+    ),
+
     // All open waiting ons — no date restriction (Waiting Ons card shows all, not just this week)
     (isManagementView
       ? supabase.from('waiting_ons')
@@ -243,6 +295,23 @@ export default async function TodayPage({
           .order('priority', { ascending: true })
           .order('due_at', { ascending: true, nullsFirst: false })
           .limit(30)
+    ),
+
+    // Waiting ons fulfilled this week
+    (isManagementView
+      ? supabase.from('waiting_ons')
+          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name')
+          .gte('fulfilled_at', weekStartISO)
+          .lt('fulfilled_at', weekEndISO)
+          .eq('status', 'fulfilled')
+          .is('archived_at', null)
+      : supabase.from('waiting_ons')
+          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name')
+          .eq('owner_user_id', user.id)
+          .gte('fulfilled_at', weekStartISO)
+          .lt('fulfilled_at', weekEndISO)
+          .eq('status', 'fulfilled')
+          .is('archived_at', null)
     ),
 
     // Today's meetings (scheduled + open)
@@ -286,6 +355,15 @@ export default async function TodayPage({
       .order('created_at', { ascending: false })
       .limit(50),
 
+    // Todos completed this week
+    supabase.from('todos')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
+      .eq('user_id', user.id)
+      .gte('completed_at', weekStartISO)
+      .lt('completed_at', weekEndISO)
+      .order('completed_at', { ascending: false })
+      .limit(50),
+
     // Tasks pending my review (I am the requester)
     supabase.from('tasks')
       .select('id, title, priority, submitted_at, owner:owner_user_id (id, display_name)')
@@ -305,18 +383,6 @@ export default async function TodayPage({
       .order('returned_at', { ascending: false })
       .limit(20),
 
-    // Tasks I delegated that are expected this week (I created, someone else owns, due this week, not done)
-    supabase.from('tasks')
-      .select('id, title, priority, due_at, status, owner:owner_user_id (id, display_name)')
-      .eq('created_by_user_id', user.id)
-      .neq('owner_user_id', user.id)
-      .lt('due_at', weekEndISO)
-      .not('due_at', 'is', null)
-      .not('status', 'in', '("done","cancelled","pending_review")')
-      .is('archived_at', null)
-      .order('due_at', { ascending: true })
-      .limit(20),
-
     // Active projects for the upgrade-to-task modal
     supabase.from('projects')
       .select('id, title')
@@ -328,10 +394,13 @@ export default async function TodayPage({
   // ─── Build unified work items list ────────────────────────────────────────
 
   const unfinishedTasks = (unfinishedTasksRes.data || []) as RawTask[]
+  const completedTasks  = (completedTasksRes.data  || []) as RawTask[]
   const allOpenWOs      = (allOpenWOsRes.data       || []) as RawWO[]
+  const fulfilledWOs    = (fulfilledWOsRes.data     || []) as RawWO[]
   const draftMeetings   = (draftMeetingsRes.data    || []) as { id: string; title: string; scheduled_start: string | null }[]
 
   // For the work items list, only include WOs due within this week
+  // (preserves the original week-scoped work list behaviour)
   const wosForWork = allOpenWOs.filter(w => w.due_at && new Date(w.due_at) < weekEnd)
 
   const workItems: WorkItem[] = [
@@ -349,38 +418,40 @@ export default async function TodayPage({
       href: `/waiting-ons/${w.id}`,
       ownerName: isManagementView ? ownerName(w) : undefined,
     })),
+    ...completedTasks.map(t => ({
+      id: t.id, kind: 'task' as const,
+      title: t.title, priority: t.priority,
+      due_at: t.due_at, done_at: t.completed_at,
+      href: `/tasks/${t.id}?returnTo=/today`,
+      ownerName: isManagementView ? ownerName(t) : undefined,
+    })),
+    ...fulfilledWOs.map(w => ({
+      id: w.id, kind: 'waiting_on' as const,
+      title: w.title, priority: w.priority,
+      due_at: w.due_at, done_at: w.fulfilled_at,
+      href: `/waiting-ons/${w.id}`,
+      ownerName: isManagementView ? ownerName(w) : undefined,
+    })),
   ]
 
-  const unfinished = sortWorkItems(workItems, now)
+  const sorted     = sortWorkItems(workItems, now)
+  const unfinished = sorted.filter(i => i.done_at === null)
+  const done       = sorted.filter(i => i.done_at !== null)
 
   // ─── Classify by urgency ──────────────────────────────────────────────────
-  // Genuinely urgent = critical/normal priority (P1/P2) that are overdue or due today,
-  // OR any priority that is overdue by more than 2 days. Tomorrow items are not urgent.
 
   const urgentItems = unfinished.filter(item => {
     const s = getDueState(item.due_at, now, weekEnd)
-    if (s === 'overdue') {
-      // P1/P2 are always urgent when overdue
-      if (item.priority <= 2) return true
-      // P3/P4 only urgent if overdue by more than 2 days (significantly late)
-      if (item.due_at) {
-        const daysOverdue = (now.getTime() - new Date(item.due_at).getTime()) / 86_400_000
-        return daysOverdue > 2
-      }
-      return false
-    }
-    // Due today with high priority
-    if (s === 'today' && item.priority <= 2) return true
-    return false
+    return s === 'overdue' || s === 'today' || s === 'tomorrow'
   })
 
-  // Work This Week = non-urgent tasks (WOs are shown in dedicated WOs card)
-  const urgentIds = new Set(urgentItems.map(i => i.id))
+  // Work This Week = non-urgent tasks only (WOs are shown in dedicated WOs card)
   const weekTaskItems = unfinished.filter(item => {
-    return item.kind === 'task' && !urgentIds.has(item.id)
+    return getDueState(item.due_at, now, weekEnd) === 'this_week' && item.kind === 'task'
   })
 
   // Waiting Ons card: all open WOs excluding the ones already in Urgent Now
+  const urgentIds = new Set(urgentItems.map(i => i.id))
   const nonUrgentWOs = allOpenWOs.filter(wo => !urgentIds.has(wo.id))
 
   // ─── Meetings ─────────────────────────────────────────────────────────────
@@ -391,7 +462,8 @@ export default async function TodayPage({
 
   // ─── Todos ────────────────────────────────────────────────────────────────
 
-  const openTodos = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
+  const openTodos        = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
+  const completedThisWeek = filterCompletedThisWeek((completedWeekTodosRes.data ?? []) as Todo[], now)
 
   // ─── Upgrade-to-task modal data (personal view only) ─────────────────────
 
@@ -414,27 +486,25 @@ export default async function TodayPage({
   const pendingReviewTasks = (!isManagementView ? (pendingReviewTasksRes.data || []) : []) as RawPendingReview[]
   const returnedTasks      = (!isManagementView ? (returnedTasksRes.data      || []) : []) as RawReturned[]
 
-  type RawExpectedSubmission = {
-    id: string; title: string; priority: number; due_at: string | null; status: string
-    owner: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined
-  }
-  const expectedSubmissions = (!isManagementView ? (expectedSubmissionsRes.data || []) : []) as RawExpectedSubmission[]
-
   // ─── At-a-glance summary counts ──────────────────────────────────────────
 
+  const overdueCount      = urgentItems.filter(i => getDueState(i.due_at, now, weekEnd) === 'overdue').length
+  const completedCount    = done.length + completedThisWeek.length
   const meetingsThisWeek  = todayMeetings.length + laterMeetings.length
 
+  const weekRangeLabel = formatCopenhagenWeekRange(weekStart, weekEnd)
 
   // ─── Render ───────────────────────────────────────────────────────────────
   //
   // Layout: 2-column CSS grid on desktop (lg+).
-  //   Left column  (3fr): My To-Dos (largest, most prominent)
-  //   Right column (2fr): Urgent Now (conditional) → Work This Week → Waiting Ons → Meetings
+  //   Left column  (3fr): Urgent Now → Work This Week → Completed This Week
+  //   Right column (2fr): To-Dos → Waiting Ons → Meetings → At a Glance
   //
-  // Mobile (< lg): single column, visual order via CSS `order-N`.
-
-  // Work This Week section counts
-  const workWeekTotal = pendingReviewTasks.length + returnedTasks.length + weekTaskItems.length + expectedSubmissions.length
+  // Mobile (< lg): single column, visual order 1-7 via CSS `order-N`.
+  //   Cards with explicit lg:col-start-N lg:row-start-N are placed by the
+  //   grid on desktop; lg:order-none resets to DOM order for auto-placement.
+  //   On mobile, the `lg:col-start-*` classes are inactive so all items
+  //   auto-place to col 1, ordered by the `order-N` class.
 
   return (
     <div className="-m-4 p-4 min-h-screen bg-kraft-light">
@@ -473,31 +543,19 @@ export default async function TodayPage({
       {/* ── Dashboard grid ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2.5 items-start">
 
-        {/* ═══ My To-Dos — largest panel (left col, spans full height) ══════ */}
-        <div className="self-start order-1 lg:order-none lg:col-start-1 lg:row-start-1 lg:row-span-4">
-          <TodoBlock
-            openTodos={openTodos}
-            completedThisWeek={[]}
-            maxItems={20}
-            showFooter
+        {/* ═══ Card 1 — Urgent Now (left col, row 1) ════════════════════════ */}
+        <div className="self-start order-1 lg:order-none lg:col-start-1 lg:row-start-1">
+          <DashCard
+            title="Urgent now"
+            badge={urgentItems.length > 0 ? urgentItems.length : undefined}
+            footerHref="/tasks"
+            footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : 'View all tasks'}
+            icon={<IconUrgent />}
             accentHeader
-            allUsers={todoAllUsers}
-            projects={todoProjects}
-            currentUserId={user.id}
-          />
-        </div>
-
-        {/* ═══ Urgent Now (right col, row 1) — only when genuinely urgent ═══ */}
-        {urgentItems.length > 0 && (
-          <div className="self-start order-2 lg:order-none lg:col-start-2 lg:row-start-1">
-            <DashCard
-              title="Urgent now"
-              badge={urgentItems.length}
-              footerHref="/tasks"
-              footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : 'View all tasks'}
-              icon={<IconUrgent />}
-              accentHeader
-            >
+          >
+            {urgentItems.length === 0 ? (
+              <EmptyRow text="No overdue or imminent items." />
+            ) : (
               <div className="divide-y divide-[#171717]/15">
                 {urgentItems.slice(0, 6).map(item => {
                   const s = getDueState(item.due_at, now, weekEnd)
@@ -529,197 +587,80 @@ export default async function TodayPage({
                   )
                 })}
               </div>
-            </DashCard>
-          </div>
-        )}
+            )}
+          </DashCard>
+        </div>
 
-        {/* ═══ Work This Week (right col) — unified task panel ══════════════ */}
-        <div className="self-start order-3 lg:order-none lg:col-start-2">
+        {/* ═══ Card 2 — To-Dos (right col, row 1) ══════════════════════════ */}
+        <div className="self-start order-2 lg:order-none lg:col-start-2 lg:row-start-1">
+          <TodoBlock
+            openTodos={openTodos}
+            completedThisWeek={[]}
+            maxItems={10}
+            showFooter
+            accentHeader
+            allUsers={todoAllUsers}
+            projects={todoProjects}
+            currentUserId={user.id}
+          />
+        </div>
+
+        {/* ═══ Card 3 — Work This Week (left col, row 2) ═══════════════════ */}
+        <div className="self-start order-3 lg:order-none lg:col-start-1 lg:row-start-2">
           <DashCard
             title="Work this week"
-            badge={workWeekTotal > 0 ? workWeekTotal : undefined}
+            badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
             footerHref="/tasks"
             footerLabel="View all tasks"
             icon={<IconWorkWeek />}
             accentHeader
           >
-            {workWeekTotal === 0 ? (
-              <EmptyRow text="No tasks this week." />
+            {weekTaskItems.length === 0 ? (
+              <EmptyRow text="No remaining tasks this week." />
             ) : (
-              <div>
-                {/* Section 1: For review — tasks awaiting my approval */}
-                {!isManagementView && pendingReviewTasks.length > 0 && (
-                  <>
-                    <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider text-kk-muted border-b border-[#171717]/10 bg-[#B7A486]/10">
-                      For your review
-                    </div>
-                    <div className="divide-y divide-[#171717]/15">
-                      {pendingReviewTasks.map(t => {
-                        const o = Array.isArray(t.owner) ? t.owner[0] : t.owner
-                        return (
-                          <Link
-                            key={t.id}
-                            href={`/tasks/${t.id}?returnTo=/today`}
-                            className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                          >
-                            <PriorityDot priority={t.priority} />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
-                                {t.title}
-                              </span>
-                              {o?.display_name && (
-                                <div className="text-xs text-kk-muted mt-0.5">From: {o.display_name}</div>
-                              )}
-                            </div>
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-kk-brand bg-kk-bad-bg">
-                              Review
-                            </span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </>
-                )}
-
-                {/* Section 1b: Returned to you — tasks sent back */}
-                {!isManagementView && returnedTasks.length > 0 && (
-                  <>
-                    <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider text-kk-muted border-b border-[#171717]/10 bg-[#B7A486]/10">
-                      Returned to you
-                    </div>
-                    <div className="divide-y divide-[#171717]/15">
-                      {returnedTasks.map(t => {
-                        const c = Array.isArray(t.creator) ? t.creator[0] : t.creator
-                        return (
-                          <Link
-                            key={t.id}
-                            href={`/tasks/${t.id}?returnTo=/today`}
-                            className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                          >
-                            <PriorityDot priority={t.priority} />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
-                                {t.title}
-                              </span>
-                              {t.latest_review_note ? (
-                                <div className="text-xs text-kk-muted mt-0.5 truncate">{t.latest_review_note}</div>
-                              ) : c?.display_name ? (
-                                <div className="text-xs text-kk-muted mt-0.5">From: {c.display_name}</div>
-                              ) : null}
-                            </div>
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-amber-700 bg-amber-50">
-                              Returned
-                            </span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </>
-                )}
-
-                {/* Section 2: Assigned to me — tasks I own, due this week */}
-                {weekTaskItems.length > 0 && (
-                  <>
-                    {(pendingReviewTasks.length > 0 || returnedTasks.length > 0) && !isManagementView && (
-                      <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider text-kk-muted border-b border-[#171717]/10 bg-[#B7A486]/10">
-                        Assigned to {isManagementView ? 'team' : 'you'}
+              <div className="divide-y divide-[#171717]/15">
+                {weekTaskItems.slice(0, 7).map(item => (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <PriorityDot priority={item.priority} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <TypeChip label={item.kind === 'waiting_on' ? 'WO' : 'Task'} />
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate">
+                          {item.title}
+                        </span>
                       </div>
+                      {item.ownerName && (
+                        <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
+                      )}
+                    </div>
+                    {item.due_at && (
+                      <span className="text-xs text-kk-muted shrink-0">{formatShortDate(item.due_at)}</span>
                     )}
-                    <div className="divide-y divide-[#171717]/15">
-                      {weekTaskItems.slice(0, 7).map(item => {
-                        const s = getDueState(item.due_at, now, weekEnd)
-                        const cfg = DUE_STATE_CONFIG[s]
-                        return (
-                          <Link
-                            key={item.id}
-                            href={item.href}
-                            className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                          >
-                            <PriorityDot priority={item.priority} />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
-                                {item.title}
-                              </span>
-                              {item.ownerName && (
-                                <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
-                              )}
-                            </div>
-                            {cfg.label ? (
-                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${cfg.cls}`}>
-                                {cfg.label}
-                              </span>
-                            ) : item.due_at ? (
-                              <span className="text-xs text-kk-muted shrink-0">{formatShortDate(item.due_at)}</span>
-                            ) : null}
-                          </Link>
-                        )
-                      })}
-                      {weekTaskItems.length > 7 && (
-                        <div className="px-4 py-2 text-xs text-kk-muted">
-                          + {weekTaskItems.length - 7} more
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* Section 3: Expected submissions — tasks I delegated */}
-                {!isManagementView && expectedSubmissions.length > 0 && (
-                  <>
-                    <div className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider text-kk-muted border-b border-[#171717]/10 bg-[#B7A486]/10">
-                      Expected from others
-                    </div>
-                    <div className="divide-y divide-[#171717]/15">
-                      {expectedSubmissions.slice(0, 5).map(t => {
-                        const o = Array.isArray(t.owner) ? t.owner[0] : t.owner
-                        const s = getDueState(t.due_at, now, weekEnd)
-                        const cfg = DUE_STATE_CONFIG[s]
-                        return (
-                          <Link
-                            key={t.id}
-                            href={`/tasks/${t.id}?returnTo=/today`}
-                            className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                          >
-                            <PriorityDot priority={t.priority} />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
-                                {t.title}
-                              </span>
-                              {o?.display_name && (
-                                <div className="text-xs text-kk-muted mt-0.5">{o.display_name}</div>
-                              )}
-                            </div>
-                            {cfg.label ? (
-                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${cfg.cls}`}>
-                                {cfg.label}
-                              </span>
-                            ) : t.due_at ? (
-                              <span className="text-xs text-kk-muted shrink-0">{formatShortDate(t.due_at)}</span>
-                            ) : null}
-                          </Link>
-                        )
-                      })}
-                      {expectedSubmissions.length > 5 && (
-                        <div className="px-4 py-2 text-xs text-kk-muted">
-                          + {expectedSubmissions.length - 5} more
-                        </div>
-                      )}
-                    </div>
-                  </>
+                  </Link>
+                ))}
+                {weekTaskItems.length > 7 && (
+                  <div className="px-4 py-2 text-xs text-kk-muted">
+                    + {weekTaskItems.length - 7} more
+                  </div>
                 )}
               </div>
             )}
           </DashCard>
         </div>
 
-        {/* ═══ Waiting Ons (right col) ═════════════════════════════════════ */}
-        <div className="self-start order-4 lg:order-none lg:col-start-2">
+        {/* ═══ Card 4 — Waiting Ons (right col, row 2) ═════════════════════ */}
+        <div className="self-start order-4 lg:order-none lg:col-start-2 lg:row-start-2">
           <DashCard
             title="Waiting ons"
             badge={nonUrgentWOs.length > 0 ? nonUrgentWOs.length : undefined}
             footerHref="/waiting-ons"
             footerLabel="View all waiting ons"
             icon={<IconWaiting />}
+            accentHeader
           >
             {nonUrgentWOs.length === 0 ? (
               <EmptyRow text="No open waiting ons." />
@@ -755,8 +696,8 @@ export default async function TodayPage({
           </DashCard>
         </div>
 
-        {/* ═══ Meetings (right col) ════════════════════════════════════════ */}
-        <div className="self-start order-5 lg:order-none lg:col-start-2">
+        {/* ═══ Card 5 — Meetings (right col, row 3) ════════════════════════ */}
+        <div className="self-start order-5 lg:order-none lg:col-start-2 lg:row-start-3">
           <DashCard
             title="Meetings"
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
@@ -768,6 +709,7 @@ export default async function TodayPage({
               <EmptyRow text="No meetings this week." />
             ) : (
               <div className="divide-y divide-[#171717]/15">
+                {/* Today */}
                 {todayMeetings.map(m => (
                   <Link
                     key={m.id}
@@ -783,6 +725,7 @@ export default async function TodayPage({
                     )}
                   </Link>
                 ))}
+                {/* Later this week — cap total to keep card compact */}
                 {laterMeetings.slice(0, Math.max(0, 5 - todayMeetings.length)).map(m => (
                   <Link
                     key={m.id}
@@ -797,6 +740,7 @@ export default async function TodayPage({
                     </div>
                   </Link>
                 ))}
+                {/* Draft meetings awaiting review (management only) */}
                 {canManage && draftMeetings.slice(0, 2).map(m => (
                   <Link
                     key={m.id}
@@ -816,6 +760,151 @@ export default async function TodayPage({
             )}
           </DashCard>
         </div>
+
+        {/* ═══ Card 6 — Completed This Week (left col, row 3) ══════════════ */}
+        <div className="self-start order-6 lg:order-none lg:col-start-1 lg:row-start-3">
+          {(() => {
+            const visibleDone  = done.slice(0, 3)
+            const visibleTodos = completedThisWeek.slice(0, Math.max(0, 3 - visibleDone.length))
+            const overflow     = completedCount - visibleDone.length - visibleTodos.length
+
+            return (
+              <DashCard
+                title="Completed this week"
+                badge={completedCount > 0 ? completedCount : undefined}
+                footerHref="/tasks"
+                footerLabel="View all completed"
+                icon={<IconCompleted />}
+              >
+                {completedCount === 0 ? (
+                  <EmptyRow text="Nothing completed yet — week is just getting started." />
+                ) : (
+                  <div className="divide-y divide-[#171717]/15">
+                    {visibleDone.map(item => (
+                      <Link
+                        key={item.id}
+                        href={item.href}
+                        className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group opacity-80"
+                      >
+                        <PriorityDot priority={item.priority} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {item.kind === 'waiting_on' && <TypeChip label="WO" green />}
+                            <span className="text-sm text-kk-good line-through truncate">{item.title}</span>
+                          </div>
+                          {item.ownerName && (
+                            <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
+                          )}
+                        </div>
+                        {item.done_at && (
+                          <span className="text-xs text-kk-good/70 shrink-0">{formatShortDate(item.done_at)}</span>
+                        )}
+                      </Link>
+                    ))}
+                    {visibleTodos.map(todo => (
+                      <div key={todo.id} className="flex items-center gap-3 px-4 py-1.5 opacity-80">
+                        <PriorityDot priority={todo.priority} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <TypeChip label="To-Do" green />
+                            <span className="text-sm text-kk-good line-through truncate">{todo.title}</span>
+                          </div>
+                        </div>
+                        {todo.completed_at && (
+                          <span className="text-xs text-kk-good/70 shrink-0">{formatShortDate(todo.completed_at)}</span>
+                        )}
+                      </div>
+                    ))}
+                    {overflow > 0 && (
+                      <div className="px-4 py-2 text-xs text-kk-muted">+ {overflow} more</div>
+                    )}
+                  </div>
+                )}
+              </DashCard>
+            )
+          })()}
+        </div>
+
+        {/* ═══ Card 6b — Ready for Review (right col, between row 3 and 4, personal only) ═══ */}
+        {!isManagementView && pendingReviewTasks.length > 0 && (
+          <div className="self-start order-[6] lg:order-none lg:col-start-2 lg:row-start-[3]" style={{ gridRow: 'auto' }}>
+            <DashCard
+              title="Ready for review"
+              badge={pendingReviewTasks.length}
+              footerHref="/tasks"
+              footerLabel="View all tasks"
+              icon={<IconReview />}
+            >
+              <div className="divide-y divide-[#171717]/15">
+                {pendingReviewTasks.map((t) => {
+                  const o = Array.isArray(t.owner) ? t.owner[0] : t.owner
+                  return (
+                    <Link
+                      key={t.id}
+                      href={`/tasks/${t.id}?returnTo=/today`}
+                      className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                        {o?.display_name && (
+                          <div className="text-xs text-kk-muted mt-0.5">From: {o.display_name}</div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-kk-brand bg-kk-bad-bg">
+                        Review
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </DashCard>
+          </div>
+        )}
+
+        {/* ═══ Card 6c — Returned to You (right col, personal only) ══════════ */}
+        {!isManagementView && returnedTasks.length > 0 && (
+          <div className="self-start order-[6] lg:order-none lg:col-start-2" style={{ gridRow: 'auto' }}>
+            <DashCard
+              title="Returned to you"
+              badge={returnedTasks.length}
+              footerHref="/tasks"
+              footerLabel="View all tasks"
+              icon={<IconReturned />}
+            >
+              <div className="divide-y divide-[#171717]/15">
+                {returnedTasks.map((t) => {
+                  const c = Array.isArray(t.creator) ? t.creator[0] : t.creator
+                  return (
+                    <Link
+                      key={t.id}
+                      href={`/tasks/${t.id}?returnTo=/today`}
+                      className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                        {t.latest_review_note ? (
+                          <div className="text-xs text-kk-muted mt-0.5 truncate">{t.latest_review_note}</div>
+                        ) : c?.display_name ? (
+                          <div className="text-xs text-kk-muted mt-0.5">From: {c.display_name}</div>
+                        ) : null}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-amber-700 bg-amber-50">
+                        Returned
+                      </span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </DashCard>
+          </div>
+        )}
+
 
       </div>
     </div>
