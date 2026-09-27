@@ -11,8 +11,8 @@
  *   4. If no signals: return early (no recommendations needed)
  *   5. Call Claude with signals (lib/ai/paid-recommendations.ts)
  *   6. If AI fails: return error (preserves existing needs_review records)
- *   7. Delete all existing needs_review records
- *   8. Insert new recommendations
+ *   7. Clear stale needs_review records only for campaigns receiving new recommendations
+ *   8. Insert new recommendations (existing unresolved reviews for other campaigns survive)
  *
  * Security: all DB access uses createServiceClient (service_role).
  * No user identity is passed in — this is a background generation job.
@@ -178,12 +178,22 @@ async function loadGoogleData(db: Db, ranges: RecDateRanges): Promise<GoogleCamp
 
 // ─── DB writes ────────────────────────────────────────────────────────────────
 
-async function clearNeedsReview(db: Db): Promise<void> {
+/**
+ * Remove only the needs_review recommendations for campaigns that are about to
+ * receive a fresh recommendation. Recommendations for other campaigns survive
+ * until the user approves or dismisses them.
+ */
+async function clearStaleReviews(db: Db, campaignKeys: Set<string>): Promise<void> {
+  if (campaignKeys.size === 0) return
+  // Build list of campaign_ids to clear (platform-specific clearing is handled by
+  // the unique constraint on insert — each campaign only gets one needs_review row).
+  const campaignIds = [...campaignKeys].map(k => k.split(':')[1])
   const { error } = await db
     .from('paid_recommendations')
     .delete()
     .eq('status', 'needs_review')
-  if (error) throw new Error(`Failed to clear needs_review records: ${error.message}`)
+    .in('campaign_id', campaignIds)
+  if (error) throw new Error(`Failed to clear stale review records: ${error.message}`)
 }
 
 async function insertRecommendations(
@@ -254,8 +264,9 @@ export interface GenerateResult {
 /**
  * Generates paid recommendations from the current 7-day vs prior 7-day campaign data.
  *
- * Idempotent: clears all existing needs_review records before inserting new ones.
- * Approved and dismissed records are preserved.
+ * Existing needs_review recommendations survive unless the same campaign receives
+ * a fresh recommendation (in which case the old one is replaced).
+ * Approved, dismissed, and in-progress records are always preserved.
  */
 export async function generatePaidRecommendations(now = new Date()): Promise<GenerateResult> {
   const db = createServiceClient()
@@ -286,18 +297,19 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     return { ok: true, signalCount: 0, recommendationCount: 0, skipped: true }
   }
 
-  // 2b. Suppress signals for campaigns that already have an active or pending recommendation.
-  //     Suppress while: pending_approval (awaiting user action), executing, or in_motion.
-  //     This prevents contradictory simultaneous recommendations (e.g. pause + resume).
-  //     Allow again once terminal: completed, failed, needs_attention.
-  const { data: activeExecRecs } = await db
+  // 2b. Suppress signals for campaigns that already have an active/unresolved recommendation.
+  //     Suppress when a non-dismissed recommendation is pending_approval, executing, or in_motion.
+  //     Dismissed recommendations do NOT suppress — the user explicitly cleared them.
+  //     Terminal states (completed, failed, needs_attention) do not suppress.
+  const { data: activeRecs } = await db
     .from('paid_recommendations')
     .select('platform, campaign_id')
     .in('execution_status', ['pending_approval', 'executing', 'in_motion'])
-  const activeExecKeys = new Set(
-    (activeExecRecs ?? []).map((r: { platform: string; campaign_id: string }) => `${r.platform}:${r.campaign_id}`),
+    .neq('status', 'dismissed')
+  const activeKeys = new Set(
+    (activeRecs ?? []).map((r: { platform: string; campaign_id: string }) => `${r.platform}:${r.campaign_id}`),
   )
-  const filteredSignals = signals.filter(s => !activeExecKeys.has(`${s.platform}:${s.campaign_id}`))
+  const filteredSignals = signals.filter(s => !activeKeys.has(`${s.platform}:${s.campaign_id}`))
   if (filteredSignals.length === 0) {
     console.log('[paid-recs/generate] All signals suppressed — campaigns already have active recommendations.')
     return { ok: true, signalCount: signals.length, recommendationCount: 0, skipped: true }
@@ -313,9 +325,10 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
   const { recommendations } = aiResult.output
   const model = aiResult.model
 
-  // 4. Persist: clear old needs_review (but not those with in-motion siblings), insert new
+  // 4. Persist: clear stale needs_review for campaigns receiving new recs, then insert
   try {
-    await clearNeedsReview(db)
+    const newRecCampaignKeys = new Set(recommendations.map(r => `${r.platform}:${r.campaign_id}`))
+    await clearStaleReviews(db, newRecCampaignKeys)
     const targets = new Map<string, SyncedTarget>()
     for (const input of metaInputs) targets.set(`meta:${input.campaign.id}`, { platform: 'meta', campaignId: input.campaign.id, accountId: input.campaign.ad_account_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget ? Number(input.campaign.daily_budget) : null })
     for (const input of googleInputs) targets.set(`google:${input.campaign.campaign_id}`, { platform: 'google', campaignId: input.campaign.campaign_id, accountId: input.campaign.customer_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget_micros ? input.campaign.daily_budget_micros / 1_000_000 : null, campaignBudgetResourceName: input.campaign.budget_resource_name ?? undefined, sharedBudget: input.campaign.budget_explicitly_shared ?? undefined })

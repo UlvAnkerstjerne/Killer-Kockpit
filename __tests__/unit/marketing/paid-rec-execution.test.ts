@@ -93,76 +93,64 @@ describe('determineOutcome', () => {
 // ─── Duplicate suppression logic ────────────────────────────────────────────
 
 describe('duplicate suppression', () => {
-  // Extracted filter logic from generate.ts — mirrors the suppression step
-  // Suppresses while: executing or in_motion. Allows again at terminal states.
+  // Mirrors the suppression step from generate.ts.
+  // activeKeys = campaigns with non-dismissed pending_approval/executing/in_motion recs.
+  // Dismissed recs are excluded from activeKeys by the DB query (.neq('status', 'dismissed')).
   function filterSuppressed(
     signals: Array<{ platform: string; campaign_id: string }>,
-    activeExecKeys: Set<string>,
+    activeKeys: Set<string>,
   ) {
-    return signals.filter(s => !activeExecKeys.has(`${s.platform}:${s.campaign_id}`))
+    return signals.filter(s => !activeKeys.has(`${s.platform}:${s.campaign_id}`))
   }
 
   it('11. in_motion campaign key is filtered out', () => {
-    const signals = [
-      { platform: 'meta', campaign_id: 'c1' },
-      { platform: 'meta', campaign_id: 'c2' },
-    ]
-    const activeExecKeys = new Set(['meta:c1'])
-    const result = filterSuppressed(signals, activeExecKeys)
-    expect(result).toHaveLength(1)
-    expect(result[0].campaign_id).toBe('c2')
+    const signals = [{ platform: 'meta', campaign_id: 'c1' }, { platform: 'meta', campaign_id: 'c2' }]
+    expect(filterSuppressed(signals, new Set(['meta:c1']))).toHaveLength(1)
   })
 
   it('11b. executing campaign key is filtered out', () => {
-    const signals = [
-      { platform: 'meta', campaign_id: 'c1' },
-      { platform: 'google', campaign_id: 'c2' },
-    ]
-    // c1 is in 'executing' state (claim in progress)
-    const activeExecKeys = new Set(['meta:c1'])
-    const result = filterSuppressed(signals, activeExecKeys)
-    expect(result).toHaveLength(1)
-    expect(result[0].campaign_id).toBe('c2')
+    const signals = [{ platform: 'meta', campaign_id: 'c1' }, { platform: 'google', campaign_id: 'c2' }]
+    expect(filterSuppressed(signals, new Set(['meta:c1']))).toHaveLength(1)
   })
 
   it('12. completed campaign key is NOT filtered out', () => {
-    // completed campaigns are not in the activeExecKeys set
-    const signals = [
-      { platform: 'meta', campaign_id: 'c1' },
-    ]
-    const activeExecKeys = new Set<string>()  // c1 was completed, not in set
-    const result = filterSuppressed(signals, activeExecKeys)
-    expect(result).toHaveLength(1)
+    expect(filterSuppressed([{ platform: 'meta', campaign_id: 'c1' }], new Set())).toHaveLength(1)
   })
 
   it('12b. failed campaign key is NOT filtered out', () => {
-    const signals = [
-      { platform: 'meta', campaign_id: 'c1' },
-    ]
-    const activeExecKeys = new Set<string>()  // c1 failed, not in active set
-    const result = filterSuppressed(signals, activeExecKeys)
-    expect(result).toHaveLength(1)
+    expect(filterSuppressed([{ platform: 'meta', campaign_id: 'c1' }], new Set())).toHaveLength(1)
   })
 
   it('12c. needs_attention campaign key is NOT filtered out', () => {
-    const signals = [
-      { platform: 'google', campaign_id: 'c3' },
-    ]
-    const activeExecKeys = new Set<string>()  // c3 needs_attention, not in active set
-    const result = filterSuppressed(signals, activeExecKeys)
-    expect(result).toHaveLength(1)
+    expect(filterSuppressed([{ platform: 'google', campaign_id: 'c3' }], new Set())).toHaveLength(1)
   })
 
-  it('12d. pending_approval campaign key IS filtered out (prevents contradictory recs)', () => {
-    const signals = [
-      { platform: 'meta', campaign_id: 'c1' },
-      { platform: 'meta', campaign_id: 'c2' },
-    ]
-    // c1 has a pending_approval recommendation already
-    const activeExecKeys = new Set(['meta:c1'])
-    const result = filterSuppressed(signals, activeExecKeys)
+  it('12d. needs_review + pending_approval suppresses (awaiting human action)', () => {
+    const signals = [{ platform: 'meta', campaign_id: 'c1' }, { platform: 'meta', campaign_id: 'c2' }]
+    // c1 is needs_review + pending_approval (not dismissed), so it's in activeKeys
+    const result = filterSuppressed(signals, new Set(['meta:c1']))
     expect(result).toHaveLength(1)
     expect(result[0].campaign_id).toBe('c2')
+  })
+
+  it('12e. dismissed + pending_approval does NOT suppress', () => {
+    // A dismissed rec is excluded from activeKeys by the DB query (.neq('status', 'dismissed'))
+    // So it's not in the set, and the campaign is eligible for new recommendations
+    const signals = [{ platform: 'meta', campaign_id: 'c1' }]
+    const activeKeys = new Set<string>() // c1 was dismissed — not in activeKeys
+    expect(filterSuppressed(signals, activeKeys)).toHaveLength(1)
+  })
+
+  it('12f. different eligible campaign receives new recommendation while another is suppressed', () => {
+    const signals = [
+      { platform: 'meta', campaign_id: 'c1' }, // suppressed: has active rec
+      { platform: 'meta', campaign_id: 'c2' }, // eligible: no active rec
+      { platform: 'google', campaign_id: 'c3' }, // eligible: no active rec
+    ]
+    const activeKeys = new Set(['meta:c1'])
+    const result = filterSuppressed(signals, activeKeys)
+    expect(result).toHaveLength(2)
+    expect(result.map(r => r.campaign_id)).toEqual(['c2', 'c3'])
   })
 })
 
