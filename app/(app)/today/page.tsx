@@ -468,7 +468,7 @@ export default async function TodayPage({
         <TodoBlock
           openTodos={openTodos}
           completedThisWeek={[]}
-          maxItems={10}
+          maxItems={8}
           showFooter
           accentHeader
           allUsers={todoAllUsers}
@@ -538,7 +538,7 @@ export default async function TodayPage({
             footerLabel="View all tasks"
             icon={<IconWorkWeek />}
             accentHeader
-            maxRows={8}
+            maxRows={6}
           >
             {weekTaskItems.length === 0 ? (
               <EmptyRow text="No remaining tasks this week." />
