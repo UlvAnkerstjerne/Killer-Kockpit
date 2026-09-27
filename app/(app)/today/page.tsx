@@ -7,9 +7,8 @@ import {
   copenhagenMidnightUTC,
   getDueState,
   sortWorkItems,
-  formatCopenhagenWeekRange,
 } from '@/lib/today/weekUtils'
-import { sortOpenTodos, filterCompletedThisWeek, filterTodosForToday } from '@/lib/today/todoUtils'
+import { sortOpenTodos, filterTodosForToday } from '@/lib/today/todoUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
@@ -105,14 +104,6 @@ function IconWorkWeek() {
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
       <path d="M5 1v3M11 1v3M1.5 6.5h13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    </svg>
-  )
-}
-function IconCompleted() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
-      <path d="M5 8l2.5 2.5L11 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
@@ -231,14 +222,11 @@ export default async function TodayPage({
   // All reads fire in parallel
   const [
     unfinishedTasksRes,
-    completedTasksRes,
     allOpenWOsRes,
-    fulfilledWOsRes,
     todayMeetingsRes,
     weekMeetingsRes,
     draftMeetingsRes,
     openTodosRes,
-    completedWeekTodosRes,
     pendingReviewTasksRes,
     returnedTasksRes,
     activeProjectsRes,
@@ -261,23 +249,6 @@ export default async function TodayPage({
           .is('archived_at', null)
     ),
 
-    // Tasks completed this week
-    (isManagementView
-      ? supabase.from('tasks')
-          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
-          .gte('completed_at', weekStartISO)
-          .lt('completed_at', weekEndISO)
-          .eq('status', 'done')
-          .is('archived_at', null)
-      : supabase.from('tasks')
-          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
-          .eq('owner_user_id', user.id)
-          .gte('completed_at', weekStartISO)
-          .lt('completed_at', weekEndISO)
-          .eq('status', 'done')
-          .is('archived_at', null)
-    ),
-
     // All open waiting ons — no date restriction (Waiting Ons card shows all, not just this week)
     (isManagementView
       ? supabase.from('waiting_ons')
@@ -295,23 +266,6 @@ export default async function TodayPage({
           .order('priority', { ascending: true })
           .order('due_at', { ascending: true, nullsFirst: false })
           .limit(30)
-    ),
-
-    // Waiting ons fulfilled this week
-    (isManagementView
-      ? supabase.from('waiting_ons')
-          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name')
-          .gte('fulfilled_at', weekStartISO)
-          .lt('fulfilled_at', weekEndISO)
-          .eq('status', 'fulfilled')
-          .is('archived_at', null)
-      : supabase.from('waiting_ons')
-          .select('id, title, priority, due_at, fulfilled_at, owner_user_id, waiting_for_name')
-          .eq('owner_user_id', user.id)
-          .gte('fulfilled_at', weekStartISO)
-          .lt('fulfilled_at', weekEndISO)
-          .eq('status', 'fulfilled')
-          .is('archived_at', null)
     ),
 
     // Today's meetings (scheduled + open)
@@ -355,15 +309,6 @@ export default async function TodayPage({
       .order('created_at', { ascending: false })
       .limit(50),
 
-    // Todos completed this week
-    supabase.from('todos')
-      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id')
-      .eq('user_id', user.id)
-      .gte('completed_at', weekStartISO)
-      .lt('completed_at', weekEndISO)
-      .order('completed_at', { ascending: false })
-      .limit(50),
-
     // Tasks pending my review (I am the requester)
     supabase.from('tasks')
       .select('id, title, priority, submitted_at, owner:owner_user_id (id, display_name)')
@@ -394,9 +339,7 @@ export default async function TodayPage({
   // ─── Build unified work items list ────────────────────────────────────────
 
   const unfinishedTasks = (unfinishedTasksRes.data || []) as RawTask[]
-  const completedTasks  = (completedTasksRes.data  || []) as RawTask[]
   const allOpenWOs      = (allOpenWOsRes.data       || []) as RawWO[]
-  const fulfilledWOs    = (fulfilledWOsRes.data     || []) as RawWO[]
   const draftMeetings   = (draftMeetingsRes.data    || []) as { id: string; title: string; scheduled_start: string | null }[]
 
   // For the work items list, only include WOs due within this week
@@ -418,25 +361,9 @@ export default async function TodayPage({
       href: `/waiting-ons/${w.id}`,
       ownerName: isManagementView ? ownerName(w) : undefined,
     })),
-    ...completedTasks.map(t => ({
-      id: t.id, kind: 'task' as const,
-      title: t.title, priority: t.priority,
-      due_at: t.due_at, done_at: t.completed_at,
-      href: `/tasks/${t.id}?returnTo=/today`,
-      ownerName: isManagementView ? ownerName(t) : undefined,
-    })),
-    ...fulfilledWOs.map(w => ({
-      id: w.id, kind: 'waiting_on' as const,
-      title: w.title, priority: w.priority,
-      due_at: w.due_at, done_at: w.fulfilled_at,
-      href: `/waiting-ons/${w.id}`,
-      ownerName: isManagementView ? ownerName(w) : undefined,
-    })),
   ]
 
-  const sorted     = sortWorkItems(workItems, now)
-  const unfinished = sorted.filter(i => i.done_at === null)
-  const done       = sorted.filter(i => i.done_at !== null)
+  const unfinished = sortWorkItems(workItems, now)
 
   // ─── Classify by urgency ──────────────────────────────────────────────────
 
@@ -462,8 +389,7 @@ export default async function TodayPage({
 
   // ─── Todos ────────────────────────────────────────────────────────────────
 
-  const openTodos        = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
-  const completedThisWeek = filterCompletedThisWeek((completedWeekTodosRes.data ?? []) as Todo[], now)
+  const openTodos = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
 
   // ─── Upgrade-to-task modal data (personal view only) ─────────────────────
 
@@ -488,11 +414,7 @@ export default async function TodayPage({
 
   // ─── At-a-glance summary counts ──────────────────────────────────────────
 
-  const overdueCount      = urgentItems.filter(i => getDueState(i.due_at, now, weekEnd) === 'overdue').length
-  const completedCount    = done.length + completedThisWeek.length
-  const meetingsThisWeek  = todayMeetings.length + laterMeetings.length
-
-  const weekRangeLabel = formatCopenhagenWeekRange(weekStart, weekEnd)
+  const meetingsThisWeek = todayMeetings.length + laterMeetings.length
 
   // ─── Render ───────────────────────────────────────────────────────────────
   //
@@ -759,70 +681,6 @@ export default async function TodayPage({
               </div>
             )}
           </DashCard>
-        </div>
-
-        {/* ═══ Card 6 — Completed This Week (left col, row 3) ══════════════ */}
-        <div className="self-start order-6 lg:order-none lg:col-start-1 lg:row-start-3">
-          {(() => {
-            const visibleDone  = done.slice(0, 3)
-            const visibleTodos = completedThisWeek.slice(0, Math.max(0, 3 - visibleDone.length))
-            const overflow     = completedCount - visibleDone.length - visibleTodos.length
-
-            return (
-              <DashCard
-                title="Completed this week"
-                badge={completedCount > 0 ? completedCount : undefined}
-                footerHref="/tasks"
-                footerLabel="View all completed"
-                icon={<IconCompleted />}
-              >
-                {completedCount === 0 ? (
-                  <EmptyRow text="Nothing completed yet — week is just getting started." />
-                ) : (
-                  <div className="divide-y divide-[#171717]/15">
-                    {visibleDone.map(item => (
-                      <Link
-                        key={item.id}
-                        href={item.href}
-                        className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group opacity-80"
-                      >
-                        <PriorityDot priority={item.priority} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {item.kind === 'waiting_on' && <TypeChip label="WO" green />}
-                            <span className="text-sm text-kk-good line-through truncate">{item.title}</span>
-                          </div>
-                          {item.ownerName && (
-                            <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
-                          )}
-                        </div>
-                        {item.done_at && (
-                          <span className="text-xs text-kk-good/70 shrink-0">{formatShortDate(item.done_at)}</span>
-                        )}
-                      </Link>
-                    ))}
-                    {visibleTodos.map(todo => (
-                      <div key={todo.id} className="flex items-center gap-3 px-4 py-1.5 opacity-80">
-                        <PriorityDot priority={todo.priority} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <TypeChip label="To-Do" green />
-                            <span className="text-sm text-kk-good line-through truncate">{todo.title}</span>
-                          </div>
-                        </div>
-                        {todo.completed_at && (
-                          <span className="text-xs text-kk-good/70 shrink-0">{formatShortDate(todo.completed_at)}</span>
-                        )}
-                      </div>
-                    ))}
-                    {overflow > 0 && (
-                      <div className="px-4 py-2 text-xs text-kk-muted">+ {overflow} more</div>
-                    )}
-                  </div>
-                )}
-              </DashCard>
-            )
-          })()}
         </div>
 
         {/* ═══ Card 6b — Ready for Review (right col, between row 3 and 4, personal only) ═══ */}
