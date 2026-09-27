@@ -171,8 +171,8 @@ function DashCard({
   maxRows?: number
 }) {
   return (
-    <div className="bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:4px_4px_0_#555555]">
-      <div className="px-4 py-2 border-b-2 border-[#171717] flex items-center justify-between bg-kraft-brown">
+    <div className="bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:4px_4px_0_#555555] flex flex-col h-full">
+      <div className="px-4 py-2 border-b-2 border-[#171717] flex items-center justify-between bg-kraft-brown shrink-0">
         <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
           {icon && <span className="text-kk-ink/50 shrink-0">{icon}</span>}
           {title}
@@ -181,9 +181,9 @@ function DashCard({
           )}
         </h2>
       </div>
-      <div className={maxRows ? 'overflow-y-auto overscroll-contain' : ''} style={maxRows ? { maxHeight: `${maxRows * 38}px` } : undefined}>{children}</div>
+      <div className={`flex-1 min-h-0 ${maxRows ? 'overflow-y-auto overscroll-contain' : ''}`} style={maxRows ? { maxHeight: `${maxRows * 38}px` } : undefined}>{children}</div>
       {footerHref && footerLabel && (
-        <div className="px-4 py-1.5 border-t border-[#171717]/20 flex justify-end">
+        <div className="px-4 py-1.5 border-t border-[#171717]/20 flex justify-end shrink-0">
           <Link href={footerHref} className="text-xs text-kk-ink font-medium hover:opacity-70 transition-opacity">
             {footerLabel} →
           </Link>
@@ -478,10 +478,10 @@ export default async function TodayPage({
       </div>
 
       {/* ── Dashboard grid — 2×2 beneath To-Dos ──────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch">
 
         {/* ═══ Left col, row 1 — Urgent Now ═══════════════════════════════ */}
-        <div className="self-start order-1 lg:order-none">
+        <div className="order-1 lg:order-none">
           <DashCard
             title="Urgent now"
             badge={urgentItems.length > 0 ? urgentItems.length : undefined}
@@ -530,7 +530,7 @@ export default async function TodayPage({
         </div>
 
         {/* ═══ Right col, row 1 — Work This Week ═════════════════════════ */}
-        <div className="self-start order-2 lg:order-none">
+        <div className="order-2 lg:order-none">
           <DashCard
             title="Work this week"
             badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
@@ -578,7 +578,7 @@ export default async function TodayPage({
         </div>
 
         {/* ═══ Left col, row 2 — Meetings ═════════════════════════════════ */}
-        <div className="self-start order-3 lg:order-none">
+        <div className="order-3 lg:order-none">
           <DashCard
             title="Meetings"
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
@@ -641,7 +641,7 @@ export default async function TodayPage({
         </div>
 
         {/* ═══ Right col, row 2 — Waiting Ons ════════════════════════════ */}
-        <div className="self-start order-4 lg:order-none">
+        <div className="order-4 lg:order-none">
           <DashCard
             title="Waiting ons"
             badge={nonUrgentWOs.length > 0 ? nonUrgentWOs.length : undefined}
@@ -687,7 +687,7 @@ export default async function TodayPage({
 
         {/* ═══ Ready for Review (personal only) ══════════════════════════ */}
         {!isManagementView && pendingReviewTasks.length > 0 && (
-          <div className="self-start order-5 lg:order-none">
+          <div className="order-5 lg:order-none">
   <DashCard
               title="Ready for review"
               badge={pendingReviewTasks.length}
@@ -727,7 +727,7 @@ export default async function TodayPage({
 
         {/* ═══ Card 6c — Returned to You (right col, personal only) ══════════ */}
         {!isManagementView && returnedTasks.length > 0 && (
-          <div className="self-start order-6 lg:order-none">
+          <div className="order-6 lg:order-none">
             <DashCard
               title="Returned to you"
               badge={returnedTasks.length}
