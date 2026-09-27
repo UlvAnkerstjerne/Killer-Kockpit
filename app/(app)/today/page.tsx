@@ -529,8 +529,56 @@ export default async function TodayPage({
           </DashCard>
         </div>
 
-        {/* ═══ Right col, row 1 — Meetings ════════════════════════════════ */}
+        {/* ═══ Right col, row 1 — Work This Week ═════════════════════════ */}
         <div className="self-start order-2 lg:order-none">
+          <DashCard
+            title="Work this week"
+            badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
+            footerHref="/tasks"
+            footerLabel="View all tasks"
+            icon={<IconWorkWeek />}
+            accentHeader
+            maxRows={8}
+          >
+            {weekTaskItems.length === 0 ? (
+              <EmptyRow text="No remaining tasks this week." />
+            ) : (
+              <div className="divide-y divide-[#171717]/15">
+                {weekTaskItems.slice(0, 7).map(item => (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <PriorityDot priority={item.priority} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <TypeChip label={item.kind === 'waiting_on' ? 'WO' : 'Task'} />
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate">
+                          {item.title}
+                        </span>
+                      </div>
+                      {item.ownerName && (
+                        <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
+                      )}
+                    </div>
+                    {item.due_at && (
+                      <span className="text-xs text-kk-muted shrink-0">{formatShortDate(item.due_at)}</span>
+                    )}
+                  </Link>
+                ))}
+                {weekTaskItems.length > 7 && (
+                  <div className="px-4 py-2 text-xs text-kk-muted">
+                    + {weekTaskItems.length - 7} more
+                  </div>
+                )}
+              </div>
+            )}
+          </DashCard>
+        </div>
+
+        {/* ═══ Left col, row 2 — Meetings ═════════════════════════════════ */}
+        <div className="self-start order-3 lg:order-none">
           <DashCard
             title="Meetings"
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
@@ -587,54 +635,6 @@ export default async function TodayPage({
                     <span className="text-xs text-kraft-dark font-medium shrink-0">Draft</span>
                   </Link>
                 ))}
-              </div>
-            )}
-          </DashCard>
-        </div>
-
-        {/* ═══ Left col, row 2 — Work This Week ══════════════════════════ */}
-        <div className="self-start order-3 lg:order-none">
-          <DashCard
-            title="Work this week"
-            badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
-            footerHref="/tasks"
-            footerLabel="View all tasks"
-            icon={<IconWorkWeek />}
-            accentHeader
-            maxRows={8}
-          >
-            {weekTaskItems.length === 0 ? (
-              <EmptyRow text="No remaining tasks this week." />
-            ) : (
-              <div className="divide-y divide-[#171717]/15">
-                {weekTaskItems.slice(0, 7).map(item => (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                  >
-                    <PriorityDot priority={item.priority} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <TypeChip label={item.kind === 'waiting_on' ? 'WO' : 'Task'} />
-                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate">
-                          {item.title}
-                        </span>
-                      </div>
-                      {item.ownerName && (
-                        <div className="text-xs text-kk-muted mt-0.5 truncate">{item.ownerName}</div>
-                      )}
-                    </div>
-                    {item.due_at && (
-                      <span className="text-xs text-kk-muted shrink-0">{formatShortDate(item.due_at)}</span>
-                    )}
-                  </Link>
-                ))}
-                {weekTaskItems.length > 7 && (
-                  <div className="px-4 py-2 text-xs text-kk-muted">
-                    + {weekTaskItems.length - 7} more
-                  </div>
-                )}
               </div>
             )}
           </DashCard>
