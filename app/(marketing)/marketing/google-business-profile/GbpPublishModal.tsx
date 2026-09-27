@@ -29,6 +29,7 @@ export default function GbpPublishModal({ locations }: Props) {
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const publishingRef = useRef(false)
+  const requestIdRef = useRef(crypto.randomUUID())
 
   const activeLocations = locations.filter(l => l.active)
 
@@ -42,6 +43,7 @@ export default function GbpPublishModal({ locations }: Props) {
     setResult(null)
     setError(null)
     publishingRef.current = false
+    requestIdRef.current = crypto.randomUUID()
   }, [activeLocations])
 
   function handleOpen() {
@@ -100,7 +102,7 @@ export default function GbpPublishModal({ locations }: Props) {
     setError(null)
 
     try {
-      // Step 1: upload image
+      // Step 1: upload image to server (returns only trusted storage path)
       const formData = new FormData()
       formData.append('image', imageFile!)
       const uploadRes = await fetch('/api/gbp/publish', { method: 'POST', body: formData })
@@ -108,17 +110,14 @@ export default function GbpPublishModal({ locations }: Props) {
         const body = await uploadRes.json().catch(() => ({ error: 'Upload failed.' }))
         throw new Error(body.error || 'Image upload failed.')
       }
-      const { storagePath, publicUrl, mimeType } = await uploadRes.json() as {
-        storagePath: string; publicUrl: string; mimeType: string
-      }
+      const { storagePath } = await uploadRes.json() as { storagePath: string }
 
-      // Step 2: publish to locations
+      // Step 2: publish to locations (server resolves URL and MIME)
       const publishResult = await publishGbpPost({
         postType: mode,
         caption: mode === 'local_post' ? caption.trim() : undefined,
         imageStoragePath: storagePath,
-        imagePublicUrl: publicUrl,
-        imageMimeType: mimeType,
+        requestId: requestIdRef.current,
         locationIds: Array.from(selectedIds),
       })
 

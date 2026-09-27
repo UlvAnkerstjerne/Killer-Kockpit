@@ -443,12 +443,15 @@ export interface GbpMediaItemResult {
 }
 
 /**
- * Uploads a photo as location media (ADDITIONAL category) using the v4 API.
+ * Uploads a photo as location media (ADDITIONAL category) using Google's
+ * official three-step flow:
  *
- * Uses direct media upload:
- *   POST https://mybusiness.googleapis.com/v4/accounts/{accountId}/locations/{locationId}/media
+ *   1. POST .../media:startUpload  →  MediaItemDataRef.resourceName
+ *   2. POST /upload/v1/media/{resourceName}?upload_type=media  (raw bytes)
+ *   3. POST .../media  (create item with dataRef)
  *
- * The image bytes are sent as a multipart upload.
+ * Each step is individually error-handled; failure at any step stops safely.
+ * Credentials and image bytes are never logged.
  */
 export async function createLocationMedia(
   oauthClient: Auth.OAuth2Client,
@@ -458,52 +461,72 @@ export async function createLocationMedia(
   mimeType: string,
 ): Promise<{ ok: true; data: GbpMediaItemResult } | { ok: false; error: string }> {
   const parent = reviewsParentPath(accountId, locationId)
-  const url = `${REVIEWS_V4_BASE}/${parent}/media`
 
+  // Step 1: Start upload — obtain a media data ref
+  let resourceName: string
+  try {
+    const startUrl = `${REVIEWS_V4_BASE}/${parent}/media:startUpload`
+    const startResult = await gbpFetch<{ resourceName?: string }>(oauthClient, startUrl, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+    if (!startResult.resourceName) {
+      return { ok: false, error: 'startUpload did not return a resource name.' }
+    }
+    resourceName = startResult.resourceName
+  } catch (err) {
+    const message = safeGbpError(err)
+    console.error('[gbp-client] startUpload failed:', message)
+    return { ok: false, error: message }
+  }
+
+  // Step 2: Upload raw image bytes to the upload endpoint
   let token: string | null | undefined
   try { token = (await oauthClient.getAccessToken()).token }
   catch { return { ok: false, error: 'OAuth token refresh failed.' } }
   if (!token) return { ok: false, error: 'No access token available.' }
 
-  const metadata = JSON.stringify({
-    mediaFormat: 'PHOTO',
-    locationAssociation: { category: 'ADDITIONAL' },
-  })
-
-  const boundary = `----KKBoundary${Date.now()}`
-  const parts = [
-    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n`,
-    `--${boundary}\r\nContent-Type: ${mimeType}\r\nContent-Transfer-Encoding: binary\r\n\r\n`,
-  ]
-  const prefix = Buffer.from(parts[0])
-  const mediaHeader = Buffer.from(parts[1])
-  const suffix = Buffer.from(`\r\n--${boundary}--`)
-  const body = Buffer.concat([prefix, mediaHeader, imageBytes, suffix])
-
   try {
-    const response = await fetch(url, {
+    const uploadUrl = `https://mybusiness.googleapis.com/upload/v1/media/${resourceName}?upload_type=media`
+    const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
       cache: 'no-store',
       signal: AbortSignal.timeout(60_000),
       headers: {
         Authorization: `Bearer ${token}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'Content-Type': mimeType,
       },
-      body,
+      body: new Uint8Array(imageBytes),
     })
-    if (!response.ok) {
-      let reason = 'MEDIA_UPLOAD_FAILED'
+    if (!uploadResponse.ok) {
+      let reason = 'BYTE_UPLOAD_FAILED'
       try {
-        const errBody = await response.json() as { error?: { status?: string } }
+        const errBody = await uploadResponse.json() as { error?: { status?: string } }
         if (errBody.error?.status) reason = errBody.error.status
       } catch { /* retain safe fallback */ }
-      return { ok: false, error: `GBP API ${response.status}: ${reason}` }
+      return { ok: false, error: `GBP API ${uploadResponse.status}: ${reason}` }
     }
-    const result = await response.json() as GbpMediaItemResult
+  } catch (err) {
+    const message = safeGbpError(err)
+    console.error('[gbp-client] byte upload failed:', message)
+    return { ok: false, error: message }
+  }
+
+  // Step 3: Create the location media item with the uploaded data ref
+  try {
+    const createUrl = `${REVIEWS_V4_BASE}/${parent}/media`
+    const result = await gbpFetch<GbpMediaItemResult>(oauthClient, createUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        mediaFormat: 'PHOTO',
+        locationAssociation: { category: 'ADDITIONAL' },
+        dataRef: { resourceName },
+      }),
+    })
     return { ok: true, data: result }
   } catch (err) {
     const message = safeGbpError(err)
-    console.error('[gbp-client] createLocationMedia failed:', message)
+    console.error('[gbp-client] media.create failed:', message)
     return { ok: false, error: message }
   }
 }

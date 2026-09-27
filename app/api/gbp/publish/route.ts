@@ -2,11 +2,13 @@
  * POST /api/gbp/publish
  *
  * Receives a multipart form with an image file, uploads it to Supabase Storage
- * (gbp-media bucket, public), and returns the public URL.
+ * (gbp-media bucket, public), and returns ONLY the trusted storage path.
  *
- * This is step 1 of the GBP publish flow. The browser uploads the image here,
- * gets back a public URL, then calls the publishGbpPost server action with
- * the URL and publish parameters.
+ * The browser never receives or controls the public URL or MIME type —
+ * those are resolved server-side by the publish action from the storage object.
+ *
+ * Storage path is user-bound: posts/{userId}/{uuid}.{ext}
+ * The publish action verifies the authenticated user owns the path.
  *
  * Security:
  *   - Authenticated users only (getCurrentUser)
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
 
   const ext = file.type.split('/')[1] === 'jpeg' ? 'jpg' : file.type.split('/')[1]
   const fileId = crypto.randomUUID()
-  const storagePath = `posts/${fileId}.${ext}`
+  const storagePath = `posts/${user.id}/${fileId}.${ext}`
 
   const buffer = Buffer.from(await file.arrayBuffer())
 
@@ -78,15 +80,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Image upload failed. Please retry.' }, { status: 500 })
   }
 
-  const { data: publicUrlData } = db.storage
-    .from('gbp-media')
-    .getPublicUrl(storagePath)
-
-  return NextResponse.json({
-    storagePath,
-    publicUrl: publicUrlData.publicUrl,
-    mimeType: file.type,
-  })
+  // Only return the trusted storage path — the server action resolves URL and MIME.
+  return NextResponse.json({ storagePath })
 }
 
 export async function GET() {
