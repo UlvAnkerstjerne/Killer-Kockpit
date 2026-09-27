@@ -139,6 +139,39 @@ export function buildGooglePaidCampaigns(
   })
 }
 
+// ── Meta canonical action priority ─────────────────────────────────────────
+//
+// Meta actions_json may contain aliases for the same conversion (e.g. "lead",
+// "onsite_web_lead", "offsite_conversion.fb_pixel_lead"). Summing all of them
+// would double-count. We pick ONE canonical action per objective using a
+// deterministic priority list. The first present action wins.
+
+/** Leads: prefer the platform aggregate, then on-platform, then pixel. */
+export const LEAD_ACTIONS = ['lead', 'onsite_web_lead', 'offsite_conversion.fb_pixel_lead']
+/** Sales: prefer the platform aggregate, then pixel, then on-platform. */
+export const PURCHASE_ACTIONS = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_web_purchase', 'omni_purchase']
+/** App installs: prefer the platform aggregate, then mobile-specific. */
+export const INSTALL_ACTIONS = ['app_install', 'mobile_app_install', 'offsite_conversion.fb_pixel_app_install']
+
+/**
+ * Picks the single canonical action from a priority list across all daily rows.
+ * Returns the total count for the first action type that has any non-zero value.
+ * If no matching action exists, returns 0.
+ */
+export function metaCanonicalAction(rows: MetaCampaignInsightRow[], priority: readonly string[]): number {
+  for (const actionType of priority) {
+    let total = 0
+    let found = false
+    for (const row of rows) {
+      const val = Number(row.actions_json?.find(a => a.action_type === actionType)?.value ?? 0)
+      if (val > 0) found = true
+      total += val
+    }
+    if (found) return total
+  }
+  return 0
+}
+
 export function buildMetaPaidCampaigns(
   campaigns: MetaCampaignRow[], accounts: { id: string; name: string; currency: string }[], daily: MetaCampaignInsightRow[], range: PaidRange,
 ): PaidCampaign[] {
@@ -179,6 +212,18 @@ export function buildMetaPaidCampaigns(
     } else if (c.objective === 'OUTCOME_ENGAGEMENT') {
       label = 'Post engagement'; count = postEngagement; cost = costPerResult(spend, count); efficiency = 'Cost / result'
       metrics = [metric('CPM', cpm, 'money'), metric('Impressions', impressions), metric('Daily avg freq.', frequency, 'decimal')]
+    } else if (c.objective === 'OUTCOME_LEADS') {
+      const leadCount = metaCanonicalAction(rows, LEAD_ACTIONS)
+      label = 'Leads'; count = leadCount; cost = costPerResult(spend, leadCount); efficiency = 'Cost / lead'
+      metrics = [metric('CPM', cpm, 'money'), metric('CTR', ctr, 'percent'), metric('Impressions', impressions)]
+    } else if (c.objective === 'OUTCOME_SALES') {
+      const purchaseCount = metaCanonicalAction(rows, PURCHASE_ACTIONS)
+      label = 'Purchases'; count = purchaseCount; cost = costPerResult(spend, purchaseCount); efficiency = 'Cost / purchase'
+      metrics = [metric('CPM', cpm, 'money'), metric('CTR', ctr, 'percent'), metric('Impressions', impressions)]
+    } else if (c.objective === 'OUTCOME_APP_PROMOTION') {
+      const installCount = metaCanonicalAction(rows, INSTALL_ACTIONS)
+      label = 'App installs'; count = installCount; cost = costPerResult(spend, installCount); efficiency = 'Cost / install'
+      metrics = [metric('CPM', cpm, 'money'), metric('CTR', ctr, 'percent'), metric('Impressions', impressions)]
     }
     const dates = rows.filter(r => Number(r.spend) !== 0 || Number(r.impressions) !== 0 || Number(r.clicks) !== 0 || r.actions_json?.some(a => Number(a.value) !== 0)).map(r => r.date_start).sort()
     return {

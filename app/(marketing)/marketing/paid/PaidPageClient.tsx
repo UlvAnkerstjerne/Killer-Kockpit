@@ -18,7 +18,7 @@ function CampaignCard({ campaign: c }: { campaign: PaidCampaign }) {
   const [expanded, setExpanded] = useState(false)
   const detailId = `details-${c.id}`
   const active = c.status === 'ACTIVE' || c.status === 'ENABLED'
-  const effLabel = c.platform === 'meta' && c.results[0]?.id === 'CPM' ? 'cpm' : 'cost/res.'
+  const primaryResult = c.results[0]
   const duplicateLabels = c.results.filter((r, i, all) => all.some((other, j) => j !== i && other.label === r.label)).map(r => r.label)
   return (
     <article className="min-w-0 overflow-hidden rounded-xl border border-kk-line bg-kk-panel">
@@ -46,29 +46,55 @@ function CampaignCard({ campaign: c }: { campaign: PaidCampaign }) {
       </button>
 
       {c.hasActivity ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 border-t border-kk-line divide-x divide-kk-line">
-          {c.results.map(result => (
-            <div key={result.id} className="px-3 py-2" title={result.name}>
-              <div className="text-[10px] font-medium text-kk-muted mb-0.5">{result.label}</div>
-              <div className="text-sm font-bold tabular-nums text-kk-ink" title={exactNumber(result.count)}>{formatPaidNumber(result.count)}</div>
-              <div className="text-[10px] text-kk-muted tabular-nums mt-0.5">{formatPaidMoney(result.costPerResult, c.currency)} /{effLabel}</div>
-              {duplicateLabels.includes(result.label) && <div className="text-[10px] text-kk-muted truncate mt-0.5">{result.name}</div>}
+        <div className="border-t border-kk-line">
+          {/* ── Goal + Primary outcome row ────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-kk-line">
+            <div className="px-3 py-2">
+              <div className="text-[10px] font-medium text-kk-muted mb-0.5">Goal</div>
+              <div className="text-sm font-bold text-kk-ink">{c.goal}</div>
             </div>
-          ))}
-          <div className="px-3 py-2">
-            <div className="text-[10px] font-medium text-kk-muted mb-0.5">Spend</div>
-            <div className="text-sm font-bold tabular-nums text-kk-ink">{formatPaidMoney(c.spend, c.currency)}</div>
-          </div>
-          {c.metrics.map(metric => {
-            const val = metric.value === null ? '\u2014' : metric.format === 'money' ? formatPaidMoney(metric.value, c.currency)
-              : metric.format === 'percent' ? `${metric.value.toFixed(2)}%` : metric.format === 'decimal' ? metric.value.toFixed(2) : formatPaidNumber(metric.value)
-            return (
-              <div key={metric.label} className="px-3 py-2">
-                <div className="text-[10px] font-medium text-kk-muted mb-0.5">{metric.label}</div>
-                <div className="text-sm font-bold tabular-nums text-kk-ink" title={metric.value === null ? undefined : exactNumber(metric.value)}>{val}</div>
+            {primaryResult && (
+              <div className="px-3 py-2" title={primaryResult.name}>
+                <div className="text-[10px] font-medium text-kk-muted mb-0.5">Outcome</div>
+                <div className="text-sm font-bold tabular-nums text-kk-ink" title={exactNumber(primaryResult.count)}>
+                  {formatPaidNumber(primaryResult.count)} {primaryResult.label.toLowerCase()}
+                </div>
               </div>
-            )
-          })}
+            )}
+            {primaryResult && (
+              <div className="px-3 py-2">
+                <div className="text-[10px] font-medium text-kk-muted mb-0.5">{primaryResult.id === 'CPM' ? 'CPM' : `Cost / ${primaryResult.label.toLowerCase().replace(/s$/, '')}`}</div>
+                <div className="text-sm font-bold tabular-nums text-kk-ink">{formatPaidMoney(primaryResult.costPerResult, c.currency)}</div>
+              </div>
+            )}
+            <div className="px-3 py-2">
+              <div className="text-[10px] font-medium text-kk-muted mb-0.5">Spend</div>
+              <div className="text-sm font-bold tabular-nums text-kk-ink">{formatPaidMoney(c.spend, c.currency)}</div>
+            </div>
+          </div>
+          {/* ── Additional results (Google multi-goal) + metrics ─────── */}
+          {(c.results.length > 1 || c.metrics.length > 0) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 border-t border-kk-line/50 divide-x divide-kk-line/50">
+              {c.results.slice(1).map(result => (
+                <div key={result.id} className="px-3 py-1.5" title={result.name}>
+                  <div className="text-[10px] font-medium text-kk-muted mb-0.5">{result.label}</div>
+                  <div className="text-xs font-semibold tabular-nums text-kk-ink" title={exactNumber(result.count)}>{formatPaidNumber(result.count)}</div>
+                  <div className="text-[10px] text-kk-muted tabular-nums">{formatPaidMoney(result.costPerResult, c.currency)} /cost</div>
+                  {duplicateLabels.includes(result.label) && <div className="text-[10px] text-kk-muted truncate">{result.name}</div>}
+                </div>
+              ))}
+              {c.metrics.map(metric => {
+                const val = metric.value === null ? '\u2014' : metric.format === 'money' ? formatPaidMoney(metric.value, c.currency)
+                  : metric.format === 'percent' ? `${metric.value.toFixed(2)}%` : metric.format === 'decimal' ? metric.value.toFixed(2) : formatPaidNumber(metric.value)
+                return (
+                  <div key={metric.label} className="px-3 py-1.5">
+                    <div className="text-[10px] font-medium text-kk-muted mb-0.5">{metric.label}</div>
+                    <div className="text-xs font-semibold tabular-nums text-kk-ink" title={metric.value === null ? undefined : exactNumber(metric.value)}>{val}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <p className="border-t border-kk-line px-4 py-2 text-xs text-kk-muted">No activity in this period.</p>
