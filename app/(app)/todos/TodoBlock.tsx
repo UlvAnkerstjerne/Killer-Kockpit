@@ -423,37 +423,41 @@ export default function TodoBlock({
         </div>
       ) : (
         <div className="divide-y divide-[#171717]/15">
-          {/* ── Sortable open todos ─────────────────────────────────────────── */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          >
-            <SortableContext
-              items={(maxItems ? localOpenTodos.slice(0, maxItems) : localOpenTodos).map(t => t.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {(maxItems ? localOpenTodos.slice(0, maxItems) : localOpenTodos).map(todo => (
-                <SortableOpenTodo
-                  key={todo.id}
-                  todo={todo}
-                  isPending={isPending}
-                  completionLoading={completionLoading}
-                  completingTodoId={completingTodoId}
-                  completionContextText={completionContextText}
-                  completionError={completionError}
-                  canUpgrade={canUpgrade}
-                  onComplete={() => openCompletionBox(todo)}
-                  onCancel={() => handleAction(() => cancelTodo(todo.id))}
-                  onUpgrade={() => setUpgradingTodo(todo)}
-                  onContextChange={setCompletionContextText}
-                  onContextConfirm={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
-                  onContextCancel={() => setCompletingTodoId(null)}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+          {/* ── Sortable open todos (scrollable when exceeding maxItems) ──── */}
+          <div className={maxItems && localOpenTodos.length > maxItems ? `overflow-y-auto overscroll-contain` : ''} style={maxItems && localOpenTodos.length > maxItems ? { maxHeight: `${maxItems * 38}px` } : undefined}>
+            <div className="divide-y divide-[#171717]/15">
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+                modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+              >
+                <SortableContext
+                  items={localOpenTodos.map(t => t.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {localOpenTodos.map(todo => (
+                    <SortableOpenTodo
+                      key={todo.id}
+                      todo={todo}
+                      isPending={isPending}
+                      completionLoading={completionLoading}
+                      completingTodoId={completingTodoId}
+                      completionContextText={completionContextText}
+                      completionError={completionError}
+                      canUpgrade={canUpgrade}
+                      onComplete={() => openCompletionBox(todo)}
+                      onCancel={() => handleAction(() => cancelTodo(todo.id))}
+                      onUpgrade={() => setUpgradingTodo(todo)}
+                      onContextChange={setCompletionContextText}
+                      onContextConfirm={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
+                      onContextCancel={() => setCompletingTodoId(null)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </div>
+          </div>
 
           {/* Completed this week */}
           {completedThisWeek.length > 0 && (
