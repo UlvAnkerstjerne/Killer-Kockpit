@@ -159,7 +159,7 @@ function IconReturned() {
 // ─── Dashboard card shell ────────────────────────────────────────────────────
 
 function DashCard({
-  title, badge, footerHref, footerLabel, children, icon, accentHeader,
+  title, badge, footerHref, footerLabel, children, icon, accentHeader, maxRows,
 }: {
   title: string
   badge?: number | string
@@ -168,6 +168,7 @@ function DashCard({
   children: React.ReactNode
   icon?: React.ReactNode
   accentHeader?: boolean
+  maxRows?: number
 }) {
   return (
     <div className="bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:4px_4px_0_#555555]">
@@ -180,7 +181,7 @@ function DashCard({
           )}
         </h2>
       </div>
-      <div>{children}</div>
+      <div className={maxRows ? 'overflow-y-auto overscroll-contain' : ''} style={maxRows ? { maxHeight: `${maxRows * 38}px` } : undefined}>{children}</div>
       {footerHref && footerLabel && (
         <div className="px-4 py-1.5 border-t border-[#171717]/20 flex justify-end">
           <Link href={footerHref} className="text-xs text-kk-ink font-medium hover:opacity-70 transition-opacity">
@@ -488,6 +489,7 @@ export default async function TodayPage({
             footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : 'View all tasks'}
             icon={<IconUrgent />}
             accentHeader
+            maxRows={6}
           >
             {urgentItems.length === 0 ? (
               <EmptyRow text="No overdue or imminent items." />
@@ -535,6 +537,7 @@ export default async function TodayPage({
             footerHref="/meetings"
             footerLabel="View all meetings"
             icon={<IconMeeting />}
+            maxRows={6}
           >
             {todayMeetings.length === 0 && laterMeetings.length === 0 && draftMeetings.length === 0 ? (
               <EmptyRow text="No meetings this week." />
@@ -598,6 +601,7 @@ export default async function TodayPage({
             footerLabel="View all tasks"
             icon={<IconWorkWeek />}
             accentHeader
+            maxRows={8}
           >
             {weekTaskItems.length === 0 ? (
               <EmptyRow text="No remaining tasks this week." />
@@ -645,6 +649,7 @@ export default async function TodayPage({
             footerLabel="View all waiting ons"
             icon={<IconWaiting />}
             accentHeader
+            maxRows={6}
           >
             {nonUrgentWOs.length === 0 ? (
               <EmptyRow text="No open waiting ons." />
@@ -689,6 +694,7 @@ export default async function TodayPage({
               footerHref="/tasks"
               footerLabel="View all tasks"
               icon={<IconReview />}
+              maxRows={6}
             >
               <div className="divide-y divide-[#171717]/15">
                 {pendingReviewTasks.map((t) => {
@@ -728,6 +734,7 @@ export default async function TodayPage({
               footerHref="/tasks"
               footerLabel="View all tasks"
               icon={<IconReturned />}
+              maxRows={6}
             >
               <div className="divide-y divide-[#171717]/15">
                 {returnedTasks.map((t) => {
