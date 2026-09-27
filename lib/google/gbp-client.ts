@@ -390,3 +390,120 @@ export async function fetchGbpSearchKeywords(client: Auth.OAuth2Client, location
   })
   return fetchPages<GbpSearchKeyword>(client, `${PERF_BASE}/${locationInfoPath(locationId)}/searchkeywords/impressions/monthly?${params}`, 'searchKeywordsCounts')
 }
+
+// ── Publishing: Local Posts & Location Media ────────────────────────────────
+
+export interface GbpLocalPostResult {
+  name?: string        // resource name of the created post
+  state?: string       // e.g. "LIVE"
+  topicType?: string
+  summary?: string
+}
+
+/**
+ * Creates a Local Post (STANDARD update with optional photo) on a GBP location.
+ *
+ * Uses the v4 My Business API:
+ *   POST https://mybusiness.googleapis.com/v4/accounts/{accountId}/locations/{locationId}/localPosts
+ *
+ * mediaSourceUrl must be a publicly accessible URL that Google can fetch.
+ */
+export async function createLocalPost(
+  oauthClient: Auth.OAuth2Client,
+  accountId: string,
+  locationId: string,
+  summary: string,
+  mediaSourceUrl: string,
+): Promise<{ ok: true; data: GbpLocalPostResult } | { ok: false; error: string }> {
+  const parent = reviewsParentPath(accountId, locationId)
+  const url = `${REVIEWS_V4_BASE}/${parent}/localPosts`
+  const body = {
+    topicType: 'STANDARD',
+    languageCode: 'da',
+    summary,
+    media: [{ mediaFormat: 'PHOTO', sourceUrl: mediaSourceUrl }],
+  }
+  try {
+    const result = await gbpFetch<GbpLocalPostResult>(oauthClient, url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    return { ok: true, data: result }
+  } catch (err) {
+    const message = safeGbpError(err)
+    console.error('[gbp-client] createLocalPost failed:', message)
+    return { ok: false, error: message }
+  }
+}
+
+export interface GbpMediaItemResult {
+  name?: string          // resource name of the created media item
+  mediaFormat?: string
+  googleUrl?: string
+}
+
+/**
+ * Uploads a photo as location media (ADDITIONAL category) using the v4 API.
+ *
+ * Uses direct media upload:
+ *   POST https://mybusiness.googleapis.com/v4/accounts/{accountId}/locations/{locationId}/media
+ *
+ * The image bytes are sent as a multipart upload.
+ */
+export async function createLocationMedia(
+  oauthClient: Auth.OAuth2Client,
+  accountId: string,
+  locationId: string,
+  imageBytes: Buffer,
+  mimeType: string,
+): Promise<{ ok: true; data: GbpMediaItemResult } | { ok: false; error: string }> {
+  const parent = reviewsParentPath(accountId, locationId)
+  const url = `${REVIEWS_V4_BASE}/${parent}/media`
+
+  let token: string | null | undefined
+  try { token = (await oauthClient.getAccessToken()).token }
+  catch { return { ok: false, error: 'OAuth token refresh failed.' } }
+  if (!token) return { ok: false, error: 'No access token available.' }
+
+  const metadata = JSON.stringify({
+    mediaFormat: 'PHOTO',
+    locationAssociation: { category: 'ADDITIONAL' },
+  })
+
+  const boundary = `----KKBoundary${Date.now()}`
+  const parts = [
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n`,
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\nContent-Transfer-Encoding: binary\r\n\r\n`,
+  ]
+  const prefix = Buffer.from(parts[0])
+  const mediaHeader = Buffer.from(parts[1])
+  const suffix = Buffer.from(`\r\n--${boundary}--`)
+  const body = Buffer.concat([prefix, mediaHeader, imageBytes, suffix])
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(60_000),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    })
+    if (!response.ok) {
+      let reason = 'MEDIA_UPLOAD_FAILED'
+      try {
+        const errBody = await response.json() as { error?: { status?: string } }
+        if (errBody.error?.status) reason = errBody.error.status
+      } catch { /* retain safe fallback */ }
+      return { ok: false, error: `GBP API ${response.status}: ${reason}` }
+    }
+    const result = await response.json() as GbpMediaItemResult
+    return { ok: true, data: result }
+  } catch (err) {
+    const message = safeGbpError(err)
+    console.error('[gbp-client] createLocationMedia failed:', message)
+    return { ok: false, error: message }
+  }
+}
