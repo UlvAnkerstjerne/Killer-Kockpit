@@ -66,6 +66,7 @@ interface Props {
   maxItems?: number        // if set, cap visible open todos (badge still shows full count)
   showFooter?: boolean     // if true, render a footer link instead of the header "All →" link
   accentHeader?: boolean   // if true, apply warm-grey header (Today page)
+  softPanel?: boolean      // if true, use softer panel styling (new Today design)
   // Upgrade-to-task: when provided, shows "→ Task" action on each open todo row
   allUsers?: UserOption[]
   projects?: ProjectOption[]
@@ -122,7 +123,7 @@ function SortableOpenTodo({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className={`group${isDragging ? ' opacity-50 relative z-10 bg-kraft-light ring-1 ring-[#171717]/20' : ''}`}
+      className={`group${isDragging ? ' opacity-50 relative z-10 bg-white ring-1 ring-[#171717]/10' : ''}`}
     >
       <div className="flex items-stretch">
         {/* ── Drag affordance (decorative only — whole row is draggable) ── */}
@@ -136,17 +137,17 @@ function SortableOpenTodo({
         </div>
 
         {/* ── Row content ───────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 pr-4 py-1.5">
+        <div className="flex-1 min-w-0 pr-4 py-2">
           <div className="flex items-center gap-3">
             {/* Complete button */}
             <button
               onClick={onComplete}
               disabled={isPending || completionLoading}
-              className="w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light hover:bg-[#171717] hover:text-kraft-light transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center [box-shadow:2px_2px_0_#555555] active:translate-x-px active:translate-y-px active:[box-shadow:1px_1px_0_#555555] group"
+              className="w-[18px] h-[18px] rounded-[3px] border border-[#c5bfb4] bg-white hover:border-kk-ink hover:bg-kk-soft transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center group/check"
               title="Mark complete"
               aria-label="Mark complete"
             >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-0 group-hover/check:opacity-60 transition-opacity" aria-hidden="true">
                 <path d="M1.5 5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
@@ -154,16 +155,16 @@ function SortableOpenTodo({
             {/* Title + recurrence indicator */}
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <PriorityDot priority={todo.priority} />
-              <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
+              <span className="text-sm text-kk-ink truncate">{todo.title}</span>
               {todo.recurrence_rule && (
-                <span className="text-[10px] text-kk-brand/60 shrink-0">
-                  ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                <span className="text-[10px] font-semibold text-[#AD3919] bg-[#AD3919]/10 rounded-full px-1.5 py-px shrink-0">
+                  {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
                 </span>
               )}
             </div>
 
             {/* Priority label */}
-            <span className="text-[10px] text-kk-muted shrink-0">
+            <span className="text-xs text-kk-muted shrink-0">
               {PRIORITY_CONFIG[todo.priority]?.label}
             </span>
 
@@ -180,21 +181,23 @@ function SortableOpenTodo({
               </button>
             )}
 
-            {/* Cancel button — visible on hover */}
+            {/* Three-dot menu button */}
             <button
               onClick={onCancel}
               disabled={isPending}
-              className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
-              title="Cancel"
-              aria-label="Cancel"
+              className="text-kk-muted/40 hover:text-kk-muted transition-colors shrink-0"
+              title="More actions"
+              aria-label="More actions"
             >
-              ×
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <circle cx="8" cy="3" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="13" r="1.2"/>
+              </svg>
             </button>
           </div>
 
           {/* Completion context box */}
           {completingTodoId === todo.id && (
-            <div className="mt-2 pt-2 border-t border-[#171717]/20 space-y-1.5">
+            <div className="mt-2 pt-2 border-t border-kk-line space-y-1.5">
               <div>
                 <p className="text-xs font-semibold text-kk-ink">Add context</p>
                 <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
@@ -204,7 +207,7 @@ function SortableOpenTodo({
                 onChange={e => onContextChange(e.target.value)}
                 rows={2}
                 placeholder="e.g. Confirmed with the team, all done."
-                className="w-full text-xs text-kk-ink bg-kk-soft rounded-lg px-3 py-1.5 outline-none resize-none placeholder:text-kk-muted"
+                className="w-full text-xs text-kk-ink bg-kk-bg rounded-lg px-3 py-1.5 outline-none resize-none placeholder:text-kk-muted border border-kk-line"
                 disabled={completionLoading}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
@@ -232,7 +235,7 @@ function SortableOpenTodo({
                   type="button"
                   onClick={onContextCancel}
                   disabled={completionLoading}
-                  className="text-xs px-3 py-1 border border-[#171717]/30 text-kk-muted rounded-lg hover:bg-[#B7A486]/20 transition-colors"
+                  className="text-xs px-3 py-1 border border-kk-line text-kk-muted rounded-lg hover:bg-kk-soft transition-colors"
                 >
                   Cancel
                 </button>
@@ -250,7 +253,7 @@ function SortableOpenTodo({
 // ---------------------------------------------------------------------------
 
 export default function TodoBlock({
-  openTodos, completedThisWeek, maxItems, showFooter, accentHeader,
+  openTodos, completedThisWeek, maxItems, showFooter, accentHeader, softPanel,
   allUsers, projects, currentUserId,
 }: Props) {
   const router = useRouter()
@@ -348,21 +351,31 @@ export default function TodoBlock({
     startTransition(() => router.refresh())
   }
 
+  const soft = softPanel ?? false
+  const panelCls = soft
+    ? 'bg-white border border-kk-line rounded-xl overflow-hidden shadow-sm'
+    : 'bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:4px_4px_0_#555555]'
+  const headerCls = soft
+    ? 'px-5 py-3 border-b border-kk-line flex items-center justify-between'
+    : 'px-4 py-2 border-b-2 border-[#171717] flex items-center justify-between bg-kraft-brown'
+  const formBorderCls = soft ? 'border-b border-kk-line' : 'border-b-2 border-[#171717]'
+  const dividerCls = soft ? 'divide-y divide-kk-line/60' : 'divide-y divide-[#171717]/15'
+
   return (
-    <div className="bg-kraft-light border-2 border-[#171717] rounded-lg overflow-hidden [box-shadow:4px_4px_0_#555555]">
+    <div className={panelCls}>
       {/* Header */}
-      <div className="px-4 py-2 border-b-2 border-[#171717] flex items-center justify-between bg-kraft-brown">
-        <h2 className="text-sm font-bold text-kk-ink flex items-center gap-1.5">
-          <span className="text-kk-ink/50 shrink-0">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <div className={headerCls}>
+        <h2 className="text-base font-bold text-kk-ink flex items-center gap-2">
+          <span className="text-kk-muted shrink-0">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2.5" y="2.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
               <rect x="2.5" y="9.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
               <path d="M9.5 4.5h4M9.5 11.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
           </span>
-          To-Dos
+          My To-Dos
           {openTodos.length > 0 && (
-            <span className="text-kk-muted font-normal ml-1">· {openTodos.length} open</span>
+            <span className="text-kk-muted font-normal text-sm">· {openTodos.length} items</span>
           )}
         </h2>
         <div className="flex items-center gap-3">
@@ -380,7 +393,7 @@ export default function TodoBlock({
       </div>
 
       {/* Quick-add form */}
-      <form onSubmit={handleCreate} className="px-4 py-2.5 border-b-2 border-[#171717] flex items-center gap-2">
+      <form onSubmit={handleCreate} className={`px-5 py-3 ${formBorderCls} flex items-center gap-2`}>
         <input
           ref={inputRef}
           type="text"
@@ -388,13 +401,17 @@ export default function TodoBlock({
           onChange={e => setTitle(e.target.value)}
           placeholder="Add a to-do…"
           maxLength={200}
-          className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none transition-colors"
+          className={soft
+            ? 'flex-1 text-sm bg-kk-bg border border-kk-line rounded-lg px-3 py-2 text-kk-ink placeholder:text-kk-muted outline-none focus:border-kk-muted transition-colors'
+            : 'flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none transition-colors'}
           disabled={isPending}
         />
         <select
           value={priority}
           onChange={e => setPriority(Number(e.target.value) as 1 | 2 | 3 | 4)}
-          className="text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
+          className={soft
+            ? 'text-xs text-kk-muted bg-white border border-kk-line rounded-lg px-2.5 py-2 outline-none cursor-pointer hover:border-kk-muted transition-colors shrink-0'
+            : 'text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0'}
           disabled={isPending}
           aria-label="Priority"
         >
@@ -406,7 +423,9 @@ export default function TodoBlock({
         <button
           type="submit"
           disabled={!title.trim() || isPending}
-          className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0 [box-shadow:3px_3px_0_#555555]"
+          className={soft
+            ? 'text-sm font-semibold px-4 py-2 bg-[#AD3919] text-white rounded-lg disabled:opacity-30 transition-opacity hover:opacity-90 shrink-0'
+            : 'text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0 [box-shadow:3px_3px_0_#555555]'}
         >
           Add
         </button>
@@ -422,7 +441,7 @@ export default function TodoBlock({
           No to-dos. Add one above.
         </div>
       ) : (
-        <div className="divide-y divide-[#171717]/15">
+        <div className={dividerCls}>
           {/* ── Sortable open todos ─────────────────────────────────────────── */}
           <DndContext
             sensors={sensors}
@@ -458,9 +477,9 @@ export default function TodoBlock({
           {/* Completed this week */}
           {completedThisWeek.length > 0 && (
             <>
-              <div className="px-5 py-2 bg-kraft-brown/40">
+              <div className="px-5 py-2 bg-kk-good-bg/40">
                 <span className="text-xs font-medium text-kk-good">
-                  ✓ Completed this week · {completedThisWeek.length}
+                  Completed this week · {completedThisWeek.length}
                 </span>
               </div>
               {completedThisWeek.map(todo => (
@@ -473,7 +492,7 @@ export default function TodoBlock({
                   <div className="flex-1 min-w-0">
                     <span className="text-sm text-kk-muted line-through truncate block">{todo.title}</span>
                     {todo.completion_context && (
-                      <p className="text-[10px] text-kk-good/80 truncate mt-0.5">✓ {todo.completion_context}</p>
+                      <p className="text-[10px] text-kk-good/80 truncate mt-0.5">{todo.completion_context}</p>
                     )}
                   </div>
                   <button
@@ -492,12 +511,12 @@ export default function TodoBlock({
       )}
 
       {actionError && (
-        <div className="px-5 py-2 border-t border-[#171717]/20 text-xs text-kk-bad">{actionError}</div>
+        <div className="px-5 py-2 border-t border-kk-line text-xs text-kk-bad">{actionError}</div>
       )}
 
       {showFooter && (
-        <div className="px-4 py-1.5 border-t border-[#171717]/20 flex justify-end">
-          <Link href="/todos" className="text-xs text-kk-ink font-medium hover:opacity-70 transition-opacity">
+        <div className={`px-5 py-2 ${soft ? 'border-t border-kk-line' : 'border-t border-[#171717]/20'} flex justify-end`}>
+          <Link href="/todos" className="text-xs text-kk-muted font-medium hover:text-kk-ink transition-colors">
             View all to-dos →
           </Link>
         </div>
