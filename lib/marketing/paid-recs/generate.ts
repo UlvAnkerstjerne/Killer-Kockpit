@@ -124,7 +124,7 @@ async function loadGoogleData(db: Db, ranges: RecDateRanges): Promise<GoogleCamp
   const [campaigns, accounts, actions, daily] = await Promise.all([
     readPages<GooglePaidCampaign>(offset =>
       db.from('google_ads_campaigns')
-        .select('customer_id,campaign_id,name,status,channel_type,channel_sub_type,bidding_strategy_type,goal_config_level,conversion_goals,custom_conversion_goal,synced_at')
+        .select('customer_id,campaign_id,name,status,channel_type,channel_sub_type,bidding_strategy_type,goal_config_level,conversion_goals,custom_conversion_goal,budget_resource_name,daily_budget_micros,budget_explicitly_shared,synced_at')
         .eq('status', 'ENABLED')
         .order('customer_id').order('campaign_id').range(offset, offset + 499)
     ),
@@ -286,19 +286,20 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     return { ok: true, signalCount: 0, recommendationCount: 0, skipped: true }
   }
 
-  // 2b. Suppress signals for campaigns that already have an active execution
-  //     Suppress while: executing (claim in progress) or in_motion (monitoring/running)
-  //     Allow again once terminal: completed, failed, needs_attention
+  // 2b. Suppress signals for campaigns that already have an active or pending recommendation.
+  //     Suppress while: pending_approval (awaiting user action), executing, or in_motion.
+  //     This prevents contradictory simultaneous recommendations (e.g. pause + resume).
+  //     Allow again once terminal: completed, failed, needs_attention.
   const { data: activeExecRecs } = await db
     .from('paid_recommendations')
     .select('platform, campaign_id')
-    .in('execution_status', ['executing', 'in_motion'])
+    .in('execution_status', ['pending_approval', 'executing', 'in_motion'])
   const activeExecKeys = new Set(
     (activeExecRecs ?? []).map((r: { platform: string; campaign_id: string }) => `${r.platform}:${r.campaign_id}`),
   )
   const filteredSignals = signals.filter(s => !activeExecKeys.has(`${s.platform}:${s.campaign_id}`))
   if (filteredSignals.length === 0) {
-    console.log('[paid-recs/generate] All signals suppressed — campaigns already executing or in motion.')
+    console.log('[paid-recs/generate] All signals suppressed — campaigns already have active recommendations.')
     return { ok: true, signalCount: signals.length, recommendationCount: 0, skipped: true }
   }
 
@@ -317,7 +318,7 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     await clearNeedsReview(db)
     const targets = new Map<string, SyncedTarget>()
     for (const input of metaInputs) targets.set(`meta:${input.campaign.id}`, { platform: 'meta', campaignId: input.campaign.id, accountId: input.campaign.ad_account_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget ? Number(input.campaign.daily_budget) : null })
-    for (const input of googleInputs) targets.set(`google:${input.campaign.campaign_id}`, { platform: 'google', campaignId: input.campaign.campaign_id, accountId: input.campaign.customer_id, status: input.campaign.status, currency: input.campaign.currency })
+    for (const input of googleInputs) targets.set(`google:${input.campaign.campaign_id}`, { platform: 'google', campaignId: input.campaign.campaign_id, accountId: input.campaign.customer_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget_micros ? input.campaign.daily_budget_micros / 1_000_000 : null, campaignBudgetResourceName: input.campaign.budget_resource_name ?? undefined, sharedBudget: input.campaign.budget_explicitly_shared ?? undefined })
     // Resolve configured account IDs from canonical server-side config.
     // Meta: META_AD_ACCOUNT_ID env var (same as sync uses).
     // Google: GOOGLE_ADS_CUSTOMER_ID constant from ads-sync.ts (single source of truth).

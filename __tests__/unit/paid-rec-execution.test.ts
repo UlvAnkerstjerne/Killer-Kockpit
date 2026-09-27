@@ -251,4 +251,145 @@ describe('execution and recovery', () => {
     const result = await executeTrustedPlan(metaPlan, { read, mutate: vi.fn().mockResolvedValue({}) })
     expect(result).toMatchObject({ ok: false, status: 'needs_attention' })
   })
+  it('rejects non-mutation plan types', async () => {
+    const monitorPlan = { action_type: 'monitor_only', platform: 'meta', campaign_id: '1' }
+    const diagPlan = { action_type: 'run_tracking_diagnostic', platform: 'meta', campaign_id: '1' }
+    const taskPlan = { action_type: 'create_task', platform: 'meta', campaign_id: '1', reason: 'Needs manual review for tracking.' }
+    for (const plan of [monitorPlan, diagPlan, taskPlan]) {
+      const result = await executeTrustedPlan(plan, { read: vi.fn(), mutate: vi.fn() })
+      expect(result.ok).toBe(false)
+    }
+  })
+})
+
+// ─── Google budget plan compilation (with synced budget data) ────────────
+
+describe('Google budget plan compilation with synced data', () => {
+  const googleBudgetTarget: SyncedTarget = {
+    platform: 'google', campaignId: '456', accountId: '8582465933', status: 'ENABLED', currency: 'DKK',
+    dailyBudget: 50, // 50 DKK (already converted from micros)
+    campaignBudgetResourceName: 'customers/8582465933/campaignBudgets/999',
+    sharedBudget: false,
+  }
+  const configured: ConfiguredAccounts = { googleCustomerId: '8582465933' }
+
+  it('compiles Google budget plan when synced data is complete', () => {
+    const result = compileExecutionPlan(
+      { action_type: 'set_daily_budget', target_id: '456', target_type: 'campaign', target_daily_budget: 40 },
+      googleBudgetTarget, configured,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.plan).toMatchObject({
+        action_type: 'google_set_campaign_budget',
+        customer_id: '8582465933',
+        campaign_budget_resource_name: 'customers/8582465933/campaignBudgets/999',
+        shared_budget: false,
+        currency: 'DKK',
+        current_daily_budget: 50,
+        target_daily_budget: 40,
+      })
+    }
+  })
+
+  it('rejects Google budget when synced data has shared budget', () => {
+    const shared = { ...googleBudgetTarget, sharedBudget: true }
+    const result = compileExecutionPlan(
+      { action_type: 'set_daily_budget', target_id: '456', target_type: 'campaign', target_daily_budget: 40 },
+      shared, configured,
+    )
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toContain('Shared budgets')
+  })
+
+  it('rejects Google budget when synced data has no budget amount', () => {
+    const noBudget = { ...googleBudgetTarget, dailyBudget: null }
+    const result = compileExecutionPlan(
+      { action_type: 'set_daily_budget', target_id: '456', target_type: 'campaign', target_daily_budget: 40 },
+      noBudget as SyncedTarget, configured,
+    )
+    expect(result.ok).toBe(false)
+  })
+
+  it('compiles Google pause without budget data', () => {
+    const noBudget: SyncedTarget = { platform: 'google', campaignId: '456', accountId: '8582465933', status: 'ENABLED', currency: 'DKK' }
+    const result = compileExecutionPlan(
+      { action_type: 'pause_campaign', target_id: '456' },
+      noBudget, configured,
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('compiles Google resume without budget data', () => {
+    const noBudget: SyncedTarget = { platform: 'google', campaignId: '456', accountId: '8582465933', status: 'PAUSED', currency: 'DKK' }
+    const result = compileExecutionPlan(
+      { action_type: 'resume_campaign', target_id: '456' },
+      noBudget, configured,
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects Google budget exceeding 25% automation limit', () => {
+    const result = compileExecutionPlan(
+      { action_type: 'set_daily_budget', target_id: '456', target_type: 'campaign', target_daily_budget: 30 }, // -40%
+      googleBudgetTarget, configured,
+    )
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toContain('25%')
+  })
+})
+
+// ─── Status toggle semantics ────────────────────────────────────────────
+
+describe('executor matchesExpected for status toggles', () => {
+  it('verifies Meta pause reads back PAUSED', async () => {
+    const pausePlan = { action_type: 'meta_pause_campaign', platform: 'meta', target_type: 'campaign', target_id: '1', ad_account_id: 'act_2', expected_current_status: 'ACTIVE' } as const
+    const read = vi.fn()
+      .mockResolvedValueOnce({ platform: 'meta', accountId: 'act_2', status: 'ACTIVE' })
+      .mockResolvedValueOnce({ platform: 'meta', accountId: 'act_2', status: 'PAUSED' })
+    const result = await executeTrustedPlan(pausePlan, { read, mutate: vi.fn().mockResolvedValue({}) })
+    expect(result.ok).toBe(true)
+  })
+
+  it('verifies Meta resume reads back ACTIVE', async () => {
+    const resumePlan = { action_type: 'meta_resume_campaign', platform: 'meta', target_type: 'campaign', target_id: '1', ad_account_id: 'act_2', expected_current_status: 'PAUSED' } as const
+    const read = vi.fn()
+      .mockResolvedValueOnce({ platform: 'meta', accountId: 'act_2', status: 'PAUSED' })
+      .mockResolvedValueOnce({ platform: 'meta', accountId: 'act_2', status: 'ACTIVE' })
+    const result = await executeTrustedPlan(resumePlan, { read, mutate: vi.fn().mockResolvedValue({}) })
+    expect(result.ok).toBe(true)
+  })
+
+  it('verifies Google pause reads back PAUSED', async () => {
+    const pausePlan = { action_type: 'google_pause_campaign', platform: 'google', customer_id: '1234567890', campaign_id: '1', expected_current_status: 'ENABLED' } as const
+    const read = vi.fn()
+      .mockResolvedValueOnce({ platform: 'google', accountId: '1234567890', status: 'ENABLED' })
+      .mockResolvedValueOnce({ platform: 'google', accountId: '1234567890', status: 'PAUSED' })
+    const result = await executeTrustedPlan(pausePlan, { read, mutate: vi.fn().mockResolvedValue({}) })
+    expect(result.ok).toBe(true)
+  })
+
+  it('verifies Google resume reads back ENABLED', async () => {
+    const resumePlan = { action_type: 'google_resume_campaign', platform: 'google', customer_id: '1234567890', campaign_id: '1', expected_current_status: 'PAUSED' } as const
+    const read = vi.fn()
+      .mockResolvedValueOnce({ platform: 'google', accountId: '1234567890', status: 'PAUSED' })
+      .mockResolvedValueOnce({ platform: 'google', accountId: '1234567890', status: 'ENABLED' })
+    const result = await executeTrustedPlan(resumePlan, { read, mutate: vi.fn().mockResolvedValue({}) })
+    expect(result.ok).toBe(true)
+  })
+
+  it('rejects when pre-state does not match expected', async () => {
+    const pausePlan = { action_type: 'meta_pause_campaign', platform: 'meta', target_type: 'campaign', target_id: '1', ad_account_id: 'act_2', expected_current_status: 'ACTIVE' } as const
+    const read = vi.fn().mockResolvedValue({ platform: 'meta', accountId: 'act_2', status: 'PAUSED' }) // already paused
+    const result = await executeTrustedPlan(pausePlan, { read, mutate: vi.fn() })
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toContain('Status changed')
+  })
+
+  it('rejects currency mismatch on budget mutation', () => {
+    const live: LivePaidTarget = { platform: 'meta', accountId: 'act_42', dailyBudget: 300, currency: 'SEK' }
+    const result = checkExecutionGuardrails(metaPlan, live)
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toContain('Currency')
+  })
 })

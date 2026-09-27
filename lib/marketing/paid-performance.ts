@@ -20,9 +20,13 @@ export interface PaidCampaign {
 export interface GooglePaidAccount { customer_id: string; name: string | null; currency_code: string; time_zone: string }
 export interface GooglePaidCampaign {
   customer_id: string; campaign_id: string; name: string; status: string; channel_type: string
+  channel_sub_type?: string | null; bidding_strategy_type?: string | null
   goal_config_level: string | null
   conversion_goals: { category: string; origin: string; biddable: boolean }[]
   custom_conversion_goal: { resourceName: string; conversionActions?: string[] } | null
+  budget_resource_name?: string | null
+  daily_budget_micros?: number | null
+  budget_explicitly_shared?: boolean | null
 }
 export interface GooglePaidAction {
   customer_id: string; resource_name: string; name: string; category: string

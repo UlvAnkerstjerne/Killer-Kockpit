@@ -152,6 +152,18 @@ describe('duplicate suppression', () => {
     const result = filterSuppressed(signals, activeExecKeys)
     expect(result).toHaveLength(1)
   })
+
+  it('12d. pending_approval campaign key IS filtered out (prevents contradictory recs)', () => {
+    const signals = [
+      { platform: 'meta', campaign_id: 'c1' },
+      { platform: 'meta', campaign_id: 'c2' },
+    ]
+    // c1 has a pending_approval recommendation already
+    const activeExecKeys = new Set(['meta:c1'])
+    const result = filterSuppressed(signals, activeExecKeys)
+    expect(result).toHaveLength(1)
+    expect(result[0].campaign_id).toBe('c2')
+  })
 })
 
 // ─── Execution type assignment ──────────────────────────────────────────────

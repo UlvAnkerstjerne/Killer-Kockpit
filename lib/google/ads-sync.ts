@@ -118,7 +118,7 @@ export async function runGoogleAdsSync(now = new Date()): Promise<GoogleAdsSyncR
     result.dateRange = range
     const conversionCustomer = customer.conversionTrackingSetting?.googleAdsConversionCustomer
     const conversionCustomerId = conversionCustomer?.match(/^customers\/(\d{10})$/)?.[1] ?? null
-    const campaignRows = await search<{ campaign: AdsCampaign }>("SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.advertising_channel_sub_type, campaign.bidding_strategy_type FROM campaign WHERE campaign.status IN ('ENABLED', 'PAUSED', 'REMOVED')")
+    const campaignRows = await search<{ campaign: AdsCampaign; campaignBudget?: { resourceName?: string; amountMicros?: string; explicitlyShared?: boolean } }>("SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.advertising_channel_sub_type, campaign.bidding_strategy_type, campaign.campaign_budget, campaign_budget.resource_name, campaign_budget.amount_micros, campaign_budget.explicitly_shared FROM campaign WHERE campaign.status IN ('ENABLED', 'PAUSED', 'REMOVED')")
     const actionRows = await search<{ conversionAction: AdsConversionAction }>('SELECT conversion_action.resource_name, conversion_action.id, conversion_action.name, conversion_action.status, conversion_action.type, conversion_action.category, conversion_action.origin, conversion_action.primary_for_goal FROM conversion_action', conversionCustomerId ?? customerId)
     const goalRows = await search<{ campaignConversionGoal: Goal }>('SELECT campaign_conversion_goal.campaign, campaign_conversion_goal.category, campaign_conversion_goal.origin, campaign_conversion_goal.biddable FROM campaign_conversion_goal')
     const configRows = await search<{ conversionGoalCampaignConfig: GoalConfig }>('SELECT conversion_goal_campaign_config.campaign, conversion_goal_campaign_config.goal_config_level, conversion_goal_campaign_config.custom_conversion_goal FROM conversion_goal_campaign_config')
@@ -130,6 +130,7 @@ export async function runGoogleAdsSync(now = new Date()): Promise<GoogleAdsSyncR
     // conversion metrics separately and attach them to the single daily total.
     const conversions = await search<AdsMetricRow>(`SELECT campaign.id, segments.date, segments.conversion_action, segments.conversion_action_name, segments.conversion_action_category, metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value FROM campaign WHERE ${period} AND campaign.status IN ('ENABLED', 'PAUSED', 'REMOVED')`)
     const daily = buildAdsDailyRows(customerId, totals, conversions, await previousDays(db, range), range, startedAt)
+    const budgetByCampaignId = new Map(campaignRows.map(row => [row.campaign.id, row.campaignBudget]))
     const campaigns = campaignRows.map(row => row.campaign)
     const actions = actionRows.map(row => row.conversionAction)
     await upsertRows(db, 'google_ads_accounts', [{ customer_id: customerId, name: customer.descriptiveName ?? null,
@@ -138,11 +139,16 @@ export async function runGoogleAdsSync(now = new Date()): Promise<GoogleAdsSyncR
       const resource = `customers/${customerId}/campaigns/${campaign.id}`
       const config = configRows.find(row => row.conversionGoalCampaignConfig.campaign === resource)?.conversionGoalCampaignConfig
       const custom = customGoals.find(row => row.customConversionGoal.resourceName === config?.customConversionGoal)?.customConversionGoal
+      const budget = budgetByCampaignId.get(campaign.id)
       return { customer_id: customerId, campaign_id: campaign.id, name: campaign.name, status: campaign.status,
         channel_type: campaign.advertisingChannelType, channel_sub_type: campaign.advertisingChannelSubType ?? null,
         bidding_strategy_type: campaign.biddingStrategyType ?? null, goal_config_level: config?.goalConfigLevel ?? null,
         conversion_goals: goalRows.filter(row => row.campaignConversionGoal.campaign === resource).map(({ campaignConversionGoal: goal }) => ({ category: goal.category, origin: goal.origin, biddable: goal.biddable ?? false })),
-        custom_conversion_goal: custom ?? (config?.customConversionGoal ? { resourceName: config.customConversionGoal } : null), synced_at: startedAt }
+        custom_conversion_goal: custom ?? (config?.customConversionGoal ? { resourceName: config.customConversionGoal } : null),
+        budget_resource_name: budget?.resourceName ?? null,
+        daily_budget_micros: budget?.amountMicros ? Number(budget.amountMicros) : null,
+        budget_explicitly_shared: budget?.explicitlyShared ?? null,
+        synced_at: startedAt }
     }), 'customer_id,campaign_id')
     await upsertRows(db, 'google_ads_conversion_actions', actions.map(action => ({ customer_id: customerId, resource_name: action.resourceName,
       action_id: action.id, name: action.name, status: action.status, type: action.type, category: action.category,

@@ -155,7 +155,7 @@ describe('A. Concurrent Approve & start — idempotency', () => {
     expect(resultUpdate).toBeDefined()
     // Audit event recorded
     expect(mocks.auditInserts).toHaveLength(1)
-    expect(mocks.auditInserts[0].action).toBe('marketing.paid_recommendation.approved_and_started')
+    expect(mocks.auditInserts[0].action).toBe('marketing.paid_recommendation.approved_and_executed')
     expect(mocks.auditInserts[0].after_json).toMatchObject({
       execution_type: 'create_task_and_monitor',
       linked_task_id: 'task-1',
