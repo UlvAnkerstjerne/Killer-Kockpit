@@ -462,11 +462,25 @@ export default async function TodayPage({
         <CaptureBar user={user} inline />
       </div>
 
-      {/* ── Dashboard grid ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2.5 items-start">
+      {/* ── To-Dos — full width ─────────────────────────────────────────────── */}
+      <div className="mb-2.5">
+        <TodoBlock
+          openTodos={openTodos}
+          completedThisWeek={[]}
+          maxItems={10}
+          showFooter
+          accentHeader
+          allUsers={todoAllUsers}
+          projects={todoProjects}
+          currentUserId={user.id}
+        />
+      </div>
 
-        {/* ═══ Card 1 — Urgent Now (left col, row 1) ════════════════════════ */}
-        <div className="self-start order-1 lg:order-none lg:col-start-1 lg:row-start-1">
+      {/* ── Dashboard grid — 2×2 beneath To-Dos ──────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
+
+        {/* ═══ Left col, row 1 — Urgent Now ═══════════════════════════════ */}
+        <div className="self-start order-1 lg:order-none">
           <DashCard
             title="Urgent now"
             badge={urgentItems.length > 0 ? urgentItems.length : undefined}
@@ -513,22 +527,70 @@ export default async function TodayPage({
           </DashCard>
         </div>
 
-        {/* ═══ Card 2 — To-Dos (right col, row 1) ══════════════════════════ */}
-        <div className="self-start order-2 lg:order-none lg:col-start-2 lg:row-start-1">
-          <TodoBlock
-            openTodos={openTodos}
-            completedThisWeek={[]}
-            maxItems={10}
-            showFooter
-            accentHeader
-            allUsers={todoAllUsers}
-            projects={todoProjects}
-            currentUserId={user.id}
-          />
+        {/* ═══ Right col, row 1 — Meetings ════════════════════════════════ */}
+        <div className="self-start order-2 lg:order-none">
+          <DashCard
+            title="Meetings"
+            badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
+            footerHref="/meetings"
+            footerLabel="View all meetings"
+            icon={<IconMeeting />}
+          >
+            {todayMeetings.length === 0 && laterMeetings.length === 0 && draftMeetings.length === 0 ? (
+              <EmptyRow text="No meetings this week." />
+            ) : (
+              <div className="divide-y divide-[#171717]/15">
+                {todayMeetings.map(m => (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}`}
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      <div className="text-xs font-medium text-kk-warn mt-0.5">Today</div>
+                    </div>
+                    {m.scheduled_start && (
+                      <span className="text-xs text-kk-muted shrink-0 tabular-nums">{formatTime(m.scheduled_start)}</span>
+                    )}
+                  </Link>
+                ))}
+                {laterMeetings.slice(0, Math.max(0, 5 - todayMeetings.length)).map(m => (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}`}
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      {m.scheduled_start && (
+                        <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+                {canManage && draftMeetings.slice(0, 2).map(m => (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}/publish`}
+                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      {m.scheduled_start && (
+                        <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
+                      )}
+                    </div>
+                    <span className="text-xs text-kraft-dark font-medium shrink-0">Draft</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </DashCard>
         </div>
 
-        {/* ═══ Card 3 — Work This Week (left col, row 2) ═══════════════════ */}
-        <div className="self-start order-3 lg:order-none lg:col-start-1 lg:row-start-2">
+        {/* ═══ Left col, row 2 — Work This Week ══════════════════════════ */}
+        <div className="self-start order-3 lg:order-none">
           <DashCard
             title="Work this week"
             badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
@@ -574,8 +636,8 @@ export default async function TodayPage({
           </DashCard>
         </div>
 
-        {/* ═══ Card 4 — Waiting Ons (right col, row 2) ═════════════════════ */}
-        <div className="self-start order-4 lg:order-none lg:col-start-2 lg:row-start-2">
+        {/* ═══ Right col, row 2 — Waiting Ons ════════════════════════════ */}
+        <div className="self-start order-4 lg:order-none">
           <DashCard
             title="Waiting ons"
             badge={nonUrgentWOs.length > 0 ? nonUrgentWOs.length : undefined}
@@ -618,75 +680,10 @@ export default async function TodayPage({
           </DashCard>
         </div>
 
-        {/* ═══ Card 5 — Meetings (right col, row 3) ════════════════════════ */}
-        <div className="self-start order-5 lg:order-none lg:col-start-2 lg:row-start-3">
-          <DashCard
-            title="Meetings"
-            badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
-            footerHref="/meetings"
-            footerLabel="View all meetings"
-            icon={<IconMeeting />}
-          >
-            {todayMeetings.length === 0 && laterMeetings.length === 0 && draftMeetings.length === 0 ? (
-              <EmptyRow text="No meetings this week." />
-            ) : (
-              <div className="divide-y divide-[#171717]/15">
-                {/* Today */}
-                {todayMeetings.map(m => (
-                  <Link
-                    key={m.id}
-                    href={`/meetings/${m.id}`}
-                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
-                      <div className="text-xs font-medium text-kk-warn mt-0.5">Today</div>
-                    </div>
-                    {m.scheduled_start && (
-                      <span className="text-xs text-kk-muted shrink-0 tabular-nums">{formatTime(m.scheduled_start)}</span>
-                    )}
-                  </Link>
-                ))}
-                {/* Later this week — cap total to keep card compact */}
-                {laterMeetings.slice(0, Math.max(0, 5 - todayMeetings.length)).map(m => (
-                  <Link
-                    key={m.id}
-                    href={`/meetings/${m.id}`}
-                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
-                      {m.scheduled_start && (
-                        <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-                {/* Draft meetings awaiting review (management only) */}
-                {canManage && draftMeetings.slice(0, 2).map(m => (
-                  <Link
-                    key={m.id}
-                    href={`/meetings/${m.id}/publish`}
-                    className="flex items-center gap-3 px-4 py-1.5 hover:bg-[#B7A486]/25 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
-                      {m.scheduled_start && (
-                        <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
-                      )}
-                    </div>
-                    <span className="text-xs text-kraft-dark font-medium shrink-0">Draft</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </DashCard>
-        </div>
-
-        {/* ═══ Card 6b — Ready for Review (right col, between row 3 and 4, personal only) ═══ */}
+        {/* ═══ Ready for Review (personal only) ══════════════════════════ */}
         {!isManagementView && pendingReviewTasks.length > 0 && (
-          <div className="self-start order-[6] lg:order-none lg:col-start-2 lg:row-start-[3]" style={{ gridRow: 'auto' }}>
-            <DashCard
+          <div className="self-start order-5 lg:order-none">
+  <DashCard
               title="Ready for review"
               badge={pendingReviewTasks.length}
               footerHref="/tasks"
@@ -724,7 +721,7 @@ export default async function TodayPage({
 
         {/* ═══ Card 6c — Returned to You (right col, personal only) ══════════ */}
         {!isManagementView && returnedTasks.length > 0 && (
-          <div className="self-start order-[6] lg:order-none lg:col-start-2" style={{ gridRow: 'auto' }}>
+          <div className="self-start order-6 lg:order-none">
             <DashCard
               title="Returned to you"
               badge={returnedTasks.length}
