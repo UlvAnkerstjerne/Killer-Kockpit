@@ -26,6 +26,7 @@ import type {
   RevenueMetrics,
   LabourMetrics,
   KitchenMetrics,
+  SalesMixMetrics,
   GbpMetrics,
   StockTakeStatus,
   MeatUseStatus,
@@ -84,6 +85,10 @@ export interface StoreDashboardProps {
   kitchenYesterday: KitchenMetrics
   kitchenWeek: KitchenMetrics
   kitchenMonth: KitchenMetrics
+  salesMixToday: SalesMixMetrics
+  salesMixYesterday: SalesMixMetrics
+  salesMixWeek: SalesMixMetrics
+  salesMixMonth: SalesMixMetrics
   gbp: GbpMetrics
   latestAudit: DashboardAudit | null
   latestDiner: DashboardDiner | null
@@ -171,19 +176,23 @@ function StorePerformance({
   revenueToday, revenueYesterday, revenueWeek, revenueMonth,
   labourToday, labourYesterday, labourWeek, labourMonth,
   kitchenToday, kitchenYesterday, kitchenWeek, kitchenMonth,
+  salesMixToday, salesMixYesterday, salesMixWeek, salesMixMonth,
 }: Pick<StoreDashboardProps,
   'revenueToday' | 'revenueYesterday' | 'revenueWeek' | 'revenueMonth' |
   'labourToday' | 'labourYesterday' | 'labourWeek' | 'labourMonth' |
-  'kitchenToday' | 'kitchenYesterday' | 'kitchenWeek' | 'kitchenMonth'
+  'kitchenToday' | 'kitchenYesterday' | 'kitchenWeek' | 'kitchenMonth' |
+  'salesMixToday' | 'salesMixYesterday' | 'salesMixWeek' | 'salesMixMonth'
 >) {
   const [period, setPeriod] = useState<Period>('today')
 
   const revMap: Record<Period, RevenueMetrics> = { today: revenueToday, yesterday: revenueYesterday, week: revenueWeek, month: revenueMonth }
   const labMap: Record<Period, LabourMetrics> = { today: labourToday, yesterday: labourYesterday, week: labourWeek, month: labourMonth }
   const kitMap: Record<Period, KitchenMetrics> = { today: kitchenToday, yesterday: kitchenYesterday, week: kitchenWeek, month: kitchenMonth }
+  const mixMap: Record<Period, SalesMixMetrics> = { today: salesMixToday, yesterday: salesMixYesterday, week: salesMixWeek, month: salesMixMonth }
   const rev = revMap[period]
   const lab = labMap[period]
   const kit = kitMap[period]
+  const mix = mixMap[period]
 
   const TABS: { key: Period; label: string }[] = [
     { key: 'today',     label: 'Today' },
@@ -280,6 +289,30 @@ function StorePerformance({
                 {formatPp(kit.vsTarget)} target
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Kombo-% + Lemonades */}
+      <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex mt-4">
+        <div className="flex-1 p-5 border-r-2 border-[#171717]">
+          <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+            Kombo-%
+          </div>
+          <div className="h-10 flex items-end">
+            <span className="text-4xl font-black text-[#171717] leading-none">
+              {mix.komboPct.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+        <div className="flex-1 p-5">
+          <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+            Lemonades
+          </div>
+          <div className="h-10 flex items-end">
+            <span className="text-4xl font-black text-[#171717] leading-none">
+              {mix.lemonades}
+            </span>
           </div>
         </div>
       </div>
@@ -700,6 +733,7 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
     revenueToday, revenueYesterday, revenueWeek, revenueMonth,
     labourToday, labourYesterday, labourWeek, labourMonth,
     kitchenToday, kitchenYesterday, kitchenWeek, kitchenMonth,
+    salesMixToday, salesMixYesterday, salesMixWeek, salesMixMonth,
     gbp,
     latestAudit,
     latestDiner,
@@ -746,6 +780,10 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
               kitchenYesterday={kitchenYesterday}
               kitchenWeek={kitchenWeek}
               kitchenMonth={kitchenMonth}
+              salesMixToday={salesMixToday}
+              salesMixYesterday={salesMixYesterday}
+              salesMixWeek={salesMixWeek}
+              salesMixMonth={salesMixMonth}
             />
           </section>
 

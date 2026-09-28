@@ -6,6 +6,7 @@ import {
   getRevenueDemoData,
   getLabourDemoData,
   getKitchenDemoData,
+  getSalesMixDemoData,
   getStockTakeDemoData,
   getMeatUseDemoData,
 } from '@/lib/store/adapter'
@@ -437,6 +438,10 @@ export default async function StorePage({
   const kitchenYesterday = getKitchenDemoData('yesterday')
   const kitchenWeek      = getKitchenDemoData('week')
   const kitchenMonth     = getKitchenDemoData('month')
+  const salesMixToday     = getSalesMixDemoData('today')
+  const salesMixYesterday = getSalesMixDemoData('yesterday')
+  const salesMixWeek      = getSalesMixDemoData('week')
+  const salesMixMonth     = getSalesMixDemoData('month')
   const gbp           = await fetchGbpMetrics(location.id)
   const stockTake     = getStockTakeDemoData()
   const meatUse       = getMeatUseDemoData()
@@ -458,6 +463,10 @@ export default async function StorePage({
       kitchenYesterday={kitchenYesterday}
       kitchenWeek={kitchenWeek}
       kitchenMonth={kitchenMonth}
+      salesMixToday={salesMixToday}
+      salesMixYesterday={salesMixYesterday}
+      salesMixWeek={salesMixWeek}
+      salesMixMonth={salesMixMonth}
       gbp={gbp}
       latestAudit={latestAudit}
       latestDiner={latestDiner}

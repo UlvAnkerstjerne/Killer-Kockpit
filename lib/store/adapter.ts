@@ -81,6 +81,24 @@ export function getKitchenDemoData(period: 'today' | 'yesterday' | 'week' | 'mon
   return demo[period]
 }
 
+// ─── Sales Mix ───────────────────────────────────────────────────────────────
+
+export interface SalesMixMetrics {
+  komboPct: number
+  lemonades: number
+}
+
+/** @unwired — returns demo data until POS integration is live */
+export function getSalesMixDemoData(period: 'today' | 'yesterday' | 'week' | 'month'): SalesMixMetrics {
+  const demo: Record<'today' | 'yesterday' | 'week' | 'month', SalesMixMetrics> = {
+    today:     { komboPct: 64.2, lemonades: 38 },
+    yesterday: { komboPct: 71.5, lemonades: 52 },
+    week:      { komboPct: 68.3, lemonades: 284 },
+    month:     { komboPct: 66.9, lemonades: 1_120 },
+  }
+  return demo[period]
+}
+
 // ─── Google Business Profile ──────────────────────────────────────────────────
 
 /** Rating trend direction based on trailing 30-day comparison */
