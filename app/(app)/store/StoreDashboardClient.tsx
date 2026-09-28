@@ -209,64 +209,64 @@ function StorePerformance({
       {/* Compound block: Revenue + Labour/Kitchen */}
       <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex">
         {/* Revenue — left */}
-        <div className="flex-1 p-4 border-r-2 border-[#171717]">
-          <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-1">
+        <div className="flex-1 p-5 border-r-2 border-[#171717]">
+          <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
             Revenue
           </div>
-          <div className="text-3xl font-black text-[#171717] leading-none">
+          <div className="text-4xl font-black text-[#171717] leading-none">
             {formatDKK(rev.revenue)}
           </div>
-          <div className="text-[10px] text-[#171717] mt-1">DKK</div>
+          <div className="text-[11px] text-[#171717] mt-1">DKK</div>
           {rev.vsLast != null && (
             <div className="mt-3 flex items-center gap-1.5">
               <span className={[
-                'text-xs font-bold',
+                'text-sm font-bold',
                 rev.vsLast >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
               ].join(' ')}>
                 {formatPct(rev.vsLast, true)}
               </span>
-              <span className="text-[10px] text-[#8D795F]">vs last</span>
+              <span className="text-[11px] text-[#8D795F]">vs last</span>
             </div>
           )}
           {rev.vsBudget != null && (
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className={[
-                'text-xs font-bold',
+                'text-sm font-bold',
                 rev.vsBudget >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
               ].join(' ')}>
                 {formatPct(rev.vsBudget, true)}
               </span>
-              <span className="text-[10px] text-[#8D795F]">vs budget</span>
+              <span className="text-[11px] text-[#8D795F]">vs budget</span>
             </div>
           )}
         </div>
 
         {/* Labour + Kitchen — shared red column */}
-        <div className="w-[130px] shrink-0 flex flex-col bg-[#AD3919]">
+        <div className="w-[140px] shrink-0 flex flex-col bg-[#AD3919]">
           {/* Labour */}
-          <div className="flex-1 p-3 border-b-2 border-[#171717]">
-            <div className="text-[10px] font-black tracking-[0.1em] uppercase text-[#D2C3A7] mb-1">
+          <div className="flex-1 p-4 border-b-2 border-[#171717]">
+            <div className="text-[11px] font-black tracking-[0.1em] uppercase text-[#D2C3A7] mb-1">
               Labour
             </div>
-            <div className="text-2xl font-black text-white leading-none tracking-tight">
+            <div className="text-3xl font-black text-white leading-none tracking-tight">
               {lab.labourPct.toFixed(1)}%
             </div>
             {lab.vsTarget != null && (
-              <div className="text-[10px] text-[#D2C3A7] mt-1">
+              <div className="text-[11px] text-[#D2C3A7] mt-1">
                 {formatPp(lab.vsTarget)} target
               </div>
             )}
           </div>
           {/* Kitchen */}
-          <div className="flex-1 p-3">
-            <div className="text-[10px] font-black tracking-[0.1em] uppercase text-[#D2C3A7] mb-1">
+          <div className="flex-1 p-4">
+            <div className="text-[11px] font-black tracking-[0.1em] uppercase text-[#D2C3A7] mb-1">
               Kitchen
             </div>
-            <div className="text-2xl font-black text-white leading-none tracking-tight">
+            <div className="text-3xl font-black text-white leading-none tracking-tight">
               {kit.kitchenPct.toFixed(1)}%
             </div>
             {kit.vsTarget != null && (
-              <div className="text-[10px] text-[#D2C3A7] mt-1">
+              <div className="text-[11px] text-[#D2C3A7] mt-1">
                 {formatPp(kit.vsTarget)} target
               </div>
             )}
@@ -294,41 +294,41 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
   return (
     <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex">
       {/* Google rating */}
-      <div className="flex-1 p-4 border-r-2 border-[#171717]">
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+      <div className="flex-1 p-5 border-r-2 border-[#171717]">
+        <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Google Rating
         </div>
         {gbp.rating != null ? (
           <>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl font-black text-[#171717] leading-none">
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-black text-[#171717] leading-none">
                 {gbp.rating.toFixed(1)}
               </span>
               {trend && (
-                <span className={`text-sm font-bold ${trend.cls}`}>{trend.arrow}</span>
+                <span className={`text-base font-bold ${trend.cls}`}>{trend.arrow}</span>
               )}
             </div>
-            <div className="text-[10px] text-[#8D795F] mt-1">
+            <div className="text-[11px] text-[#8D795F] mt-1.5">
               ★ {gbp.reviewCount ?? '—'} reviews
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">Unavailable</div>
+          <div className="text-sm text-[#8D795F]">Unavailable</div>
         )}
       </div>
 
       {/* Reviews this week */}
-      <div className="flex-1 p-4">
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+      <div className="flex-1 p-5">
+        <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Reviews This Week
         </div>
         {gbp.reviewsThisWeek != null ? (
           <>
-            <div className="text-3xl font-black text-[#171717] leading-none">
+            <div className="text-4xl font-black text-[#171717] leading-none">
               {gbp.reviewsThisWeek}
             </div>
             {weekComp && (
-              <div className={`text-[10px] mt-1 ${
+              <div className={`text-[11px] mt-1.5 ${
                 weekComp.startsWith('\u2191') ? 'text-[#2f6d4c]' :
                 weekComp.startsWith('\u2193') ? 'text-[#AD3919]' :
                 'text-[#8D795F]'
@@ -338,7 +338,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
             )}
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">Unavailable</div>
+          <div className="text-sm text-[#8D795F]">Unavailable</div>
         )}
       </div>
     </div>
@@ -364,52 +364,52 @@ function LatestChecks({
       {/* Operational Audit */}
       <Link
         href={latestAudit ? `/kkc/audits/${latestAudit.id}` : '/kkc/audits'}
-        className="flex-1 p-4 border-r-2 border-[#171717] group"
+        className="flex-1 p-5 border-r-2 border-[#171717] group"
       >
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+        <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Operational Audit
         </div>
         {latestAudit ? (
           <>
-            <div className="text-3xl font-black text-[#171717] leading-none">
+            <div className="text-4xl font-black text-[#171717] leading-none">
               {latestAudit.score_pct != null
                 ? `${Math.round(latestAudit.score_pct)}%`
                 : '—'}
             </div>
             {latestAudit.audit_status && (
               <div className={[
-                'text-[10px] font-bold mt-1 uppercase tracking-wide',
+                'text-[11px] font-bold mt-1.5 uppercase tracking-wide',
                 AUDIT_STATUS_COLOR[latestAudit.audit_status] ?? 'text-[#8D795F]',
               ].join(' ')}>
                 {latestAudit.audit_status.replace('_', ' ')}
               </div>
             )}
-            <div className="text-[10px] text-[#8D795F] mt-0.5">
+            <div className="text-[11px] text-[#8D795F] mt-0.5">
               {formatRelDate(latestAudit.submitted_at)}
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">No audits yet</div>
+          <div className="text-sm text-[#8D795F]">No audits yet</div>
         )}
       </Link>
 
       {/* Mystery Diner */}
       <Link
         href={latestDiner ? `/diner/${latestDiner.id}` : '/diner'}
-        className="flex-1 p-4 group"
+        className="flex-1 p-5 group"
       >
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+        <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Mystery Diner
         </div>
         {latestDiner ? (
           <>
-            <div className="text-3xl font-black text-[#171717] leading-none">
+            <div className="text-4xl font-black text-[#171717] leading-none">
               {latestDiner.score_pct != null
                 ? `${Math.round(latestDiner.score_pct)}%`
                 : '—'}
             </div>
             <div className={[
-              'text-[10px] font-bold mt-1 uppercase tracking-wide',
+              'text-[11px] font-bold mt-1.5 uppercase tracking-wide',
               latestDiner.status === 'GREEN'  ? 'text-[#2f6d4c]' :
               latestDiner.status === 'YELLOW' ? 'text-[#8a5b16]' :
               latestDiner.status === 'RED'    ? 'text-[#AD3919]' :
@@ -417,12 +417,12 @@ function LatestChecks({
             ].join(' ')}>
               {latestDiner.status ?? 'Pending'}
             </div>
-            <div className="text-[10px] text-[#8D795F] mt-0.5">
+            <div className="text-[11px] text-[#8D795F] mt-0.5">
               {formatRelDate(latestDiner.submitted_at)}
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#8D795F]">No visit yet</div>
+          <div className="text-sm text-[#8D795F]">No visit yet</div>
         )}
       </Link>
     </div>
