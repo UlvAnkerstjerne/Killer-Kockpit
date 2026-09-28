@@ -383,10 +383,12 @@ function LatestChecks({
         </div>
         {latestAudit ? (
           <>
-            <div className="text-4xl font-black text-[#171717] leading-none">
-              {latestAudit.score_pct != null
-                ? `${Math.round(latestAudit.score_pct)}%`
-                : '—'}
+            <div className="h-10 flex items-end">
+              <span className="text-4xl font-black text-[#171717] leading-none">
+                {latestAudit.score_pct != null
+                  ? `${Math.round(latestAudit.score_pct)}%`
+                  : '—'}
+              </span>
             </div>
             {latestAudit.audit_status && (
               <div className={[
@@ -401,7 +403,7 @@ function LatestChecks({
             </div>
           </>
         ) : (
-          <div className="text-sm text-[#8D795F]">No audits yet</div>
+          <div className="text-sm text-[#8D795F] mt-2">No audits yet</div>
         )}
       </Link>
 
@@ -415,10 +417,12 @@ function LatestChecks({
         </div>
         {latestDiner ? (
           <>
-            <div className="text-4xl font-black text-[#171717] leading-none">
-              {latestDiner.score_pct != null
-                ? `${Math.round(latestDiner.score_pct)}%`
-                : '—'}
+            <div className="h-10 flex items-end">
+              <span className="text-4xl font-black text-[#171717] leading-none">
+                {latestDiner.score_pct != null
+                  ? `${Math.round(latestDiner.score_pct)}%`
+                  : '—'}
+              </span>
             </div>
             <div className={[
               'text-[11px] font-bold mt-1.5 uppercase tracking-wide',
