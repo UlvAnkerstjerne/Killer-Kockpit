@@ -47,6 +47,14 @@ vi.mock('@/lib/marketing/brief/material-signals', () => ({
   buildMaterialSignals: vi.fn().mockReturnValue([]),
 }))
 
+vi.mock('@/lib/marketing/brief/detect-drivers', () => ({
+  detectDrivers: vi.fn().mockReturnValue([]),
+}))
+
+vi.mock('@/lib/marketing/brief/driver-context', () => ({
+  collectDriverContext: vi.fn().mockResolvedValue({ googleAds: null, metaPaid: null, igCadence: { posts_current_7d: 0, posts_prior_7d: 0, exceptional_post_ids: [] } }),
+}))
+
 // ── Import after mocks ────────────────────────────────────────────────────────
 
 import { generateMorningBrief, forcedRegenerateMorningBrief } from '@/lib/marketing/brief/generate-brief'
@@ -408,6 +416,7 @@ describe('runGenerationPipeline — material signal wiring', () => {
       expect.anything(),
       expect.anything(),
       [candidate],
+      expect.any(Array),  // driverCandidates
     )
   })
 
