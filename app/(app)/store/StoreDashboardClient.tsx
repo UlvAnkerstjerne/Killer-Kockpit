@@ -310,12 +310,12 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
         </div>
         {gbp.rating != null ? (
           <>
-            <div className="flex items-baseline gap-2">
+            <div className="h-10 flex items-end gap-2">
               <span className="text-4xl font-black text-[#171717] leading-none">
                 {gbp.rating.toFixed(1)}
               </span>
               {trend && (
-                <span className={`text-base font-bold ${trend.cls}`}>{trend.arrow}</span>
+                <span className={`text-base font-bold leading-none mb-0.5 ${trend.cls}`}>{trend.arrow}</span>
               )}
             </div>
             <div className="text-[11px] text-[#8D795F] mt-1.5">
@@ -323,7 +323,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
             </div>
           </>
         ) : (
-          <div className="text-sm text-[#8D795F]">Unavailable</div>
+          <div className="text-sm text-[#8D795F] mt-2">Unavailable</div>
         )}
       </div>
 
@@ -334,8 +334,10 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
         </div>
         {gbp.reviewsThisWeek != null ? (
           <>
-            <div className="text-4xl font-black text-[#171717] leading-none">
-              {gbp.reviewsThisWeek}
+            <div className="h-10 flex items-end">
+              <span className="text-4xl font-black text-[#171717] leading-none">
+                {gbp.reviewsThisWeek}
+              </span>
             </div>
             {weekComp && (
               <div className={`text-[11px] mt-1.5 ${
@@ -348,7 +350,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
             )}
           </>
         ) : (
-          <div className="text-sm text-[#8D795F]">Unavailable</div>
+          <div className="text-sm text-[#8D795F] mt-2">Unavailable</div>
         )}
       </div>
     </div>
