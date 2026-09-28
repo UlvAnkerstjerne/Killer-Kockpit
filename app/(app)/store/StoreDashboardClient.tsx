@@ -677,10 +677,10 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
 
         {/* ── Header ───────────────────────────────────────────────────── */}
         <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
-          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#8D795F]">
+          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717]">
             Killer Kockpit SMD
           </div>
-          <div className="font-brand text-2xl font-black text-[#171717] leading-tight tracking-tight mt-1">
+          <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight mt-1">
             {storeName}
           </div>
           <div className="text-[11px] text-[#171717] mt-1.5">
