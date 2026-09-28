@@ -6,10 +6,10 @@ import {
   getRevenueDemoData,
   getLabourDemoData,
   getKitchenDemoData,
-  getGbpDemoData,
   getStockTakeDemoData,
   getMeatUseDemoData,
 } from '@/lib/store/adapter'
+import type { GbpMetrics } from '@/lib/store/adapter'
 import {
   loadSelectedStoreData,
   selectAssignedStore,
@@ -120,6 +120,59 @@ async function fetchTasks(
   })
 }
 
+async function fetchGbpMetrics(
+  locationId: string,
+): Promise<GbpMetrics> {
+  const service = createServiceClient()
+
+  // Resolve canonical location → gbp_locations
+  const { data: gbpLoc } = await service
+    .from('gbp_locations')
+    .select('id')
+    .eq('location_id', locationId)
+    .limit(1)
+    .single()
+
+  if (!gbpLoc) return { rating: null, reviewCount: null, reviewsThisWeek: null }
+
+  const gbpLocId = (gbpLoc as { id: string }).id
+
+  // Average rating and total count across all reviews for this GBP location
+  const { data: reviews } = await service
+    .from('gbp_reviews')
+    .select('star_rating, review_created_at')
+    .eq('location_id', gbpLocId)
+
+  if (!reviews || reviews.length === 0) {
+    return { rating: null, reviewCount: null, reviewsThisWeek: null }
+  }
+
+  const typedReviews = reviews as Array<{ star_rating: number; review_created_at: string }>
+  const totalCount = typedReviews.length
+  const avgRating = typedReviews.reduce((sum, r) => sum + r.star_rating, 0) / totalCount
+
+  // Current Europe/Copenhagen calendar week start (Monday)
+  const now = new Date()
+  // Get current time in Copenhagen
+  const cphNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Copenhagen' }))
+  const day = cphNow.getDay()
+  const mondayOffset = day === 0 ? 6 : day - 1
+  const weekStart = new Date(cphNow)
+  weekStart.setDate(cphNow.getDate() - mondayOffset)
+  weekStart.setHours(0, 0, 0, 0)
+
+  const reviewsThisWeek = typedReviews.filter(r => {
+    const reviewDate = new Date(r.review_created_at)
+    return reviewDate >= weekStart
+  }).length
+
+  return {
+    rating: Math.round(avgRating * 10) / 10,
+    reviewCount: totalCount,
+    reviewsThisWeek,
+  }
+}
+
 async function fetchLatestAudit(
   locationId: string,
 ): Promise<DashboardAudit | null> {
@@ -128,14 +181,15 @@ async function fetchLatestAudit(
   // regardless of auditor. locationId comes from the authorised selection gate.
   const service = createServiceClient()
 
-  const { data: template } = await service
+  // Find all operational_audit template IDs (published or retired) so we
+  // include submissions against older template versions.
+  const { data: templates } = await service
     .from('audit_templates')
     .select('id')
     .eq('audit_key', 'operational_audit')
-    .eq('status', 'published')
-    .single()
 
-  if (!template) return null
+  const templateIds = ((templates ?? []) as { id: string }[]).map(t => t.id)
+  if (templateIds.length === 0) return null
 
   type RawAudit = {
     id: string
@@ -148,7 +202,7 @@ async function fetchLatestAudit(
   const { data } = await service
     .from('audit_submissions')
     .select('id, score_pct, audit_status, submitted_at, locations!location_id (name)')
-    .eq('template_id', (template as { id: string }).id)
+    .in('template_id', templateIds)
     .eq('status', 'submitted')
     .eq('location_id', locationId)
     .order('submitted_at', { ascending: false })
@@ -234,7 +288,7 @@ async function fetchLatestDiner(
 
 function StoreFallback() {
   return (
-    <div className="-m-4 min-h-[calc(100vh-0px)]" style={{ background: '#C8B89A' }}>
+    <div className="min-h-screen" style={{ background: '#C8B89A' }}>
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
         <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
           <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
@@ -263,7 +317,7 @@ function StoreSelectionPrompt({
   invalidRequest: boolean
 }) {
   return (
-    <div className="-m-4 min-h-[calc(100vh-0px)]" style={{ background: '#C8B89A' }}>
+    <div className="min-h-screen" style={{ background: '#C8B89A' }}>
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
         <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
           <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
@@ -351,7 +405,7 @@ export default async function StorePage({
   if (!dashboardData) return null
   const { todos, tasks, latestAudit, latestDiner } = dashboardData
 
-  // Adapter data (unwired — all from lib/store/adapter.ts)
+  // Adapter data — still demo for Revenue, Labour, Kitchen, Stock Take, Meat Use
   const revenueToday  = getRevenueDemoData('today')
   const revenueWeek   = getRevenueDemoData('week')
   const revenueMonth  = getRevenueDemoData('month')
@@ -361,7 +415,7 @@ export default async function StorePage({
   const kitchenToday  = getKitchenDemoData('today')
   const kitchenWeek   = getKitchenDemoData('week')
   const kitchenMonth  = getKitchenDemoData('month')
-  const gbp           = getGbpDemoData()
+  const gbp           = await fetchGbpMetrics(location.id)
   const stockTake     = getStockTakeDemoData()
   const meatUse       = getMeatUseDemoData()
 

@@ -420,6 +420,13 @@ export default function AppShell({
     )
   }
 
+  // /store is a standalone Store Manager product — no management chrome
+  const isStoreRoute = pathname === '/store' || pathname.startsWith('/store/')
+
+  if (isStoreRoute) {
+    return <>{children}</>
+  }
+
   return (
     <div className="flex min-h-screen">
 

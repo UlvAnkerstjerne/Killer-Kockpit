@@ -668,9 +668,8 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
   } = props
 
   return (
-    // -m-4 escapes the AppShell <main> p-4 padding so we own the full canvas
     <div
-      className="-m-4 min-h-[calc(100vh-0px)]"
+      className="min-h-screen"
       style={{ background: '#C8B89A' }}
     >
       {/* Narrow centred column — mobile-style on all viewports */}

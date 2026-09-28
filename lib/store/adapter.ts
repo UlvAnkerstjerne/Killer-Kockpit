@@ -8,9 +8,11 @@
  *   - Revenue metrics        — no Planday/POS revenue table yet
  *   - Labour cost metrics    — no Planday labour-cost integration yet
  *   - Kitchen metrics        — no kitchen system integration yet
- *   - Google rating/reviews  — GBP API scope pending OAuth re-grant
  *   - Stock Take status      — no stock-take table yet
  *   - Meat Use status        — no meat-use table yet
+ *
+ * WIRED (live data, no longer using demo adapters):
+ *   - Google rating/reviews  — fetched from gbp_locations + gbp_reviews in page.tsx
  *
  * All placeholder values are centralised here so components never scatter
  * hardcoded demo data. When a real data source becomes available, replace
@@ -85,7 +87,7 @@ export interface GbpMetrics {
   reviewsThisWeek: number | null
 }
 
-/** @unwired — GBP v4 Reviews API pending approval; returns unavailable state */
+/** @deprecated — GBP data is now fetched live in store/page.tsx. Retained for type export only. */
 export function getGbpDemoData(): GbpMetrics {
   return { rating: null, reviewCount: null, reviewsThisWeek: null }
 }
