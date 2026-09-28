@@ -109,7 +109,7 @@ function Chevron() {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-t-2 border-[#171717] pt-3 mb-3">
+    <div className="mb-3">
       <h2 className="text-[10px] font-black tracking-[0.18em] uppercase text-[#171717]">
         {children}
       </h2>
