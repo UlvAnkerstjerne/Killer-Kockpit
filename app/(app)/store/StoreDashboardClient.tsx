@@ -19,6 +19,9 @@ import {
 import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { reorderTodos } from '@/lib/actions/todos'
+import {
+  formatWeekComparison,
+} from '@/lib/store/adapter'
 import type {
   RevenueMetrics,
   LabourMetrics,
@@ -27,6 +30,7 @@ import type {
   StockTakeStatus,
   MeatUseStatus,
   RoutineStatus,
+  RatingTrend,
 } from '@/lib/store/adapter'
 
 // ─── Types from server ────────────────────────────────────────────────────────
@@ -275,7 +279,18 @@ function StorePerformance({
 
 // ─── Customer Feedback ────────────────────────────────────────────────────────
 
+const TREND_DISPLAY: Record<Exclude<RatingTrend, null>, { arrow: string; cls: string }> = {
+  up:   { arrow: '\u2191', cls: 'text-[#2f6d4c]' },
+  down: { arrow: '\u2193', cls: 'text-[#AD3919]' },
+  flat: { arrow: '\u2192', cls: 'text-[#8D795F]' },
+}
+
 function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
+  const trend = gbp.ratingTrend ? TREND_DISPLAY[gbp.ratingTrend] : null
+  const weekComp = gbp.reviewsThisWeek != null && gbp.reviewsPreviousWeek != null
+    ? formatWeekComparison(gbp.reviewsThisWeek, gbp.reviewsPreviousWeek)
+    : ''
+
   return (
     <div className="border-2 border-[#171717] rounded-xl overflow-hidden flex">
       {/* Google rating */}
@@ -285,8 +300,13 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
         </div>
         {gbp.rating != null ? (
           <>
-            <div className="text-3xl font-black text-[#171717] leading-none">
-              {gbp.rating.toFixed(1)}
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-3xl font-black text-[#171717] leading-none">
+                {gbp.rating.toFixed(1)}
+              </span>
+              {trend && (
+                <span className={`text-sm font-bold ${trend.cls}`}>{trend.arrow}</span>
+              )}
             </div>
             <div className="text-[10px] text-[#8D795F] mt-1">
               ★ {gbp.reviewCount ?? '—'} reviews
@@ -307,9 +327,15 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
             <div className="text-3xl font-black text-[#171717] leading-none">
               {gbp.reviewsThisWeek}
             </div>
-            <div className="text-[10px] text-[#8D795F] mt-1">
-              new reviews
-            </div>
+            {weekComp && (
+              <div className={`text-[10px] mt-1 ${
+                weekComp.startsWith('\u2191') ? 'text-[#2f6d4c]' :
+                weekComp.startsWith('\u2193') ? 'text-[#AD3919]' :
+                'text-[#8D795F]'
+              }`}>
+                {weekComp}
+              </div>
+            )}
           </>
         ) : (
           <div className="text-xs text-[#8D795F]">Unavailable</div>

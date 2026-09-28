@@ -80,16 +80,49 @@ export function getKitchenDemoData(period: 'today' | 'week' | 'month'): KitchenM
 
 // ─── Google Business Profile ──────────────────────────────────────────────────
 
+/** Rating trend direction based on trailing 30-day comparison */
+export type RatingTrend = 'up' | 'down' | 'flat' | null
+
 export interface GbpMetrics {
   rating: number | null
   reviewCount: number | null
   /** New reviews in the current calendar week */
   reviewsThisWeek: number | null
+  /** Rating trend: recent 30d vs previous 30d (±0.05 threshold) */
+  ratingTrend: RatingTrend
+  /** Reviews in the previous calendar week (Mon–Sun) */
+  reviewsPreviousWeek: number | null
 }
 
 /** @deprecated — GBP data is now fetched live in store/page.tsx. Retained for type export only. */
 export function getGbpDemoData(): GbpMetrics {
-  return { rating: null, reviewCount: null, reviewsThisWeek: null }
+  return { rating: null, reviewCount: null, reviewsThisWeek: null, ratingTrend: null, reviewsPreviousWeek: null }
+}
+
+/**
+ * Compute rating trend from two averages with ±0.05 dead zone.
+ * Exported for testing.
+ */
+export function computeRatingTrend(recentAvg: number | null, previousAvg: number | null): RatingTrend {
+  if (recentAvg == null || previousAvg == null) return null
+  // Round to 2 decimal places to avoid floating-point comparison artefacts
+  const diff = Math.round((recentAvg - previousAvg) * 100) / 100
+  if (diff >= 0.05) return 'up'
+  if (diff <= -0.05) return 'down'
+  return 'flat'
+}
+
+/**
+ * Format the reviews-this-week vs previous-week comparison line.
+ * Exported for testing.
+ */
+export function formatWeekComparison(current: number, previous: number | null): string {
+  if (previous == null) return ''
+  if (current === previous) return '\u2192 Same as last week'
+  if (previous === 0) return `\u2191 +${current} vs last week`
+  const pctChange = Math.round(Math.abs(current - previous) / previous * 100)
+  if (current > previous) return `\u2191 ${pctChange}% vs last week`
+  return `\u2193 ${pctChange}% vs last week`
 }
 
 // ─── Stock Take ───────────────────────────────────────────────────────────────

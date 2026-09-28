@@ -10,6 +10,7 @@ import {
   getMeatUseDemoData,
 } from '@/lib/store/adapter'
 import type { GbpMetrics } from '@/lib/store/adapter'
+import { computeRatingTrend } from '@/lib/store/adapter'
 import {
   loadSelectedStoreData,
   selectAssignedStore,
@@ -124,6 +125,10 @@ async function fetchGbpMetrics(
   locationId: string,
 ): Promise<GbpMetrics> {
   const service = createServiceClient()
+  const empty: GbpMetrics = {
+    rating: null, reviewCount: null, reviewsThisWeek: null,
+    ratingTrend: null, reviewsPreviousWeek: null,
+  }
 
   // Resolve canonical location → gbp_locations
   const { data: gbpLoc } = await service
@@ -133,43 +138,69 @@ async function fetchGbpMetrics(
     .limit(1)
     .single()
 
-  if (!gbpLoc) return { rating: null, reviewCount: null, reviewsThisWeek: null }
+  if (!gbpLoc) return empty
 
   const gbpLocId = (gbpLoc as { id: string }).id
 
-  // Average rating and total count across all reviews for this GBP location
+  // All reviews for this GBP location
   const { data: reviews } = await service
     .from('gbp_reviews')
     .select('star_rating, review_created_at')
     .eq('location_id', gbpLocId)
 
-  if (!reviews || reviews.length === 0) {
-    return { rating: null, reviewCount: null, reviewsThisWeek: null }
-  }
+  if (!reviews || reviews.length === 0) return empty
 
   const typedReviews = reviews as Array<{ star_rating: number; review_created_at: string }>
   const totalCount = typedReviews.length
   const avgRating = typedReviews.reduce((sum, r) => sum + r.star_rating, 0) / totalCount
 
-  // Current Europe/Copenhagen calendar week start (Monday)
+  // ── Time boundaries in Europe/Copenhagen ──
   const now = new Date()
-  // Get current time in Copenhagen
   const cphNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Copenhagen' }))
-  const day = cphNow.getDay()
-  const mondayOffset = day === 0 ? 6 : day - 1
-  const weekStart = new Date(cphNow)
-  weekStart.setDate(cphNow.getDate() - mondayOffset)
-  weekStart.setHours(0, 0, 0, 0)
 
-  const reviewsThisWeek = typedReviews.filter(r => {
-    const reviewDate = new Date(r.review_created_at)
-    return reviewDate >= weekStart
-  }).length
+  // Current week start (Monday 00:00)
+  const dayOfWeek = cphNow.getDay()
+  const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+  const currentWeekStart = new Date(cphNow)
+  currentWeekStart.setDate(cphNow.getDate() - mondayOffset)
+  currentWeekStart.setHours(0, 0, 0, 0)
+
+  // Previous week: Monday 00:00 to Sunday 23:59:59
+  const previousWeekStart = new Date(currentWeekStart)
+  previousWeekStart.setDate(previousWeekStart.getDate() - 7)
+  const previousWeekEnd = new Date(currentWeekStart.getTime() - 1)
+
+  // Trailing 30-day windows for rating trend
+  const recent30Start = new Date(cphNow)
+  recent30Start.setDate(cphNow.getDate() - 30)
+  recent30Start.setHours(0, 0, 0, 0)
+
+  const previous30Start = new Date(recent30Start)
+  previous30Start.setDate(previous30Start.getDate() - 30)
+
+  // ── Compute aggregates ──
+  let reviewsThisWeek = 0
+  let reviewsPreviousWeek = 0
+  let recent30Sum = 0, recent30Count = 0
+  let previous30Sum = 0, previous30Count = 0
+
+  for (const r of typedReviews) {
+    const d = new Date(r.review_created_at)
+    if (d >= currentWeekStart) reviewsThisWeek++
+    if (d >= previousWeekStart && d <= previousWeekEnd) reviewsPreviousWeek++
+    if (d >= recent30Start) { recent30Sum += r.star_rating; recent30Count++ }
+    else if (d >= previous30Start) { previous30Sum += r.star_rating; previous30Count++ }
+  }
+
+  const recent30Avg = recent30Count > 0 ? recent30Sum / recent30Count : null
+  const previous30Avg = previous30Count > 0 ? previous30Sum / previous30Count : null
 
   return {
     rating: Math.round(avgRating * 10) / 10,
     reviewCount: totalCount,
     reviewsThisWeek,
+    ratingTrend: computeRatingTrend(recent30Avg, previous30Avg),
+    reviewsPreviousWeek,
   }
 }
 
