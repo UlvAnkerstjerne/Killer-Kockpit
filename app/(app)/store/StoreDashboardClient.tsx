@@ -188,7 +188,7 @@ function StorePerformance({
   return (
     <div>
       {/* Segmented control */}
-      <div className="flex border-2 border-[#171717] rounded-xl overflow-hidden mb-4">
+      <div className="flex border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden mb-4">
         {TABS.map((t, i) => (
           <button
             key={t.key}
@@ -207,7 +207,7 @@ function StorePerformance({
       </div>
 
       {/* Compound block: Revenue + Labour/Kitchen */}
-      <div className="border-2 border-[#171717] rounded-xl overflow-hidden flex">
+      <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex">
         {/* Revenue — left */}
         <div className="flex-1 p-4 border-r-2 border-[#171717]">
           <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-1">
@@ -292,7 +292,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
     : ''
 
   return (
-    <div className="border-2 border-[#171717] rounded-xl overflow-hidden flex">
+    <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex">
       {/* Google rating */}
       <div className="flex-1 p-4 border-r-2 border-[#171717]">
         <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
@@ -360,7 +360,7 @@ function LatestChecks({
   }
 
   return (
-    <div className="border-2 border-[#171717] rounded-xl overflow-hidden flex">
+    <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex">
       {/* Operational Audit */}
       <Link
         href={latestAudit ? `/kkc/audits/${latestAudit.id}` : '/kkc/audits'}
@@ -506,7 +506,7 @@ function MyTodos({ todos }: Pick<StoreDashboardProps, 'todos'>) {
   }, [openTodos])
 
   return (
-    <div className="border-2 border-[#171717] rounded-xl overflow-hidden">
+    <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden">
       {openTodos.length === 0 && completed.length === 0 ? (
         <div className="px-4 py-6 text-center text-xs text-[#8D795F]">
           No to-dos. Add one below.
@@ -579,7 +579,7 @@ const TASK_STATUS: Record<string, { label: string; cls: string }> = {
 function MyTasks({ tasks }: Pick<StoreDashboardProps, 'tasks'>) {
   if (tasks.length === 0) {
     return (
-      <div className="border-2 border-[#171717] rounded-xl px-4 py-6 text-center text-xs text-[#8D795F]">
+      <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] px-4 py-6 text-center text-xs text-[#8D795F]">
         No open tasks assigned to you.
       </div>
     )
@@ -593,7 +593,7 @@ function MyTasks({ tasks }: Pick<StoreDashboardProps, 'tasks'>) {
           <Link
             key={task.id}
             href={`/tasks/${task.id}?returnTo=/store`}
-            className="flex items-center gap-3 border-2 border-[#171717] rounded-xl px-4 py-3 bg-[#D2C3A7] hover:bg-[#C8B89A] transition-colors group"
+            className="flex items-center gap-3 border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] px-4 py-3 bg-[#D2C3A7] hover:bg-[#C8B89A] transition-colors group"
           >
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-[#171717] leading-snug truncate">
@@ -641,7 +641,7 @@ function RoutineRow({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 border-2 border-[#171717] rounded-xl px-4 py-4 bg-[#D2C3A7] hover:bg-[#C8B89A] transition-colors"
+      className="flex items-center gap-3 border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] px-4 py-4 bg-[#D2C3A7] hover:bg-[#C8B89A] transition-colors"
     >
       <div className="flex-1 min-w-0">
         <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717]">
