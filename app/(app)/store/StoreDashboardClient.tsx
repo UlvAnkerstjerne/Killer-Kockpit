@@ -712,18 +712,12 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
 
         {/* ── Header ───────────────────────────────────────────────────── */}
-        <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
+        <header className="px-5 pt-4 pb-3 border-b-2 border-[#171717]">
           <div className="text-[11px] font-black tracking-[0.18em] uppercase text-[#171717]">
             Killer Kockpit SMD
           </div>
-          <div className="text-[11vw] font-black text-[#AD3919] leading-none tracking-tight uppercase mt-1">
+          <div className="text-[11vw] font-black text-[#AD3919] leading-none tracking-tight uppercase mt-0.5">
             {storeName}
-          </div>
-          <div className="text-[11px] text-[#171717] mt-1.5">
-            {new Date().toLocaleDateString('en-GB', {
-              timeZone: 'Europe/Copenhagen',
-              day: 'numeric', month: 'short', year: 'numeric',
-            })}
           </div>
         </header>
 
