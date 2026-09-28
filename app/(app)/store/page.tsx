@@ -158,25 +158,13 @@ async function fetchGbpMetrics(
   const now = new Date()
   const cphNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Copenhagen' }))
 
-  // Current week start (Monday 00:00)
-  const dayOfWeek = cphNow.getDay()
-  const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-  const currentWeekStart = new Date(cphNow)
-  currentWeekStart.setDate(cphNow.getDate() - mondayOffset)
-  currentWeekStart.setHours(0, 0, 0, 0)
-
-  // Previous week: Monday 00:00 to Sunday 23:59:59
-  const previousWeekStart = new Date(currentWeekStart)
-  previousWeekStart.setDate(previousWeekStart.getDate() - 7)
-  const previousWeekEnd = new Date(currentWeekStart.getTime() - 1)
+  // Rolling 7-day windows for review volume comparison
+  const trailing7Start = new Date(cphNow.getTime() - 7 * 86_400_000)
+  const previous7Start = new Date(cphNow.getTime() - 14 * 86_400_000)
 
   // Trailing 30-day windows for rating trend
-  const recent30Start = new Date(cphNow)
-  recent30Start.setDate(cphNow.getDate() - 30)
-  recent30Start.setHours(0, 0, 0, 0)
-
-  const previous30Start = new Date(recent30Start)
-  previous30Start.setDate(previous30Start.getDate() - 30)
+  const recent30Start = new Date(cphNow.getTime() - 30 * 86_400_000)
+  const previous30Start = new Date(cphNow.getTime() - 60 * 86_400_000)
 
   // ── Compute aggregates ──
   let reviewsThisWeek = 0
@@ -186,8 +174,8 @@ async function fetchGbpMetrics(
 
   for (const r of typedReviews) {
     const d = new Date(r.review_created_at)
-    if (d >= currentWeekStart) reviewsThisWeek++
-    if (d >= previousWeekStart && d <= previousWeekEnd) reviewsPreviousWeek++
+    if (d >= trailing7Start) reviewsThisWeek++
+    else if (d >= previous7Start) reviewsPreviousWeek++
     if (d >= recent30Start) { recent30Sum += r.star_rating; recent30Count++ }
     else if (d >= previous30Start) { previous30Sum += r.star_rating; previous30Count++ }
   }
