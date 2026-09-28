@@ -680,7 +680,7 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717]">
             Killer Kockpit SMD
           </div>
-          <div className="font-brand text-2xl font-black text-[#AD3919] leading-tight tracking-tight mt-1">
+          <div className="font-brand text-[11vw] font-black text-[#AD3919] leading-none tracking-tighter mt-1">
             {storeName}
           </div>
           <div className="text-[11px] text-[#171717] mt-1.5">
