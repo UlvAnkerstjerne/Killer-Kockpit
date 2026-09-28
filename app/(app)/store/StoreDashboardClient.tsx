@@ -115,14 +115,82 @@ function Chevron() {
 
 // ─── Section heading ──────────────────────────────────────────────────────────
 
-function SectionHeading({ icon, children }: { icon?: string; children: React.ReactNode }) {
+function SectionHeading({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="mb-3">
-      <h2 className="text-[20px] font-black tracking-[0.12em] uppercase text-[#171717] flex items-center gap-2">
-        {icon && <span className="text-[18px]">{icon}</span>}
+      <h2 className="text-[20px] font-black tracking-[0.12em] uppercase text-[#171717] flex items-center gap-2.5">
+        {icon && <span className="shrink-0 text-[#171717]">{icon}</span>}
         {children}
       </h2>
     </div>
+  )
+}
+
+// ─── Section icons (SVG stroke style matching Kockpit nav) ───────────────────
+
+function IconRevenue() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M8 1v14M5.5 3.5h3.75a1.75 1.75 0 010 3.5H5v0h4.25a1.75 1.75 0 010 3.5H5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function IconFeedback() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M8 1.5L9.8 5.2l4.2.6-3 2.9.7 4.1L8 10.8l-3.7 2 .7-4.1-3-2.9 4.2-.6L8 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function IconChecks() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function IconTodoSection() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="2.5" y="9.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M9.5 4.5h4M9.5 11.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function IconTaskSection() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5.5 8l2 2 3.5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function IconRoutines() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M1.5 8a6.5 6.5 0 0111.35-4.33" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M14.5 8a6.5 6.5 0 01-11.35 4.33" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M13 1.5l.5 2.5-2.5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 14.5l-.5-2.5 2.5-.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function IconStore() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true">
+      <path d="M2 6.5L3.5 2h9L14 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M2 6.5c0 1.1.9 2 2 2s2-.9 2-2c0 1.1.9 2 2 2s2-.9 2-2c0 1.1.9 2 2 2s2-.9 2-2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M3 8.5V14h10V8.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M6.5 14v-4h3v4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
   )
 }
 
@@ -758,7 +826,7 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
             Killer Kockpit SMD
           </div>
           <div className="text-[11vw] font-black text-[#AD3919] leading-none tracking-tight uppercase mt-0.5 flex items-center gap-2">
-            <span className="text-[8vw]">🏪</span>
+            <span className="text-[8vw]"><IconStore /></span>
             {storeName}
           </div>
         </header>
@@ -768,7 +836,7 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
 
           {/* Store Performance */}
           <section>
-            <SectionHeading icon="💰">Store Performance</SectionHeading>
+            <SectionHeading icon={<IconRevenue />}>Store Performance</SectionHeading>
             <StorePerformance
               revenueToday={revenueToday}
               revenueYesterday={revenueYesterday}
@@ -791,31 +859,31 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
 
           {/* Customer Feedback */}
           <section>
-            <SectionHeading icon="⭐">Customer Feedback</SectionHeading>
+            <SectionHeading icon={<IconFeedback />}>Customer Feedback</SectionHeading>
             <CustomerFeedback gbp={gbp} />
           </section>
 
           {/* Latest Checks */}
           <section>
-            <SectionHeading icon="✅">Latest Checks</SectionHeading>
+            <SectionHeading icon={<IconChecks />}>Latest Checks</SectionHeading>
             <LatestChecks latestAudit={latestAudit} latestDiner={latestDiner} />
           </section>
 
           {/* My To-Dos */}
           <section>
-            <SectionHeading icon="📋">My To-Dos</SectionHeading>
+            <SectionHeading icon={<IconTodoSection />}>My To-Dos</SectionHeading>
             <MyTodos todos={todos} />
           </section>
 
           {/* My Tasks */}
           <section>
-            <SectionHeading icon="🎯">My Tasks</SectionHeading>
+            <SectionHeading icon={<IconTaskSection />}>My Tasks</SectionHeading>
             <MyTasks tasks={tasks} />
           </section>
 
           {/* Store Routines */}
           <section>
-            <SectionHeading icon="🔄">Store Routines</SectionHeading>
+            <SectionHeading icon={<IconRoutines />}>Store Routines</SectionHeading>
             <StoreRoutines stockTake={stockTake} meatUse={meatUse} />
           </section>
 
