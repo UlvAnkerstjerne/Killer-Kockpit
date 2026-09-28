@@ -214,11 +214,8 @@ function StorePerformance({
             <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
               Revenue
             </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-7xl font-black text-[#171717] leading-none">
-                {formatDKK(rev.revenue)}
-              </span>
-              <span className="text-sm font-bold text-[#171717]">DKK</span>
+            <div className="text-7xl font-black text-[#171717] leading-none text-center">
+              {formatDKK(rev.revenue)}
             </div>
           </div>
           <div className="mt-3">
