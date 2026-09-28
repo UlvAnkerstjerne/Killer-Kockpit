@@ -133,7 +133,7 @@ function formatPct(n: number, signed = false): string {
 function formatPp(n: number | null): string {
   if (n == null) return '—'
   const s = Math.abs(n).toFixed(1)
-  return n < 0 ? `−${s}pp` : `+${s}pp`
+  return n < 0 ? `−${s}%` : `+${s}%`
 }
 
 function formatDate(iso: string | null): string {
