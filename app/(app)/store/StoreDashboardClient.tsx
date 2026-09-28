@@ -73,12 +73,15 @@ export interface StoreDashboardProps {
   storeOptions?: Array<{ id: string; short_name: string }>
   managerName: string
   revenueToday: RevenueMetrics
+  revenueYesterday: RevenueMetrics
   revenueWeek: RevenueMetrics
   revenueMonth: RevenueMetrics
   labourToday: LabourMetrics
+  labourYesterday: LabourMetrics
   labourWeek: LabourMetrics
   labourMonth: LabourMetrics
   kitchenToday: KitchenMetrics
+  kitchenYesterday: KitchenMetrics
   kitchenWeek: KitchenMetrics
   kitchenMonth: KitchenMetrics
   gbp: GbpMetrics
@@ -90,7 +93,7 @@ export interface StoreDashboardProps {
   meatUse: MeatUseStatus
 }
 
-type Period = 'today' | 'week' | 'month'
+type Period = 'today' | 'yesterday' | 'week' | 'month'
 
 // ─── Chevron ──────────────────────────────────────────────────────────────────
 
@@ -165,24 +168,28 @@ function routineLabel(status: RoutineStatus, lastAt: string | null): string {
 // ─── Store Performance ────────────────────────────────────────────────────────
 
 function StorePerformance({
-  revenueToday, revenueWeek, revenueMonth,
-  labourToday, labourWeek, labourMonth,
-  kitchenToday, kitchenWeek, kitchenMonth,
+  revenueToday, revenueYesterday, revenueWeek, revenueMonth,
+  labourToday, labourYesterday, labourWeek, labourMonth,
+  kitchenToday, kitchenYesterday, kitchenWeek, kitchenMonth,
 }: Pick<StoreDashboardProps,
-  'revenueToday' | 'revenueWeek' | 'revenueMonth' |
-  'labourToday' | 'labourWeek' | 'labourMonth' |
-  'kitchenToday' | 'kitchenWeek' | 'kitchenMonth'
+  'revenueToday' | 'revenueYesterday' | 'revenueWeek' | 'revenueMonth' |
+  'labourToday' | 'labourYesterday' | 'labourWeek' | 'labourMonth' |
+  'kitchenToday' | 'kitchenYesterday' | 'kitchenWeek' | 'kitchenMonth'
 >) {
   const [period, setPeriod] = useState<Period>('today')
 
-  const rev = period === 'today' ? revenueToday : period === 'week' ? revenueWeek : revenueMonth
-  const lab = period === 'today' ? labourToday  : period === 'week' ? labourWeek  : labourMonth
-  const kit = period === 'today' ? kitchenToday : period === 'week' ? kitchenWeek : kitchenMonth
+  const revMap: Record<Period, RevenueMetrics> = { today: revenueToday, yesterday: revenueYesterday, week: revenueWeek, month: revenueMonth }
+  const labMap: Record<Period, LabourMetrics> = { today: labourToday, yesterday: labourYesterday, week: labourWeek, month: labourMonth }
+  const kitMap: Record<Period, KitchenMetrics> = { today: kitchenToday, yesterday: kitchenYesterday, week: kitchenWeek, month: kitchenMonth }
+  const rev = revMap[period]
+  const lab = labMap[period]
+  const kit = kitMap[period]
 
   const TABS: { key: Period; label: string }[] = [
-    { key: 'today', label: 'Today' },
-    { key: 'week',  label: 'Week'  },
-    { key: 'month', label: 'Month' },
+    { key: 'today',     label: 'Today' },
+    { key: 'yesterday', label: 'Yesterday' },
+    { key: 'week',      label: 'Week'  },
+    { key: 'month',     label: 'Month' },
   ]
 
   return (
@@ -684,9 +691,9 @@ function StoreRoutines({
 export default function StoreDashboardClient(props: StoreDashboardProps) {
   const {
     storeName,
-    revenueToday, revenueWeek, revenueMonth,
-    labourToday, labourWeek, labourMonth,
-    kitchenToday, kitchenWeek, kitchenMonth,
+    revenueToday, revenueYesterday, revenueWeek, revenueMonth,
+    labourToday, labourYesterday, labourWeek, labourMonth,
+    kitchenToday, kitchenYesterday, kitchenWeek, kitchenMonth,
     gbp,
     latestAudit,
     latestDiner,
@@ -728,12 +735,15 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
             <SectionHeading>Store Performance</SectionHeading>
             <StorePerformance
               revenueToday={revenueToday}
+              revenueYesterday={revenueYesterday}
               revenueWeek={revenueWeek}
               revenueMonth={revenueMonth}
               labourToday={labourToday}
+              labourYesterday={labourYesterday}
               labourWeek={labourWeek}
               labourMonth={labourMonth}
               kitchenToday={kitchenToday}
+              kitchenYesterday={kitchenYesterday}
               kitchenWeek={kitchenWeek}
               kitchenMonth={kitchenMonth}
             />

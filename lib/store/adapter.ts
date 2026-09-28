@@ -33,11 +33,12 @@ export interface RevenueMetrics {
 }
 
 /** @unwired — returns demo data until POS/Planday revenue is integrated */
-export function getRevenueDemoData(period: 'today' | 'week' | 'month'): RevenueMetrics {
-  const demo: Record<'today' | 'week' | 'month', RevenueMetrics> = {
-    today: { period: 'Today',     revenue: 18_420, vsLast: 0.07,  vsBudget: 0.03  },
-    week:  { period: 'This week', revenue: 98_600, vsLast: -0.02, vsBudget: -0.05 },
-    month: { period: 'This month',revenue: 387_000,vsLast: 0.11,  vsBudget: 0.08  },
+export function getRevenueDemoData(period: 'today' | 'yesterday' | 'week' | 'month'): RevenueMetrics {
+  const demo: Record<'today' | 'yesterday' | 'week' | 'month', RevenueMetrics> = {
+    today:     { period: 'Today',     revenue: 18_420,  vsLast: 0.07,  vsBudget: 0.03  },
+    yesterday: { period: 'Yesterday', revenue: 22_150,  vsLast: 0.12,  vsBudget: 0.05  },
+    week:      { period: 'This week', revenue: 98_600,  vsLast: -0.02, vsBudget: -0.05 },
+    month:     { period: 'This month',revenue: 387_000, vsLast: 0.11,  vsBudget: 0.08  },
   }
   return demo[period]
 }
@@ -59,21 +60,23 @@ export interface KitchenMetrics {
 }
 
 /** @unwired — returns demo data until Planday labour-cost integration is live */
-export function getLabourDemoData(period: 'today' | 'week' | 'month'): LabourMetrics {
-  const demo: Record<'today' | 'week' | 'month', LabourMetrics> = {
-    today: { labourPct: 28.4, vsTarget: -1.6 },
-    week:  { labourPct: 31.2, vsTarget:  1.2 },
-    month: { labourPct: 29.8, vsTarget: -0.2 },
+export function getLabourDemoData(period: 'today' | 'yesterday' | 'week' | 'month'): LabourMetrics {
+  const demo: Record<'today' | 'yesterday' | 'week' | 'month', LabourMetrics> = {
+    today:     { labourPct: 28.4, vsTarget: -1.6 },
+    yesterday: { labourPct: 27.1, vsTarget: -2.9 },
+    week:      { labourPct: 31.2, vsTarget:  1.2 },
+    month:     { labourPct: 29.8, vsTarget: -0.2 },
   }
   return demo[period]
 }
 
 /** @unwired — returns demo data until kitchen system integration is live */
-export function getKitchenDemoData(period: 'today' | 'week' | 'month'): KitchenMetrics {
-  const demo: Record<'today' | 'week' | 'month', KitchenMetrics> = {
-    today: { kitchenPct: 14.2, vsTarget: -0.8 },
-    week:  { kitchenPct: 15.8, vsTarget:  0.8 },
-    month: { kitchenPct: 14.9, vsTarget: -0.1 },
+export function getKitchenDemoData(period: 'today' | 'yesterday' | 'week' | 'month'): KitchenMetrics {
+  const demo: Record<'today' | 'yesterday' | 'week' | 'month', KitchenMetrics> = {
+    today:     { kitchenPct: 14.2, vsTarget: -0.8 },
+    yesterday: { kitchenPct: 13.5, vsTarget: -1.5 },
+    week:      { kitchenPct: 15.8, vsTarget:  0.8 },
+    month:     { kitchenPct: 14.9, vsTarget: -0.1 },
   }
   return demo[period]
 }

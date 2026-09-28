@@ -425,15 +425,18 @@ export default async function StorePage({
   const { todos, tasks, latestAudit, latestDiner } = dashboardData
 
   // Adapter data — still demo for Revenue, Labour, Kitchen, Stock Take, Meat Use
-  const revenueToday  = getRevenueDemoData('today')
-  const revenueWeek   = getRevenueDemoData('week')
-  const revenueMonth  = getRevenueDemoData('month')
-  const labourToday   = getLabourDemoData('today')
-  const labourWeek    = getLabourDemoData('week')
-  const labourMonth   = getLabourDemoData('month')
-  const kitchenToday  = getKitchenDemoData('today')
-  const kitchenWeek   = getKitchenDemoData('week')
-  const kitchenMonth  = getKitchenDemoData('month')
+  const revenueToday     = getRevenueDemoData('today')
+  const revenueYesterday = getRevenueDemoData('yesterday')
+  const revenueWeek      = getRevenueDemoData('week')
+  const revenueMonth     = getRevenueDemoData('month')
+  const labourToday      = getLabourDemoData('today')
+  const labourYesterday  = getLabourDemoData('yesterday')
+  const labourWeek       = getLabourDemoData('week')
+  const labourMonth      = getLabourDemoData('month')
+  const kitchenToday     = getKitchenDemoData('today')
+  const kitchenYesterday = getKitchenDemoData('yesterday')
+  const kitchenWeek      = getKitchenDemoData('week')
+  const kitchenMonth     = getKitchenDemoData('month')
   const gbp           = await fetchGbpMetrics(location.id)
   const stockTake     = getStockTakeDemoData()
   const meatUse       = getMeatUseDemoData()
@@ -444,12 +447,15 @@ export default async function StorePage({
       storeOptions={storeSelection.locations}
       managerName={user.display_name}
       revenueToday={revenueToday}
+      revenueYesterday={revenueYesterday}
       revenueWeek={revenueWeek}
       revenueMonth={revenueMonth}
       labourToday={labourToday}
+      labourYesterday={labourYesterday}
       labourWeek={labourWeek}
       labourMonth={labourMonth}
       kitchenToday={kitchenToday}
+      kitchenYesterday={kitchenYesterday}
       kitchenWeek={kitchenWeek}
       kitchenMonth={kitchenMonth}
       gbp={gbp}
