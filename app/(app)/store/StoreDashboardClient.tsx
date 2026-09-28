@@ -115,10 +115,11 @@ function Chevron() {
 
 // ─── Section heading ──────────────────────────────────────────────────────────
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionHeading({ icon, children }: { icon?: string; children: React.ReactNode }) {
   return (
     <div className="mb-3">
-      <h2 className="text-[20px] font-black tracking-[0.12em] uppercase text-[#171717]">
+      <h2 className="text-[20px] font-black tracking-[0.12em] uppercase text-[#171717] flex items-center gap-2">
+        {icon && <span className="text-[18px]">{icon}</span>}
         {children}
       </h2>
     </div>
@@ -756,7 +757,8 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           <div className="text-[11px] font-black tracking-[0.18em] uppercase text-[#171717]">
             Killer Kockpit SMD
           </div>
-          <div className="text-[11vw] font-black text-[#AD3919] leading-none tracking-tight uppercase mt-0.5">
+          <div className="text-[11vw] font-black text-[#AD3919] leading-none tracking-tight uppercase mt-0.5 flex items-center gap-2">
+            <span className="text-[8vw]">🏪</span>
             {storeName}
           </div>
         </header>
@@ -766,7 +768,7 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
 
           {/* Store Performance */}
           <section>
-            <SectionHeading>Store Performance</SectionHeading>
+            <SectionHeading icon="💰">Store Performance</SectionHeading>
             <StorePerformance
               revenueToday={revenueToday}
               revenueYesterday={revenueYesterday}
@@ -789,31 +791,31 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
 
           {/* Customer Feedback */}
           <section>
-            <SectionHeading>Customer Feedback</SectionHeading>
+            <SectionHeading icon="⭐">Customer Feedback</SectionHeading>
             <CustomerFeedback gbp={gbp} />
           </section>
 
           {/* Latest Checks */}
           <section>
-            <SectionHeading>Latest Checks</SectionHeading>
+            <SectionHeading icon="✅">Latest Checks</SectionHeading>
             <LatestChecks latestAudit={latestAudit} latestDiner={latestDiner} />
           </section>
 
           {/* My To-Dos */}
           <section>
-            <SectionHeading>My To-Dos</SectionHeading>
+            <SectionHeading icon="📋">My To-Dos</SectionHeading>
             <MyTodos todos={todos} />
           </section>
 
           {/* My Tasks */}
           <section>
-            <SectionHeading>My Tasks</SectionHeading>
+            <SectionHeading icon="🎯">My Tasks</SectionHeading>
             <MyTasks tasks={tasks} />
           </section>
 
           {/* Store Routines */}
           <section>
-            <SectionHeading>Store Routines</SectionHeading>
+            <SectionHeading icon="🔄">Store Routines</SectionHeading>
             <StoreRoutines stockTake={stockTake} meatUse={meatUse} />
           </section>
 
