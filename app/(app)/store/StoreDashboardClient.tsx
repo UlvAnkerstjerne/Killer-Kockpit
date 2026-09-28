@@ -210,7 +210,7 @@ function StorePerformance({
       <div className="border-2 border-[#171717] rounded-xl overflow-hidden flex">
         {/* Revenue — left */}
         <div className="flex-1 p-4 border-r-2 border-[#171717]">
-          <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-1">
+          <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-1">
             Revenue
           </div>
           <div className="text-3xl font-black text-[#171717] leading-none">
@@ -295,7 +295,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
     <div className="border-2 border-[#171717] rounded-xl overflow-hidden flex">
       {/* Google rating */}
       <div className="flex-1 p-4 border-r-2 border-[#171717]">
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
+        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Google Rating
         </div>
         {gbp.rating != null ? (
@@ -319,7 +319,7 @@ function CustomerFeedback({ gbp }: Pick<StoreDashboardProps, 'gbp'>) {
 
       {/* Reviews this week */}
       <div className="flex-1 p-4">
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
+        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Reviews This Week
         </div>
         {gbp.reviewsThisWeek != null ? (
@@ -366,7 +366,7 @@ function LatestChecks({
         href={latestAudit ? `/kkc/audits/${latestAudit.id}` : '/kkc/audits'}
         className="flex-1 p-4 border-r-2 border-[#171717] group"
       >
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
+        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Operational Audit
         </div>
         {latestAudit ? (
@@ -398,7 +398,7 @@ function LatestChecks({
         href={latestDiner ? `/diner/${latestDiner.id}` : '/diner'}
         className="flex-1 p-4 group"
       >
-        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-2">
+        <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
           Mystery Diner
         </div>
         {latestDiner ? (
