@@ -21,9 +21,10 @@
 
 import type { BriefInputData, OverallStatus } from './types'
 import type { MaterialSignalCandidate } from './material-signals'
+import type { MarketingDriverCandidate } from './driver-types'
 
 /** Current prompt version. Increment when system prompt changes. */
-export const BRIEF_PROMPT_VERSION = 'v3'
+export const BRIEF_PROMPT_VERSION = 'v4'
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -45,6 +46,18 @@ OUTPUT FIELDS:
   organic_assessment  — 1–2 sentences. Direct verdict on organic performance.
   gbp_assessment      — 1 sentence. null when GBP is not yet connected.
   observations        — array. See OBSERVATION RULES below.
+
+DRIVER INTELLIGENCE RULES:
+- Some signal candidates have one or more DRIVER CANDIDATES attached.
+- A driver candidate explains WHY a signal likely happened by referencing other data sources.
+- For each observation, if a driver candidate exists AND you judge it plausible:
+  - Set driver_id to the exact id of the supplied driver candidate — do not invent driver ids.
+  - Incorporate the driver's explanation into your interpretation, using the driver's evidence and mechanism.
+  - Preserve the driver's caveat — never claim definite causation.
+  - Use the driver's confidence language: "likely driver" or "possible contributor".
+- If no driver candidate is supplied, or you judge none plausible, set driver_id to null.
+- NEVER invent a causal explanation not supplied as a driver candidate.
+- NEVER say "X caused Y" — prefer "likely contributed", "consistent with", "may partly explain".
 
 OBSERVATION RULES:
 - Target 5–8 observations. Never pad. Never exceed 8.
@@ -149,6 +162,7 @@ export function buildBriefUserMessage(
   data: BriefInputData,
   status: OverallStatus,
   candidates: MaterialSignalCandidate[] = [],
+  driverCandidates: MarketingDriverCandidate[] = [],
 ): string {
   const lines: string[] = []
 
@@ -186,6 +200,27 @@ export function buildBriefUserMessage(
         const chgStr = ev.change_pct != null ? ` (${ev.change_pct >= 0 ? '+' : ''}${Math.round(ev.change_pct * 100)}%)` : ''
         lines.push(`    evidence: ${metricLabel(ev.metric)} = ${valStr}${chgStr}`)
       }
+      lines.push('')
+    }
+  }
+
+  // ── Driver candidates (CONTEXT for observations) ──────────────────────────
+  if (driverCandidates.length > 0) {
+    lines.push('═══ DRIVER CANDIDATES ═══')
+    lines.push('These explain WHY a signal likely happened. Use driver_id to select the best driver for each observation.')
+    lines.push('Never invent a driver. Never say "caused". Use "likely driver", "likely contributed", "consistent with".')
+    lines.push('')
+    for (const dc of driverCandidates) {
+      lines.push(`  driver_id: ${dc.id}`)
+      lines.push(`  target_signal: ${dc.target_signal_id}`)
+      lines.push(`  confidence: ${dc.confidence}`)
+      lines.push(`  observation: ${dc.observation}`)
+      lines.push(`  mechanism: ${dc.mechanism}`)
+      for (const ev of dc.evidence) {
+        const chgStr = ev.change_pct != null ? ` (${ev.change_pct >= 0 ? '+' : ''}${Math.round(ev.change_pct * 100)}%)` : ''
+        lines.push(`  evidence: ${ev.label} = ${ev.current != null ? fmtNum(ev.current, 0) : 'n/a'}${chgStr} [${ev.window}]`)
+      }
+      lines.push(`  caveat: ${dc.caveat}`)
       lines.push('')
     }
   }
@@ -326,6 +361,10 @@ export function buildBriefUserMessage(
   lines.push(`The overall status is: ${status.toUpperCase()}`)
   lines.push('Write the Morning Brief JSON with fields: overall_reason, ai_summary, paid_assessment, organic_assessment, gbp_assessment, observations')
   lines.push('For observations: use the signal candidates above. Each signal_id must exactly match a candidate id listed above.')
+  if (driverCandidates.length > 0) {
+    lines.push('For driver_id: if a DRIVER CANDIDATE targets this signal and you judge it plausible, set driver_id to that driver\'s id. Otherwise set driver_id to null.')
+    lines.push('Never invent a driver_id. Never claim causation. Use the driver\'s caveat in your interpretation.')
+  }
   lines.push('Be concise, honest, and decision-oriented. Do not invent metrics or contradict the data above.')
 
   return lines.join('\n')

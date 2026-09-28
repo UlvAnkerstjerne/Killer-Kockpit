@@ -321,6 +321,14 @@ export interface BriefObservation {
   interpretation:     string
   recommended_action: string
   creative_start:     string | null
+  // Driver Intelligence v1 — optional for backward compat with stored briefs
+  driver?: {
+    id:         string
+    label:      string
+    confidence: 'likely' | 'possible'
+    evidence:   string     // pre-formatted evidence string from deterministic code
+    caveat:     string
+  } | null
 }
 
 export const MorningBriefAIOutputSchema = z.object({
@@ -347,6 +355,9 @@ export const MorningBriefAIOutputSchema = z.object({
       interpretation:     z.string().min(10).max(400),
       recommended_action: z.string().min(5).max(100),
       creative_start:     z.string().max(200).nullable(),
+      // Driver Intelligence v1 — AI selects from supplied driver candidates.
+      // Must exactly match a supplied driver candidate id, or null if no driver applies.
+      driver_id:          z.string().max(100).nullable().optional(),
     })
   ).min(0).max(8),
 })

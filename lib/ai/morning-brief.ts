@@ -120,6 +120,7 @@ export async function callMorningBriefAI(
           interpretation:     o.interpretation.trim(),
           recommended_action: o.recommended_action.trim(),
           creative_start:     o.creative_start?.trim() ?? null,
+          driver_id:          o.driver_id?.trim() ?? null,
         })),
       }
 

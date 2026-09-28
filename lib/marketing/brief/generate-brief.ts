@@ -47,6 +47,9 @@ import { buildBriefUserMessage } from './build-prompt'
 import { BRIEF_PROMPT_VERSION } from './build-prompt'
 import { callMorningBriefAI } from '@/lib/ai/morning-brief'
 import { buildMaterialSignals } from './material-signals'
+import { detectDrivers } from './detect-drivers'
+import { collectDriverContext } from './driver-context'
+import type { MarketingDriverCandidate } from './driver-types'
 import type { MaterialSignalCandidate } from './material-signals'
 import type {
   BriefInputData,
@@ -365,8 +368,18 @@ async function runGenerationPipeline(briefDate: string): Promise<
 
   const candidates: MaterialSignalCandidate[] = buildMaterialSignals(data)
 
+  // ── Driver Intelligence: collect cross-channel context and detect drivers ──
+  let driverCandidates: MarketingDriverCandidate[] = []
+  try {
+    const driverContext = await collectDriverContext(data.dataWindowEnd, data.dataWindowStart)
+    driverCandidates = detectDrivers(candidates, data, driverContext)
+  } catch (err) {
+    // Driver detection failure is non-fatal — brief still generates without drivers
+    console.warn('[generate-brief] Driver detection failed (non-fatal):', err instanceof Error ? err.message : err)
+  }
+
   const overallStatus = data.signals.computed_status
-  const userMessage   = buildBriefUserMessage(data, overallStatus, candidates)
+  const userMessage   = buildBriefUserMessage(data, overallStatus, candidates, driverCandidates)
   const aiResult      = await callMorningBriefAI(userMessage)
 
   if (!aiResult.ok) {
@@ -388,11 +401,41 @@ async function runGenerationPipeline(briefDate: string): Promise<
     }
   }
 
-  // Build a lookup so we can attach source/category from the candidate to the stored observation
+  // Build lookups for enriching observations with source/category and driver data
   const candidateById = new Map(candidates.map((c) => [c.id, c]))
+  const driverById    = new Map(driverCandidates.map((d) => [d.id, d]))
+
+  // Validate AI-returned driver_ids: unknown IDs are silently nulled out (non-fatal).
+  const validDriverIds = new Set(driverCandidates.map((d) => d.id))
 
   const observations: BriefObservation[] = aiResult.output.observations.map((o) => {
     const candidate = candidateById.get(o.signal_id)
+
+    // Resolve driver — must match a supplied candidate, must target this signal
+    const rawDriverId = o.driver_id ?? null
+    let resolvedDriver: BriefObservation['driver'] = null
+    if (rawDriverId && validDriverIds.has(rawDriverId)) {
+      const dc = driverById.get(rawDriverId)
+      if (dc && dc.target_signal_id === o.signal_id) {
+        // Format evidence string from deterministic driver data
+        const evStr = dc.evidence
+          .map(e => {
+            const chg = e.change_pct != null ? ` ${e.change_pct >= 0 ? '+' : ''}${Math.round(e.change_pct * 100)}%` : ''
+            return `${e.label}${chg}`
+          })
+          .join(' · ')
+        resolvedDriver = {
+          id:         dc.id,
+          label:      dc.confidence === 'likely'
+            ? 'Likely driver'
+            : 'Possible contributor',
+          confidence: dc.confidence,
+          evidence:   evStr,
+          caveat:     dc.caveat,
+        }
+      }
+    }
+
     return {
       signal_id:          o.signal_id,
       source:             candidate?.source,
@@ -402,6 +445,7 @@ async function runGenerationPipeline(briefDate: string): Promise<
       interpretation:     o.interpretation,
       recommended_action: o.recommended_action,
       creative_start:     o.creative_start,
+      driver:             resolvedDriver,
     }
   })
 
