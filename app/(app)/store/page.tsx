@@ -291,7 +291,7 @@ function StoreFallback() {
     <div className="min-h-screen" style={{ background: '#C8B89A' }}>
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
         <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
-          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
+          <div className="text-[11px] font-black tracking-[0.18em] uppercase text-[#171717] mb-1">
             Killer Kockpit
           </div>
           <div className="text-xl font-black text-[#8D795F] leading-tight tracking-tight">
@@ -320,7 +320,7 @@ function StoreSelectionPrompt({
     <div className="min-h-screen" style={{ background: '#C8B89A' }}>
       <div className="mx-auto w-full max-w-[430px] flex flex-col min-h-screen">
         <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
-          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717] mb-1">
+          <div className="text-[11px] font-black tracking-[0.18em] uppercase text-[#171717] mb-1">
             Killer Kockpit
           </div>
           <div className="text-xl font-black text-[#8D795F] leading-tight tracking-tight">

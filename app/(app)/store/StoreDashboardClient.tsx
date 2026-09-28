@@ -209,7 +209,7 @@ function StorePerformance({
           <div className="text-[10px] font-black tracking-[0.15em] uppercase text-[#8D795F] mb-1">
             Revenue
           </div>
-          <div className="font-brand text-3xl font-black text-[#171717] leading-none">
+          <div className="text-3xl font-black text-[#171717] leading-none">
             {formatDKK(rev.revenue)}
           </div>
           <div className="text-[10px] text-[#171717] mt-1">DKK</div>
@@ -677,10 +677,10 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
 
         {/* ── Header ───────────────────────────────────────────────────── */}
         <header className="px-5 pt-6 pb-5 border-b-2 border-[#171717]">
-          <div className="font-brand text-[11px] tracking-[0.25em] uppercase text-[#171717]">
+          <div className="text-[11px] font-black tracking-[0.18em] uppercase text-[#171717]">
             Killer Kockpit SMD
           </div>
-          <div className="font-brand text-[11vw] font-black text-[#AD3919] leading-none tracking-tighter mt-1">
+          <div className="text-[11vw] font-black text-[#AD3919] leading-none tracking-tight uppercase mt-1">
             {storeName}
           </div>
           <div className="text-[11px] text-[#171717] mt-1.5">
