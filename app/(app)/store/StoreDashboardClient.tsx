@@ -187,7 +187,7 @@ function StorePerformance({
 
   const TABS: { key: Period; label: string }[] = [
     { key: 'today',     label: 'Today' },
-    { key: 'yesterday', label: 'Yesterday' },
+    { key: 'yesterday', label: 'Yday' },
     { key: 'week',      label: 'Week'  },
     { key: 'month',     label: 'Month' },
   ]
