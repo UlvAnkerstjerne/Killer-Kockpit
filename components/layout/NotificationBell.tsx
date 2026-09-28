@@ -388,7 +388,7 @@ export default function NotificationBell() {
           className={[
             'z-[9999]',
             'w-80 max-w-[calc(100vw-240px)]',
-            'bg-kraft-light border-2 border-[#171717] rounded-2xl [box-shadow:4px_4px_0_#555555]',
+            'bg-kraft-light border-2 border-[#171717] rounded-2xl overflow-hidden [box-shadow:4px_4px_0_#555555]',
             'flex flex-col max-h-[calc(100vh-80px)]',
           ].join(' ')}
         >
