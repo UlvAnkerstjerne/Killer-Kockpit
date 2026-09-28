@@ -469,7 +469,6 @@ export default async function TodayPage({
           openTodos={openTodos}
           completedThisWeek={[]}
           maxItems={8}
-          showFooter
           accentHeader
           allUsers={todoAllUsers}
           projects={todoProjects}
@@ -485,8 +484,6 @@ export default async function TodayPage({
           <DashCard
             title="Urgent now"
             badge={urgentItems.length > 0 ? urgentItems.length : undefined}
-            footerHref="/tasks"
-            footerLabel={urgentItems.length > 6 ? `View all ${urgentItems.length} urgent items` : 'View all tasks'}
             icon={<IconUrgent />}
             accentHeader
             maxRows={6}
@@ -495,7 +492,7 @@ export default async function TodayPage({
               <EmptyRow text="No overdue or imminent items." />
             ) : (
               <div className="divide-y divide-[#171717]/15">
-                {urgentItems.slice(0, 6).map(item => {
+                {urgentItems.map(item => {
                   const s = getDueState(item.due_at, now, weekEnd)
                   const cfg = DUE_STATE_CONFIG[s]
                   return (
@@ -534,8 +531,6 @@ export default async function TodayPage({
           <DashCard
             title="Work this week"
             badge={weekTaskItems.length > 0 ? weekTaskItems.length : undefined}
-            footerHref="/tasks"
-            footerLabel="View all tasks"
             icon={<IconWorkWeek />}
             accentHeader
             maxRows={6}
@@ -544,7 +539,7 @@ export default async function TodayPage({
               <EmptyRow text="No remaining tasks this week." />
             ) : (
               <div className="divide-y divide-[#171717]/15">
-                {weekTaskItems.slice(0, 7).map(item => (
+                {weekTaskItems.map(item => (
                   <Link
                     key={item.id}
                     href={item.href}
@@ -567,11 +562,6 @@ export default async function TodayPage({
                     )}
                   </Link>
                 ))}
-                {weekTaskItems.length > 7 && (
-                  <div className="px-4 py-2 text-xs text-kk-muted">
-                    + {weekTaskItems.length - 7} more
-                  </div>
-                )}
               </div>
             )}
           </DashCard>
@@ -582,8 +572,6 @@ export default async function TodayPage({
           <DashCard
             title="Meetings"
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
-            footerHref="/meetings"
-            footerLabel="View all meetings"
             icon={<IconMeeting />}
             maxRows={6}
           >
@@ -606,7 +594,7 @@ export default async function TodayPage({
                     )}
                   </Link>
                 ))}
-                {laterMeetings.slice(0, Math.max(0, 5 - todayMeetings.length)).map(m => (
+                {laterMeetings.map(m => (
                   <Link
                     key={m.id}
                     href={`/meetings/${m.id}`}
@@ -620,7 +608,7 @@ export default async function TodayPage({
                     </div>
                   </Link>
                 ))}
-                {canManage && draftMeetings.slice(0, 2).map(m => (
+                {canManage && draftMeetings.map(m => (
                   <Link
                     key={m.id}
                     href={`/meetings/${m.id}/publish`}
@@ -645,8 +633,6 @@ export default async function TodayPage({
           <DashCard
             title="Waiting ons"
             badge={nonUrgentWOs.length > 0 ? nonUrgentWOs.length : undefined}
-            footerHref="/waiting-ons"
-            footerLabel="View all waiting ons"
             icon={<IconWaiting />}
             accentHeader
             maxRows={6}
@@ -655,7 +641,7 @@ export default async function TodayPage({
               <EmptyRow text="No open waiting ons." />
             ) : (
               <div className="divide-y divide-[#171717]/15">
-                {nonUrgentWOs.slice(0, 5).map(wo => (
+                {nonUrgentWOs.map(wo => (
                   <Link
                     key={wo.id}
                     href={`/waiting-ons/${wo.id}`}
@@ -675,11 +661,6 @@ export default async function TodayPage({
                     </span>
                   </Link>
                 ))}
-                {nonUrgentWOs.length > 5 && (
-                  <div className="px-4 py-2 text-xs text-kk-muted">
-                    + {nonUrgentWOs.length - 5} more
-                  </div>
-                )}
               </div>
             )}
           </DashCard>
@@ -691,8 +672,6 @@ export default async function TodayPage({
   <DashCard
               title="Ready for review"
               badge={pendingReviewTasks.length}
-              footerHref="/tasks"
-              footerLabel="View all tasks"
               icon={<IconReview />}
               maxRows={6}
             >
@@ -731,8 +710,6 @@ export default async function TodayPage({
             <DashCard
               title="Returned to you"
               badge={returnedTasks.length}
-              footerHref="/tasks"
-              footerLabel="View all tasks"
               icon={<IconReturned />}
               maxRows={6}
             >
