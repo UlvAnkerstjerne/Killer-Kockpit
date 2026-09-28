@@ -553,7 +553,7 @@ function MyTodos({ todos }: Pick<StoreDashboardProps, 'todos'>) {
 
       {/* Add a To-Do */}
       <Link
-        href="/todos"
+        href="/todos?returnTo=/store"
         className="flex items-center justify-center w-full py-3 bg-[#AD3919] border-t-2 border-[#171717] text-[11px] font-black tracking-[0.15em] uppercase text-white hover:bg-[#9a3215] transition-colors"
       >
         + Add a To-Do

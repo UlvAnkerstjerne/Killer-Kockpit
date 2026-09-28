@@ -490,8 +490,8 @@ export default function AppShell({
       {/* ── Main area ── */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Mobile header with hamburger (hidden on desktop) */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-kraft-light border-b border-[#171717]/20 shrink-0">
+        {/* Mobile header with hamburger (hidden on desktop, hidden when returnTo=/store) */}
+        <div className={`md:hidden flex items-center gap-3 px-4 py-3 bg-kraft-light border-b border-[#171717]/20 shrink-0${searchParams.get('returnTo') === '/store' ? ' hidden' : ''}`}>
           <button
             onClick={() => setMobileMenuOpen(true)}
             className="p-1.5 -ml-1.5 text-kk-ink/60 hover:text-kk-ink transition-colors"
@@ -503,7 +503,11 @@ export default function AppShell({
           </button>
         </div>
 
-        {pathname !== '/today' && <CaptureBar user={user} currentView={currentView} />}
+        {pathname !== '/today' && (
+          <div className={searchParams.get('returnTo') === '/store' ? 'hidden sm:block' : ''}>
+            <CaptureBar user={user} currentView={currentView} />
+          </div>
+        )}
         <main className="flex-1 p-4">
           {children}
         </main>

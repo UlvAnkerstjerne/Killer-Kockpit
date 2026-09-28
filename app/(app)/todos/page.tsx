@@ -3,6 +3,7 @@ import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView, canAssignToOthers, MANAGEMENT_ROLES } from '@/lib/permissions'
 import type { Todo, TeamTodo } from '@/lib/types'
 import TeamColumn from './TeamColumn'
+import MobileTodoView from './MobileTodoView'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,13 @@ type RawTeamTodo = {
 // Hardcoded display order: current user first, then team
 const TEAM_ORDER = ['Kasper Kristiansen', 'Adam Vearey', 'Lydia Mertiri', 'Sara Jørgensen']
 
-export default async function TodosPage() {
+export default async function TodosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>
+}) {
+  const sp = await searchParams
+  const returnTo = sp.returnTo
   const user = await getCurrentUser()
   if (!user) return null
 
@@ -56,12 +63,6 @@ export default async function TodosPage() {
 
   const todos = (myData ?? []) as Todo[]
   const openTodos = todos.filter(t => !t.completed_at && !t.cancelled_at && !t.upgraded_to_task_id)
-  const completedTodos = todos
-    .filter(t => !!t.completed_at)
-    .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime())
-  const cancelledTodos = todos
-    .filter(t => !!t.cancelled_at && !t.completed_at)
-    .sort((a, b) => new Date(b.cancelled_at!).getTime() - new Date(a.cancelled_at!).getTime())
 
   const allUsers = (allUsersResult as { id: string; display_name: string; email: string }[])
     .map(u => ({ id: u.id, display_name: u.display_name, email: u.email }))
@@ -106,7 +107,6 @@ export default async function TodosPage() {
 
     const managementUsers = (managementUsersRes.data ?? []) as { id: string; display_name: string }[]
 
-    // Build columns in the fixed order
     const todosByUser = new Map<string, TeamTodo[]>()
     for (const t of teamTodos) {
       const arr = todosByUser.get(t.user_id) ?? []
@@ -114,7 +114,6 @@ export default async function TodosPage() {
       todosByUser.set(t.user_id, arr)
     }
 
-    // Sort users by TEAM_ORDER, unknowns at end
     const sortedUsers = [...managementUsers].sort((a, b) => {
       const ai = TEAM_ORDER.indexOf(a.display_name)
       const bi = TEAM_ORDER.indexOf(b.display_name)
@@ -127,37 +126,53 @@ export default async function TodosPage() {
     }))
   }
 
+  const myName = user.display_name?.split(' ')[0] ?? 'Me'
+  const myTeamTodos: TeamTodo[] = openTodos.map(t => ({
+    id: t.id, user_id: t.user_id, title: t.title,
+    priority: t.priority as 1 | 2 | 3 | 4,
+    created_at: t.created_at, updated_at: t.updated_at,
+    completed_at: t.completed_at, cancelled_at: t.cancelled_at,
+    notes: t.notes, scheduled_for: t.scheduled_for,
+    recurrence_rule: t.recurrence_rule, recurrence_day: t.recurrence_day,
+    parent_todo_id: t.parent_todo_id,
+    owner: { id: user.id, display_name: user.display_name ?? '' },
+  }))
+
   return (
     <div className="-m-4 p-4 min-h-screen bg-[#171717]">
-      <div className="mb-5">
-        <h1 className="text-2xl font-black tracking-tight text-kraft-light">To-Dos</h1>
-        <p className="text-sm text-kraft-dark mt-0.5">Everyone&apos;s to-dos</p>
-      </div>
-
-      <div className={`grid gap-4`} style={canSeeTeam ? { gridTemplateColumns: `repeat(${1 + teamColumns.length}, 1fr)` } : undefined}>
-        {/* My column — same card style as team, but interactive */}
-        <TeamColumn
-          name={user.display_name?.split(' ')[0] ?? 'Me'}
-          todos={openTodos.map(t => ({
-            id: t.id, user_id: t.user_id, title: t.title,
-            priority: t.priority as 1 | 2 | 3 | 4,
-            created_at: t.created_at, updated_at: t.updated_at,
-            completed_at: t.completed_at, cancelled_at: t.cancelled_at,
-            notes: t.notes, scheduled_for: t.scheduled_for,
-            recurrence_rule: t.recurrence_rule, recurrence_day: t.recurrence_day,
-            parent_todo_id: t.parent_todo_id,
-            owner: { id: user.id, display_name: user.display_name ?? '' },
-          }))}
-          interactive
+      {/* ── Mobile view (< 640px) ── */}
+      <div className="sm:hidden">
+        <MobileTodoView
+          myName={myName}
+          myTodos={myTeamTodos}
+          teamColumns={canSeeTeam ? teamColumns : []}
           currentUserId={user.id}
           allUsers={allUsers}
           projects={projectsResult.data ?? []}
+          returnTo={returnTo}
         />
+      </div>
 
-        {/* Team columns — read-only */}
-        {teamColumns.map(col => (
-          <TeamColumn key={col.name} name={col.name} todos={col.todos} />
-        ))}
+      {/* ── Desktop view (>= 640px) ── */}
+      <div className="hidden sm:block">
+        <div className="mb-5">
+          <h1 className="text-2xl font-black tracking-tight text-kraft-light">To-Dos</h1>
+          <p className="text-sm text-kraft-dark mt-0.5">Everyone&apos;s to-dos</p>
+        </div>
+
+        <div className={`grid gap-4`} style={canSeeTeam ? { gridTemplateColumns: `repeat(${1 + teamColumns.length}, 1fr)` } : undefined}>
+          <TeamColumn
+            name={myName}
+            todos={myTeamTodos}
+            interactive
+            currentUserId={user.id}
+            allUsers={allUsers}
+            projects={projectsResult.data ?? []}
+          />
+          {teamColumns.map(col => (
+            <TeamColumn key={col.name} name={col.name} todos={col.todos} />
+          ))}
+        </div>
       </div>
     </div>
   )
