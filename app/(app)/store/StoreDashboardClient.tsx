@@ -209,36 +209,42 @@ function StorePerformance({
       {/* Compound block: Revenue + Labour/Kitchen */}
       <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex">
         {/* Revenue — left */}
-        <div className="flex-1 p-5 border-r-2 border-[#171717]">
-          <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
-            Revenue
-          </div>
-          <div className="text-4xl font-black text-[#171717] leading-none">
-            {formatDKK(rev.revenue)}
-          </div>
-          <div className="text-[11px] text-[#171717] mt-1">DKK</div>
-          {rev.vsLast != null && (
-            <div className="mt-3 flex items-center gap-1.5">
-              <span className={[
-                'text-sm font-bold',
-                rev.vsLast >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
-              ].join(' ')}>
-                {formatPct(rev.vsLast, true)}
-              </span>
-              <span className="text-[11px] text-[#8D795F]">vs last</span>
+        <div className="flex-1 p-5 border-r-2 border-[#171717] flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
+              Revenue
             </div>
-          )}
-          {rev.vsBudget != null && (
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={[
-                'text-sm font-bold',
-                rev.vsBudget >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
-              ].join(' ')}>
-                {formatPct(rev.vsBudget, true)}
+            <div className="flex items-baseline gap-1">
+              <span className="text-5xl font-black text-[#171717] leading-none">
+                {formatDKK(rev.revenue)}
               </span>
-              <span className="text-[11px] text-[#8D795F]">vs budget</span>
+              <span className="text-sm font-bold text-[#171717]">DKK</span>
             </div>
-          )}
+          </div>
+          <div className="mt-3">
+            {rev.vsLast != null && (
+              <div className="flex items-center gap-1.5">
+                <span className={[
+                  'text-sm font-bold',
+                  rev.vsLast >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
+                ].join(' ')}>
+                  {formatPct(rev.vsLast, true)}
+                </span>
+                <span className="text-[11px] text-[#8D795F]">vs last</span>
+              </div>
+            )}
+            {rev.vsBudget != null && (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={[
+                  'text-sm font-bold',
+                  rev.vsBudget >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
+                ].join(' ')}>
+                  {formatPct(rev.vsBudget, true)}
+                </span>
+                <span className="text-[11px] text-[#8D795F]">vs budget</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Labour + Kitchen — shared red column */}
