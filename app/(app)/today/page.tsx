@@ -435,7 +435,7 @@ export default async function TodayPage({
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-end justify-between -mx-4 px-4 -mt-4 pt-4 pb-3 mb-1.5 border-b border-[#171717]/20">
         <h1
-          className="font-brand leading-none text-8xl font-black text-[#AD3919] tracking-tight [text-shadow:2px_3px_6px_rgba(0,0,0,0.25)]"
+          className="font-brand leading-none text-4xl lg:text-8xl font-black text-[#AD3919] tracking-tight [text-shadow:2px_3px_6px_rgba(0,0,0,0.25)]"
           style={{ WebkitTextStroke: '0.25px #171717' }}
         >
           KILLER KOCKPIT
@@ -458,9 +458,17 @@ export default async function TodayPage({
         )}
       </div>
 
-      {/* ── Inline capture buttons ──────────────────────────────────────────── */}
-      <div className="mb-3">
+      {/* ── Inline capture buttons — full set on desktop, + Task only on mobile ── */}
+      <div className="hidden lg:block mb-3">
         <CaptureBar user={user} inline />
+      </div>
+      <div className="lg:hidden mb-3">
+        <Link
+          href="/tasks/new"
+          className="inline-flex text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
+        >
+          + Task
+        </Link>
       </div>
 
       {/* ── To-Dos — full width ─────────────────────────────────────────────── */}
