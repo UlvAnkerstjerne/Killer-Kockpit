@@ -410,8 +410,8 @@ export default async function TodayPage({
     creator: { id: string; display_name: string } | Array<{ id: string; display_name: string }> | undefined
   }
 
-  const pendingReviewTasks = (!isManagementView ? (pendingReviewTasksRes.data || []) : []) as RawPendingReview[]
-  const returnedTasks      = (!isManagementView ? (returnedTasksRes.data      || []) : []) as RawReturned[]
+  const pendingReviewTasks = (pendingReviewTasksRes.data || []) as RawPendingReview[]
+  const returnedTasks      = (returnedTasksRes.data      || []) as RawReturned[]
 
   // ─── At-a-glance summary counts ──────────────────────────────────────────
 
@@ -476,8 +476,106 @@ export default async function TodayPage({
         />
       </div>
 
-      {/* ── Dashboard grid — 2×2 beneath To-Dos ──────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch">
+      {/* ── Mobile task queue — Management mode only, hidden on desktop ──── */}
+      {isManagementView && (
+        <div className="lg:hidden mb-2.5">
+          <DashCard
+            title="My tasks"
+            badge={(unfinishedTasks.length + pendingReviewTasks.length + returnedTasks.length) > 0
+              ? unfinishedTasks.length + pendingReviewTasks.length + returnedTasks.length
+              : undefined}
+            icon={<IconWorkWeek />}
+            accentHeader
+            maxRows={10}
+          >
+            {unfinishedTasks.length === 0 && pendingReviewTasks.length === 0 && returnedTasks.length === 0 ? (
+              <EmptyRow text="No tasks right now." />
+            ) : (
+              <div className="divide-y divide-[#171717]/15">
+                {/* Review items first */}
+                {pendingReviewTasks.map(t => {
+                  const o = Array.isArray(t.owner) ? t.owner[0] : t.owner
+                  return (
+                    <Link
+                      key={`review-${t.id}`}
+                      href={`/tasks/${t.id}?returnTo=/today`}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                        {o?.display_name && (
+                          <div className="text-xs text-kk-muted mt-0.5 truncate">From: {o.display_name}</div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-kk-brand bg-kk-bad-bg">
+                        Review
+                      </span>
+                    </Link>
+                  )
+                })}
+                {/* Returned items */}
+                {returnedTasks.map(t => {
+                  const c = Array.isArray(t.creator) ? t.creator[0] : t.creator
+                  return (
+                    <Link
+                      key={`returned-${t.id}`}
+                      href={`/tasks/${t.id}?returnTo=/today`}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                        {t.latest_review_note ? (
+                          <div className="text-xs text-kk-muted mt-0.5 truncate">{t.latest_review_note}</div>
+                        ) : c?.display_name ? (
+                          <div className="text-xs text-kk-muted mt-0.5 truncate">From: {c.display_name}</div>
+                        ) : null}
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 text-amber-700 bg-amber-50">
+                        Returned
+                      </span>
+                    </Link>
+                  )
+                })}
+                {/* My assigned tasks (exclude ones already shown as review/returned) */}
+                {unfinishedTasks.filter(t => !pendingReviewTasks.some(r => r.id === t.id) && !returnedTasks.some(r => r.id === t.id)).map(t => {
+                  const s = getDueState(t.due_at, now, weekEnd)
+                  const cfg = DUE_STATE_CONFIG[s]
+                  return (
+                    <Link
+                      key={`task-${t.id}`}
+                      href={`/tasks/${t.id}?returnTo=/today`}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group"
+                    >
+                      <PriorityDot priority={t.priority} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
+                          {t.title}
+                        </span>
+                      </div>
+                      {cfg.label ? (
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${cfg.cls}`}>
+                          {cfg.label}
+                        </span>
+                      ) : t.due_at ? (
+                        <span className="text-xs text-kk-muted shrink-0">{formatShortDate(t.due_at)}</span>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </DashCard>
+        </div>
+      )}
+
+      {/* ── Dashboard grid — hidden on mobile in Management, visible on desktop ── */}
+      <div className={`grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch ${isManagementView ? 'hidden lg:grid' : ''}`}>
 
         {/* ═══ Left col, row 1 — Urgent Now ═══════════════════════════════ */}
         <div className="order-1 lg:order-none">
