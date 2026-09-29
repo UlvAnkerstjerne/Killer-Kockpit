@@ -176,8 +176,10 @@ export default async function MeetingDetailPage({
 
       {/* ── Mobile meeting view — agenda + Record ──────────────────────────── */}
       <div className="md:hidden">
-        <div className="flex items-center gap-2 text-sm text-kk-muted mb-3">
-          <Link href="/today" className="hover:text-kk-ink transition-colors">← Back</Link>
+        <div className="mb-3">
+          <Link href="/today" className="inline-flex items-center gap-1 text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]">
+            ← Back
+          </Link>
         </div>
         <h1 className="text-xl font-black tracking-tight text-kk-ink mb-1">{meeting.title}</h1>
         <div className="flex items-center gap-2 mb-5">
