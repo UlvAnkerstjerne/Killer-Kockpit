@@ -12,6 +12,7 @@ import { sortOpenTodos, filterTodosForToday } from '@/lib/today/todoUtils'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
+import QuickAddTask from './QuickAddTask'
 import CaptureBar from '@/components/layout/CaptureBar'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
@@ -458,17 +459,9 @@ export default async function TodayPage({
         )}
       </div>
 
-      {/* ── Inline capture buttons — full set on desktop, + Task only on mobile ── */}
+      {/* ── Inline capture buttons — desktop only ──────────────────────────── */}
       <div className="hidden lg:block mb-3">
         <CaptureBar user={user} inline />
-      </div>
-      <div className="lg:hidden mb-3">
-        <Link
-          href="/tasks/new"
-          className="inline-flex text-sm px-3.5 py-1.5 bg-[#171717] text-kraft-light rounded-md hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
-        >
-          + Task
-        </Link>
       </div>
 
       {/* ── To-Dos — full width ─────────────────────────────────────────────── */}
@@ -496,6 +489,7 @@ export default async function TodayPage({
             accentHeader
             maxRows={10}
           >
+            <QuickAddTask />
             {unfinishedTasks.length === 0 && pendingReviewTasks.length === 0 && returnedTasks.length === 0 ? (
               <EmptyRow text="No tasks right now." />
             ) : (
