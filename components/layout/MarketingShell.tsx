@@ -78,12 +78,18 @@ export default function MarketingShell({
       ) : null}
       {/* Sidebar */}
       <aside className={`w-60 shrink-0 bg-kk-sidebar border-r border-kk-line flex-col sticky top-0 h-screen ${usesResponsiveShell ? 'hidden md:flex' : 'flex'}`}>
-        {/* Wordmark */}
+        {/* Wordmark — Chelsea Market, matching Today page treatment (synthetic bold + stroke + shadow) */}
         <div className="px-5 pt-5 pb-4">
-          <div className="font-brand text-[26px] font-black text-[#AD3919] leading-none tracking-tight">
+          <div
+            className="font-brand text-[28px] font-black text-[#AD3919] leading-none tracking-tight"
+            style={{ WebkitTextStroke: '0.15px #171717', textShadow: '1px 1.5px 3px rgba(0,0,0,0.2)' }}
+          >
             KILLER
           </div>
-          <div className="font-brand text-[26px] font-extrabold text-[#AD3919] leading-tight tracking-[0.1em] uppercase mt-1">
+          <div
+            className="font-brand text-[28px] font-black text-[#AD3919] leading-tight tracking-tight mt-0.5"
+            style={{ WebkitTextStroke: '0.15px #171717', textShadow: '1px 1.5px 3px rgba(0,0,0,0.2)' }}
+          >
             KOCKPIT
           </div>
           <div className="text-xs font-bold tracking-widest uppercase text-kk-muted mt-2">

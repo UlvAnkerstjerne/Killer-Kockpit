@@ -77,6 +77,50 @@ export interface Insight {
   text: string
 }
 
+// ── Facebook post types ──────────────────────────────────────────────────────
+
+export interface FbPostRow {
+  id: string
+  post_type: string
+  message: string | null
+  permalink: string | null
+  published_at: string | null
+}
+
+export interface FbPostInsightsRow {
+  post_id: string
+  reactions_total: number | null
+  clicks: number | null
+  comments: number | null
+  shares: number | null
+}
+
+export interface FbPostWithContext {
+  id: string
+  post_type: string
+  message: string | null
+  permalink: string | null
+  published_at: string | null
+  reactions_total: number | null
+  clicks: number | null
+  comments: number | null
+  shares: number | null
+}
+
+export type FbSortMode = 'recent' | 'reactions' | 'clicks'
+
+export function sortFbPosts(posts: FbPostWithContext[], mode: FbSortMode): FbPostWithContext[] {
+  const sorted = [...posts]
+  switch (mode) {
+    case 'recent':
+      return sorted.sort((a, b) => (b.published_at ?? '').localeCompare(a.published_at ?? ''))
+    case 'reactions':
+      return sorted.sort((a, b) => (b.reactions_total ?? 0) - (a.reactions_total ?? 0))
+    case 'clicks':
+      return sorted.sort((a, b) => (b.clicks ?? 0) - (a.clicks ?? 0))
+  }
+}
+
 // ── Period helpers ─────────────────────────────────────────────────────────────
 
 export function daysAgoStr(n: number): string {

@@ -25,9 +25,12 @@ import type {
   IgDailyRow,
   IgPostRow,
   FbDailyRow,
+  FbPostRow,
+  FbPostInsightsRow,
+  FbPostWithContext,
 } from './organic-utils'
 
-export type { IgOverview, FbOverview, PostWithContext, Insight, IgDailyRow, FbDailyRow }
+export type { IgOverview, FbOverview, PostWithContext, Insight, IgDailyRow, FbDailyRow, FbPostWithContext }
 
 export interface OrganicData {
   igOverview7:   IgOverview
@@ -40,6 +43,8 @@ export interface OrganicData {
   fbOverview7:   FbOverview
   fbOverview28:  FbOverview
   fbDaily:       FbDailyRow[]
+  fbPosts7:      FbPostWithContext[]
+  fbPosts28:     FbPostWithContext[]
   hasData:       boolean
 }
 
@@ -71,7 +76,7 @@ export async function getOrganicPerformance(): Promise<OrganicData> {
     igDaily: [], posts7: [], posts28: [], insights7: [], insights28: [],
     fbOverview7: { reach: null, reachPrior: null, views: 0, viewsPrior: 0, engagedUsers: 0, engagedPrior: 0, fanGrowth: null, fanGrowthPrior: null, fans: null },
     fbOverview28: { reach: null, reachPrior: null, views: 0, viewsPrior: 0, engagedUsers: 0, engagedPrior: 0, fanGrowth: null, fanGrowthPrior: null, fans: null },
-    fbDaily: [], hasData: false,
+    fbDaily: [], fbPosts7: [], fbPosts28: [], hasData: false,
   }
 
   const user = await getCurrentUser()
@@ -86,7 +91,7 @@ export async function getOrganicPerformance(): Promise<OrganicData> {
   const since = daysAgoStr(60)
   const curEnd = daysAgoStr(1)
 
-  const [igDailyData, igMediaData, fbDailyData] = await Promise.all([
+  const [igDailyData, igMediaData, fbDailyData, fbPostsData, fbInsightsData] = await Promise.all([
     db.from('meta_ig_account_daily')
       .select('date, reach, followers_count, accounts_engaged, profile_views')
       .gte('date', since)
@@ -101,11 +106,37 @@ export async function getOrganicPerformance(): Promise<OrganicData> {
       .select('date, views, reach, engaged_users, fan_count')
       .gte('date', since)
       .order('date', { ascending: true }),
+    db.from('meta_fb_posts')
+      .select('id, post_type, message, permalink, published_at')
+      .order('published_at', { ascending: false })
+      .limit(200),
+    db.from('meta_fb_post_insights')
+      .select('post_id, reactions_total, clicks, comments, shares'),
   ])
 
   const igDaily = (igDailyData.data ?? []) as IgDailyRow[]
   const allPosts = igMediaData as IgPostRow[]
   const fbDaily = (fbDailyData.data ?? []) as FbDailyRow[]
+
+  // Join FB posts with their insights
+  const fbInsightsMap = new Map<string, FbPostInsightsRow>()
+  for (const ins of (fbInsightsData.data ?? []) as FbPostInsightsRow[]) {
+    fbInsightsMap.set(ins.post_id, ins)
+  }
+  const allFbPosts: FbPostWithContext[] = ((fbPostsData.data ?? []) as FbPostRow[]).map(p => {
+    const ins = fbInsightsMap.get(p.id)
+    return {
+      id: p.id,
+      post_type: p.post_type,
+      message: p.message,
+      permalink: p.permalink,
+      published_at: p.published_at,
+      reactions_total: ins?.reactions_total ?? null,
+      clicks: ins?.clicks ?? null,
+      comments: ins?.comments ?? null,
+      shares: ins?.shares ?? null,
+    }
+  })
 
   if (igDaily.length === 0 && allPosts.length === 0) return EMPTY
 
@@ -136,10 +167,16 @@ export async function getOrganicPerformance(): Promise<OrganicData> {
   const fbOverview7  = computeFbOverview(fbDaily, cur7Start, curEnd, pri7Start, pri7End)
   const fbOverview28 = computeFbOverview(fbDaily, cur28Start, curEnd, pri28Start, pri28End)
 
+  // FB posts for each period
+  const fbPostsInPeriod = (start: string) =>
+    allFbPosts.filter(p => p.published_at && p.published_at.slice(0, 10) >= start && p.published_at.slice(0, 10) <= curEnd)
+  const fbPosts7  = fbPostsInPeriod(cur7Start)
+  const fbPosts28 = fbPostsInPeriod(cur28Start)
+
   return {
     igOverview7, igOverview28,
     igDaily, posts7, posts28, insights7, insights28,
-    fbOverview7, fbOverview28, fbDaily,
+    fbOverview7, fbOverview28, fbDaily, fbPosts7, fbPosts28,
     hasData: true,
   }
 }

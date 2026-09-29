@@ -1,18 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import type { OrganicData, PostWithContext, IgOverview, FbOverview, Insight, IgDailyRow } from '@/lib/actions/marketing/organic-performance'
-import type { SortMode } from '@/lib/actions/marketing/organic-utils'
-import { sortPosts } from '@/lib/actions/marketing/organic-utils'
+import type { OrganicData, PostWithContext, FbPostWithContext } from '@/lib/actions/marketing/organic-performance'
+import type { SortMode, FbSortMode } from '@/lib/actions/marketing/organic-utils'
+import { sortPosts, sortFbPosts } from '@/lib/actions/marketing/organic-utils'
 import IgThumbnail from './IgThumbnail'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 10_000) return Math.round(n / 1_000) + 'K'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-  return n.toLocaleString('en-GB')
+  return Math.round(n).toLocaleString('en-GB')
 }
 
 function fmtGrowth(n: number): string {
@@ -21,11 +18,16 @@ function fmtGrowth(n: number): string {
 }
 
 function fmtDate(iso: string): string {
-  // Handle both date-only ("2026-09-17") and timestamp ("2026-09-17 14:30:04+00")
   const d = iso.length <= 10
     ? new Date(iso + 'T12:00:00Z')
     : new Date(iso)
   if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+function fmtDateShort(iso: string): string {
+  const d = new Date(iso + 'T12:00:00Z')
+  if (isNaN(d.getTime())) return ''
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
@@ -36,6 +38,10 @@ function pctDelta(cur: number, pri: number): number | null {
 
 function mediaTypeLabel(t: string): string {
   return ({ IMAGE: 'Image', VIDEO: 'Reel', CAROUSEL_ALBUM: 'Carousel', REEL: 'Reel' } as Record<string, string>)[t] ?? t
+}
+
+function fbPostTypeLabel(t: string): string {
+  return ({ video: 'Video', status: 'Post', photo: 'Photo', link: 'Link', offer: 'Offer' } as Record<string, string>)[t] ?? t
 }
 
 function daysAgoStr(n: number): string {
@@ -66,37 +72,110 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: Re
   )
 }
 
-type IgMetric = 'reach'
+// ── Platform icons ──────────────────────────────────────────────────────────
 
-// ── MiniBarChart (simple, reusable) ──────────────────────────────────────────
-
-function MiniBarChart({ rows, fmtVal }: {
-  rows: { date: string; value: number }[]
-  fmtVal: (v: number) => string
-}) {
-  if (rows.length === 0) return <p className="text-sm text-kk-muted">No data available.</p>
-  const max = Math.max(...rows.map(r => r.value), 1)
+function IgIcon({ className = '' }: { className?: string }) {
   return (
-    <div className="space-y-1.5">
-      {rows.map(row => (
-        <div key={row.date} className="flex items-center gap-3">
-          <span className="text-[10px] text-kk-muted w-12 shrink-0">{fmtDate(row.date)}</span>
-          <div className="flex-1 h-2 bg-kk-soft rounded-full overflow-hidden">
-            <div
-              className="h-full bg-kk-ink rounded-full"
-              style={{ width: `${(row.value / max) * 100}%` }}
-            />
-          </div>
-          <span className="text-[10px] font-semibold text-kk-ink w-12 text-right shrink-0 tabular-nums">
-            {fmtVal(row.value)}
-          </span>
-        </div>
-      ))}
-    </div>
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" className={className}>
+      <rect x="2.5" y="2.5" width="13" height="13" rx="4" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="13" cy="5" r="0.8" fill="currentColor"/>
+    </svg>
   )
 }
 
-// ── Post row ──────────────────────────────────────────────────────────────────
+function FbIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" className={className}>
+      <path d="M10.5 9h2l.5-2.5H10.5V5c0-.7.35-1.5 1.5-1.5H13V1.5C12.2 1.5 11 1.5 11 1.5 8.8 1.5 7.5 2.8 7.5 5.2V6.5H5.5V9h2v7.5h3V9Z" fill="currentColor"/>
+    </svg>
+  )
+}
+
+// ── AreaChart (compact SVG, dates on x-axis, metric on y-axis) ──────────────
+
+const CHART_FONT = 'Inter, ui-sans-serif, system-ui, sans-serif'
+const CHART_LABEL_COLOR = '#6b6760'  // kk-muted
+
+function AreaChart({ rows, fmtVal, height = 88 }: {
+  rows: { date: string; value: number }[]
+  fmtVal: (v: number) => string
+  height?: number
+}) {
+  if (rows.length === 0) return <p className="text-sm text-kk-muted">No data available.</p>
+
+  const max = Math.max(...rows.map(r => r.value), 1)
+  const padL = 52   // left gutter for y-axis labels (room for full numbers like 80,000)
+  const padR = 24   // right gutter — room for last date label
+  const padT = 4
+  const padB = 18   // bottom gutter for x-axis labels
+  const w = 600     // viewBox width (scales with container)
+  const plotW = w - padL - padR
+  const plotH = height - padT - padB
+
+  // y-axis: 3 ticks (top, mid, zero)
+  const yTicks = [0, 0.5, 1].map(f => ({
+    val: Math.round(max * f),
+    y: padT + plotH * (1 - f),
+  }))
+
+  // x-axis: show ~5 evenly-spaced date labels, always include first and last.
+  // Drop the penultimate interval label if it crowds the forced last label.
+  const labelInterval = Math.max(1, Math.ceil(rows.length / 5))
+  const lastIdx = rows.length - 1
+  const xLabels = rows
+    .map((r, i) => ({ ...r, i }))
+    .filter((r, i) => {
+      if (i === 0 || i === lastIdx) return true
+      if (i % labelInterval !== 0) return false
+      // suppress if within 2 indices of the last point (would crowd)
+      if (lastIdx - i < labelInterval * 0.6) return false
+      return true
+    })
+
+  // Build path
+  const points = rows.map((r, i) => {
+    const x = padL + (i / Math.max(rows.length - 1, 1)) * plotW
+    const y = padT + plotH * (1 - r.value / max)
+    return { x, y }
+  })
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+  const areaPath = `${linePath} L${points[points.length - 1].x},${padT + plotH} L${points[0].x},${padT + plotH} Z`
+
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" preserveAspectRatio="xMidYMid meet" aria-hidden>
+      {/* Grid lines */}
+      {yTicks.map(t => (
+        <line key={t.val} x1={padL} x2={w - padR} y1={t.y} y2={t.y} stroke="#e5e2dc" strokeWidth={0.5} />
+      ))}
+      {/* Y-axis labels */}
+      {yTicks.map(t => (
+        <text key={t.val} x={padL - 4} y={t.y + 3} textAnchor="end" fontFamily={CHART_FONT} fontSize={9} fontWeight={500} fill={CHART_LABEL_COLOR}>
+          {fmtVal(t.val)}
+        </text>
+      ))}
+      {/* Area fill */}
+      <path d={areaPath} fill="#171717" fillOpacity={0.06} />
+      {/* Line */}
+      <path d={linePath} fill="none" stroke="#171717" strokeWidth={1.5} strokeLinejoin="round" />
+      {/* X-axis labels */}
+      {xLabels.map((r, idx) => {
+        const x = padL + (r.i / Math.max(rows.length - 1, 1)) * plotW
+        const isFirst = idx === 0
+        const isLast = idx === xLabels.length - 1
+        const anchor = isFirst ? 'start' : isLast ? 'end' : 'middle'
+        return (
+          <text key={r.date} x={x} y={height - 3} textAnchor={anchor} fontFamily={CHART_FONT} fontSize={9} fontWeight={500} fill={CHART_LABEL_COLOR}>
+            {fmtDateShort(r.date)}
+          </text>
+        )
+      })}
+    </svg>
+  )
+}
+
+// ── Post row (Instagram) ────────────────────────────────────────────────────
 
 function PostRow({ post }: { post: PostWithContext }) {
   const thumbSrc = post.thumbnail_url ?? post.media_url ?? null
@@ -107,12 +186,9 @@ function PostRow({ post }: { post: PostWithContext }) {
   return (
     <div className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
       <div className="flex">
-        {/* Thumbnail */}
         <div className="w-[72px] h-[72px] shrink-0 bg-kk-soft overflow-hidden">
           <IgThumbnail src={thumbSrc} />
         </div>
-
-        {/* Content */}
         <div className="flex-1 min-w-0 px-3 py-2">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-[10px] font-semibold text-kk-ink">{mediaTypeLabel(post.media_type)}</span>
@@ -156,14 +232,61 @@ function PostRow({ post }: { post: PostWithContext }) {
   )
 }
 
+// ── Post row (Facebook) ─────────────────────────────────────────────────────
+
+function FbPostRow({ post }: { post: FbPostWithContext }) {
+  return (
+    <div className="bg-kk-panel border border-kk-line rounded-xl overflow-hidden">
+      <div className="px-3 py-2.5">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-[10px] font-semibold text-kk-ink">{fbPostTypeLabel(post.post_type)}</span>
+          {post.published_at && (
+            <span className="text-[10px] text-kk-muted">{fmtDate(post.published_at)}</span>
+          )}
+          {post.permalink && (
+            <a
+              href={post.permalink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-medium text-kk-muted hover:text-kk-ink ml-auto shrink-0"
+            >
+              View ↗
+            </a>
+          )}
+        </div>
+        {post.message && (
+          <p className="text-[11px] text-kk-muted line-clamp-2 mb-1">{post.message}</p>
+        )}
+        <div className="flex items-center gap-3 text-[10px] tabular-nums">
+          {post.reactions_total != null && (
+            <span className="font-semibold text-kk-ink">{fmt(post.reactions_total)} <span className="font-normal text-kk-muted">Reactions</span></span>
+          )}
+          {post.clicks != null && (
+            <span className="text-kk-muted">🖱 {fmt(post.clicks)} Clicks</span>
+          )}
+          {post.comments != null && post.comments > 0 && (
+            <span className="text-kk-muted">💬 {fmt(post.comments)}</span>
+          )}
+          {post.shares != null && post.shares > 0 && (
+            <span className="text-kk-muted">↗ {fmt(post.shares)}</span>
+          )}
+          {post.reactions_total == null && post.clicks == null && (
+            <span className="text-kk-muted">No metrics available</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function OrganicClient({ data }: { data: OrganicData }) {
   const [period, setPeriod] = useState<7 | 28>(7)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [fbSortMode, setFbSortMode] = useState<FbSortMode>('recent')
 
   type FbMetric = 'reach' | 'engaged_users'
-  // Default to reach if any FB row has reach data, otherwise engaged_users
   const fbHasReach = data.fbDaily.some(r => r.reach != null)
   const [fbMetric, setFbMetric] = useState<FbMetric>(fbHasReach ? 'reach' : 'engaged_users')
 
@@ -171,8 +294,10 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
   const fbOverview = period === 7 ? data.fbOverview7 : data.fbOverview28
   const rawPosts   = period === 7 ? data.posts7 : data.posts28
   const insights   = period === 7 ? data.insights7 : data.insights28
+  const rawFbPosts = period === 7 ? data.fbPosts7 : data.fbPosts28
 
-  const posts = sortPosts(rawPosts, sortMode)
+  const posts   = sortPosts(rawPosts, sortMode)
+  const fbPosts = sortFbPosts(rawFbPosts, fbSortMode)
 
   // IG trend chart data
   const curEnd   = daysAgoStr(1)
@@ -219,12 +344,16 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
       <div className="space-y-4">
 
         {/* ── Instagram Overview ─────────────────────────────────────────── */}
-        <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-          <div className="bg-[#DDD9D1] px-5 py-3 border-b border-black/10">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-kk-ink">Instagram</span>
-              <span className="text-xs text-kk-muted">killerkebab</span>
+        <section
+          className="bg-white border border-kk-line rounded-2xl overflow-hidden"
+          style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}
+        >
+          <div className="px-5 py-4 flex items-center gap-2.5 border-b border-kk-line">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#FDF0F7', color: '#C13584' }}>
+              <IgIcon />
             </div>
+            <span className="text-[13px] font-bold tracking-[0.06em] uppercase text-kk-muted">Instagram</span>
+            <span className="text-xs text-kk-muted">killerkebab</span>
           </div>
 
           <div className="px-5 pt-4 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 border-b border-kk-line">
@@ -260,14 +389,22 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
             <div className="text-[11px] font-bold tracking-[0.08em] uppercase text-kk-muted mb-3">
               Daily Reach — {period} days
             </div>
-            <MiniBarChart rows={trendRows} fmtVal={fmt} />
+            <AreaChart rows={trendRows} fmtVal={fmt} />
           </div>
         </section>
 
-        {/* ── Top Content ───────────────────────────────────────────────── */}
-        <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-          <div className="bg-[#DDD9D1] px-5 py-3 border-b border-black/10 flex items-center justify-between">
-            <span className="text-sm font-semibold text-kk-ink">Content</span>
+        {/* ── Instagram Content ──────────────────────────────────────────── */}
+        <section
+          className="bg-white border border-kk-line rounded-2xl overflow-hidden"
+          style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}
+        >
+          <div className="px-5 py-4 flex items-center justify-between border-b border-kk-line">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#FDF0F7', color: '#C13584' }}>
+                <IgIcon />
+              </div>
+              <span className="text-[13px] font-bold tracking-[0.06em] uppercase text-kk-muted">Content</span>
+            </div>
             <span className="text-xs text-kk-muted">{rawPosts.length} posts in {period}d</span>
           </div>
 
@@ -292,8 +429,8 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
             ))}
           </div>
 
-          {/* Post list */}
-          <div className="p-3 space-y-2">
+          {/* Post list — scrollable */}
+          <div className="p-3 space-y-2 max-h-[480px] overflow-y-auto">
             {posts.length > 0 ? (
               posts.map(post => <PostRow key={post.id} post={post} />)
             ) : (
@@ -304,9 +441,15 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
 
         {/* ── What's Working ────────────────────────────────────────────── */}
         {insights.length > 0 && (
-          <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-            <div className="bg-[#DDD9D1] px-5 py-3 border-b border-black/10">
-              <span className="text-sm font-semibold text-kk-ink">What&apos;s working</span>
+          <section
+            className="bg-white border border-kk-line rounded-2xl overflow-hidden"
+            style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}
+          >
+            <div className="px-5 py-4 flex items-center gap-2.5 border-b border-kk-line">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-kk-good-bg text-kk-good">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M6 9l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+              <span className="text-[13px] font-bold tracking-[0.06em] uppercase text-kk-muted">What&apos;s working</span>
             </div>
             <div className="px-5 py-4 space-y-3">
               {insights.map((ins, i) => (
@@ -320,12 +463,16 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
         )}
 
         {/* ── Facebook Overview ──────────────────────────────────────────── */}
-        <section className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
-          <div className="bg-[#DDD9D1] px-5 py-3 border-b border-black/10">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-kk-ink">Facebook</span>
-              <span className="text-xs text-kk-muted">Page metrics</span>
+        <section
+          className="bg-white border border-kk-line rounded-2xl overflow-hidden"
+          style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}
+        >
+          <div className="px-5 py-4 flex items-center gap-2.5 border-b border-kk-line">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#EBF3FF', color: '#1877F2' }}>
+              <FbIcon />
             </div>
+            <span className="text-[13px] font-bold tracking-[0.06em] uppercase text-kk-muted">Facebook</span>
+            <span className="text-xs text-kk-muted">Page metrics</span>
           </div>
 
           <div className="px-5 pt-4 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -380,7 +527,52 @@ export default function OrganicClient({ data }: { data: OrganicData }) {
                 ))}
               </div>
             </div>
-            <MiniBarChart rows={fbTrendRows} fmtVal={fmt} />
+            <AreaChart rows={fbTrendRows} fmtVal={fmt} />
+          </div>
+        </section>
+
+        {/* ── Facebook Content ───────────────────────────────────────────── */}
+        <section
+          className="bg-white border border-kk-line rounded-2xl overflow-hidden"
+          style={{ boxShadow: '0 2px 8px rgba(23,23,23,0.05)' }}
+        >
+          <div className="px-5 py-4 flex items-center justify-between border-b border-kk-line">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#EBF3FF', color: '#1877F2' }}>
+                <FbIcon />
+              </div>
+              <span className="text-[13px] font-bold tracking-[0.06em] uppercase text-kk-muted">Content</span>
+            </div>
+            <span className="text-xs text-kk-muted">{rawFbPosts.length} posts in {period}d</span>
+          </div>
+
+          {/* Sort tabs */}
+          <div className="px-5 pt-3 pb-2 flex gap-1 border-b border-kk-line">
+            {([
+              { key: 'recent' as FbSortMode, label: 'Recent' },
+              { key: 'reactions' as FbSortMode, label: 'Reactions' },
+              { key: 'clicks' as FbSortMode, label: 'Clicks' },
+            ]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setFbSortMode(tab.key)}
+                className={[
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+                  fbSortMode === tab.key ? 'bg-kk-ink text-white' : 'text-kk-muted hover:text-kk-ink',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Post list — scrollable */}
+          <div className="p-3 space-y-2 max-h-[480px] overflow-y-auto">
+            {fbPosts.length > 0 ? (
+              fbPosts.map(post => <FbPostRow key={post.id} post={post} />)
+            ) : (
+              <p className="text-sm text-kk-muted px-2 py-4">No Facebook posts in the last {period} days.</p>
+            )}
           </div>
         </section>
 
