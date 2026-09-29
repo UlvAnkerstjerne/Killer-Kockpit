@@ -480,7 +480,7 @@ export default async function TodayPage({
 
       {/* ── Mobile task queue — Management mode only, hidden on desktop ──── */}
       {isManagementView && (
-        <div className="lg:hidden mb-2.5">
+        <div className="lg:hidden mb-5">
           <DashCard
             title="My tasks"
             badge={(unfinishedTasks.length + pendingReviewTasks.length + returnedTasks.length) > 0
