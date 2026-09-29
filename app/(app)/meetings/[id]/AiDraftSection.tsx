@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { generateMeetingDraft, discardDraft, applyMeetingDraft } from '@/lib/actions/ai-drafts'
-import { closeMeeting } from '@/lib/actions/meetings'
+import { openMeeting, closeMeeting } from '@/lib/actions/meetings'
 import type { MeetingAiDraft } from '@/lib/types'
 import type { TaskDraft, DecisionDraft, WaitingOnDraft } from '@/lib/ai/meeting-draft-schema'
 
@@ -103,17 +103,30 @@ export default function AiDraftSection({
       return
     }
 
-    // Transition meeting to draft status if it's currently open,
-    // so the review/publish page is accessible.
-    if (meetingStatus === 'open') {
+    // Transition meeting to draft status so the review/publish page is accessible.
+    // Lifecycle: scheduled → open → draft. We may need both steps.
+    if (meetingStatus === 'scheduled') {
+      const openResult = await openMeeting(meetingId)
+      if (openResult.error) {
+        setError(openResult.error)
+        setApplying(false)
+        return
+      }
       const closeResult = await closeMeeting(meetingId)
       if (closeResult.error) {
-        // Draft was applied but close failed — still navigate to meeting detail
+        setError(closeResult.error)
+        setApplying(false)
+        return
+      }
+    } else if (meetingStatus === 'open') {
+      const closeResult = await closeMeeting(meetingId)
+      if (closeResult.error) {
         setError(closeResult.error)
         setApplying(false)
         return
       }
     }
+    // If already 'draft', no transition needed.
 
     // Navigate to the review screen
     router.push(`/meetings/${meetingId}/publish`)
