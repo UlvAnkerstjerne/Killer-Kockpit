@@ -466,7 +466,7 @@ export default async function TodayPage({
       </div>
 
       {/* ── To-Dos — full width ─────────────────────────────────────────────── */}
-      <div className="mb-2.5">
+      <div className="mb-5 lg:mb-2.5">
         <TodoBlock
           openTodos={openTodos}
           completedThisWeek={[]}
