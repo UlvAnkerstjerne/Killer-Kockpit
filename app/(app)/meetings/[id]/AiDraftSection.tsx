@@ -128,8 +128,10 @@ export default function AiDraftSection({
     }
     // If already 'draft', no transition needed.
 
-    // Navigate to the review screen
-    router.push(`/meetings/${meetingId}/publish`)
+    // Navigate directly to the review screen — use window.location to
+    // bypass the React revalidation race that would briefly show the
+    // "applied" intermediary state before router.push takes effect.
+    window.location.href = `/meetings/${meetingId}/publish`
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
