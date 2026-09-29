@@ -199,6 +199,16 @@ export default async function MeetingDetailPage({
           </div>
         )}
 
+        {/* Attendees */}
+        <div className="mb-5">
+          <AttendeeSection
+            meetingId={id}
+            attendees={attendees}
+            allUsers={usersResult.data ?? []}
+            canEdit={canEdit && isActive}
+          />
+        </div>
+
         {/* Record button */}
         {allowsRecording && canManageTranscriptFile && (
           <Link
