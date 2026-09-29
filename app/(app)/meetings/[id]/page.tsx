@@ -168,11 +168,64 @@ export default async function MeetingDetailPage({
     })
   }
 
+  const allowsRecording = status === 'scheduled' || status === 'open' || status === 'draft'
+
   return (
     <div className="max-w-4xl">
       <RecordRecent userId={user.id} item={{ id, type: 'meeting', title: meeting.title, href: `/meetings/${id}` }} />
+
+      {/* ── Mobile meeting view — agenda + Record ──────────────────────────── */}
+      <div className="md:hidden">
+        <div className="flex items-center gap-2 text-sm text-kk-muted mb-3">
+          <Link href="/today" className="hover:text-kk-ink transition-colors">← Back</Link>
+        </div>
+        <h1 className="text-xl font-black tracking-tight text-kk-ink mb-1">{meeting.title}</h1>
+        <div className="flex items-center gap-2 mb-5">
+          <MeetingStatusBadge status={status} />
+          {meeting.scheduled_start && (
+            <span className="text-xs text-kk-muted">{formatDT(meeting.scheduled_start)}</span>
+          )}
+        </div>
+
+        {/* Agenda (read-only on mobile) */}
+        {agendaItems.length > 0 && (
+          <div className="mb-5">
+            <AgendaSection
+              meetingId={id}
+              items={agendaItems}
+              canEdit={false}
+              isEditable={false}
+            />
+          </div>
+        )}
+
+        {/* Record button */}
+        {allowsRecording && canManageTranscriptFile && (
+          <Link
+            href={`/meetings/${id}/record`}
+            className="flex items-center justify-center gap-3 w-full py-4 bg-[#AD3919] text-white text-lg font-bold rounded-xl hover:opacity-90 transition-opacity [box-shadow:4px_4px_0_#555555]"
+          >
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M8 9.5V12M5.5 14h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            Record
+          </Link>
+        )}
+
+        {status === 'draft' && canEdit && (
+          <Link
+            href={`/meetings/${id}/publish`}
+            className="block w-full mt-3 py-3 text-center bg-kk-good-bg text-kk-good text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity"
+          >
+            Review & publish →
+          </Link>
+        )}
+      </div>
+
+      {/* ── Desktop meeting view — full content ───────────────────────────── */}
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="hidden md:flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 text-sm text-kk-muted mb-1">
             <Link href="/meetings" className="hover:text-kk-ink transition-colors">← Meetings</Link>
@@ -195,7 +248,7 @@ export default async function MeetingDetailPage({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="hidden md:grid grid-cols-3 gap-6">
         {/* Left: main content */}
         <div className="col-span-2 space-y-6">
           {/* Agenda */}
