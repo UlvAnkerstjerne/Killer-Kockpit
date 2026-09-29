@@ -13,6 +13,7 @@ import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
 import QuickAddTask from './QuickAddTask'
+import QuickNewMeeting from './QuickNewMeeting'
 import CaptureBar from '@/components/layout/CaptureBar'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
@@ -570,6 +571,57 @@ export default async function TodayPage({
                     </Link>
                   )
                 })}
+              </div>
+            )}
+          </DashCard>
+        </div>
+      )}
+
+      {/* ── Mobile meetings — Management mode only, hidden on desktop ────── */}
+      {isManagementView && (
+        <div className="lg:hidden mb-2.5">
+          <DashCard
+            title="Meetings"
+            badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
+            icon={<IconMeeting />}
+            maxRows={6}
+          >
+            <div className="px-4 py-2.5 border-b-2 border-[#171717]">
+              <QuickNewMeeting users={allActiveUsers} currentUserId={user.id} />
+            </div>
+            {todayMeetings.length === 0 && laterMeetings.length === 0 ? (
+              <EmptyRow text="No meetings this week." />
+            ) : (
+              <div className="divide-y divide-[#171717]/15">
+                {todayMeetings.map(m => (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}`}
+                    className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      <div className="text-xs font-medium text-kk-warn mt-0.5">Today</div>
+                    </div>
+                    {m.scheduled_start && (
+                      <span className="text-xs text-kk-muted shrink-0 tabular-nums">{formatTime(m.scheduled_start)}</span>
+                    )}
+                  </Link>
+                ))}
+                {laterMeetings.map(m => (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}`}
+                    className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">{m.title}</span>
+                      {m.scheduled_start && (
+                        <div className="text-xs text-kk-muted mt-0.5">{formatShortDate(m.scheduled_start)}</div>
+                      )}
+                    </div>
+                  </Link>
+                ))}
               </div>
             )}
           </DashCard>

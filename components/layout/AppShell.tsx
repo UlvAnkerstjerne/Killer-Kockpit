@@ -285,8 +285,8 @@ export default function AppShell({
     )
   }
 
-  // Routes available on mobile in Management mode (To-Dos first, then Tasks)
-  const MOBILE_MGMT_ROUTES = new Set(['/today', '/todos', '/tasks'])
+  // Routes available on mobile in Management mode
+  const MOBILE_MGMT_ROUTES = new Set(['/today', '/todos', '/tasks', '/meetings'])
 
   // ── NavContent — shared between desktop sidebar and mobile drawer ──────────
   // onNavigate is called when a nav link is tapped (used to close the mobile drawer).
@@ -307,6 +307,7 @@ export default function AppShell({
               <NotificationBell />
               <NavLink href="/todos" label="To-Dos" onNavigate={onNavigate} />
               <NavLink href="/tasks" label="Tasks" onNavigate={onNavigate} />
+              <NavLink href="/meetings" label="Meetings" onNavigate={onNavigate} />
             </div>
           </div>
 
