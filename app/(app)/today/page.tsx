@@ -629,6 +629,22 @@ export default async function TodayPage({
         </div>
       )}
 
+      {/* ── Mobile + Add Audit button — Management mode only ─────────────── */}
+      {isManagementView && (
+        <div className="lg:hidden mb-2.5">
+          <Link
+            href="/kkc/audit"
+            className="flex items-center justify-center gap-2 w-full py-4 bg-[#AD3919] text-white text-base font-bold rounded-lg hover:opacity-90 transition-opacity [box-shadow:4px_4px_0_#555555]"
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            + Add Audit
+          </Link>
+        </div>
+      )}
+
       {/* ── Dashboard grid — hidden on mobile in Management, visible on desktop ── */}
       <div className={`grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch ${isManagementView ? 'hidden lg:grid' : ''}`}>
 
