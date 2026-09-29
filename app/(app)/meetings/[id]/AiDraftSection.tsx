@@ -194,30 +194,18 @@ export default function AiDraftSection({
               <span className="font-mono">{draft.model}</span>
             </div>
 
-            {/* Applied state — compact */}
+            {/* Applied — just show a link to the review page */}
             {draft.applied_at ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-2 py-1 rounded-lg">
-                    ✦ AI draft applied
-                  </span>
-                </div>
-                <p className="text-sm text-kk-muted">
-                  {totalOutcomes} proposed outcome{totalOutcomes !== 1 ? 's' : ''} added to the review queue.
-                </p>
-                {meetingStatus === 'draft' && (
-                  <Link
-                    href={`/meetings/${meetingId}/publish`}
-                    className="inline-block text-sm px-4 py-2 bg-kk-good-bg text-kk-good rounded-xl hover:opacity-90 transition-opacity font-medium"
-                  >
-                    Review &amp; Publish →
-                  </Link>
-                )}
-                {meetingStatus !== 'draft' && (
-                  <p className="text-xs text-kk-muted">
-                    Close the meeting to draft status to review and publish.
-                  </p>
-                )}
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-2 py-1 rounded-lg">
+                  ✦ AI draft applied
+                </span>
+                <Link
+                  href={`/meetings/${meetingId}/publish`}
+                  className="text-sm px-4 py-2 bg-kk-good-bg text-kk-good rounded-xl hover:opacity-90 transition-opacity font-medium"
+                >
+                  Review &amp; Publish →
+                </Link>
               </div>
             ) : (
               <>
