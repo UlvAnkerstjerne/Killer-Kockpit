@@ -584,9 +584,10 @@ export default async function TodayPage({
             title="Meetings"
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
             icon={<IconMeeting />}
+            accentHeader
             maxRows={6}
           >
-            <div className="px-4 py-2.5 border-b-2 border-[#171717]">
+            <div className="border-b-2 border-[#171717] px-4 py-2.5">
               <QuickNewMeeting users={allActiveUsers} currentUserId={user.id} />
             </div>
             {todayMeetings.length === 0 && laterMeetings.length === 0 ? (
