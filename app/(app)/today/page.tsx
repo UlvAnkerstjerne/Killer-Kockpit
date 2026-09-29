@@ -442,7 +442,7 @@ export default async function TodayPage({
           KILLER KOCKPIT
         </h1>
         {canManage && (
-          <div className="flex gap-1 text-sm">
+          <div className="hidden lg:flex gap-1 text-sm">
             <Link
               href="/today?view=personal"
               className={`px-3 py-1.5 rounded-lg transition-colors ${view === 'personal' ? 'bg-[#171717] text-kraft-light font-semibold' : 'text-kk-muted hover:bg-[#B7A486]/25 hover:text-kk-ink'}`}
