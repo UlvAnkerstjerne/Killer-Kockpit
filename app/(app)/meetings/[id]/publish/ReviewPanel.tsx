@@ -186,11 +186,6 @@ export default function ReviewPanel({
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
-  // Inline Responsible / Due editing on the collapsed row
-  const [inlineEdit, setInlineEdit] = useState<{
-    outcomeId: string
-    field: 'responsible' | 'due'
-  } | null>(null)
   const [inlineSaving, setInlineSaving] = useState(false)
 
   const [publishing, setPublishing] = useState(false)
@@ -200,7 +195,6 @@ export default function ReviewPanel({
     setEditingId(outcome.id)
     setEditForm(payloadToForm(outcome))
     setEditError(null)
-    setInlineEdit(null)
   }
 
   function cancelEdit() {
@@ -258,7 +252,6 @@ export default function ReviewPanel({
       payload_json: buildInlinePayload(outcome.payload_json, field, value),
     })
     setInlineSaving(false)
-    setInlineEdit(null)
     if (!result.error) router.refresh()
   }
 
@@ -302,8 +295,6 @@ export default function ReviewPanel({
           {initialOutcomes.map((outcome) => {
             const isEditing = editingId === outcome.id
             const supportsInline = outcomeSupportsInlineEdit(outcome.kind)
-            const responsibleName = getResponsibleName(outcome.payload_json, allUsers)
-            const dueDateDisplay = formatReviewDue(outcome.payload_json.due_at as string | null)
 
             return (
               <div key={outcome.id}>
@@ -322,77 +313,39 @@ export default function ReviewPanel({
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm text-kk-ink truncate">{outcome.title}</span>
 
-                    {/* Inline Responsible + Due chips for task and waiting_on */}
+                    {/* Inline Responsible + Due — always visible for task and waiting_on */}
                     {supportsInline && !isEditing && (
-                      <span className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1">
-
-                        {/* Responsible chip */}
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-[11px] text-kk-muted">Responsible</span>
-                          {inlineEdit?.outcomeId === outcome.id && inlineEdit.field === 'responsible' ? (
-                            <select
-                              defaultValue={(outcome.payload_json.owner_user_id as string) || ''}
-                              onChange={(e) => saveInlineField(outcome, 'owner_user_id', e.target.value || null)}
-                              onBlur={() => setInlineEdit(null)}
-                              // eslint-disable-next-line jsx-a11y/no-autofocus
-                              autoFocus
-                              disabled={inlineSaving}
-                              className="text-[11px] border border-kk-line rounded px-1.5 py-0.5 text-kk-ink bg-white focus:outline-none focus:border-kk-ink disabled:opacity-40"
-                            >
-                              <option value="">— Unassigned —</option>
-                              {allUsers.map((u) => (
-                                <option key={u.id} value={u.id}>{u.display_name}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <button
-                              onClick={() => setInlineEdit({ outcomeId: outcome.id, field: 'responsible' })}
-                              disabled={inlineSaving}
-                              className="text-[11px] text-kk-ink font-medium hover:underline disabled:cursor-default disabled:no-underline"
-                            >
-                              {responsibleName ?? (
-                                <span className="text-kk-muted font-normal">Choose responsible</span>
-                              )}
-                            </button>
-                          )}
-                        </span>
-
-                        {/* Due chip */}
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-[11px] text-kk-muted">Due</span>
-                          {inlineEdit?.outcomeId === outcome.id && inlineEdit.field === 'due' ? (
-                            <input
-                              type="datetime-local"
-                              defaultValue={utcToWall(outcome.payload_json.due_at as string | null)}
-                              onBlur={(e) =>
-                                saveInlineField(
-                                  outcome,
-                                  'due_at',
-                                  e.target.value ? wallToUtc(e.target.value) : null,
-                                )
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') e.currentTarget.blur()
-                                if (e.key === 'Escape') setInlineEdit(null)
-                              }}
-                              // eslint-disable-next-line jsx-a11y/no-autofocus
-                              autoFocus
-                              disabled={inlineSaving}
-                              className="text-[11px] border border-kk-line rounded px-1.5 py-0.5 text-kk-ink bg-white focus:outline-none focus:border-kk-ink disabled:opacity-40"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setInlineEdit({ outcomeId: outcome.id, field: 'due' })}
-                              disabled={inlineSaving}
-                              className="text-[11px] text-kk-ink font-medium hover:underline disabled:cursor-default disabled:no-underline"
-                            >
-                              {dueDateDisplay ?? (
-                                <span className="text-kk-muted font-normal">Set due date</span>
-                              )}
-                            </button>
-                          )}
-                        </span>
-
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                        <label className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-kk-muted shrink-0">Responsible</span>
+                          <select
+                            value={(outcome.payload_json.owner_user_id as string) || ''}
+                            onChange={(e) => saveInlineField(outcome, 'owner_user_id', e.target.value || null)}
+                            disabled={inlineSaving}
+                            className="text-[11px] border border-kk-line rounded px-1.5 py-0.5 text-kk-ink bg-white focus:outline-none focus:border-kk-ink disabled:opacity-40 max-w-[140px]"
+                          >
+                            <option value="">— Unassigned —</option>
+                            {allUsers.map((u) => (
+                              <option key={u.id} value={u.id}>{u.display_name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-kk-muted shrink-0">Due</span>
+                          <input
+                            type="datetime-local"
+                            value={utcToWall(outcome.payload_json.due_at as string | null)}
+                            onChange={(e) =>
+                              saveInlineField(
+                                outcome,
+                                'due_at',
+                                e.target.value ? wallToUtc(e.target.value) : null,
+                              )
+                            }
+                            disabled={inlineSaving}
+                            className="text-[11px] border border-kk-line rounded px-1.5 py-0.5 text-kk-ink bg-white focus:outline-none focus:border-kk-ink disabled:opacity-40"
+                          />
+                        </label>
                       </span>
                     )}
 
