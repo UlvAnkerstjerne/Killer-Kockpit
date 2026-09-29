@@ -285,11 +285,43 @@ export default function AppShell({
     )
   }
 
+  // Routes available on mobile in Management mode (To-Dos first, then Tasks)
+  const MOBILE_MGMT_ROUTES = new Set(['/today', '/todos', '/tasks'])
+
   // ── NavContent — shared between desktop sidebar and mobile drawer ──────────
   // onNavigate is called when a nav link is tapped (used to close the mobile drawer).
   // onOpenSearch opens the global search modal (state owned by AppShell).
+  // mobileManagement: when true, restrict to To-Dos + Tasks only (mobile management mode).
 
-  function NavContent({ onNavigate, onOpenSearch }: { onNavigate?: () => void; onOpenSearch?: () => void }) {
+  function NavContent({ onNavigate, onOpenSearch, mobileManagement }: { onNavigate?: () => void; onOpenSearch?: () => void; mobileManagement?: boolean }) {
+    if (mobileManagement) {
+      // Simplified mobile nav for Management mode: Today, To-Dos, Tasks only
+      return (
+        <nav className="flex-1 px-3 overflow-y-auto">
+          <div className="mb-1">
+            <div className="px-2.5 mb-1.5 text-[10px] font-bold tracking-[0.12em] uppercase text-kk-ink">
+              Operations
+            </div>
+            <div className="space-y-0.5">
+              <NavLink href="/today" label="Today" onNavigate={onNavigate} />
+              <NotificationBell />
+              <NavLink href="/todos" label="To-Dos" onNavigate={onNavigate} />
+              <NavLink href="/tasks" label="Tasks" onNavigate={onNavigate} />
+            </div>
+          </div>
+
+          {onOpenSearch && (
+            <>
+              <div className="my-2 border-t border-[#171717]/20" />
+              <div className="mb-1">
+                <GlobalSearchTrigger onOpen={onOpenSearch} />
+              </div>
+            </>
+          )}
+        </nav>
+      )
+    }
+
     return (
       <nav className="flex-1 px-3 overflow-y-auto">
         {/* Primary group */}
@@ -481,6 +513,7 @@ export default function AppShell({
             <NavContent
               onNavigate={() => setMobileMenuOpen(false)}
               onOpenSearch={() => { setMobileMenuOpen(false); setSearchOpen(true) }}
+              mobileManagement={managementAllowed && currentView === 'management'}
             />
             <SidebarFooter onSignOut={handleSignOut} />
           </div>
@@ -509,7 +542,36 @@ export default function AppShell({
           </div>
         )}
         <main className="flex-1 p-4">
-          {children}
+          {/* Desktop-only gate: in Management mode on mobile, restrict to allowed routes */}
+          {managementAllowed && currentView === 'management' && ![...MOBILE_MGMT_ROUTES].some(r => pathname === r || pathname.startsWith(r + '/')) ? (
+            <>
+              {/* Desktop: show content normally */}
+              <div className="hidden md:block">{children}</div>
+              {/* Mobile: show a friendly gate */}
+              <div className="md:hidden flex flex-col items-center justify-center py-16 px-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-kraft-brown/30 flex items-center justify-center mb-4">
+                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+                    <path d="M5 13v1.5M11 13v1.5M4 14.5h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <h2 className="text-base font-bold text-kk-ink mb-1">Open this section on desktop</h2>
+                <p className="text-sm text-kk-muted max-w-xs">
+                  This section works best on a larger screen. Your To-Dos and Tasks are available here on mobile.
+                </p>
+                <div className="flex gap-2 mt-5">
+                  <Link href="/todos" className="px-4 py-2 bg-[#171717] text-kraft-light text-sm font-medium rounded-lg [box-shadow:3px_3px_0_#555555]">
+                    To-Dos
+                  </Link>
+                  <Link href="/tasks" className="px-4 py-2 bg-kraft-light text-[#171717] text-sm font-medium rounded-lg border-2 border-[#171717] [box-shadow:3px_3px_0_#555555]">
+                    Tasks
+                  </Link>
+                </div>
+              </div>
+            </>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>
