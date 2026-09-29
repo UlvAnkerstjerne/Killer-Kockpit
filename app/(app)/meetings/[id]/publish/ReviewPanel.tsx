@@ -435,7 +435,7 @@ export default function ReviewPanel({
 
                     {outcome.kind === 'task' && (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Field label="Responsible">
                             <select
                               value={editForm.owner_user_id}
@@ -468,7 +468,7 @@ export default function ReviewPanel({
                             </select>
                           </Field>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Field label="Deadline">
                             <input
                               type="datetime-local"
@@ -501,7 +501,7 @@ export default function ReviewPanel({
 
                     {outcome.kind === 'waiting_on' && (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Field label="Owner">
                             <select
                               value={editForm.owner_user_id}
@@ -548,7 +548,7 @@ export default function ReviewPanel({
                             />
                           </Field>
                         )}
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Field label="Due date">
                             <input
                               type="datetime-local"

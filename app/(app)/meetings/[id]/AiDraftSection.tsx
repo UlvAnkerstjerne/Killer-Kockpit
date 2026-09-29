@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { generateMeetingDraft, discardDraft, applyMeetingDraft } from '@/lib/actions/ai-drafts'
+import { closeMeeting } from '@/lib/actions/meetings'
 import type { MeetingAiDraft } from '@/lib/types'
 import type { TaskDraft, DecisionDraft, WaitingOnDraft } from '@/lib/ai/meeting-draft-schema'
 
@@ -102,8 +103,20 @@ export default function AiDraftSection({
       return
     }
 
-    router.refresh()
-    setApplying(false)
+    // Transition meeting to draft status if it's currently open,
+    // so the review/publish page is accessible.
+    if (meetingStatus === 'open') {
+      const closeResult = await closeMeeting(meetingId)
+      if (closeResult.error) {
+        // Draft was applied but close failed — still navigate to meeting detail
+        setError(closeResult.error)
+        setApplying(false)
+        return
+      }
+    }
+
+    // Navigate to the review screen
+    router.push(`/meetings/${meetingId}/publish`)
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -322,7 +335,7 @@ export default function AiDraftSection({
                       disabled={applying || discarding || generating}
                       className="px-4 py-2 bg-kk-ink text-white text-sm rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40"
                     >
-                      {applying ? 'Applying…' : 'Use this draft'}
+                      {applying ? 'Applying…' : 'Accept draft'}
                     </button>
                     <button
                       onClick={handleGenerate}
