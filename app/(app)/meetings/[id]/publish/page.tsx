@@ -57,20 +57,19 @@ export default async function PublishMeetingPage({
   if (!canEditMeeting(user.role, owner?.id ?? null, user.id)) redirect(`/meetings/${id}`)
 
   return (
-    <div className="max-w-2xl">
-      <div className="mb-6">
-        <div className="flex items-center gap-2 text-sm text-kk-muted mb-1">
-          <Link href="/meetings" className="hover:text-kk-ink transition-colors">← Meetings</Link>
-          <span>/</span>
-          <Link href={`/meetings/${id}`} className="hover:text-kk-ink transition-colors">{meeting.title}</Link>
-          <span>/</span>
-          <span className="text-kk-ink">Publish</span>
+    <div className="max-w-4xl">
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <div className="flex items-center gap-2 text-sm text-kk-muted mb-1">
+            <Link href="/meetings" className="hover:text-kk-ink transition-colors">← Meetings</Link>
+            <span>/</span>
+            <Link href={`/meetings/${id}`} className="hover:text-kk-ink transition-colors">{meeting.title}</Link>
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-kk-ink">Review & Publish</h1>
+          <p className="text-sm text-kk-muted mt-1">
+            Review and correct outcomes before publishing.
+          </p>
         </div>
-        <h1 className="text-2xl font-black tracking-tight text-kk-ink">Review & Publish</h1>
-        <p className="text-sm text-kk-muted mt-1">
-          Review and correct outcomes and notes before publishing. Changes here are saved immediately
-          but nothing becomes institutional history until you click Publish.
-        </p>
       </div>
 
       <ReviewPanel
