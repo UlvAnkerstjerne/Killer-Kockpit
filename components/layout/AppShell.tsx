@@ -527,7 +527,7 @@ export default function AppShell({
         {/* Mobile header with hamburger — hidden; mobile nav is handled by bottom tab or direct links */}
 
         {pathname !== '/today' && (
-          <div className={searchParams.get('returnTo') === '/store' ? 'hidden sm:block' : ''}>
+          <div className={`hidden md:block ${searchParams.get('returnTo') === '/store' ? 'md:hidden sm:block' : ''}`}>
             <CaptureBar user={user} currentView={currentView} />
           </div>
         )}
