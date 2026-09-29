@@ -523,18 +523,7 @@ export default function AppShell({
       {/* ── Main area ── */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Mobile header with hamburger (hidden on desktop, hidden when returnTo=/store) */}
-        <div className={`md:hidden flex items-center gap-3 px-4 py-3 bg-kraft-light border-b border-[#171717]/20 shrink-0${searchParams.get('returnTo') === '/store' ? ' hidden' : ''}`}>
-          <button
-            onClick={() => setMobileMenuOpen(true)}
-            className="p-1.5 -ml-1.5 text-kk-ink/60 hover:text-kk-ink transition-colors"
-            aria-label="Open navigation"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
+        {/* Mobile header with hamburger — hidden; mobile nav is handled by bottom tab or direct links */}
 
         {pathname !== '/today' && (
           <div className={searchParams.get('returnTo') === '/store' ? 'hidden sm:block' : ''}>
