@@ -372,7 +372,7 @@ export default function TodoBlock({
             </span>
           )}
           {!showFooter && (
-            <Link href="/todos" className="text-xs text-kk-muted hover:text-kk-ink transition-colors">
+            <Link href="/todos" className="hidden lg:inline text-xs text-kk-muted hover:text-kk-ink transition-colors">
               All →
             </Link>
           )}
