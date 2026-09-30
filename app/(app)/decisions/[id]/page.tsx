@@ -61,7 +61,7 @@ export default async function DecisionDetailPage({
 
       <div className="grid gap-5">
         {/* Decision content */}
-        <div className="bg-kk-panel border border-kk-line rounded-2xl p-5 space-y-4">
+        <div className="bg-kk-panel border-2 border-[#171717] rounded-2xl p-5 space-y-4 [box-shadow:4px_4px_0_#555555]">
           <div>
             <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide mb-1">Decision</div>
             <p className="text-sm text-kk-ink whitespace-pre-wrap">{d.decision_text}</p>

@@ -59,7 +59,7 @@ export default async function DecisionsPage({
         {canCreate && (
           <Link
             href="/decisions/new"
-            className="text-sm px-4 py-2 bg-kk-ink text-white rounded-xl hover:opacity-90 transition-opacity font-medium"
+            className="text-sm px-4 py-2 bg-[#171717] text-kraft-light rounded-lg hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
           >
             + Decision
           </Link>
@@ -85,7 +85,7 @@ export default async function DecisionsPage({
               className={[
                 'text-sm px-3 py-1.5 rounded-lg transition-colors',
                 statusFilter === f.value
-                  ? 'bg-kk-ink text-white font-medium'
+                  ? 'bg-[#171717] text-kraft-light font-medium [box-shadow:3px_3px_0_#555555]'
                   : 'text-kk-muted hover:bg-kk-line hover:text-kk-ink',
               ].join(' ')}
             >
@@ -95,7 +95,7 @@ export default async function DecisionsPage({
         </div>
       </div>
 
-      <div className="bg-kk-panel border border-kk-line rounded-2xl overflow-hidden">
+      <div className="bg-kk-panel border-2 border-[#171717] rounded-2xl overflow-hidden [box-shadow:4px_4px_0_#555555]">
         <div className="divide-y divide-kk-line">
           {(decisions ?? []).map((d) => {
             const owner = Array.isArray(d.owner) ? d.owner[0] : d.owner

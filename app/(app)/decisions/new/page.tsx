@@ -50,7 +50,7 @@ export default async function NewDecisionPage({
         )}
       </div>
 
-      <div className="bg-kk-panel border border-kk-line rounded-2xl p-6">
+      <div className="bg-kk-panel border-2 border-[#171717] rounded-2xl p-6 [box-shadow:4px_4px_0_#555555]">
         <DecisionForm
           projects={projects ?? []}
           defaultProjectId={params.project_id}

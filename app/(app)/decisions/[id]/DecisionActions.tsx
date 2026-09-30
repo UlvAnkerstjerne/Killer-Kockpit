@@ -68,7 +68,7 @@ export default function DecisionActions({
         <button
           onClick={handleApprove}
           disabled={loading}
-          className="text-sm px-4 py-2 bg-kk-good text-white rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 font-medium"
+          className="text-sm px-4 py-2 bg-kk-good text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 font-medium [box-shadow:3px_3px_0_#555555]"
         >
           Approve
         </button>
@@ -77,13 +77,13 @@ export default function DecisionActions({
         <>
           <Link
             href={`/decisions/${decisionId}/edit`}
-            className="text-sm px-4 py-2 bg-kk-ink text-white rounded-xl hover:opacity-90 transition-opacity font-medium"
+            className="text-sm px-4 py-2 bg-[#171717] text-kraft-light rounded-lg hover:opacity-90 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
           >
             Edit
           </Link>
           <Link
             href={`/decisions/new?supersedes=${decisionId}`}
-            className="text-sm px-4 py-2 border border-kk-line text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+            className="text-sm px-4 py-2 bg-kraft-light text-[#171717] border-2 border-[#171717] rounded-lg hover:opacity-80 transition-opacity font-medium [box-shadow:3px_3px_0_#555555]"
           >
             Record superseding decision
           </Link>
@@ -93,7 +93,7 @@ export default function DecisionActions({
         <button
           onClick={handleNotify}
           disabled={notifyStatus === 'sending'}
-          className="text-sm px-4 py-2 border border-kk-line text-kk-muted rounded-xl hover:bg-kk-soft transition-colors disabled:opacity-40"
+          className="text-sm px-4 py-2 bg-kraft-light text-[#171717] border-2 border-[#171717] rounded-lg hover:opacity-80 transition-opacity font-medium disabled:opacity-40 [box-shadow:3px_3px_0_#555555]"
         >
           {notifyStatus === 'sending' ? 'Sending…' : 'Notify all members'}
         </button>

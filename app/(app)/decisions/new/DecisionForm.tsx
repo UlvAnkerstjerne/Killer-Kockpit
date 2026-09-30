@@ -151,14 +151,14 @@ export default function DecisionForm({ projects, defaultProjectId, defaultMeetin
         <button
           type="submit"
           disabled={!title.trim() || !decisionText.trim() || submitting}
-          className="flex-1 py-2.5 bg-kk-ink text-white text-sm font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
+          className="flex-1 py-2.5 bg-[#171717] text-kraft-light text-sm font-medium rounded-lg disabled:opacity-40 hover:opacity-80 transition-opacity [box-shadow:3px_3px_0_#555555]"
         >
           {submitting ? 'Saving…' : 'Record decision'}
         </button>
         <button
           type="button"
           onClick={() => router.push('/decisions')}
-          className="px-5 py-2.5 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+          className="px-5 py-2.5 bg-kraft-light text-[#171717] border-2 border-[#171717] text-sm font-medium rounded-lg hover:opacity-80 transition-opacity [box-shadow:3px_3px_0_#555555]"
         >
           Cancel
         </button>
