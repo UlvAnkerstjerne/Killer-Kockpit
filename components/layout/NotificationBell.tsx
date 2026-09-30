@@ -42,6 +42,7 @@ export const KNOWN_TYPES = [
   'kkc.result',
   'diner.result',
   'audit.followup.overdue',
+  'decision.recorded',
 ] as const
 
 // ─── Pure helpers (exported for testing) ──────────────────────────────────────
@@ -146,6 +147,13 @@ export function safeFormatMessage(
       const parts = [`Overdue follow-up — ${loc}`]
       if (rf !== undefined) parts.push(`${rf} red flag${rf === 1 ? '' : 's'}`)
       return parts.join(' · ')
+    }
+
+    case 'decision.recorded': {
+      const who  = (m?.recorder as string | undefined) ?? actor
+      const what = (m?.title as string | undefined) ?? 'a decision'
+      const st   = (m?.status as string | undefined) ?? 'proposed'
+      return `${who} recorded decision "${what}" — ${st}`
     }
 
     default: return `${actor} updated a task`
@@ -314,6 +322,8 @@ export default function NotificationBell() {
       router.push('/kkc/ssp-cph')
     } else if (n.entity_type === 'diner_submission') {
       router.push(`/kkc/diner/${n.entity_id}`)
+    } else if (n.entity_type === 'decision') {
+      router.push(`/decisions/${n.entity_id}`)
     } else {
       router.push(`/tasks/${n.entity_id}`)
     }

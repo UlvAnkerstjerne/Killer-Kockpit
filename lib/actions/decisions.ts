@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import { canCreateDecision, canEditDecision, canApproveDecision, isAdminOverride } from '@/lib/permissions'
+import { createSystemNotificationIdempotent } from '@/lib/reports/notify-users'
 import type { DecisionStatus, ActionResult } from '@/lib/types'
 
 type DecisionInput = {
@@ -14,6 +15,7 @@ type DecisionInput = {
   meeting_id?: string
   decided_at?: string
   status?: DecisionStatus
+  notify_members?: boolean
 }
 
 export async function createDecision(
@@ -46,9 +48,42 @@ export async function createDecision(
     return { error: 'Failed to create decision. Please try again.' }
   }
 
+  const newDecisionId = decisionId as string
+
+  // ── Notify all active Kockpit members (except the recorder) ──────────
+  if (input.notify_members !== false) {
+    const { data: activeUsers } = await serviceClient
+      .from('app_users')
+      .select('id')
+      .eq('active', true)
+      .neq('id', user.id)
+
+    if (activeUsers && activeUsers.length > 0) {
+      const metadata = {
+        title:    input.title.trim(),
+        recorder: user.display_name,
+        status:   input.status || 'proposed',
+      }
+
+      await Promise.all(
+        activeUsers.map((u) =>
+          createSystemNotificationIdempotent({
+            reportType:    'decision.recorded',
+            submissionKey: newDecisionId,
+            userId:        u.id,
+            type:          'decision.recorded',
+            entityType:    'decision',
+            entityId:      newDecisionId,
+            metadata,
+          })
+        )
+      )
+    }
+  }
+
   revalidatePath('/decisions')
   if (input.project_id) revalidatePath(`/projects/${input.project_id}`)
-  return { data: { id: decisionId as string } }
+  return { data: { id: newDecisionId } }
 }
 
 export async function updateDecision(

@@ -31,7 +31,16 @@ const mocks = vi.hoisted(() => {
   const mockClient = { from: mockFrom }
 
   const mockRpc = vi.fn()
-  const mockServiceClient = { rpc: mockRpc }
+  const mockServiceFromSelect = vi.fn().mockReturnValue({
+    eq: vi.fn().mockReturnValue({
+      neq: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }),
+  })
+  const mockServiceFrom = vi.fn().mockImplementation((table: string) => {
+    if (table === 'app_users') return { select: mockServiceFromSelect }
+    throw new Error(`Unexpected service table: ${table}`)
+  })
+  const mockServiceClient = { rpc: mockRpc, from: mockServiceFrom }
 
   return {
     mockGetCurrentUser,

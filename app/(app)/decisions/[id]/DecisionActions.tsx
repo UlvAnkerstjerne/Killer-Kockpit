@@ -44,12 +44,20 @@ export default function DecisionActions({
         </button>
       )}
       {canEdit && (
-        <Link
-          href={`/decisions/new?supersedes=${decisionId}`}
-          className="text-sm px-4 py-2 border border-kk-line text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
-        >
-          Record superseding decision
-        </Link>
+        <>
+          <Link
+            href={`/decisions/${decisionId}/edit`}
+            className="text-sm px-4 py-2 bg-kk-ink text-white rounded-xl hover:opacity-90 transition-opacity font-medium"
+          >
+            Edit
+          </Link>
+          <Link
+            href={`/decisions/new?supersedes=${decisionId}`}
+            className="text-sm px-4 py-2 border border-kk-line text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
+          >
+            Record superseding decision
+          </Link>
+        </>
       )}
       {error && <p className="text-sm text-kk-bad self-center">{error}</p>}
     </div>

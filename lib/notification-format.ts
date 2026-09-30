@@ -16,6 +16,7 @@ export type NotificationType =
   | 'diner.result'
   | 'audit.followup.overdue'
   | 'todo.completed'
+  | 'decision.recorded'
 
 /**
  * Derives a concise human-readable notification message.
@@ -105,6 +106,13 @@ export function formatNotificationMessage(
       const who = (metadata?.completed_by as string | undefined) ?? actor
       const what = (metadata?.title as string | undefined) ?? 'a to-do'
       return `${who} completed "${what}"`
+    }
+
+    case 'decision.recorded': {
+      const who   = (metadata?.recorder as string | undefined) ?? actor
+      const what  = (metadata?.title as string | undefined) ?? 'a decision'
+      const st    = (metadata?.status as string | undefined) ?? 'proposed'
+      return `${who} recorded decision "${what}" — ${st}`
     }
   }
 }

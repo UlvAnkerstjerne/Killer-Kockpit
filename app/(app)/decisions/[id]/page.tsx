@@ -68,7 +68,7 @@ export default async function DecisionDetailPage({
 
           {d.rationale && (
             <div>
-              <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide mb-1">Rationale</div>
+              <div className="text-xs font-semibold text-kk-muted uppercase tracking-wide mb-1">Context and reasoning</div>
               <p className="text-sm text-kk-muted whitespace-pre-wrap">{d.rationale}</p>
             </div>
           )}

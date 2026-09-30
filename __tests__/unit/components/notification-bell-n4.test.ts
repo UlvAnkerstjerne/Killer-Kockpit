@@ -52,6 +52,7 @@ describe('KNOWN_TYPES', () => {
     expect([...KNOWN_TYPES].sort()).toEqual([
       'audit.followup.overdue',
       'audit.result',
+      'decision.recorded',
       'diner.result',
       'kkc.result',
       'task.approved',

@@ -2,25 +2,32 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createDecision } from '@/lib/actions/decisions'
+import { updateDecision } from '@/lib/actions/decisions'
 import type { DecisionStatus } from '@/lib/types'
 
-type Props = {
-  projects: { id: string; title: string }[]
-  defaultProjectId?: string
-  defaultMeetingId?: string
-  supersedesDecisionId?: string
+type DecisionData = {
+  id: string
+  title: string
+  decision_text: string
+  rationale: string | null
+  status: string
+  decided_at: string | null
+  project_id: string | null
 }
 
-export default function DecisionForm({ projects, defaultProjectId, defaultMeetingId, supersedesDecisionId }: Props) {
+type Props = {
+  decision: DecisionData
+  projects: { id: string; title: string }[]
+}
+
+export default function EditDecisionForm({ decision, projects }: Props) {
   const router = useRouter()
-  const [title, setTitle] = useState('')
-  const [decisionText, setDecisionText] = useState('')
-  const [rationale, setRationale] = useState('')
-  const [projectId, setProjectId] = useState(defaultProjectId ?? '')
-  const [decidedAt, setDecidedAt] = useState('')
-  const [status, setStatus] = useState<DecisionStatus>('proposed')
-  const [notifyMembers, setNotifyMembers] = useState(true)
+  const [title, setTitle] = useState(decision.title)
+  const [decisionText, setDecisionText] = useState(decision.decision_text)
+  const [rationale, setRationale] = useState(decision.rationale ?? '')
+  const [projectId, setProjectId] = useState(decision.project_id ?? '')
+  const [decidedAt, setDecidedAt] = useState(decision.decided_at ?? '')
+  const [status, setStatus] = useState<DecisionStatus>(decision.status as DecisionStatus)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,16 +38,13 @@ export default function DecisionForm({ projects, defaultProjectId, defaultMeetin
     setSubmitting(true)
     setError(null)
 
-    const result = await createDecision({
+    const result = await updateDecision(decision.id, {
       title,
       decision_text: decisionText,
       rationale: rationale || undefined,
       project_id: projectId || undefined,
-      meeting_id: defaultMeetingId || undefined,
       decided_at: decidedAt || undefined,
       status,
-      supersedes_decision_id: supersedesDecisionId,
-      notify_members: notifyMembers,
     })
 
     if (result.error) {
@@ -49,7 +53,7 @@ export default function DecisionForm({ projects, defaultProjectId, defaultMeetin
       return
     }
 
-    router.push(`/decisions/${result.data!.id}`)
+    router.push(`/decisions/${decision.id}`)
   }
 
   return (
@@ -134,17 +138,6 @@ export default function DecisionForm({ projects, defaultProjectId, defaultMeetin
         </select>
       </div>
 
-      <label className="flex items-center gap-2.5 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={notifyMembers}
-          onChange={(e) => setNotifyMembers(e.target.checked)}
-          disabled={submitting}
-          className="w-4 h-4 rounded border-kk-line text-kk-ink focus:ring-kk-ink accent-kk-ink"
-        />
-        <span className="text-sm text-kk-ink">Notify all Kockpit members</span>
-      </label>
-
       {error && <p className="text-sm text-kk-bad">{error}</p>}
 
       <div className="flex gap-2 pt-2">
@@ -153,11 +146,11 @@ export default function DecisionForm({ projects, defaultProjectId, defaultMeetin
           disabled={!title.trim() || !decisionText.trim() || submitting}
           className="flex-1 py-2.5 bg-kk-ink text-white text-sm font-medium rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
         >
-          {submitting ? 'Saving…' : 'Record decision'}
+          {submitting ? 'Saving…' : 'Save changes'}
         </button>
         <button
           type="button"
-          onClick={() => router.push('/decisions')}
+          onClick={() => router.push(`/decisions/${decision.id}`)}
           className="px-5 py-2.5 border border-kk-line text-sm text-kk-muted rounded-xl hover:bg-kk-soft transition-colors"
         >
           Cancel
