@@ -19,6 +19,7 @@ function formatAction(action: string): string {
     'task.priority.changed': 'Priority changed',
     'task.completed': 'Task completed',
     'task.cancelled': 'Task cancelled',
+    'decision.members_notified': 'All members notified',
   }
   return map[action] || action
 }

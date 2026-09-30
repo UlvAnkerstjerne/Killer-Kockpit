@@ -43,6 +43,7 @@ export default async function DecisionDetailPage({
 
   const canEdit = canEditDecision(user.role, owner?.id ?? null, user.id)
   const canApprove = canApproveDecision(user.role) && d.status === 'proposed'
+  const canNotify = canEdit
 
   return (
     <div className="max-w-2xl">
@@ -127,11 +128,12 @@ export default async function DecisionDetailPage({
         </div>
 
         {/* Actions */}
-        {(canApprove || canEdit) && d.status !== 'superseded' && (
+        {(canApprove || canEdit || canNotify) && d.status !== 'superseded' && (
           <DecisionActions
             decisionId={d.id}
             canApprove={canApprove}
             canEdit={canEdit}
+            canNotify={canNotify}
             currentStatus={d.status as DecisionStatus}
           />
         )}

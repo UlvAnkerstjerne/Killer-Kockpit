@@ -150,6 +150,79 @@ export async function updateDecision(
   return {}
 }
 
+export async function notifyDecisionMembers(
+  decisionId: string
+): Promise<ActionResult<{ sent: number; skipped: number }>> {
+  const user = await getCurrentUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const supabase = await createClient()
+  const { data: decision, error: fetchError } = await supabase
+    .from('decisions')
+    .select('id, title, status, owner_user_id')
+    .eq('id', decisionId)
+    .single()
+
+  if (fetchError || !decision) return { error: 'Decision not found.' }
+
+  if (!canEditDecision(user.role, decision.owner_user_id, user.id)) {
+    return { error: 'You do not have permission to notify members for this decision.' }
+  }
+
+  const serviceClient = createServiceClient()
+
+  // Unique round key prevents duplicates within the same send, but allows
+  // deliberate re-sends later (each click generates a new round).
+  const roundKey = `${decisionId}:notify:${Date.now()}`
+
+  const { data: activeUsers } = await serviceClient
+    .from('app_users')
+    .select('id')
+    .eq('active', true)
+    .neq('id', user.id)
+
+  if (!activeUsers || activeUsers.length === 0) {
+    return { data: { sent: 0, skipped: 0 } }
+  }
+
+  const metadata = {
+    title:    decision.title,
+    recorder: user.display_name,
+    status:   decision.status,
+  }
+
+  const results = await Promise.all(
+    activeUsers.map((u) =>
+      createSystemNotificationIdempotent({
+        reportType:    'decision.notify_members',
+        submissionKey: roundKey,
+        userId:        u.id,
+        type:          'decision.recorded',
+        entityType:    'decision',
+        entityId:      decisionId,
+        metadata,
+      })
+    )
+  )
+
+  const sent    = results.filter((r) => r === 'sent').length
+  const skipped = results.filter((r) => r === 'skipped').length
+
+  // Record the notification action in audit history
+  await serviceClient.from('audit_events').insert({
+    actor_user_id: user.id,
+    actor_type:    'user',
+    action:        'decision.members_notified',
+    entity_type:   'decision',
+    entity_id:     decisionId,
+    after_json:    { recipients: sent, skipped },
+    metadata:      {},
+  })
+
+  revalidatePath(`/decisions/${decisionId}`)
+  return { data: { sent, skipped } }
+}
+
 export async function approveDecision(decisionId: string): Promise<ActionResult> {
   const user = await getCurrentUser()
   if (!user) return { error: 'Not authenticated' }

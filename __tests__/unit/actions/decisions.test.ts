@@ -36,11 +36,15 @@ const mocks = vi.hoisted(() => {
       neq: vi.fn().mockResolvedValue({ data: [], error: null }),
     }),
   })
+  const mockServiceInsert = vi.fn().mockResolvedValue({ data: null, error: null })
   const mockServiceFrom = vi.fn().mockImplementation((table: string) => {
     if (table === 'app_users') return { select: mockServiceFromSelect }
+    if (table === 'audit_events') return { insert: mockServiceInsert }
     throw new Error(`Unexpected service table: ${table}`)
   })
   const mockServiceClient = { rpc: mockRpc, from: mockServiceFrom }
+
+  const mockCreateSystemNotification = vi.fn()
 
   return {
     mockGetCurrentUser,
@@ -50,6 +54,8 @@ const mocks = vi.hoisted(() => {
     mockClient,
     mockRpc,
     mockServiceClient,
+    mockServiceInsert,
+    mockCreateSystemNotification,
   }
 })
 
@@ -58,6 +64,9 @@ vi.mock('next/cache', () => ({ revalidatePath: mocks.mockRevalidatePath }))
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue(mocks.mockClient),
   createServiceClient: vi.fn().mockReturnValue(mocks.mockServiceClient),
+}))
+vi.mock('@/lib/reports/notify-users', () => ({
+  createSystemNotificationIdempotent: mocks.mockCreateSystemNotification,
 }))
 
 // ---- Fixtures ----------------------------------------------------------------
@@ -322,5 +331,92 @@ describe('approveDecision', () => {
     const { approveDecision } = await import('@/lib/actions/decisions')
     const result = await approveDecision('decision-uuid')
     expect(result.error).toBeTruthy()
+  })
+})
+
+// ---- notifyDecisionMembers ------------------------------------------------
+
+describe('notifyDecisionMembers', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns error when user is not authenticated', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(null)
+    const { notifyDecisionMembers } = await import('@/lib/actions/decisions')
+    const result = await notifyDecisionMembers('decision-uuid')
+    expect(result.error).toBeTruthy()
+  })
+
+  it('returns error when MEMBER tries to notify', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(MEMBER_USER)
+    mocks.mockSelectSingle.mockResolvedValue({
+      data: { id: 'decision-uuid', title: 'Test', status: 'proposed', owner_user_id: SUPER_ADMIN_USER.id },
+      error: null,
+    })
+    const { notifyDecisionMembers } = await import('@/lib/actions/decisions')
+    const result = await notifyDecisionMembers('decision-uuid')
+    expect(result.error).toContain('permission')
+    expect(mocks.mockCreateSystemNotification).not.toHaveBeenCalled()
+  })
+
+  it('sends notifications to active users and records audit event', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({
+      data: { id: 'decision-uuid', title: 'Killer Klub 2.0', status: 'approved', owner_user_id: SUPER_ADMIN_USER.id },
+      error: null,
+    })
+    // Two other active users
+    mocks.mockServiceClient.from = vi.fn().mockImplementation((table: string) => {
+      if (table === 'app_users') return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            neq: vi.fn().mockResolvedValue({ data: [{ id: 'user-a' }, { id: 'user-b' }], error: null }),
+          }),
+        }),
+      }
+      if (table === 'audit_events') return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) }
+      throw new Error(`Unexpected table: ${table}`)
+    })
+    mocks.mockCreateSystemNotification.mockResolvedValue('sent')
+
+    const { notifyDecisionMembers } = await import('@/lib/actions/decisions')
+    const result = await notifyDecisionMembers('decision-uuid')
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.sent).toBe(2)
+    expect(mocks.mockCreateSystemNotification).toHaveBeenCalledTimes(2)
+    expect(mocks.mockCreateSystemNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportType:  'decision.notify_members',
+        type:        'decision.recorded',
+        entityType:  'decision',
+        entityId:    'decision-uuid',
+        metadata:    expect.objectContaining({ title: 'Killer Klub 2.0', status: 'approved' }),
+      })
+    )
+  })
+
+  it('returns sent=0 when no other active users exist', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockSelectSingle.mockResolvedValue({
+      data: { id: 'decision-uuid', title: 'Test', status: 'proposed', owner_user_id: SUPER_ADMIN_USER.id },
+      error: null,
+    })
+    mocks.mockServiceClient.from = vi.fn().mockImplementation((table: string) => {
+      if (table === 'app_users') return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            neq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        }),
+      }
+      throw new Error(`Unexpected table: ${table}`)
+    })
+
+    const { notifyDecisionMembers } = await import('@/lib/actions/decisions')
+    const result = await notifyDecisionMembers('decision-uuid')
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.sent).toBe(0)
+    expect(mocks.mockCreateSystemNotification).not.toHaveBeenCalled()
   })
 })
