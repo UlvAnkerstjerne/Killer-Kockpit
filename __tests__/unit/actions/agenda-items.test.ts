@@ -26,7 +26,10 @@ const mocks = vi.hoisted(() => {
     if (table === 'agenda_items') {
       return {
         select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({ single: mockItemSelectSingle }),
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({ single: mockItemSelectSingle }),
+            single: mockItemSelectSingle,
+          }),
         }),
       }
     }
@@ -239,6 +242,17 @@ describe('updateAgendaItem', () => {
     const { updateAgendaItem } = await import('@/lib/actions/agenda-items')
     const result = await updateAgendaItem('item-uuid', 'meeting-uuid', { title: 'X' })
     expect(result.error).toMatch(/cannot be modified/i)
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('rejects when agenda item does not belong to the claimed meeting (IDOR prevention)', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: SCHEDULED_MEETING, error: null })
+    // Item not found because meeting_id filter excludes it (belongs to different meeting)
+    mocks.mockItemSelectSingle.mockResolvedValue({ data: null, error: { message: 'not found' } })
+    const { updateAgendaItem } = await import('@/lib/actions/agenda-items')
+    const result = await updateAgendaItem('foreign-item-uuid', 'meeting-uuid', { title: 'Hacked' })
+    expect(result.error).toContain('not found')
     expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 })

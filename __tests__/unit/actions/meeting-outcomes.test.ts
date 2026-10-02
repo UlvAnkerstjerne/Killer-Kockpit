@@ -26,7 +26,10 @@ const mocks = vi.hoisted(() => {
     if (table === 'meeting_outcomes') {
       return {
         select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({ single: mockOutcomeSelectSingle }),
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({ single: mockOutcomeSelectSingle }),
+            single: mockOutcomeSelectSingle,
+          }),
         }),
       }
     }
@@ -166,6 +169,7 @@ describe('removeMeetingOutcome', () => {
   it('calls remove_meeting_outcome_and_audit on success', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
     mocks.mockMeetingSelectSingle.mockResolvedValue({ data: MEETING_OPEN, error: null })
+    mocks.mockOutcomeSelectSingle.mockResolvedValue({ data: { id: 'outcome-uuid' }, error: null })
     mocks.mockRpc.mockResolvedValue({ data: null, error: null })
     const { removeMeetingOutcome } = await import('@/lib/actions/meeting-outcomes')
     const result = await removeMeetingOutcome('outcome-uuid', 'meeting-uuid')
@@ -177,5 +181,33 @@ describe('removeMeetingOutcome', () => {
         p_actor_user_id: SUPER_ADMIN_USER.id,
       })
     )
+  })
+
+  it('rejects when outcome does not belong to the claimed meeting (IDOR prevention)', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: MEETING_OPEN, error: null })
+    // Outcome not found for this meeting_id (belongs to a different meeting)
+    mocks.mockOutcomeSelectSingle.mockResolvedValue({ data: null, error: { message: 'not found' } })
+    const { removeMeetingOutcome } = await import('@/lib/actions/meeting-outcomes')
+    const result = await removeMeetingOutcome('foreign-outcome-uuid', 'meeting-uuid')
+    expect(result.error).toContain('not found')
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
+  })
+})
+
+// ---- updateMeetingOutcome IDOR prevention ----------------------------------
+
+describe('updateMeetingOutcome IDOR prevention', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('rejects when outcome does not belong to the claimed meeting', async () => {
+    mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+    mocks.mockMeetingSelectSingle.mockResolvedValue({ data: MEETING_OPEN, error: null })
+    // Outcome not found because meeting_id filter excludes it
+    mocks.mockOutcomeSelectSingle.mockResolvedValue({ data: null, error: { message: 'not found' } })
+    const { updateMeetingOutcome } = await import('@/lib/actions/meeting-outcomes')
+    const result = await updateMeetingOutcome('foreign-outcome-uuid', 'meeting-uuid', { title: 'Hacked' })
+    expect(result.error).toContain('not found')
+    expect(mocks.mockRpc).not.toHaveBeenCalled()
   })
 })

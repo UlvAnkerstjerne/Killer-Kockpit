@@ -75,6 +75,7 @@ export async function updateAgendaItem(
     .from('agenda_items')
     .select('title, description, status')
     .eq('id', itemId)
+    .eq('meeting_id', meetingId)
     .single()
 
   if (!current) return { error: 'Agenda item not found.' }

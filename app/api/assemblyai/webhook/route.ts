@@ -56,6 +56,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getTranscript } from '@/lib/assemblyai/client'
 import { buildTranscript } from '@/lib/assemblyai/transcript'
@@ -69,7 +70,9 @@ export async function POST(request: NextRequest) {
   }
 
   const providedSecret = request.headers.get('x-assemblyai-webhook-secret')
-  if (!providedSecret || providedSecret !== webhookSecret) {
+  if (!providedSecret
+    || Buffer.byteLength(providedSecret) !== Buffer.byteLength(webhookSecret)
+    || !timingSafeEqual(Buffer.from(providedSecret), Buffer.from(webhookSecret))) {
     console.warn('[webhook/assemblyai] Rejected request with invalid secret')
     return NextResponse.json({ error: 'Unauthorised.' }, { status: 401 })
   }

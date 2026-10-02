@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
   try {
     data = await fetchSSPCphDataDirect()
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    console.error('[api/kkc/ssp-cph/preview-overview] Data fetch failed:', err)
+    return NextResponse.json({ error: 'Failed to load data.' }, { status: 500 })
   }
 
   const buf = await generateSspOverviewPdf({

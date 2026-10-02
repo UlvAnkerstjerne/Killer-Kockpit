@@ -77,6 +77,7 @@ export async function updateMeetingOutcome(
     .from('meeting_outcomes')
     .select('title, payload_json')
     .eq('id', outcomeId)
+    .eq('meeting_id', meetingId)
     .single()
 
   if (!current) return { error: 'Outcome not found.' }
@@ -127,6 +128,16 @@ export async function removeMeetingOutcome(
   if (!canEditMeeting(user.role, meeting.owner_user_id, user.id)) {
     return { error: 'You do not have permission to edit this meeting.' }
   }
+
+  // Verify the outcome belongs to this meeting before deleting via service client
+  const { data: outcome } = await supabase
+    .from('meeting_outcomes')
+    .select('id')
+    .eq('id', outcomeId)
+    .eq('meeting_id', meetingId)
+    .single()
+
+  if (!outcome) return { error: 'Outcome not found.' }
 
   const serviceClient = createServiceClient()
   const { error } = await serviceClient.rpc('remove_meeting_outcome_and_audit', {
