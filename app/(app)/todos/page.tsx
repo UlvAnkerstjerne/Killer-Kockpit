@@ -4,6 +4,7 @@ import { canAccessManagementView, canAssignToOthers, MANAGEMENT_ROLES } from '@/
 import type { Todo, TeamTodo } from '@/lib/types'
 import TeamColumn from './TeamColumn'
 import MobileTodoView from './MobileTodoView'
+import CompletedTodosSection from './CompletedTodosSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,14 +45,24 @@ export default async function TodosPage({
   const supabase = await createClient()
 
   // Always load the user's own todos for the interactive column
-  const [{ data: myData }, allUsersResult, projectsResult] = await Promise.all([
+  const [{ data: myData }, { data: completedData }, allUsersResult, projectsResult] = await Promise.all([
     supabase
       .from('todos')
       .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, upgraded_to_task_id, upgraded_at, completion_context, completed_by_user_id, sort_order')
       .eq('user_id', user.id)
+      .is('completed_at', null)
+      .is('cancelled_at', null)
+      .is('upgraded_to_task_id', null)
       .order('sort_order', { ascending: true, nullsFirst: true })
       .order('created_at', { ascending: false })
       .limit(200),
+    supabase
+      .from('todos')
+      .select('id, title, completed_at, completion_context, notes, upgraded_to_task_id')
+      .eq('user_id', user.id)
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(500),
     canAssignToOthers(user.role) ? getActiveUsers() : Promise.resolve([user]),
     supabase
       .from('projects')
@@ -62,7 +73,18 @@ export default async function TodosPage({
   ])
 
   const todos = (myData ?? []) as Todo[]
-  const openTodos = todos.filter(t => !t.completed_at && !t.cancelled_at && !t.upgraded_to_task_id)
+  const openTodos = todos
+
+  type CompletedTodoItem = {
+    id: string
+    title: string
+    completed_at: string
+    completion_context: string | null
+    notes: string | null
+    upgraded_to_task_id: string | null
+  }
+  const completedTodos: CompletedTodoItem[] = (completedData ?? [])
+    .filter((t): t is typeof t & { completed_at: string } => !!t.completed_at)
 
   const allUsers = (allUsersResult as { id: string; display_name: string; email: string }[])
     .map(u => ({ id: u.id, display_name: u.display_name, email: u.email }))
@@ -151,6 +173,7 @@ export default async function TodosPage({
           projects={projectsResult.data ?? []}
           returnTo={returnTo}
         />
+        <CompletedTodosSection todos={completedTodos} />
       </div>
 
       {/* ── Desktop view (>= 640px) ── */}
@@ -173,6 +196,8 @@ export default async function TodosPage({
             <TeamColumn key={col.name} name={col.name} todos={col.todos} />
           ))}
         </div>
+
+        <CompletedTodosSection todos={completedTodos} />
       </div>
     </div>
   )
