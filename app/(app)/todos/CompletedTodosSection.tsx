@@ -104,7 +104,7 @@ export default function CompletedTodosSection({
     <div className="mt-6">
       <button
         onClick={() => setIsOpen(o => !o)}
-        className="flex items-center gap-1.5 text-xs text-kraft-dark hover:text-kraft-light transition-colors"
+        className="flex items-center gap-1.5 text-xs text-kk-muted hover:text-kk-ink transition-colors"
       >
         <span className="text-[10px]">{isOpen ? '▾' : '▸'}</span>
         <span className="font-bold uppercase tracking-wide">Completed</span>
@@ -118,17 +118,17 @@ export default function CompletedTodosSection({
             <button
               onClick={() => setWeekAnchor(d => shiftWeek(d, -1))}
               disabled={!hasOlderTodos}
-              className="text-xs px-2.5 py-1 bg-kraft-light/20 text-kraft-light border border-kraft-dark/30 rounded-lg disabled:opacity-30 hover:bg-kraft-light/30 transition-colors"
+              className="text-xs px-2.5 py-1 bg-[#171717] text-kraft-light border border-[#171717] rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity [box-shadow:2px_2px_0_#555555]"
             >
               ‹ Previous
             </button>
-            <span className="text-xs text-kraft-light font-medium flex-1 text-center">
+            <span className="text-xs text-kk-ink font-medium flex-1 text-center">
               {week.label}
             </span>
             <button
               onClick={() => setWeekAnchor(d => shiftWeek(d, 1))}
               disabled={isCurrentOrFuture}
-              className="text-xs px-2.5 py-1 bg-kraft-light/20 text-kraft-light border border-kraft-dark/30 rounded-lg disabled:opacity-30 hover:bg-kraft-light/30 transition-colors"
+              className="text-xs px-2.5 py-1 bg-[#171717] text-kraft-light border border-[#171717] rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity [box-shadow:2px_2px_0_#555555]"
             >
               Next ›
             </button>
@@ -136,15 +136,15 @@ export default function CompletedTodosSection({
 
           {/* Items for this week */}
           {weekTodos.length === 0 ? (
-            <div className="bg-kraft-light/10 border border-kraft-dark/20 rounded-lg px-4 py-5 text-center">
-              <span className="text-xs text-kraft-dark">No completed to-dos this week</span>
+            <div className="bg-kraft-brown/20 border border-[#171717]/15 rounded-lg px-4 py-5 text-center">
+              <span className="text-xs text-kk-muted">No completed to-dos this week</span>
             </div>
           ) : (
             <div className="space-y-1.5">
               {weekTodos.map(todo => (
                 <div
                   key={todo.id}
-                  className="bg-kraft-light/60 border border-[#171717]/30 rounded-lg px-3 py-2 space-y-1"
+                  className="bg-kraft-brown/20 border border-[#171717]/15 rounded-lg px-3 py-2 space-y-1"
                 >
                   <div className="flex items-center gap-2">
                     {/* Checked checkbox — click to restore */}
@@ -161,7 +161,7 @@ export default function CompletedTodosSection({
                     <span className="text-sm text-kk-muted line-through truncate flex-1 min-w-0">
                       {todo.title}
                     </span>
-                    <span className="text-[10px] text-kraft-dark shrink-0">
+                    <span className="text-[10px] text-kk-muted shrink-0">
                       {formatCompletionDate(todo.completed_at)}
                     </span>
                   </div>
@@ -170,10 +170,10 @@ export default function CompletedTodosSection({
                   {(todo.completion_context || todo.notes) && (
                     <div className="pl-6 space-y-0.5">
                       {todo.completion_context && (
-                        <p className="text-xs text-kraft-dark">{todo.completion_context}</p>
+                        <p className="text-xs text-kk-muted">{todo.completion_context}</p>
                       )}
                       {todo.notes && !todo.completion_context?.includes(todo.notes) && (
-                        <p className="text-xs text-kraft-dark/60">{todo.notes}</p>
+                        <p className="text-xs text-kk-muted/60">{todo.notes}</p>
                       )}
                     </div>
                   )}
@@ -183,7 +183,7 @@ export default function CompletedTodosSection({
                     <div className="pl-6">
                       <Link
                         href={`/tasks/${todo.upgraded_to_task_id}`}
-                        className="text-[10px] text-kraft-light/60 hover:text-kraft-light transition-colors"
+                        className="text-[10px] text-kk-muted hover:text-kk-ink transition-colors"
                       >
                         → Upgraded to task
                       </Link>

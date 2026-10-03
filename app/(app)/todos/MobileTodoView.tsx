@@ -69,13 +69,13 @@ export default function MobileTodoView({
         {returnTo && (
           <Link
             href={returnTo}
-            className="flex items-center gap-1.5 text-sm text-kraft-dark mb-3 py-1"
+            className="flex items-center gap-1.5 text-sm text-kk-muted mb-3 py-1"
           >
             <span className="text-lg leading-none">&lsaquo;</span>
             <span>{returnTo === '/store' ? 'Store Dashboard' : 'Back'}</span>
           </Link>
         )}
-        <h1 className="text-2xl font-black tracking-tight text-kraft-light">To-Dos</h1>
+        <h1 className="text-2xl font-black tracking-tight text-kk-ink">To-Dos</h1>
       </div>
 
       {/* Person selector (only for management users with team columns) */}
@@ -85,8 +85,8 @@ export default function MobileTodoView({
             onClick={() => setSelectedPerson('me')}
             className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-colors ${
               isViewingOwn
-                ? 'bg-kraft-light text-[#171717]'
-                : 'text-kraft-dark hover:text-kraft-light'
+                ? 'bg-[#171717] text-kraft-light'
+                : 'text-kk-muted hover:text-kk-ink'
             }`}
           >
             {myName}
@@ -97,8 +97,8 @@ export default function MobileTodoView({
               onClick={() => setSelectedPerson(col.name)}
               className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-colors ${
                 selectedPerson === col.name
-                  ? 'bg-kraft-light text-[#171717]'
-                  : 'text-kraft-dark hover:text-kraft-light'
+                  ? 'bg-[#171717] text-kraft-light'
+                  : 'text-kk-muted hover:text-kk-ink'
               }`}
             >
               {col.name}
@@ -136,8 +136,8 @@ export default function MobileTodoView({
       {/* Todo list */}
       <div className="space-y-2">
         {activeTodos.length === 0 && (
-          <div className="bg-kraft-light/10 border border-kraft-dark/20 rounded-lg px-4 py-6 text-center">
-            <span className="text-sm text-kraft-dark">
+          <div className="bg-kraft-brown/20 border border-[#171717]/15 rounded-lg px-4 py-6 text-center">
+            <span className="text-sm text-kk-muted">
               {isViewingOwn ? 'No open to-dos' : `No open to-dos for ${selectedPerson}`}
             </span>
           </div>

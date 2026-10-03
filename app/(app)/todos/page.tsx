@@ -161,7 +161,7 @@ export default async function TodosPage({
   }))
 
   return (
-    <div className="-m-4 p-4 min-h-screen bg-[#171717]">
+    <div className="-m-4 p-4 min-h-screen bg-kraft-light">
       {/* ── Mobile view (< 640px) ── */}
       <div className="sm:hidden">
         <MobileTodoView
@@ -179,8 +179,8 @@ export default async function TodosPage({
       {/* ── Desktop view (>= 640px) ── */}
       <div className="hidden sm:block">
         <div className="mb-5">
-          <h1 className="text-2xl font-black tracking-tight text-kraft-light">To-Dos</h1>
-          <p className="text-sm text-kraft-dark mt-0.5">Everyone&apos;s to-dos</p>
+          <h1 className="text-2xl font-black tracking-tight text-kk-ink">To-Dos</h1>
+          <p className="text-sm text-kk-muted mt-0.5">Everyone&apos;s to-dos</p>
         </div>
 
         <div className={`grid gap-4`} style={canSeeTeam ? { gridTemplateColumns: `repeat(${1 + teamColumns.length}, 1fr)` } : undefined}>

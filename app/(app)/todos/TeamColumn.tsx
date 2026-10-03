@@ -49,9 +49,9 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
   return (
     <div>
       <div className="mb-2">
-        <span className="text-lg font-black uppercase tracking-wide text-kraft-light">{name}</span>
+        <span className="text-lg font-black uppercase tracking-wide text-kk-ink">{name}</span>
         {todos.length > 0 && (
-          <span className="text-xs text-kraft-dark ml-1">· {todos.length}</span>
+          <span className="text-xs text-kk-muted ml-1">· {todos.length}</span>
         )}
       </div>
 
