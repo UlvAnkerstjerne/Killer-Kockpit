@@ -97,11 +97,6 @@ export default function MarketingShell({
           </div>
         </div>
 
-        {/* Workspace switcher */}
-        <div className="px-3 pb-4">
-          <WorkspaceSwitcher currentWorkspace="marketing" />
-        </div>
-
         {/* Nav */}
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
           {MARKETING_NAV.map((item) => {
@@ -125,6 +120,11 @@ export default function MarketingShell({
             )
           })}
         </nav>
+
+        {/* Workspace switcher — matches Management sidebar placement */}
+        <div className="px-3 pb-2">
+          <WorkspaceSwitcher currentWorkspace="marketing" />
+        </div>
 
         {/* User footer */}
         <div className="border-t border-kk-line mx-3 mb-4 pt-3">
