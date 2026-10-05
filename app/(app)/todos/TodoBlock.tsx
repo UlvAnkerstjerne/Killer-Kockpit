@@ -163,12 +163,12 @@ function SortableOpenTodo({
               <div className="flex items-start gap-2 min-w-0 flex-wrap">
                 <PriorityDot priority={todo.priority} />
                 <span className="text-sm font-semibold text-kk-ink break-words min-w-0" style={{ wordBreak: 'break-word' }}>{todo.title}</span>
+                {todo.recurrence_rule && (
+                  <span className="text-[10px] text-kk-brand/60 shrink-0 mt-0.5">
+                    ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                  </span>
+                )}
               </div>
-              {todo.recurrence_rule && (
-                <span className="text-[10px] text-kk-brand/60 mt-0.5 inline-block">
-                  ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
-                </span>
-              )}
               {todo.notes && (
                 <p className="text-xs text-kk-muted mt-0.5 break-words" style={{ wordBreak: 'break-word' }}>{todo.notes}</p>
               )}
