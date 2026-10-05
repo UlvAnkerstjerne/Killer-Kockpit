@@ -76,6 +76,7 @@ export interface GbpStoreReviewSummary {
   gbpLocationId:  string
   storeShortName: string
   newReviews7d:   number | null
+  avgRating7d:    number | null
   unanswered:     number | null
   avgRating:      number | null
 }
@@ -339,20 +340,38 @@ export async function getGbpStoreReviewSummary(): Promise<GbpStoreReviewSummary[
   )
   if (coreLocations.length === 0) return []
 
+  // Cutoff for 7-day average rating (Europe/Copenhagen)
+  const cutoff7d = new Date()
+  cutoff7d.setDate(cutoff7d.getDate() - 6)
+  cutoff7d.setHours(0, 0, 0, 0)
+  const cutoff7dIso = cutoff7d.toISOString()
+
   // One indexed latest-row lookup per core location. Missing snapshots display
   // as unavailable until sync, without a permanent review-history fallback.
   return Promise.all(coreLocations.map(async (loc: { id: string; store_short_name: string }) => {
-    const { data, error } = await db.from('gbp_review_health_daily')
-      .select('average_rating,new_reviews_7d,unanswered_count')
-      .eq('location_id', loc.id)
-      .order('snapshot_date', { ascending: false })
-      .limit(1).maybeSingle()
+    const [healthResult, recentResult] = await Promise.all([
+      db.from('gbp_review_health_daily')
+        .select('average_rating,new_reviews_7d,unanswered_count')
+        .eq('location_id', loc.id)
+        .order('snapshot_date', { ascending: false })
+        .limit(1).maybeSingle(),
+      db.from('gbp_reviews')
+        .select('star_rating')
+        .eq('location_id', loc.id)
+        .gte('review_created_at', cutoff7dIso),
+    ])
+    const { data, error: hErr } = healthResult
+    const recentReviews = recentResult.data ?? []
+    const avgRating7d = recentReviews.length > 0
+      ? recentReviews.reduce((sum: number, r: { star_rating: number }) => sum + r.star_rating, 0) / recentReviews.length
+      : null
     return {
       gbpLocationId: loc.id,
       storeShortName: loc.store_short_name,
-      newReviews7d: error ? null : data?.new_reviews_7d ?? null,
-      unanswered: error ? null : data?.unanswered_count ?? null,
-      avgRating: error || data?.average_rating == null ? null : Number(data.average_rating),
+      newReviews7d: hErr ? null : data?.new_reviews_7d ?? null,
+      avgRating7d,
+      unanswered: hErr ? null : data?.unanswered_count ?? null,
+      avgRating: hErr || data?.average_rating == null ? null : Number(data.average_rating),
     }
   }))
 }

@@ -12,15 +12,22 @@ type Props = {
  * In Marketing: always visible (layout already enforces access).
  */
 export default function WorkspaceSwitcher({ currentWorkspace }: Props) {
+  const isMarketing = currentWorkspace === 'marketing'
+
   return (
-    <div className="flex bg-[#171717] rounded-xl p-1">
+    <div className={[
+      'flex rounded-xl p-1',
+      isMarketing ? 'bg-kk-line' : 'bg-[#171717]',
+    ].join(' ')}>
       <Link
         href="/today"
         className={[
           'flex-1 text-xs text-center py-1.5 px-2 rounded-lg transition-colors',
           currentWorkspace === 'management'
             ? 'bg-kraft-light text-[#171717] font-semibold'
-            : 'text-kraft-light/60 hover:text-kraft-light',
+            : isMarketing
+              ? 'text-kk-muted hover:text-kk-ink'
+              : 'text-kraft-light/60 hover:text-kraft-light',
         ].join(' ')}
       >
         Management
@@ -30,7 +37,7 @@ export default function WorkspaceSwitcher({ currentWorkspace }: Props) {
         className={[
           'flex-1 text-xs text-center py-1.5 px-2 rounded-lg transition-colors',
           currentWorkspace === 'marketing'
-            ? 'bg-kraft-light text-[#171717] font-semibold'
+            ? 'bg-kk-brand text-white font-semibold'
             : 'text-kraft-light/60 hover:text-kraft-light',
         ].join(' ')}
       >

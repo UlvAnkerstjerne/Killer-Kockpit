@@ -111,30 +111,53 @@ export default function GbpDashboard({
             <Link
               key={s.gbpLocationId}
               href={`${pathname}?location=${s.gbpLocationId}`}
-              className="block bg-kk-panel border border-kk-line rounded-2xl px-4 py-3.5 no-underline transition-shadow transition-[border-color] duration-150 hover:border-kk-muted/30 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-ink"
+              className="group block bg-kk-panel rounded-2xl overflow-hidden no-underline shadow-sm hover:shadow-md transition-shadow duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-ink"
               aria-label={`${s.storeShortName} — view details`}
             >
-              <div className="text-[13px] font-bold text-kk-ink mb-3 truncate">{s.storeShortName}</div>
-
-              <div className="space-y-2.5">
-                <div>
-                  <div className="text-[10px] font-medium text-kk-muted leading-tight">New reviews (7D)</div>
-                  <div className="text-xl font-bold text-kk-ink tabular-nums">{s.newReviews7d ?? '—'}</div>
+              {/* Tinted header */}
+              <div className="bg-kk-brand/[0.06] border-b border-kk-line px-4 py-3">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-kk-brand/10 shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M2 14V7l6-5 6 5v7H2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" className="text-kk-brand"/>
+                      <rect x="6" y="10" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1.3" className="text-kk-brand"/>
+                    </svg>
+                  </span>
+                  <span className="text-[13px] font-bold text-kk-ink truncate">{s.storeShortName}</span>
                 </div>
+              </div>
 
-                <div>
-                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Unanswered reviews</div>
-                  <div className={`text-xl font-bold tabular-nums ${(s.unanswered ?? 0) > 0 ? 'text-kk-bad' : 'text-kk-ink'}`}>
-                    {s.unanswered ?? '—'}
+              {/* Metrics */}
+              <div className="px-4 py-3 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[10px] font-medium text-kk-muted leading-tight">New reviews (7D)</div>
+                    <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">{s.newReviews7d ?? '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-medium text-kk-muted leading-tight">Avg rating (7D)</div>
+                    <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
+                      {s.avgRating7d !== null ? (
+                        <>{s.avgRating7d.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
+                      ) : '—'}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Current rating</div>
-                  <div className="text-xl font-bold text-kk-ink tabular-nums">
-                    {s.avgRating !== null ? (
-                      <>{s.avgRating.toFixed(1)} <span className="text-sm text-kk-muted/60">★</span></>
-                    ) : '—'}
+                <div className="border-t border-kk-line/60 pt-2.5 grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[10px] font-medium text-kk-muted leading-tight">Unanswered</div>
+                    <div className={`text-lg font-bold tabular-nums mt-0.5 ${(s.unanswered ?? 0) > 0 ? 'text-kk-brand' : 'text-kk-ink'}`}>
+                      {s.unanswered ?? '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-medium text-kk-muted leading-tight">Current rating</div>
+                    <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
+                      {s.avgRating !== null ? (
+                        <>{s.avgRating.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
+                      ) : '—'}
+                    </div>
                   </div>
                 </div>
               </div>
