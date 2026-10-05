@@ -1,6 +1,9 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getGbpReviewDetail } from '@/lib/actions/marketing/gbp-reviews'
+import { getCurrentUser } from '@/lib/auth'
+import { getUserMarketingPermissions } from '@/lib/actions/marketing/permissions'
+import { hasMarketingPermission } from '@/lib/permissions'
 import ReviewDetailClient from './ReviewDetailClient'
 
 export const dynamic = 'force-dynamic'
@@ -12,8 +15,12 @@ interface Props {
 export default async function GbpReviewDetailPage({ params }: Props) {
   const { id: replyId } = await params
 
-  // getGbpReviewDetail authenticates internally — no auth context accepted here.
-  const review = await getGbpReviewDetail(replyId)
+  const [review, user] = await Promise.all([
+    getGbpReviewDetail(replyId),
+    getCurrentUser(),
+  ])
+  const permissions = user ? await getUserMarketingPermissions(user.id) : []
+  const canApprove = user ? hasMarketingPermission(user.role, permissions, 'reviews_approve') : false
 
   if (!review) notFound()
 
@@ -42,7 +49,7 @@ export default async function GbpReviewDetailPage({ params }: Props) {
         </p>
       </div>
 
-      <ReviewDetailClient review={review} replyId={reply?.id ?? replyId} />
+      <ReviewDetailClient review={review} replyId={reply?.id ?? replyId} canApprove={canApprove} />
     </div>
   )
 }

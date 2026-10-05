@@ -50,8 +50,10 @@ function PaidRecActions({ id }: { id: string }) {
 
 export default function NeedsReviewClient({
   items,
+  canActionPaid,
 }: {
   items: MarketingReviewItem[]
+  canActionPaid: boolean
 }) {
   if (items.length === 0) {
     return (
@@ -82,7 +84,7 @@ export default function NeedsReviewClient({
                     timeZone: 'Europe/Copenhagen',
                   })}
                 </div>
-                {item.kind === 'paid_recommendation' && (
+                {item.kind === 'paid_recommendation' && canActionPaid && (
                   <PaidRecActions id={item.id} />
                 )}
               </div>

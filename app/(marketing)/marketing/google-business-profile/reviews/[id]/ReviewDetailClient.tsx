@@ -20,9 +20,10 @@ function StarRating({ rating }: { rating: number }) {
 interface Props {
   review:  GbpReviewRow
   replyId: string
+  canApprove: boolean
 }
 
-export default function ReviewDetailClient({ review, replyId }: Props) {
+export default function ReviewDetailClient({ review, replyId, canApprove }: Props) {
   const router   = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -34,7 +35,7 @@ export default function ReviewDetailClient({ review, replyId }: Props) {
   const [feedback, setFeedback]         = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const status = reply?.status ?? 'new'
-  const isActionable = ['awaiting_review', 'rejected', 'publish_failed'].includes(status)
+  const isActionable = canApprove && ['awaiting_review', 'rejected', 'publish_failed'].includes(status)
   const isApproved   = status === 'approved'
   const isPublished  = status === 'published'
 
@@ -208,7 +209,7 @@ export default function ReviewDetailClient({ review, replyId }: Props) {
           )}
 
           {/* Publish button */}
-          {isApproved && (
+          {canApprove && isApproved && (
             <div className="flex items-center gap-3">
               <button
                 onClick={handlePublish}
