@@ -155,6 +155,7 @@ export default function GbpDashboard({
                     ) : '—'}
                     {s.ratingTrend === 'up' && <span className="text-green-600 text-xs leading-none">▲</span>}
                     {s.ratingTrend === 'down' && <span className="text-kk-brand text-xs leading-none">▼</span>}
+                    {s.ratingTrend === 'flat' && <span className="text-kk-muted text-[10px] leading-none">▸</span>}
                   </div>
                 </div>
               </div>
