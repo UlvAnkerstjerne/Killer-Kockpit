@@ -79,6 +79,7 @@ export interface GbpStoreReviewSummary {
   avgRating7d:    number | null
   unanswered:     number | null
   avgRating:      number | null
+  ratingTrend:    'up' | 'down' | 'flat' | null
 }
 
 export interface GbpSyncStatus {
@@ -354,24 +355,34 @@ export async function getGbpStoreReviewSummary(): Promise<GbpStoreReviewSummary[
         .select('average_rating,new_reviews_7d,unanswered_count')
         .eq('location_id', loc.id)
         .order('snapshot_date', { ascending: false })
-        .limit(1).maybeSingle(),
+        .limit(2),
       db.from('gbp_reviews')
         .select('star_rating')
         .eq('location_id', loc.id)
         .gte('review_created_at', cutoff7dIso),
     ])
-    const { data, error: hErr } = healthResult
+    const rows = healthResult.data ?? []
+    const hErr = healthResult.error
+    const latest = rows[0] ?? null
+    const prev   = rows[1] ?? null
     const recentReviews = recentResult.data ?? []
     const avgRating7d = recentReviews.length > 0
       ? recentReviews.reduce((sum: number, r: { star_rating: number }) => sum + r.star_rating, 0) / recentReviews.length
       : null
+    const curRating  = hErr || latest?.average_rating == null ? null : Number(latest.average_rating)
+    const prevRating = hErr || prev?.average_rating == null   ? null : Number(prev.average_rating)
+    let ratingTrend: 'up' | 'down' | 'flat' | null = null
+    if (curRating !== null && prevRating !== null) {
+      ratingTrend = curRating > prevRating ? 'up' : curRating < prevRating ? 'down' : 'flat'
+    }
     return {
       gbpLocationId: loc.id,
       storeShortName: loc.store_short_name,
-      newReviews7d: hErr ? null : data?.new_reviews_7d ?? null,
+      newReviews7d: hErr ? null : latest?.new_reviews_7d ?? null,
       avgRating7d,
-      unanswered: hErr ? null : data?.unanswered_count ?? null,
-      avgRating: hErr || data?.average_rating == null ? null : Number(data.average_rating),
+      unanswered: hErr ? null : latest?.unanswered_count ?? null,
+      avgRating: curRating,
+      ratingTrend,
     }
   }))
 }

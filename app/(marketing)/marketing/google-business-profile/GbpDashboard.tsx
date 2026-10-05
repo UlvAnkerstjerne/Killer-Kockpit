@@ -149,10 +149,12 @@ export default function GbpDashboard({
                 </div>
                 <div className="px-4 py-2.5">
                   <div className="text-[10px] font-medium text-kk-muted leading-tight">Current rating</div>
-                  <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
+                  <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5 flex items-center gap-1">
                     {s.avgRating !== null ? (
                       <>{s.avgRating.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
                     ) : '—'}
+                    {s.ratingTrend === 'up' && <span className="text-green-600 text-xs leading-none">▲</span>}
+                    {s.ratingTrend === 'down' && <span className="text-kk-brand text-xs leading-none">▼</span>}
                   </div>
                 </div>
               </div>
