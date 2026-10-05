@@ -116,41 +116,36 @@ export default function MobileTodoView({
 
       {/* Create form (own todos only) */}
       {isViewingOwn && (
-        <div className="mb-4">
-          <form onSubmit={handleCreate} className="flex gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Add a to-do..."
-              maxLength={200}
-              disabled={isPending}
-              className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-2.5 text-kk-ink placeholder:text-kk-muted outline-none min-w-0"
-            />
-            <button
-              type="submit"
-              disabled={!title.trim() || isPending}
-              className="text-sm font-bold px-4 py-2.5 bg-kraft-light text-[#171717] rounded-lg disabled:opacity-30 shrink-0"
-            >
-              Add
-            </button>
-          </form>
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <span className="text-[10px] text-kk-muted">↻</span>
-            <select
-              value={createRecurrence}
-              onChange={e => setCreateRecurrence(e.target.value)}
-              className="text-xs text-kk-muted bg-transparent outline-none cursor-pointer hover:text-kk-ink transition-colors"
-              disabled={isPending}
-              aria-label="Repeat"
-            >
-              <option value="">No repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-            </select>
-          </div>
-        </div>
+        <form onSubmit={handleCreate} className="flex gap-2 mb-4">
+          <input
+            ref={inputRef}
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Add a to-do..."
+            maxLength={200}
+            disabled={isPending}
+            className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-2.5 text-kk-ink placeholder:text-kk-muted outline-none min-w-0"
+          />
+          <select
+            value={createRecurrence}
+            onChange={e => setCreateRecurrence(e.target.value)}
+            className="text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
+            disabled={isPending}
+            aria-label="Repeat"
+          >
+            <option value="">No repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+          <button
+            type="submit"
+            disabled={!title.trim() || isPending}
+            className="text-sm font-bold px-4 py-2.5 bg-kraft-light text-[#171717] rounded-lg disabled:opacity-30 shrink-0"
+          >
+            Add
+          </button>
+        </form>
       )}
 
       {/* Todo list */}
