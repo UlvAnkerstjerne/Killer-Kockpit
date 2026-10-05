@@ -13,11 +13,23 @@ import { getCopenhagenWeekBounds } from './weekUtils'
 // Sorting
 // ---------------------------------------------------------------------------
 
+/** Recurrence rules that repeat on a daily or weekly cadence. */
+const DAILY_WEEKLY_RULES = new Set([
+  'daily', 'weekdays', 'weekly',
+  'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
+])
+
+/** Returns true when the todo recurs on a daily or weekly schedule. */
+function isRecurringDailyOrWeekly(todo: Todo): boolean {
+  return !!todo.recurrence_rule && DAILY_WEEKLY_RULES.has(todo.recurrence_rule)
+}
+
 /**
  * Sorts open to-dos by the user's manual order, falling back to the default
  * display order for items that have never been manually sorted.
  *
- * Ordering rules (mirrors the DB ORDER BY used in server queries):
+ * Ordering rules:
+ *   0. Recurring daily/weekly todos float above ordinary todos
  *   1. sort_order IS NULL  → item has never been manually ordered; floats to top
  *   2. sort_order ASC      → lower value = higher in list (user's manual priority)
  *   3. Tie-break for nulls → created_at DESC (newest first)
@@ -32,6 +44,12 @@ import { getCopenhagenWeekBounds } from './weekUtils'
  */
 export function sortOpenTodos(todos: Todo[]): Todo[] {
   return [...todos].sort((a, b) => {
+    // Recurring daily/weekly items always appear above ordinary items
+    const aRec = isRecurringDailyOrWeekly(a)
+    const bRec = isRecurringDailyOrWeekly(b)
+    if (aRec && !bRec) return -1
+    if (!aRec && bRec) return 1
+
     const ao = a.sort_order
     const bo = b.sort_order
     // null sort_order → not yet manually ordered → appears first (top of list)

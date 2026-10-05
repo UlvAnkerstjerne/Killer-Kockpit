@@ -35,6 +35,7 @@ import Link from 'next/link'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 import UpgradeToTaskModal from './UpgradeToTaskModal'
+import TodoEditPanel from '@/components/todos/TodoEditPanel'
 
 // ---------------------------------------------------------------------------
 // Drag handle icon
@@ -64,9 +65,9 @@ interface Props {
   openTodos: Todo[]
   completedThisWeek: Todo[]
   maxItems?: number        // if set, cap visible open todos (badge still shows full count)
-  showFooter?: boolean     // if true, render a footer link instead of the header "All →" link
+  showFooter?: boolean     // if true, render a footer link instead of the header "All ->" link
   accentHeader?: boolean   // if true, apply warm-grey header (Today page)
-  // Upgrade-to-task: when provided, shows "→ Task" action on each open todo row
+  // Upgrade-to-task: when provided, shows "-> Task" action on each open todo row
   allUsers?: UserOption[]
   projects?: ProjectOption[]
   currentUserId?: string
@@ -84,9 +85,12 @@ interface SortableOpenTodoProps {
   completionContextText: string
   completionError: string | null
   canUpgrade: boolean
+  editingTodoId: string | null
   onComplete: () => void
   onCancel: () => void
   onUpgrade: () => void
+  onEdit: () => void
+  onEditClose: () => void
   onContextChange: (text: string) => void
   onContextConfirm: () => void
   onContextCancel: () => void
@@ -100,9 +104,12 @@ function SortableOpenTodo({
   completionContextText,
   completionError,
   canUpgrade,
+  editingTodoId,
   onComplete,
   onCancel,
   onUpgrade,
+  onEdit,
+  onEditClose,
   onContextChange,
   onContextConfirm,
   onContextCancel,
@@ -125,7 +132,7 @@ function SortableOpenTodo({
       className={`group${isDragging ? ' opacity-50 relative z-10 bg-kraft-light ring-1 ring-[#171717]/20' : ''}`}
     >
       <div className="flex items-stretch">
-        {/* ── Drag affordance (decorative only — whole row is draggable) ── */}
+        {/* Drag affordance (decorative only — whole row is draggable) */}
         <div
           aria-hidden="true"
           className="flex items-center justify-center w-5 shrink-0
@@ -135,14 +142,14 @@ function SortableOpenTodo({
           <GripIcon />
         </div>
 
-        {/* ── Row content ───────────────────────────────────────────────── */}
+        {/* Row content */}
         <div className="flex-1 min-w-0 pr-4 py-1.5">
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             {/* Complete button */}
             <button
               onClick={onComplete}
               disabled={isPending || completionLoading}
-              className="w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light hover:bg-[#171717] hover:text-kraft-light transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center [box-shadow:2px_2px_0_#555555] active:translate-x-px active:translate-y-px active:[box-shadow:1px_1px_0_#555555] group"
+              className="mt-0.5 w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light hover:bg-[#171717] hover:text-kraft-light transition-colors shrink-0 disabled:opacity-40 flex items-center justify-center [box-shadow:2px_2px_0_#555555] active:translate-x-px active:translate-y-px active:[box-shadow:1px_1px_0_#555555] group"
               title="Mark complete"
               aria-label="Mark complete"
             >
@@ -152,49 +159,72 @@ function SortableOpenTodo({
             </button>
 
             {/* Title + recurrence indicator */}
-            <div className="flex-1 flex items-center gap-2 min-w-0">
-              <PriorityDot priority={todo.priority} />
-              <span className="text-sm font-semibold text-kk-ink truncate">{todo.title}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start gap-2 min-w-0 flex-wrap">
+                <PriorityDot priority={todo.priority} />
+                <span className="text-sm font-semibold text-kk-ink break-words min-w-0" style={{ wordBreak: 'break-word' }}>{todo.title}</span>
+              </div>
               {todo.recurrence_rule && (
-                <span className="text-[10px] text-kk-brand/60 shrink-0">
+                <span className="text-[10px] text-kk-brand/60 mt-0.5 inline-block">
                   ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
                 </span>
               )}
+              {todo.notes && (
+                <p className="text-xs text-kk-muted mt-0.5 break-words" style={{ wordBreak: 'break-word' }}>{todo.notes}</p>
+              )}
             </div>
 
-            {/* Priority label */}
-            <span className="text-[10px] text-kk-muted shrink-0">
-              {PRIORITY_CONFIG[todo.priority]?.label}
-            </span>
+            {/* Right-side actions */}
+            <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+              <span className="text-[10px] text-kk-muted">
+                {PRIORITY_CONFIG[todo.priority]?.label}
+              </span>
 
-            {/* Upgrade to Task — visible on hover */}
-            {canUpgrade && (
+              {/* Edit button */}
               <button
-                onClick={onUpgrade}
+                onClick={onEdit}
                 disabled={isPending || completionLoading}
-                className="text-[10px] text-kk-muted sm:opacity-0 sm:group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
-                title="Upgrade to Task"
-                aria-label="Upgrade to Task"
+                className="text-[10px] text-kk-muted sm:opacity-0 sm:group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0"
+                title="Edit"
+                aria-label="Edit"
               >
-                → Task
+                Edit
               </button>
-            )}
 
-            {/* Cancel button — visible on hover */}
-            <button
-              onClick={onCancel}
-              disabled={isPending}
-              className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
-              title="Cancel"
-              aria-label="Cancel"
-            >
-              ×
-            </button>
+              {canUpgrade && (
+                <button
+                  onClick={onUpgrade}
+                  disabled={isPending || completionLoading}
+                  className="text-[10px] text-kk-muted sm:opacity-0 sm:group-hover:opacity-100 hover:text-kk-ink transition-all disabled:opacity-0 shrink-0 font-medium"
+                  title="Upgrade to Task"
+                  aria-label="Upgrade to Task"
+                >
+                  Task
+                </button>
+              )}
+
+              <button
+                onClick={onCancel}
+                disabled={isPending}
+                className="text-xs text-kk-muted opacity-0 group-hover:opacity-100 hover:text-kk-bad transition-all disabled:opacity-0 shrink-0"
+                title="Cancel"
+                aria-label="Cancel"
+              >
+                ×
+              </button>
+            </div>
           </div>
 
-          {/* Completion context box */}
+          {/* Edit panel — stop pointer events from reaching dnd-kit */}
+          {editingTodoId === todo.id && (
+            <div onPointerDown={e => e.stopPropagation()}>
+              <TodoEditPanel todo={todo} onClose={onEditClose} />
+            </div>
+          )}
+
+          {/* Completion context box — stop pointer events from reaching dnd-kit */}
           {completingTodoId === todo.id && (
-            <div className="mt-2 pt-2 border-t border-[#171717]/20 space-y-1.5">
+            <div className="mt-2 pt-2 border-t border-[#171717]/20 space-y-1.5" onPointerDown={e => e.stopPropagation()}>
               <div>
                 <p className="text-xs font-semibold text-kk-ink">Add context</p>
                 <p className="text-[10px] text-kk-muted">What happened / what was the outcome?</p>
@@ -226,7 +256,7 @@ function SortableOpenTodo({
                   disabled={!completionContextText.trim() || completionLoading}
                   className="text-xs px-3 py-1 bg-kk-ink text-white rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity"
                 >
-                  {completionLoading ? 'Saving…' : 'Done'}
+                  {completionLoading ? 'Saving...' : 'Done'}
                 </button>
                 <button
                   type="button"
@@ -258,6 +288,7 @@ export default function TodoBlock({
 
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<1 | 2 | 3 | 4>(2)
+  const [createRecurrence, setCreateRecurrence] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -272,10 +303,11 @@ export default function TodoBlock({
   const [upgradingTodo, setUpgradingTodo] = useState<Todo | null>(null)
   const canUpgrade = !!(allUsers && projects !== undefined && currentUserId)
 
-  // ── Drag-and-drop ordering ─────────────────────────────────────────────
-  // localOpenTodos mirrors openTodos prop and supports optimistic DnD reorder.
+  // Inline edit
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
+
+  // Drag-and-drop ordering
   const [localOpenTodos, setLocalOpenTodos] = useState<Todo[]>(openTodos)
-  // Sync with server when props change (after router.refresh())
   useEffect(() => { setLocalOpenTodos(openTodos) }, [openTodos])
 
   const sensors = useSensors(
@@ -294,7 +326,6 @@ export default function TodoBlock({
     const reordered = arrayMove(localOpenTodos, oldIndex, newIndex)
     setLocalOpenTodos(reordered)
 
-    // Persist asynchronously — no await, fire-and-forget from UI perspective
     startTransition(async () => {
       await reorderTodos(reordered.map(t => t.id))
     })
@@ -304,13 +335,20 @@ export default function TodoBlock({
     e.preventDefault()
     if (!title.trim()) return
     setCreateError(null)
-    const result = await createTodo(title.trim(), priority)
+    const result = await createTodo(
+      title.trim(),
+      priority,
+      null,
+      createRecurrence || null,
+      null,
+    )
     if (result.error) {
       setCreateError(result.error)
       return
     }
     setTitle('')
     setPriority(2)
+    setCreateRecurrence('')
     startTransition(() => router.refresh())
     inputRef.current?.focus()
   }
@@ -329,6 +367,7 @@ export default function TodoBlock({
     setCompletingTodoId(todo.id)
     setCompletionContextText('')
     setCompletionError(null)
+    setEditingTodoId(null)
   }
 
   async function handleCompleteConfirm(todoId: string, isRecurring: boolean) {
@@ -380,36 +419,52 @@ export default function TodoBlock({
       </div>
 
       {/* Quick-add form */}
-      <form onSubmit={handleCreate} className="px-4 py-2.5 border-b-2 border-[#171717] flex items-center gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          placeholder="Add a to-do…"
-          maxLength={200}
-          className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none transition-colors"
-          disabled={isPending}
-        />
-        <select
-          value={priority}
-          onChange={e => setPriority(Number(e.target.value) as 1 | 2 | 3 | 4)}
-          className="text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
-          disabled={isPending}
-          aria-label="Priority"
-        >
-          <option value={1}>Critical</option>
-          <option value={2}>Normal</option>
-          <option value={3}>Low</option>
-          <option value={4}>Background</option>
-        </select>
-        <button
-          type="submit"
-          disabled={!title.trim() || isPending}
-          className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0 [box-shadow:3px_3px_0_#555555]"
-        >
-          Add
-        </button>
+      <form onSubmit={handleCreate} className="px-4 py-2.5 border-b-2 border-[#171717]">
+        <div className="flex items-center gap-2">
+          <input
+            ref={inputRef}
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Add a to-do..."
+            maxLength={200}
+            className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none transition-colors min-w-0"
+            disabled={isPending}
+          />
+          <select
+            value={priority}
+            onChange={e => setPriority(Number(e.target.value) as 1 | 2 | 3 | 4)}
+            className="text-xs text-kk-muted bg-transparent border border-[#171717]/30 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-kk-ink transition-colors shrink-0"
+            disabled={isPending}
+            aria-label="Priority"
+          >
+            <option value={1}>Critical</option>
+            <option value={2}>Normal</option>
+            <option value={3}>Low</option>
+            <option value={4}>Background</option>
+          </select>
+          <button
+            type="submit"
+            disabled={!title.trim() || isPending}
+            className="text-xs px-3 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 transition-opacity hover:opacity-80 shrink-0 [box-shadow:3px_3px_0_#555555]"
+          >
+            Add
+          </button>
+        </div>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-[10px] text-kk-muted">↻</span>
+          <select
+            value={createRecurrence}
+            onChange={e => setCreateRecurrence(e.target.value)}
+            className="text-xs text-kk-muted bg-transparent outline-none cursor-pointer hover:text-kk-ink transition-colors"
+            disabled={isPending}
+            aria-label="Repeat"
+          >
+            <option value="">No repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
       </form>
 
       {createError && (
@@ -423,8 +478,8 @@ export default function TodoBlock({
         </div>
       ) : (
         <div className="divide-y divide-[#171717]/15">
-          {/* ── Sortable open todos (scrollable when exceeding maxItems) ──── */}
-          <div className={maxItems && localOpenTodos.length > maxItems ? `overflow-y-auto overscroll-contain` : ''} style={maxItems && localOpenTodos.length > maxItems ? { maxHeight: `${maxItems * 38}px` } : undefined}>
+          {/* Sortable open todos (scrollable when exceeding maxItems) */}
+          <div className={maxItems && localOpenTodos.length > maxItems ? `overflow-y-auto overscroll-contain` : ''} style={maxItems && localOpenTodos.length > maxItems ? { maxHeight: `${maxItems * 48}px` } : undefined}>
             <div className="divide-y divide-[#171717]/15">
               <DndContext
                 sensors={sensors}
@@ -446,9 +501,12 @@ export default function TodoBlock({
                       completionContextText={completionContextText}
                       completionError={completionError}
                       canUpgrade={canUpgrade}
+                      editingTodoId={editingTodoId}
                       onComplete={() => openCompletionBox(todo)}
                       onCancel={() => handleAction(() => cancelTodo(todo.id))}
                       onUpgrade={() => setUpgradingTodo(todo)}
+                      onEdit={() => { setEditingTodoId(editingTodoId === todo.id ? null : todo.id); setCompletingTodoId(null) }}
+                      onEditClose={() => setEditingTodoId(null)}
                       onContextChange={setCompletionContextText}
                       onContextConfirm={() => handleCompleteConfirm(todo.id, !!todo.recurrence_rule)}
                       onContextCancel={() => setCompletingTodoId(null)}
@@ -464,20 +522,20 @@ export default function TodoBlock({
             <>
               <div className="px-5 py-2 bg-kraft-brown/40">
                 <span className="text-xs font-medium text-kk-good">
-                  ✓ Completed this week · {completedThisWeek.length}
+                  Completed this week · {completedThisWeek.length}
                 </span>
               </div>
               {completedThisWeek.map(todo => (
-                <div key={todo.id} className="flex items-center gap-3 px-5 py-3 group opacity-70">
-                  <div className="w-4 h-4 rounded border border-kk-good bg-kk-good-bg shrink-0 flex items-center justify-center">
+                <div key={todo.id} className="flex items-start gap-3 px-5 py-3 group opacity-70">
+                  <div className="mt-0.5 w-4 h-4 rounded border border-kk-good bg-kk-good-bg shrink-0 flex items-center justify-center">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                       <path d="M1.5 5L4 7.5L8.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-kk-good" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm text-kk-muted line-through truncate block">{todo.title}</span>
+                    <span className="text-sm text-kk-muted line-through break-words" style={{ wordBreak: 'break-word' }}>{todo.title}</span>
                     {todo.completion_context && (
-                      <p className="text-[10px] text-kk-good/80 truncate mt-0.5">✓ {todo.completion_context}</p>
+                      <p className="text-[10px] text-kk-good/80 break-words mt-0.5" style={{ wordBreak: 'break-word' }}>✓ {todo.completion_context}</p>
                     )}
                   </div>
                   <button
@@ -507,7 +565,7 @@ export default function TodoBlock({
         </div>
       )}
 
-      {/* Upgrade-to-Task modal — rendered outside the card scroll context */}
+      {/* Upgrade-to-Task modal */}
       {upgradingTodo && canUpgrade && (
         <UpgradeToTaskModal
           todo={upgradingTodo}

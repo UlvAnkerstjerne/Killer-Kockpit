@@ -7,6 +7,7 @@ import { PriorityDot } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 import { createTodo, completeTodo, completeRecurringTodo } from '@/lib/actions/todos'
 import type { TeamTodo } from '@/lib/types'
+import TodoEditPanel from '@/components/todos/TodoEditPanel'
 
 type UserOption = { id: string; display_name: string; email: string }
 
@@ -33,9 +34,11 @@ export default function MobileTodoView({
   const [isPending, startTransition] = useTransition()
   const [selectedPerson, setSelectedPerson] = useState<string>('me')
   const [title, setTitle] = useState('')
+  const [createRecurrence, setCreateRecurrence] = useState('')
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [contextText, setContextText] = useState('')
   const [contextLoading, setContextLoading] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isViewingOwn = selectedPerson === 'me'
@@ -46,8 +49,9 @@ export default function MobileTodoView({
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || isPending) return
-    await createTodo(title.trim(), 2, null, null, null)
+    await createTodo(title.trim(), 2, null, createRecurrence || null, null)
     setTitle('')
+    setCreateRecurrence('')
     startTransition(() => router.refresh())
     inputRef.current?.focus()
   }
@@ -112,25 +116,41 @@ export default function MobileTodoView({
 
       {/* Create form (own todos only) */}
       {isViewingOwn && (
-        <form onSubmit={handleCreate} className="flex gap-2 mb-4">
-          <input
-            ref={inputRef}
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="Add a to-do..."
-            maxLength={200}
-            disabled={isPending}
-            className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-2.5 text-kk-ink placeholder:text-kk-muted outline-none min-w-0"
-          />
-          <button
-            type="submit"
-            disabled={!title.trim() || isPending}
-            className="text-sm font-bold px-4 py-2.5 bg-kraft-light text-[#171717] rounded-lg disabled:opacity-30 shrink-0"
-          >
-            Add
-          </button>
-        </form>
+        <div className="mb-4">
+          <form onSubmit={handleCreate} className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Add a to-do..."
+              maxLength={200}
+              disabled={isPending}
+              className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-3 py-2.5 text-kk-ink placeholder:text-kk-muted outline-none min-w-0"
+            />
+            <button
+              type="submit"
+              disabled={!title.trim() || isPending}
+              className="text-sm font-bold px-4 py-2.5 bg-kraft-light text-[#171717] rounded-lg disabled:opacity-30 shrink-0"
+            >
+              Add
+            </button>
+          </form>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-[10px] text-kk-muted">↻</span>
+            <select
+              value={createRecurrence}
+              onChange={e => setCreateRecurrence(e.target.value)}
+              className="text-xs text-kk-muted bg-transparent outline-none cursor-pointer hover:text-kk-ink transition-colors"
+              disabled={isPending}
+              aria-label="Repeat"
+            >
+              <option value="">No repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </div>
+        </div>
       )}
 
       {/* Todo list */}
@@ -145,25 +165,54 @@ export default function MobileTodoView({
 
         {activeTodos.map(todo => (
           <div key={todo.id}>
-            <div
-              className="bg-kraft-light border-2 border-[#171717] rounded-lg px-4 py-3 flex items-center gap-3"
-              onClick={isViewingOwn ? () => {
-                setCompletingId(completingId === todo.id ? null : todo.id)
-                setContextText('')
-              } : undefined}
-              style={isViewingOwn ? { cursor: 'pointer' } : undefined}
-            >
-              {isViewingOwn && (
-                <div className="w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light shrink-0" />
-              )}
-              <PriorityDot priority={todo.priority} size="md" />
-              <span className="text-sm font-semibold text-kk-ink flex-1 min-w-0">
-                {todo.title}
-              </span>
-              {todo.recurrence_rule && (
-                <span className="text-[10px] text-kk-brand/60 shrink-0">
-                  ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
-                </span>
+            <div className="bg-kraft-light border-2 border-[#171717] rounded-lg px-4 py-3 min-w-0">
+              <div className="flex items-start gap-3 min-w-0">
+                {isViewingOwn && (
+                  <button
+                    onClick={() => {
+                      setCompletingId(completingId === todo.id ? null : todo.id)
+                      setContextText('')
+                      setEditingId(null)
+                    }}
+                    className="mt-0.5 w-5 h-5 rounded border-2 border-[#171717] bg-kraft-light shrink-0 hover:bg-[#171717] hover:text-kraft-light transition-colors flex items-center justify-center"
+                    title="Mark complete"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-0" aria-hidden="true">
+                      <path d="M1.5 5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                )}
+                <PriorityDot priority={todo.priority} size="md" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-kk-ink break-words" style={{ wordBreak: 'break-word' }}>
+                    {todo.title}
+                  </span>
+                  {todo.recurrence_rule && (
+                    <span className="text-[10px] text-kk-brand/60 ml-1.5">
+                      ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                    </span>
+                  )}
+                  {todo.notes && (
+                    <p className="text-xs text-kk-muted mt-0.5 break-words" style={{ wordBreak: 'break-word' }}>{todo.notes}</p>
+                  )}
+                </div>
+                {isViewingOwn && (
+                  <button
+                    onClick={() => { setEditingId(editingId === todo.id ? null : todo.id); setCompletingId(null) }}
+                    className="text-xs text-kk-muted hover:text-kk-ink transition-colors shrink-0 mt-0.5"
+                    title="Edit"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {/* Edit panel */}
+              {isViewingOwn && editingId === todo.id && (
+                <TodoEditPanel
+                  todo={{ id: todo.id, title: todo.title, notes: todo.notes, recurrence_rule: todo.recurrence_rule, recurrence_day: todo.recurrence_day }}
+                  onClose={() => setEditingId(null)}
+                />
               )}
             </div>
 

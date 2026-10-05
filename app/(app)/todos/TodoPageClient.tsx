@@ -526,7 +526,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
           <SortablePageTodoShell key={todo.id} id={todo.id}>
             <div className="flex-1 min-w-0 px-4 py-2">
             {/* Main row — checkbox, dot, title, recurrence, priority, actions — all centered */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-start gap-3">
               <button
                 onClick={() => openCompletionBox(todo)}
                 disabled={isPending || completionLoading}
@@ -558,7 +558,8 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                 />
               ) : (
                 <span
-                  className="text-base font-semibold text-kk-ink truncate cursor-text hover:text-kk-ink/70 transition-colors flex-1 min-w-0"
+                  className="text-base font-semibold text-kk-ink break-words cursor-text hover:text-kk-ink/70 transition-colors flex-1 min-w-0"
+                  style={{ wordBreak: 'break-word' }}
                   onClick={() => startTitleEdit(todo)}
                   title="Click to edit title"
                 >
@@ -699,7 +700,8 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                   />
                 ) : todo.notes ? (
                   <p
-                    className="mt-0.5 text-xs text-kk-muted truncate cursor-text hover:text-kk-ink transition-colors"
+                    className="mt-0.5 text-xs text-kk-muted break-words cursor-text hover:text-kk-ink transition-colors"
+                    style={{ wordBreak: 'break-word' }}
                     onClick={() => startNoteEdit(todo.id, todo.notes)}
                     title="Click to edit note"
                   >
@@ -895,7 +897,7 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm text-kk-muted line-through truncate">{todo.title}</span>
+                    <span className="text-sm text-kk-muted line-through break-words" style={{ wordBreak: 'break-word' }}>{todo.title}</span>
                     {todo.recurrence_rule && (
                       <span className="text-[10px] text-kk-muted shrink-0">
                         ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
@@ -903,10 +905,10 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
                     )}
                   </div>
                   {todo.notes && (
-                    <p className="mt-0.5 text-xs text-kk-muted/70 truncate">{todo.notes}</p>
+                    <p className="mt-0.5 text-xs text-kk-muted/70 break-words" style={{ wordBreak: 'break-word' }}>{todo.notes}</p>
                   )}
                   {todo.completion_context && (
-                    <p className="mt-0.5 text-xs text-kk-good/80 truncate">✓ {todo.completion_context}</p>
+                    <p className="mt-0.5 text-xs text-kk-good/80 break-words" style={{ wordBreak: 'break-word' }}>✓ {todo.completion_context}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 mt-0.5">
@@ -937,9 +939,9 @@ export default function TodoPageClient({ openTodos, completedTodos, cancelledTod
             <div key={todo.id} className="flex items-center gap-3 bg-kraft-light border-2 border-[#171717]/30 rounded-lg px-4 py-3 group opacity-50 [box-shadow:2px_2px_0_#999]">
               <div className="w-4 h-4 rounded border border-kk-line shrink-0" />
               <div className="flex-1 min-w-0">
-                <span className="text-sm text-kk-muted line-through truncate block">{todo.title}</span>
+                <span className="text-sm text-kk-muted line-through break-words block" style={{ wordBreak: 'break-word' }}>{todo.title}</span>
                 {todo.notes && (
-                  <p className="mt-0.5 text-xs text-kk-muted/60 truncate">{todo.notes}</p>
+                  <p className="mt-0.5 text-xs text-kk-muted/60 break-words" style={{ wordBreak: 'break-word' }}>{todo.notes}</p>
                 )}
               </div>
               {todo.cancelled_at && (

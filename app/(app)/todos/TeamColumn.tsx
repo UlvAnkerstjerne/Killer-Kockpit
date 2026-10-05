@@ -6,6 +6,7 @@ import { PriorityDot } from '@/components/ui/PriorityDot'
 import { formatRecurrenceBadge } from '@/lib/todos/recurrence'
 import { createTodo, completeTodo, completeRecurringTodo, setTodoNotify } from '@/lib/actions/todos'
 import type { TeamTodo } from '@/lib/types'
+import TodoEditPanel from '@/components/todos/TodoEditPanel'
 
 type UserOption = { id: string; display_name: string; email: string }
 
@@ -22,17 +23,20 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [title, setTitle] = useState('')
+  const [createRecurrence, setCreateRecurrence] = useState('')
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [contextText, setContextText] = useState('')
   const [contextLoading, setContextLoading] = useState(false)
   const [notifyOpenId, setNotifyOpenId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim() || isPending) return
-    await createTodo(title.trim(), 2, null, null, null)
+    await createTodo(title.trim(), 2, null, createRecurrence || null, null)
     setTitle('')
+    setCreateRecurrence('')
     startTransition(() => router.refresh())
     inputRef.current?.focus()
   }
@@ -47,7 +51,7 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <div className="mb-2">
         <span className="text-lg font-black uppercase tracking-wide text-kk-ink">{name}</span>
         {todos.length > 0 && (
@@ -57,25 +61,41 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
 
       <div className="space-y-1.5">
         {interactive && (
-          <form onSubmit={handleCreate} className="flex gap-1.5">
-            <input
-              ref={inputRef}
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Add a to-do…"
-              maxLength={200}
-              disabled={isPending}
-              className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-2.5 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none min-w-0"
-            />
-            <button
-              type="submit"
-              disabled={!title.trim() || isPending}
-              className="text-xs px-2.5 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity shrink-0 [box-shadow:2px_2px_0_#555555]"
-            >
-              +
-            </button>
-          </form>
+          <div>
+            <form onSubmit={handleCreate} className="flex gap-1.5">
+              <input
+                ref={inputRef}
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="Add a to-do..."
+                maxLength={200}
+                disabled={isPending}
+                className="flex-1 text-sm bg-kraft-bg border-2 border-[#171717] rounded-lg px-2.5 py-1.5 text-kk-ink placeholder:text-kk-muted outline-none min-w-0"
+              />
+              <button
+                type="submit"
+                disabled={!title.trim() || isPending}
+                className="text-xs px-2.5 py-1.5 bg-[#171717] text-kraft-light rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity shrink-0 [box-shadow:2px_2px_0_#555555]"
+              >
+                +
+              </button>
+            </form>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="text-[10px] text-kk-muted">↻</span>
+              <select
+                value={createRecurrence}
+                onChange={e => setCreateRecurrence(e.target.value)}
+                className="text-[10px] text-kk-muted bg-transparent outline-none cursor-pointer hover:text-kk-ink transition-colors"
+                disabled={isPending}
+                aria-label="Repeat"
+              >
+                <option value="">No repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+          </div>
         )}
 
         {todos.length === 0 && !interactive && (
@@ -85,26 +105,54 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
         )}
 
         {todos.map(todo => (
-          <div key={todo.id}>
-            {/* Card — identical for interactive and read-only */}
+          <div key={todo.id} className="min-w-0">
+            {/* Card */}
             <div
-              className="bg-kraft-light border-2 border-[#171717] rounded-lg px-3 py-2 [box-shadow:2px_2px_0_#555555] flex items-center gap-2"
-              onClick={interactive ? () => { setCompletingId(completingId === todo.id ? null : todo.id); setContextText('') } : undefined}
-              style={interactive ? { cursor: 'pointer' } : undefined}
+              className="bg-kraft-light border-2 border-[#171717] rounded-lg px-3 py-2 [box-shadow:2px_2px_0_#555555] min-w-0"
             >
-              {interactive && (
-                <div
-                  className="w-4 h-4 rounded border-2 border-[#171717] bg-kraft-light shrink-0 flex items-center justify-center [box-shadow:1px_1px_0_#555555]"
+              <div className="flex items-start gap-2 min-w-0">
+                {interactive && (
+                  <button
+                    onClick={() => { setCompletingId(completingId === todo.id ? null : todo.id); setContextText(''); setEditingId(null) }}
+                    className="mt-0.5 w-4 h-4 rounded border-2 border-[#171717] bg-kraft-light shrink-0 flex items-center justify-center [box-shadow:1px_1px_0_#555555] hover:bg-[#171717] hover:text-kraft-light transition-colors"
+                    title="Mark complete"
+                  >
+                    <svg width="8" height="8" viewBox="0 0 10 10" fill="none" className="opacity-0 group-hover:opacity-100" aria-hidden="true">
+                      <path d="M1.5 5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                )}
+                <PriorityDot priority={todo.priority} size="md" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-kk-ink break-words" style={{ wordBreak: 'break-word' }}>
+                    {todo.title}
+                  </span>
+                  {todo.recurrence_rule && (
+                    <span className="text-[10px] text-kk-brand/60 ml-1.5">
+                      ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
+                    </span>
+                  )}
+                  {todo.notes && (
+                    <p className="text-xs text-kk-muted mt-0.5 break-words" style={{ wordBreak: 'break-word' }}>{todo.notes}</p>
+                  )}
+                </div>
+                {interactive && (
+                  <button
+                    onClick={() => { setEditingId(editingId === todo.id ? null : todo.id); setCompletingId(null) }}
+                    className="text-[10px] text-kk-muted hover:text-kk-ink transition-colors shrink-0 mt-0.5"
+                    title="Edit"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {/* Edit panel */}
+              {interactive && editingId === todo.id && (
+                <TodoEditPanel
+                  todo={{ id: todo.id, title: todo.title, notes: todo.notes, recurrence_rule: todo.recurrence_rule, recurrence_day: todo.recurrence_day }}
+                  onClose={() => setEditingId(null)}
                 />
-              )}
-              <PriorityDot priority={todo.priority} size="md" />
-              <span className="text-sm font-semibold text-kk-ink truncate flex-1 min-w-0">
-                {todo.title}
-              </span>
-              {todo.recurrence_rule && (
-                <span className="text-[10px] text-kk-brand/60 shrink-0">
-                  ↻ {formatRecurrenceBadge(todo.recurrence_rule, todo.recurrence_day)}
-                </span>
               )}
             </div>
 
@@ -131,7 +179,7 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
                     disabled={!contextText.trim() || contextLoading}
                     className="text-[10px] px-2 py-1 bg-[#171717] text-kraft-light rounded disabled:opacity-30 hover:opacity-80"
                   >
-                    {contextLoading ? '…' : 'Done'}
+                    {contextLoading ? '...' : 'Done'}
                   </button>
                   {allUsers && (
                     notifyOpenId === todo.id ? (
@@ -148,7 +196,7 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
                         autoFocus
                         onBlur={() => setNotifyOpenId(null)}
                       >
-                        <option value="">Notify…</option>
+                        <option value="">Notify...</option>
                         {allUsers.map(u => (
                           <option key={u.id} value={u.id}>{u.display_name.split(' ')[0]}</option>
                         ))}
@@ -158,7 +206,7 @@ export default function TeamColumn({ name, todos, interactive, allUsers }: Props
                         onClick={(e) => { e.stopPropagation(); setNotifyOpenId(todo.id) }}
                         className="text-[10px] px-2 py-1 text-kk-muted hover:text-kk-ink transition-colors"
                       >
-                        🔔 Notify
+                        Notify
                       </button>
                     )
                   )}

@@ -83,6 +83,37 @@ describe('sortOpenTodos', () => {
   it('[5] handles empty array', () => {
     expect(sortOpenTodos([])).toEqual([])
   })
+
+  it('[6] recurring daily/weekly todos float above ordinary todos', () => {
+    const ordinary = makeTodo({ sort_order: 0, created_at: '2024-01-10T00:00:00.000Z' })
+    const daily    = makeTodo({ recurrence_rule: 'daily', sort_order: 5, created_at: '2024-01-01T00:00:00.000Z' })
+    const weekly   = makeTodo({ recurrence_rule: 'weekly', sort_order: 10, created_at: '2024-01-01T00:00:00.000Z' })
+    const result = sortOpenTodos([ordinary, daily, weekly])
+    expect(result.map(t => t.id)).toEqual([daily.id, weekly.id, ordinary.id])
+  })
+
+  it('[7] preserves order within recurring group and within ordinary group', () => {
+    const d1 = makeTodo({ recurrence_rule: 'daily', sort_order: 2 })
+    const d2 = makeTodo({ recurrence_rule: 'mon', sort_order: 1 })
+    const o1 = makeTodo({ sort_order: 0 })
+    const o2 = makeTodo({ sort_order: 3 })
+    const result = sortOpenTodos([o1, d1, o2, d2])
+    expect(result.map(t => t.id)).toEqual([d2.id, d1.id, o1.id, o2.id])
+  })
+
+  it('[8] monthly recurring todos are treated as ordinary (not daily/weekly)', () => {
+    const monthly = makeTodo({ recurrence_rule: 'monthly', recurrence_day: 1, sort_order: 0 })
+    const daily   = makeTodo({ recurrence_rule: 'daily', sort_order: 5 })
+    const result = sortOpenTodos([monthly, daily])
+    expect(result.map(t => t.id)).toEqual([daily.id, monthly.id])
+  })
+
+  it('[9] weekday-specific rules (e.g. "thu") float to top alongside daily/weekly', () => {
+    const ordinary = makeTodo({ sort_order: 0 })
+    const thu      = makeTodo({ recurrence_rule: 'thu', sort_order: 10 })
+    const result = sortOpenTodos([ordinary, thu])
+    expect(result.map(t => t.id)).toEqual([thu.id, ordinary.id])
+  })
 })
 
 // ---------------------------------------------------------------------------
