@@ -9,7 +9,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
+import { canAccessMarketing } from '@/lib/permissions'
 import {
   computeIgOverview,
   computeFbOverview,
@@ -83,9 +83,6 @@ export async function getOrganicPerformance(): Promise<OrganicData> {
   if (!user) return EMPTY
   if (!canAccessMarketing(user.role, user.marketing_access)) return EMPTY
   const db = createServiceClient()
-  const { data: permRows } = await db.from('user_marketing_permissions').select('permission').eq('user_id', user.id)
-  const permissions = (permRows ?? []).map(r => r.permission as string)
-  if (user.role !== 'SUPER_ADMIN' && !permissions.includes('paid_manage')) return EMPTY
 
   // Date windows: need 56 days back (28d current + 28d prior)
   const since = daysAgoStr(60)

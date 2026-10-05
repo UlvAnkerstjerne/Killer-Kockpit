@@ -11,13 +11,14 @@
  *   - Callers may supply only IDs and date ranges. No userId/role/permission context.
  *   - All DB access uses createServiceClient() (service_role, bypasses RLS).
  *
- * Permission: paid_manage gates all Meta read actions.
- * SUPER_ADMIN bypasses the permission check.
+ * Permission: marketing_access gates all Meta read actions.
+ * Write actions require fine-grained permissions.
+ * SUPER_ADMIN bypasses all checks.
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
+import { canAccessMarketing } from '@/lib/permissions'
 import type {
   MetaCampaignRow,
   MetaCampaignInsightRow,
@@ -35,15 +36,6 @@ async function assertPaidManage() {
   if (!user) return { user: null as null, error: 'Not authenticated.' }
   if (!canAccessMarketing(user.role, user.marketing_access)) {
     return { user: null as null, error: 'Marketing access required.' }
-  }
-  const db = createServiceClient()
-  const { data: permRows } = await db
-    .from('user_marketing_permissions')
-    .select('permission')
-    .eq('user_id', user.id)
-  const permissions = (permRows ?? []).map((r) => r.permission as import('@/lib/marketing/types').MarketingPermission)
-  if (!hasMarketingPermission(user.role, permissions, 'paid_manage')) {
-    return { user: null as null, error: 'paid_manage permission required.' }
   }
   return { user, error: undefined as undefined }
 }

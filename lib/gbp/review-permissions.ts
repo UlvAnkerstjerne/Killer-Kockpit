@@ -8,17 +8,6 @@ export async function assertMarketingRead() {
   if (!canAccessMarketing(user.role, user.marketing_access)) {
     return { user: null as null, error: 'Marketing access required.' }
   }
-  const db = createServiceClient()
-  const { data: permRows } = await db
-    .from('user_marketing_permissions')
-    .select('permission')
-    .eq('user_id', user.id)
-  const permissions = (permRows ?? []).map((r) => r.permission as string)
-  const canRead =
-    user.role === 'SUPER_ADMIN' ||
-    permissions.includes('reviews_manage') ||
-    permissions.includes('reviews_approve')
-  if (!canRead) return { user: null as null, error: 'reviews_manage or reviews_approve permission required.' }
   return { user, error: undefined as undefined }
 }
 

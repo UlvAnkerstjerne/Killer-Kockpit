@@ -396,8 +396,6 @@ export async function getPaidRecommendations(): Promise<PaidRecommendationRow[]>
   const user = await getCurrentUser()
   if (!user) return []
   if (!canAccessMarketing(user.role, user.marketing_access)) return []
-  const permissions = await getUserMarketingPermissions(user.id)
-  if (!hasMarketingPermission(user.role, permissions, 'paid_manage')) return []
 
   const db = createServiceClient()
   const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()

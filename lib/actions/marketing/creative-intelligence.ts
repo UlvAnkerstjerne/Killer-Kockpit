@@ -2,9 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
-import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
+import { canAccessMarketing } from '@/lib/permissions'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getUserMarketingPermissions } from './permissions'
 import { generateCreativeIntelligence, type RefreshResult } from '@/lib/marketing/brain/generate'
 import type { CreativeRun } from '@/lib/marketing/brain/types'
 
@@ -14,8 +13,6 @@ export async function getCreativeIntelligence(): Promise<BrainData> {
   const user = await getCurrentUser()
   const denied: BrainData = { allowed: false, canRefresh: false, run: null, latestAttempt: null, error: null }
   if (!user || !canAccessMarketing(user.role, user.marketing_access)) return denied
-  const permissions = await getUserMarketingPermissions(user.id)
-  if (!hasMarketingPermission(user.role, permissions, 'paid_manage')) return denied
   const base = { ...denied, allowed: true, canRefresh: user.role === 'SUPER_ADMIN' }
   // Reads use the user JWT and RLS, including requests outside the page layout.
   const db = await createClient()

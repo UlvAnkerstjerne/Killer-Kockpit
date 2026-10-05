@@ -1,8 +1,7 @@
 import 'server-only'
 import { getCurrentUser } from '@/lib/auth'
-import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
+import { canAccessMarketing } from '@/lib/permissions'
 import { createServiceClient } from '@/lib/supabase/server'
-import type { MarketingPermission } from '@/lib/marketing/types'
 import type { MetaCampaignInsightRow, MetaCampaignRow } from '@/lib/marketing/types/meta'
 import { buildGooglePaidCampaigns, buildMetaPaidCampaigns, paidPeriod, paidRange,
   type GooglePaidAccount, type GooglePaidAction, type GooglePaidCampaign, type GooglePaidDaily,
@@ -64,12 +63,6 @@ export async function getPaidPerformance(requestedPeriod: unknown, now = new Dat
   const user = await getCurrentUser()
   if (!user || !canAccessMarketing(user.role, user.marketing_access)) return { ...base, allowed: false }
   const db = createServiceClient()
-  if (user.role !== 'SUPER_ADMIN') {
-    const { data, error } = await db.from('user_marketing_permissions').select('permission').eq('user_id', user.id)
-    if (error || !hasMarketingPermission(user.role, (data ?? []).map(r => r.permission as MarketingPermission), 'paid_manage')) {
-      return { ...base, allowed: false }
-    }
-  }
   const providers = ['meta', 'google'] as const
   const results = await Promise.allSettled([readMeta(db, range), readGoogle(db, range)])
   results.forEach((result, index) => {
