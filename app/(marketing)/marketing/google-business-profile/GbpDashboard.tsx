@@ -153,9 +153,9 @@ export default function GbpDashboard({
                     {s.avgRating !== null ? (
                       <>{s.avgRating.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
                     ) : '—'}
-                    {s.ratingTrend === 'up' && <span className="text-green-600 text-xs leading-none">▲</span>}
-                    {s.ratingTrend === 'down' && <span className="text-kk-brand text-xs leading-none">▼</span>}
-                    {s.ratingTrend === 'flat' && <span className="text-kk-muted text-[10px] leading-none">▸</span>}
+                    {s.ratingTrend === 'up' && <span className="text-green-600 text-sm leading-none">▲</span>}
+                    {s.ratingTrend === 'down' && <span className="text-kk-brand text-sm leading-none">▼</span>}
+                    {s.ratingTrend === 'flat' && <span className="text-kk-muted text-sm leading-none">▸</span>}
                   </div>
                 </div>
               </div>
