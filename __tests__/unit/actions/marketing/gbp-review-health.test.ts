@@ -18,15 +18,13 @@ it('reads six latest snapshots and computes 7-day avg rating per store', async (
         data: table === 'user_marketing_permissions' ? []
           : table === 'gbp_locations' ? locations
           : table === 'gbp_reviews' ? [{ star_rating: 4 }, { star_rating: 5 }]
-          : [
-              { average_rating: 4.578, new_reviews_7d: 8, unanswered_count: 6 },
-              { average_rating: 4.3, new_reviews_7d: 5, unanswered_count: 4 },
-            ],
+          : { average_rating: 4.578, new_reviews_7d: 8, unanswered_count: 6 },
         error: null,
       })) }
     return q
   } })
   const result = await getGbpStoreReviewSummary()
   expect(result).toHaveLength(6)
-  expect(result[0]).toMatchObject({ avgRating: 4.578, avgRating7d: 4.5, newReviews7d: 8, unanswered: 6, ratingTrend: 'up' })
+  // avgRating7d (4.5) < avgRating (4.578) → recent reviews pulling rating down
+  expect(result[0]).toMatchObject({ avgRating: 4.578, avgRating7d: 4.5, newReviews7d: 8, unanswered: 6, ratingTrend: 'down' })
 })
