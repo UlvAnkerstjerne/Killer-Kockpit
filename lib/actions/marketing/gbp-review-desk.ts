@@ -7,7 +7,7 @@ import { assertMarketingRead, assertReviewsApprove } from '@/lib/gbp/review-perm
 import { getGbpPublisher, publishClaimedReply } from '@/lib/gbp/review-publish'
 import { retryDraftForReview } from '@/lib/gbp/reviews-sync'
 import type { ActionResult } from '@/lib/types'
-import type { ReviewDeskCursor, ReviewDeskData, ReviewDeskItem, ReviewDeskSelection, ReviewPublishResult } from '@/lib/gbp/review-desk-types'
+import type { ReviewDeskCursor, ReviewDeskData, ReviewDeskItem, ReviewDeskSelection, ReviewPublishResult, SavedReviewItem } from '@/lib/gbp/review-desk-types'
 
 const cursorSchema = z.object({ createdAt: z.iso.datetime({ offset: true }), id: z.uuid() }).strict()
 const selectionsSchema = z.array(z.object({ replyId: z.uuid(), approvedText: z.string().trim().min(1).max(4096) }).strict()).min(1).max(50)
@@ -60,6 +60,79 @@ export async function publishGbpReviewBatch(selections: ReviewDeskSelection[]): 
   revalidatePath('/marketing')
   revalidatePath('/marketing/google-business-profile')
   return { data: { results, ...(warning ? { warning } : {}) } }
+}
+
+// ── Save for later ────────────────────────────────────────────────────────────
+
+export async function saveGbpReview(reviewId: string): Promise<ActionResult<{ saved: true }>> {
+  const { user, error } = await assertMarketingRead()
+  if (!user || error) return { error: error ?? 'Not authenticated.' }
+  if (!z.uuid().safeParse(reviewId).success) return { error: 'Invalid review.' }
+  const db = createServiceClient()
+  const { error: insertError } = await db.from('gbp_review_saved')
+    .upsert({ user_id: user.id, review_id: reviewId }, { onConflict: 'user_id,review_id' })
+  if (insertError) return { error: 'Could not save the review. Please try again.' }
+  return { data: { saved: true } }
+}
+
+export async function unsaveGbpReview(reviewId: string): Promise<ActionResult<{ unsaved: true }>> {
+  const { user, error } = await assertMarketingRead()
+  if (!user || error) return { error: error ?? 'Not authenticated.' }
+  if (!z.uuid().safeParse(reviewId).success) return { error: 'Invalid review.' }
+  const db = createServiceClient()
+  await db.from('gbp_review_saved').delete().eq('user_id', user.id).eq('review_id', reviewId)
+  return { data: { unsaved: true } }
+}
+
+export async function dismissGbpSavedReview(reviewId: string): Promise<ActionResult<{ dismissed: true }>> {
+  const { user, error } = await assertMarketingRead()
+  if (!user || error) return { error: error ?? 'Not authenticated.' }
+  if (!z.uuid().safeParse(reviewId).success) return { error: 'Invalid review.' }
+  const db = createServiceClient()
+  await db.from('gbp_review_saved').delete().eq('user_id', user.id).eq('review_id', reviewId)
+  revalidatePath('/marketing')
+  return { data: { dismissed: true } }
+}
+
+export async function getSavedGbpReviews(): Promise<SavedReviewItem[]> {
+  const { user, error } = await assertMarketingRead()
+  if (!user || error) return []
+  const db = createServiceClient()
+  const { data: saved } = await db.from('gbp_review_saved')
+    .select('review_id, saved_at')
+    .eq('user_id', user.id)
+    .order('saved_at', { ascending: false })
+  if (!saved || saved.length === 0) return []
+  const reviewIds = saved.map((s: { review_id: string }) => s.review_id)
+  const savedAtMap = new Map(saved.map((s: { review_id: string; saved_at: string }) => [s.review_id, s.saved_at]))
+  const { data: reviews } = await db.from('gbp_reviews')
+    .select(`
+      id, reviewer_name, star_rating, review_text, review_created_at, existing_reply_text,
+      location:gbp_locations!inner(store_short_name),
+      reply:gbp_review_replies(id, draft_text, approved_text, status, publish_error, publish_started_at)
+    `)
+    .in('id', reviewIds)
+  if (!reviews) return []
+  return reviews.map((r: Record<string, unknown>) => {
+    const loc = Array.isArray(r.location) ? r.location[0] : r.location
+    const rep = Array.isArray(r.reply) ? r.reply[0] : r.reply
+    return {
+      id: r.id as string,
+      store_short_name: (loc as Record<string, string>)?.store_short_name ?? '—',
+      reviewer_name: r.reviewer_name as string | null,
+      star_rating: r.star_rating as number,
+      review_text: r.review_text as string | null,
+      review_created_at: r.review_created_at as string,
+      reply_id: (rep as Record<string, unknown>)?.id as string | null ?? null,
+      draft_text: (rep as Record<string, unknown>)?.draft_text as string | null ?? null,
+      approved_text: (rep as Record<string, unknown>)?.approved_text as string | null ?? null,
+      status: ((rep as Record<string, unknown>)?.status as string) ?? 'new',
+      publish_error: (rep as Record<string, unknown>)?.publish_error as string | null ?? null,
+      publish_started_at: (rep as Record<string, unknown>)?.publish_started_at as string | null ?? null,
+      new_since_session: false,
+      saved_at: savedAtMap.get(r.id as string) ?? new Date().toISOString(),
+    } satisfies SavedReviewItem
+  }).sort((a: SavedReviewItem, b: SavedReviewItem) => b.saved_at.localeCompare(a.saved_at))
 }
 
 export async function retryGbpReviewDeskDraft(reviewId: string): Promise<ActionResult<{ reply: { id: string; draft_text: string; approved_text: string | null; status: string } }>> {

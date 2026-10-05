@@ -1,4 +1,4 @@
-import { getGbpReviewDesk } from '@/lib/actions/marketing/gbp-review-desk'
+import { getGbpReviewDesk, getSavedGbpReviews } from '@/lib/actions/marketing/gbp-review-desk'
 import ReviewDesk from './ReviewDesk'
 import { getCurrentUser } from '@/lib/auth'
 import {
@@ -848,11 +848,12 @@ function StatePanel({ title, detail, action }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function MorningBriefPage() {
-  const [user, latestBrief, snapshot, reviewDesk] = await Promise.all([
+  const [user, latestBrief, snapshot, reviewDesk, savedReviews] = await Promise.all([
     getCurrentUser(),
     getLatestMorningBrief(),
     getPlatformSnapshot(),
     getGbpReviewDesk(),
+    getSavedGbpReviews(),
   ])
 
   const isAdmin = user?.role === 'SUPER_ADMIN'
@@ -947,7 +948,7 @@ export default async function MorningBriefPage() {
           action={isAdmin ? <RegenerateButton /> : undefined}
         />
       )}
-      <ReviewDesk initial={reviewDesk} />
+      <ReviewDesk initial={reviewDesk} initialSaved={savedReviews} />
     </div>
   )
 }

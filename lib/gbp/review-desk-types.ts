@@ -20,6 +20,7 @@ export interface ReviewDeskData {
   nextCursor: ReviewDeskCursor | null
   error?: string
 }
+export type SavedReviewItem = ReviewDeskItem & { saved_at: string }
 export interface ReviewDeskSelection { replyId: string; approvedText: string }
 export interface ReviewPublishResult {
   replyId: string

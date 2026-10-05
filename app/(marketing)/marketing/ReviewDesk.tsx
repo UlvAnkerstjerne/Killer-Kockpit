@@ -1,8 +1,15 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { getGbpReviewDesk, publishGbpReviewBatch, retryGbpReviewDeskDraft } from '@/lib/actions/marketing/gbp-review-desk'
-import type { ReviewDeskData, ReviewDeskItem } from '@/lib/gbp/review-desk-types'
+import {
+  getGbpReviewDesk,
+  publishGbpReviewBatch,
+  retryGbpReviewDeskDraft,
+  saveGbpReview,
+  unsaveGbpReview,
+  dismissGbpSavedReview,
+} from '@/lib/actions/marketing/gbp-review-desk'
+import type { ReviewDeskData, ReviewDeskItem, SavedReviewItem } from '@/lib/gbp/review-desk-types'
 
 type Edit = { text: string; included: boolean; error?: string }
 function initialEdit(row: ReviewDeskItem): Edit {
@@ -10,20 +17,17 @@ function initialEdit(row: ReviewDeskItem): Edit {
   return { text, included: !!row.reply_id && !!text.trim() && row.status !== 'new' && !row.publish_started_at }
 }
 
-export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
+export default function ReviewDesk({ initial, initialSaved }: { initial: ReviewDeskData; initialSaved: SavedReviewItem[] }) {
   const [desk, setDesk] = useState(initial)
+  const [saved, setSaved] = useState<SavedReviewItem[]>(initialSaved)
   const [edits, setEdits] = useState<Record<string, Edit>>({})
   const [feedback, setFeedback] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   type Filter = number | 'saved' | null
   const [activeFilter, setActiveFilter] = useState<Filter>(null)
-  const [snoozed, setSnoozed] = useState<Set<string>>(new Set())
   const editFor = (row: ReviewDeskItem) => edits[row.id] ?? initialEdit(row)
-  function snooze(id: string) { setSnoozed(prev => new Set(prev).add(id)) }
-  function unsnooze(id: string) { setSnoozed(prev => { const next = new Set(prev); next.delete(id); return next }) }
-  const activeReviews = desk.reviews.filter(row => !snoozed.has(row.id))
-  const snoozedReviews = desk.reviews.filter(row => snoozed.has(row.id))
-  const filteredReviews = activeFilter === 'saved' ? snoozedReviews
+  const activeReviews = desk.reviews
+  const filteredReviews = activeFilter === 'saved' ? saved
     : activeFilter !== null ? activeReviews.filter(row => row.star_rating === activeFilter)
     : activeReviews
   const selected = filteredReviews.filter(row => row.reply_id && !row.publish_started_at && editFor(row).included)
@@ -41,6 +45,34 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
       } catch { setFeedback('Could not load more reviews. Your edits are still here.') }
     })
   }
+  function handleSave(row: ReviewDeskItem) {
+    startTransition(async () => {
+      const result = await saveGbpReview(row.id)
+      if (result.error) { patch(row, { error: result.error }); return }
+      // Move from desk to saved list
+      setDesk(prev => ({ ...prev, reviews: prev.reviews.filter(r => r.id !== row.id) }))
+      setSaved(prev => [{ ...row, saved_at: new Date().toISOString() }, ...prev.filter(s => s.id !== row.id)])
+    })
+  }
+  function handleUnsave(row: SavedReviewItem) {
+    startTransition(async () => {
+      const result = await unsaveGbpReview(row.id)
+      if (result.error) { patch(row, { error: result.error }); return }
+      // Move from saved back to desk
+      setSaved(prev => prev.filter(s => s.id !== row.id))
+      setDesk(prev => ({ ...prev, reviews: [row, ...prev.reviews] }))
+      if (activeFilter === 'saved' && saved.length <= 1) setActiveFilter(null)
+    })
+  }
+  function handleDismiss(row: SavedReviewItem) {
+    startTransition(async () => {
+      const result = await dismissGbpSavedReview(row.id)
+      if (result.error) { patch(row, { error: result.error }); return }
+      setSaved(prev => prev.filter(s => s.id !== row.id))
+      if (activeFilter === 'saved' && saved.length <= 1) setActiveFilter(null)
+      setFeedback('Review dismissed.')
+    })
+  }
   function publish() {
     startTransition(async () => {
       setFeedback(null)
@@ -49,6 +81,8 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
         if (result.error || !result.data) { setFeedback(result.error ?? 'Could not publish replies.'); return }
         const outcomes = new Map(result.data.results.map(row => [row.replyId, row]))
         const successful = result.data.results.filter(row => row.status === 'published' || row.status === 'already_published')
+        // Remove published reviews from both desk and saved lists
+        const publishedReplyIds = new Set(successful.map(r => r.replyId))
         setDesk(previous => ({ ...previous, reviews: previous.reviews.flatMap(row => {
           const outcome = row.reply_id ? outcomes.get(row.reply_id) : undefined
           if (!outcome) return [row]
@@ -56,6 +90,7 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
           return [{ ...row, publish_error: outcome.error ?? null,
             publish_started_at: outcome.status === 'confirmation_pending' ? new Date().toISOString() : row.publish_started_at }]
         }) }))
+        setSaved(prev => prev.filter(s => !s.reply_id || !publishedReplyIds.has(s.reply_id)))
         const published = successful.filter(row => row.status === 'published').length
         const alreadyAnswered = successful.length - published
         const remaining = result.data.results.length - successful.length
@@ -71,6 +106,7 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
         if (result.data) {
           const fresh = { ...row, ...result.data.reply, id: row.id, reply_id: result.data.reply.id }
           setDesk(previous => ({ ...previous, reviews: previous.reviews.map(item => item.id === row.id ? fresh : item) }))
+          setSaved(prev => prev.map(item => item.id === row.id ? { ...fresh, saved_at: item.saved_at } as SavedReviewItem : item))
           setEdits(previous => ({ ...previous, [row.id]: initialEdit(fresh) }))
         }
       } catch { patch(row, { error: 'Could not prepare the draft. Please try again.' }) }
@@ -99,6 +135,95 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
     setDrafting(false)
     setFeedback(`Generated ${done} draft ${done === 1 ? 'reply' : 'replies'}.`)
   }
+
+  // Shared review card renderer for both desk and saved views
+  function ReviewCard({ row, isSaved }: { row: ReviewDeskItem | SavedReviewItem; isSaved: boolean }) {
+    const edit = editFor(row)
+    const draftPending = !row.reply_id || row.status === 'new' || !(row.approved_text?.trim() || row.draft_text?.trim())
+    const locked = !!row.publish_started_at
+    return (
+      <article key={row.id} className="rounded-2xl border border-kk-line bg-kk-panel p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-kk-muted">
+            {desk.canApprove && <label className="flex items-center gap-1.5 shrink-0">
+              <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
+            </label>}
+            <span className="text-lg font-bold text-kk-ink flex items-center gap-1.5"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-kk-muted"><path d="M2 6.5V14h12V6.5M1 3h14v3.5H1V3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M6 10h4v4H6v-4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>{row.store_short_name}</span>
+            <span className="text-lg text-amber-500" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
+            {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {!locked && (
+              isSaved ? (
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => handleUnsave(row as SavedReviewItem)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-brand hover:bg-kk-bad-bg transition-colors disabled:opacity-50">
+                    Move back
+                  </button>
+                  <button type="button" onClick={() => handleDismiss(row as SavedReviewItem)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors disabled:opacity-50">
+                    Won{"'"}t answer
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => handleSave(row)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors disabled:opacity-50">
+                  Save for later
+                </button>
+              )
+            )}
+          </div>
+        </div>
+        <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-kk-muted mb-2">
+            <span className="font-medium text-kk-ink">{row.reviewer_name ?? 'Anonymous'}</span>
+            <span>{'\u00B7'}</span>
+            <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
+          </div>
+          <p className={`whitespace-pre-wrap break-words text-base leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
+            {row.review_text?.trim() || 'Rating only — no written comment.'}
+          </p>
+        </div>
+        {draftPending ? (
+          <div className="mt-3 flex items-center gap-3 text-sm text-kk-muted">
+            <span>Draft pending</span>
+            {desk.canApprove && !locked && <button type="button" disabled={pending} onClick={() => retry(row)} className="font-medium text-kk-brand hover:underline disabled:opacity-50">Retry draft</button>}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <label htmlFor={`reply-${row.id}`} className="mb-1 block text-sm font-medium text-kk-muted">{desk.canApprove ? 'Reply to publish' : 'Prepared reply'}</label>
+            <textarea id={`reply-${row.id}`} value={edit.text} rows={3} maxLength={4096} readOnly={!desk.canApprove} disabled={pending || locked}
+              onChange={event => patch(row, { text: event.target.value })}
+              className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-base leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
+            {desk.canApprove && !locked && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {['😊', '🙏', '❤️', '🔥', '👏', '💪', '🌯', '🧆', '⭐', '🙌'].map(emoji => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      const ta = document.getElementById(`reply-${row.id}`) as HTMLTextAreaElement | null
+                      const pos = ta?.selectionStart ?? edit.text.length
+                      const before = edit.text.slice(0, pos)
+                      const after = edit.text.slice(pos)
+                      patch(row, { text: before + emoji + after })
+                      setTimeout(() => { if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = pos + emoji.length } }, 0)
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-base hover:bg-kk-soft transition-colors disabled:opacity-50"
+                    aria-label={`Insert ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+            {row.draft_text && edit.text !== row.draft_text && <details className="mt-1 text-xs text-kk-muted"><summary className="cursor-pointer">Original AI draft</summary><p className="mt-2 whitespace-pre-wrap break-words">{row.draft_text}</p></details>}
+          </div>
+        )}
+        {locked ? <p className="mt-2 text-xs text-kk-warn">Publication pending confirmation. Run GBP sync before retrying.</p> : null}
+        {edit.error || row.publish_error ? <p role="alert" className="mt-2 text-xs text-kk-bad">{edit.error ?? row.publish_error}</p> : null}
+      </article>
+    )
+  }
+
   return (
     <section className="mt-8 border-t border-kk-line pt-6" aria-labelledby="google-reviews-heading">
       <div className="mb-4">
@@ -139,8 +264,8 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
       </div>
       {desk.error ? <p role="alert" className="text-sm text-kk-bad">{desk.error}</p> : null}
       {feedback ? <p role="status" className="mb-4 text-sm text-kk-ink">{feedback}</p> : null}
-      {!desk.error && desk.reviews.length === 0 ? <p className="text-sm text-kk-muted">All caught up. New reviews will appear here after syncing.</p> : null}
-      {desk.reviews.length > 0 && (
+      {!desk.error && desk.reviews.length === 0 && saved.length === 0 ? <p className="text-sm text-kk-muted">All caught up. New reviews will appear here after syncing.</p> : null}
+      {(desk.reviews.length > 0 || saved.length > 0) && (
         <div className="mb-3 flex flex-wrap items-center gap-1">
           <button
             type="button"
@@ -162,99 +287,21 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
               </button>
             )
           })}
-          {snoozed.size > 0 && (
+          {saved.length > 0 && (
             <button
               type="button"
               onClick={() => setActiveFilter(activeFilter === 'saved' ? null : 'saved')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeFilter === 'saved' ? 'bg-kk-bad text-white' : 'text-kk-bad bg-kk-bad-bg hover:bg-kk-bad-cell'}`}
             >
-              Saved for later <span className="tabular-nums">({snoozed.size})</span>
+              Saved for later <span className="tabular-nums">({saved.length})</span>
             </button>
           )}
         </div>
       )}
       <div className="space-y-3">
-        {filteredReviews.map(row => {
-          const edit = editFor(row)
-          const draftPending = !row.reply_id || row.status === 'new' || !(row.approved_text?.trim() || row.draft_text?.trim())
-          const locked = !!row.publish_started_at
-          return (
-            <article key={row.id} className="rounded-2xl border border-kk-line bg-kk-panel p-4 sm:p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-kk-muted">
-                  {desk.canApprove && <label className="flex items-center gap-1.5 shrink-0">
-                    <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
-                  </label>}
-                  <span className="text-lg font-bold text-kk-ink flex items-center gap-1.5"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-kk-muted"><path d="M2 6.5V14h12V6.5M1 3h14v3.5H1V3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M6 10h4v4H6v-4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>{row.store_short_name}</span>
-                  <span className="text-lg text-amber-500" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
-                  {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {!locked && (
-                    snoozed.has(row.id) ? (
-                      <button type="button" onClick={() => unsnooze(row.id)} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-brand hover:bg-kk-bad-bg transition-colors">
-                        Move back
-                      </button>
-                    ) : (
-                      <button type="button" onClick={() => snooze(row.id)} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors">
-                        Save for later
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-              <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-kk-muted mb-2">
-                  <span className="font-medium text-kk-ink">{row.reviewer_name ?? 'Anonymous'}</span>
-                  <span>{'\u00B7'}</span>
-                  <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
-                </div>
-                <p className={`whitespace-pre-wrap break-words text-base leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
-                  {row.review_text?.trim() || 'Rating only — no written comment.'}
-                </p>
-              </div>
-              {draftPending ? (
-                <div className="mt-3 flex items-center gap-3 text-sm text-kk-muted">
-                  <span>Draft pending</span>
-                  {desk.canApprove && !locked && <button type="button" disabled={pending} onClick={() => retry(row)} className="font-medium text-kk-brand hover:underline disabled:opacity-50">Retry draft</button>}
-                </div>
-              ) : (
-                <div className="mt-3">
-                  <label htmlFor={`reply-${row.id}`} className="mb-1 block text-sm font-medium text-kk-muted">{desk.canApprove ? 'Reply to publish' : 'Prepared reply'}</label>
-                  <textarea id={`reply-${row.id}`} value={edit.text} rows={3} maxLength={4096} readOnly={!desk.canApprove} disabled={pending || locked}
-                    onChange={event => patch(row, { text: event.target.value })}
-                    className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-base leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
-                  {desk.canApprove && !locked && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {['😊', '🙏', '❤️', '🔥', '👏', '💪', '🌯', '🧆', '⭐', '🙌'].map(emoji => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          disabled={pending}
-                          onClick={() => {
-                            const ta = document.getElementById(`reply-${row.id}`) as HTMLTextAreaElement | null
-                            const pos = ta?.selectionStart ?? edit.text.length
-                            const before = edit.text.slice(0, pos)
-                            const after = edit.text.slice(pos)
-                            patch(row, { text: before + emoji + after })
-                            setTimeout(() => { if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = pos + emoji.length } }, 0)
-                          }}
-                          className="w-7 h-7 flex items-center justify-center rounded-md text-base hover:bg-kk-soft transition-colors disabled:opacity-50"
-                          aria-label={`Insert ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {row.draft_text && edit.text !== row.draft_text && <details className="mt-1 text-xs text-kk-muted"><summary className="cursor-pointer">Original AI draft</summary><p className="mt-2 whitespace-pre-wrap break-words">{row.draft_text}</p></details>}
-                </div>
-              )}
-              {locked ? <p className="mt-2 text-xs text-kk-warn">Publication pending confirmation. Run GBP sync before retrying.</p> : null}
-              {edit.error || row.publish_error ? <p role="alert" className="mt-2 text-xs text-kk-bad">{edit.error ?? row.publish_error}</p> : null}
-            </article>
-          )
-        })}
+        {filteredReviews.map(row => (
+          <ReviewCard key={row.id} row={row} isSaved={activeFilter === 'saved'} />
+        ))}
       </div>
       {desk.nextCursor ? (
         <div className="mt-4 flex justify-center">
@@ -270,7 +317,7 @@ export default function ReviewDesk({ initial }: { initial: ReviewDeskData }) {
       ) : desk.reviews.length > 0 ? (
         <p className="mt-4 text-center text-xs text-kk-muted">All queued reviews loaded.</p>
       ) : null}
-      {desk.canApprove && desk.reviews.length > 0 ? <div className="mt-5 flex flex-wrap items-center gap-3">
+      {desk.canApprove && (desk.reviews.length > 0 || saved.length > 0) ? <div className="mt-5 flex flex-wrap items-center gap-3">
         <button type="button" onClick={publish} disabled={pending || selected.length === 0 || selected.length > 50 || hasInvalidText}
           className="rounded-xl bg-kk-brand px-5 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
           {pending ? 'Working…' : `Publish ${selected.length} ${selected.length === 1 ? 'reply' : 'replies'}`}
