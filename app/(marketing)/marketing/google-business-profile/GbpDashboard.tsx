@@ -153,9 +153,15 @@ export default function GbpDashboard({
                     {s.avgRating !== null ? (
                       <>{s.avgRating.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
                     ) : '—'}
-                    {s.ratingTrend === 'up' && <span className="text-green-600 text-sm leading-none">▲</span>}
-                    {s.ratingTrend === 'down' && <span className="text-kk-brand text-sm leading-none">▼</span>}
-                    {s.ratingTrend === 'flat' && <span className="text-kk-muted text-sm leading-none">▸</span>}
+                    {s.ratingTrend === 'up' && (
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className="text-green-600 shrink-0" aria-label="Trending up"><path d="M8 3l6 10H2z"/></svg>
+                    )}
+                    {s.ratingTrend === 'down' && (
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className="text-kk-brand shrink-0" aria-label="Trending down"><path d="M8 13L2 3h12z"/></svg>
+                    )}
+                    {s.ratingTrend === 'flat' && (
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className="text-kk-muted shrink-0" aria-label="Unchanged"><path d="M3 5l10 3-10 3z"/></svg>
+                    )}
                   </div>
                 </div>
               </div>
