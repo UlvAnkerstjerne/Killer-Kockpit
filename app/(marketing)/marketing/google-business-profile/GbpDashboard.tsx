@@ -127,37 +127,32 @@ export default function GbpDashboard({
                 </div>
               </div>
 
-              {/* Metrics */}
-              <div className="px-4 py-3 space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="text-[10px] font-medium text-kk-muted leading-tight">New reviews (7D)</div>
-                    <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">{s.newReviews7d ?? '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-medium text-kk-muted leading-tight">Avg rating (7D)</div>
-                    <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
-                      {s.avgRating7d !== null ? (
-                        <>{s.avgRating7d.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
-                      ) : '—'}
-                    </div>
+              {/* Metrics — single column */}
+              <div className="px-4 py-3 space-y-2.5">
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">New reviews (7D)</div>
+                  <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">{s.newReviews7d ?? '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Avg rating (7D)</div>
+                  <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
+                    {s.avgRating7d !== null ? (
+                      <>{s.avgRating7d.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
+                    ) : '—'}
                   </div>
                 </div>
-
-                <div className="border-t border-kk-line/60 pt-2.5 grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="text-[10px] font-medium text-kk-muted leading-tight">Unanswered</div>
-                    <div className={`text-lg font-bold tabular-nums mt-0.5 ${(s.unanswered ?? 0) > 0 ? 'text-kk-brand' : 'text-kk-ink'}`}>
-                      {s.unanswered ?? '—'}
-                    </div>
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Unanswered</div>
+                  <div className={`text-lg font-bold tabular-nums mt-0.5 ${(s.unanswered ?? 0) > 0 ? 'text-kk-brand' : 'text-kk-ink'}`}>
+                    {s.unanswered ?? '—'}
                   </div>
-                  <div>
-                    <div className="text-[10px] font-medium text-kk-muted leading-tight">Current rating</div>
-                    <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
-                      {s.avgRating !== null ? (
-                        <>{s.avgRating.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
-                      ) : '—'}
-                    </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-medium text-kk-muted leading-tight">Current rating</div>
+                  <div className="text-lg font-bold text-kk-ink tabular-nums mt-0.5">
+                    {s.avgRating !== null ? (
+                      <>{s.avgRating.toFixed(1)} <span className="text-amber-400 text-sm">★</span></>
+                    ) : '—'}
                   </div>
                 </div>
               </div>
