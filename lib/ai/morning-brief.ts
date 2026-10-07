@@ -56,6 +56,14 @@ export type MorningBriefAIResult = MorningBriefAISuccess | MorningBriefAIFailure
  * Retries once on validation failure (Anthropic structured outputs do not enforce
  * maxLength at the API level — Zod validation catches oversized fields post-parse).
  */
+/** Truncate a string at the last word boundary within maxLen. */
+function clamp(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s
+  const truncated = s.slice(0, maxLen)
+  const lastSpace = truncated.lastIndexOf(' ')
+  return (lastSpace > maxLen * 0.6 ? truncated.slice(0, lastSpace) : truncated) + '…'
+}
+
 export async function callMorningBriefAI(
   userMessage: string,
 ): Promise<MorningBriefAIResult> {
@@ -106,20 +114,23 @@ export async function callMorningBriefAI(
         }
       }
 
-      // Trim all string fields — Zod already validated structure
+      // Trim and clamp all string fields to schema limits.
+      // Anthropic structured outputs do not enforce maxLength at the API level,
+      // so the model can exceed limits. Clamping here prevents validation
+      // failures that would otherwise kill the entire brief.
       const output: MorningBriefAIOutput = {
-        overall_reason:      parsed.overall_reason.trim(),
-        ai_summary:          parsed.ai_summary.trim(),
-        paid_assessment:     parsed.paid_assessment.trim(),
-        organic_assessment:  parsed.organic_assessment.trim(),
-        gbp_assessment:      parsed.gbp_assessment?.trim() ?? null,
+        overall_reason:      clamp(parsed.overall_reason.trim(), 200),
+        ai_summary:          clamp(parsed.ai_summary.trim(), 200),
+        paid_assessment:     clamp(parsed.paid_assessment.trim(), 600),
+        organic_assessment:  clamp(parsed.organic_assessment.trim(), 600),
+        gbp_assessment:      parsed.gbp_assessment ? clamp(parsed.gbp_assessment.trim(), 300) : null,
         observations:        parsed.observations.map((o) => ({
           signal_id:          o.signal_id.trim(),
-          observation:        o.observation.trim(),
-          evidence:           o.evidence.trim(),
-          interpretation:     o.interpretation.trim(),
-          recommended_action: o.recommended_action.trim(),
-          creative_start:     o.creative_start?.trim() ?? null,
+          observation:        clamp(o.observation.trim(), 150),
+          evidence:           clamp(o.evidence.trim(), 250),
+          interpretation:     clamp(o.interpretation.trim(), 600),
+          recommended_action: clamp(o.recommended_action.trim(), 150),
+          creative_start:     o.creative_start ? clamp(o.creative_start.trim(), 300) : null,
           driver_id:          o.driver_id?.trim() ?? null,
         })),
       }
