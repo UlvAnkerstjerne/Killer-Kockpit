@@ -3,6 +3,7 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import { callCreativeClassifier } from '@/lib/ai/creative-classifier'
 import { callCreativeInterpretation } from '@/lib/ai/creative-interpretation'
 import { analysisWindow, buildAnalytics } from './analytics'
+import { loadMarketingBusinessContext } from './business-context'
 import { classifyLibrary } from './classification'
 import { buildCreativeSignals } from './signals'
 import { CLASSIFICATION_VERSION, INTERPRETATION_PROMPT_VERSION, type FingerprintRow } from './taxonomy'
@@ -68,12 +69,18 @@ export async function generateCreativeIntelligence(db: Db, actorId: string, opti
     const analytics = buildAnalytics(media, classified.fingerprints, now)
     const signals = buildCreativeSignals(analytics)
     await heartbeat()
-    const interpretation = await callCreativeInterpretation(signals)
+    // Load business context from canonical projects' Universal Updates.
+    // This is a separate contextual layer — it does NOT affect classification or signals.
+    const businessContext = await loadMarketingBusinessContext(db, now)
+    const interpretation = await callCreativeInterpretation(signals, businessContext)
     await heartbeat()
+    // Persist the business context snapshot with the analytics so the run records
+    // which real-world updates were available when the interpretation was generated.
+    const analyticsWithContext = { ...analytics, business_context: businessContext }
     const partial = classified.counts.failed > 0 || classified.counts.deferred > 0 || !interpretation.ok
     const completed = await db.from('marketing_creative_intelligence_runs').update({
       status: partial ? 'partial' : 'completed', generated_at: new Date().toISOString(), lease_expires_at: null,
-      analytics, signals, observations: interpretation.ok ? interpretation.observations : [],
+      analytics: analyticsWithContext, signals, observations: interpretation.ok ? interpretation.observations : [],
       model: interpretation.ok ? interpretation.model : null, classification_counts: classified.counts,
       error: !interpretation.ok ? interpretation.error : partial ? 'Some content could not be classified. Refresh again to retry remaining items.' : null,
     }).eq('id', runId).eq('status', 'running').select('id').single()
