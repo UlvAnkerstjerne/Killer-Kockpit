@@ -267,6 +267,98 @@ describe('updateTask', () => {
     )
   })
 
+  // Regression: the edit form's Status select could not represent pending_review and a
+  // generic save could move a task into/out of review, bypassing approve / send back.
+  describe('workflow-managed statuses', () => {
+    const PENDING = { ...TASK, status: 'pending_review', due_at: '2026-10-07T20:00:00+00:00' }
+
+    it('rejects moving a pending_review task to another status', async () => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: PENDING, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      const result = await updateTask('task-uuid', { status: 'open' })
+      expect(result.error).toContain('workflow')
+      expect(mocks.mockRpc).not.toHaveBeenCalled()
+    })
+
+    it.each(['pending_review', 'done', 'cancelled'] as const)('rejects editing an open task into %s', async (status) => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: { ...TASK, status: 'open' }, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      const result = await updateTask('task-uuid', { status })
+      expect(result.error).toContain('workflow')
+      expect(mocks.mockRpc).not.toHaveBeenCalled()
+    })
+
+    it.each(['done', 'cancelled'] as const)('rejects moving a %s task out via edit', async (status) => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: { ...TASK, status }, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      const result = await updateTask('task-uuid', { status: 'open' })
+      expect(result.error).toContain('workflow')
+      expect(mocks.mockRpc).not.toHaveBeenCalled()
+    })
+
+    it('still allows ordinary status edits between editable statuses', async () => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: { ...TASK, status: 'open' }, error: null })
+      mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      const result = await updateTask('task-uuid', { status: 'blocked' })
+      expect(result.error).toBeUndefined()
+      expect(mocks.mockRpc).toHaveBeenCalledWith(
+        'update_task_and_audit',
+        expect.objectContaining({ p_patch: { status: 'blocked' } }),
+      )
+    })
+
+    it('an unrelated edit to a pending_review task preserves its status', async () => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: PENDING, error: null })
+      mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      // Re-submitting the unchanged status (as the old form did) is a no-op, not a rejection.
+      const result = await updateTask('task-uuid', { status: 'pending_review', title: 'Renamed' })
+      expect(result.error).toBeUndefined()
+      const patch = mocks.mockRpc.mock.calls[0][1].p_patch
+      expect(patch).toEqual({ title: 'Renamed' })
+      expect(patch).not.toHaveProperty('status')
+    })
+  })
+
+  // Regression: "2026-10-07T20:00" (form) vs "2026-10-07T20:00:00+00:00" (DB) is the same
+  // instant; treating them as different wrote a spurious "Due date changed" audit event.
+  describe('due_at comparison', () => {
+    const DUED = { ...TASK, due_at: '2026-10-07T20:00:00+00:00' }
+
+    it('does not patch or audit a due_at that is the same instant', async () => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: DUED, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      const result = await updateTask('task-uuid', { due_at: '2026-10-07T20:00' })
+      expect(result.error).toBeUndefined()
+      expect(mocks.mockRpc).not.toHaveBeenCalled()
+    })
+
+    it('patches only the real change when due_at is the same instant', async () => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: DUED, error: null })
+      mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      await updateTask('task-uuid', { due_at: '2026-10-07T20:00', title: 'Renamed' })
+      expect(mocks.mockRpc.mock.calls[0][1].p_patch).toEqual({ title: 'Renamed' })
+    })
+
+    it('still records a genuine time-only change on the same calendar day', async () => {
+      mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
+      mocks.mockSelectSingle.mockResolvedValue({ data: DUED, error: null })
+      mocks.mockRpc.mockResolvedValue({ data: null, error: null })
+      const { updateTask } = await import('@/lib/actions/tasks')
+      await updateTask('task-uuid', { due_at: '2026-10-07T21:30' })
+      expect(mocks.mockRpc.mock.calls[0][1].p_patch).toEqual({ due_at: '2026-10-07T21:30' })
+    })
+  })
+
   it('returns error when rpc fails', async () => {
     mocks.mockGetCurrentUser.mockResolvedValue(SUPER_ADMIN_USER)
     mocks.mockSelectSingle.mockResolvedValue({ data: TASK, error: null })

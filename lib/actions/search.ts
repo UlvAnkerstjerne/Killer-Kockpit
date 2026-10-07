@@ -28,6 +28,16 @@ const EMPTY: GlobalSearchResults = {
   tasks: [], projects: [], meetings: [], decisions: [], waitingOns: [], people: [],
 }
 
+/**
+ * PostgREST `or()` filter for a case-insensitive substring match on several columns.
+ * The pattern is double-quoted so commas, parentheses and dots in the query are
+ * data, not filter syntax (an unquoted "a, b" would otherwise be a malformed filter).
+ */
+function orIlike(columns: string[], q: string): string {
+  const pattern = `"%${q.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}%"`
+  return columns.map(c => `${c}.ilike.${pattern}`).join(',')
+}
+
 export async function globalSearch(query: string): Promise<GlobalSearchResults> {
   const user = await getCurrentUser()
   if (!user) return EMPTY
@@ -49,7 +59,7 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
       .from('tasks')
       .select('id, title, status')
       .is('archived_at', null)
-      .or(`title.ilike.%${q}%,description.ilike.%${q}%`)
+      .or(orIlike(['title', 'description'], q))
       .order('created_at', { ascending: false })
       .limit(LIMIT),
 
@@ -64,7 +74,7 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
     supabase
       .from('meetings')
       .select('id, title, scheduled_start')
-      .is('cancelled_at', null)
+      .neq('status', 'cancelled')
       .ilike('title', `%${q}%`)
       .order('scheduled_start', { ascending: false })
       .limit(LIMIT),
@@ -73,7 +83,7 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
       .from('decisions')
       .select('id, title, status')
       .is('archived_at', null)
-      .or(`title.ilike.%${q}%,decision_text.ilike.%${q}%`)
+      .or(orIlike(['title', 'decision_text'], q))
       .order('created_at', { ascending: false })
       .limit(LIMIT),
 
@@ -81,7 +91,7 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
       .from('waiting_ons')
       .select('id, title, status')
       .is('archived_at', null)
-      .or(`title.ilike.%${q}%,notes.ilike.%${q}%`)
+      .or(orIlike(['title', 'notes'], q))
       .order('created_at', { ascending: false })
       .limit(LIMIT),
 
@@ -89,10 +99,18 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
       .from('employees')
       .select('id, name, role_title')
       .eq('employment_status', 'active')
-      .or(`name.ilike.%${q}%,role_title.ilike.%${q}%`)
+      .or(orIlike(['name', 'role_title'], q))
       .order('name')
       .limit(LIMIT),
   ])
+
+  // A failed query is not an empty result set: surface it so the UI can offer a retry.
+  const failed = [tasksResult, projectsResult, meetingsResult, decisionsResult, waitingOnsResult, peopleResult]
+    .find(r => r.error)
+  if (failed?.error) {
+    console.error('[globalSearch]', failed.error)
+    throw new Error('Search failed.')
+  }
 
   return {
     tasks: (tasksResult.data ?? []).map(r => ({

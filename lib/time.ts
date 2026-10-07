@@ -134,3 +134,17 @@ export function formatCopenhagen(
   if (!utcIso) return null
   return new Date(utcIso).toLocaleString('en-GB', { timeZone: SCHEDULING_TZ, ...opts })
 }
+
+/**
+ * Parse a timestamp the way the database interprets it. A value with no zone
+ * designator (e.g. "2026-10-07T20:00", as the task form submits) is read as UTC
+ * rather than the runtime's local zone, so server and browser agree.
+ * Returns null for empty or unparseable input.
+ */
+export function parseDbInstant(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const hasTime = /T\d{2}:\d{2}/.test(value)
+  const hasZone = /(Z|[+-]\d{2}(:?\d{2})?)$/i.test(value.slice(value.indexOf('T') + 1))
+  const d = new Date(hasTime && !hasZone ? `${value}Z` : value)
+  return Number.isNaN(d.getTime()) ? null : d
+}

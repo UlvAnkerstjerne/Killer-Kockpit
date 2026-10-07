@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { globalSearch, type SearchResult, type GlobalSearchResults } from '@/lib/actions/search'
+import { settleAction } from '@/lib/client/stale-version'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,8 @@ export function GlobalSearchModal({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<GlobalSearchResults | null>(null)
   const [loading, setLoading] = useState(false)
+  const [failure, setFailure] = useState<'stale' | 'failed' | null>(null)
+  const [retryNonce, setRetryNonce] = useState(0)
   const [activeIndex, setActiveIndex] = useState(0)
 
   const flatResults: SearchResult[] = results
@@ -72,6 +75,7 @@ export function GlobalSearchModal({
     onClose()
     setQuery('')
     setResults(null)
+    setFailure(null)
     setActiveIndex(0)
   }, [onClose])
 
@@ -96,22 +100,33 @@ export function GlobalSearchModal({
 
   // ── Debounced search ───────────────────────────────────────────────────────
 
+  // `cancelled` guards against out-of-order responses: only the latest request may
+  // update state. Every path out of a request clears `loading` — a thrown action
+  // (stale build, network, server error) must never leave the spinner running.
   useEffect(() => {
     const q = query.trim()
     if (!q) {
       setResults(null)
+      setLoading(false)
       setActiveIndex(0)
       return
     }
     setLoading(true)
+    let cancelled = false
     const timer = setTimeout(async () => {
-      const data = await globalSearch(q)
-      setResults(data)
-      setActiveIndex(0)
+      const outcome = await settleAction(() => globalSearch(q))
+      if (cancelled) return
+      if (outcome.kind === 'ok') {
+        setResults(outcome.data)
+        setActiveIndex(0)
+      } else {
+        setResults(null)
+        setFailure(outcome.kind)
+      }
       setLoading(false)
     }, 250)
-    return () => clearTimeout(timer)
-  }, [query])
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [query, retryNonce])
 
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
@@ -137,7 +152,7 @@ export function GlobalSearchModal({
   if (!open) return null
 
   const hasResults = flatResults.length > 0
-  const showEmpty = results && !hasResults && query.trim()
+  const showEmpty = results && !hasResults && query.trim() && !failure
   let runningIndex = 0
 
   return (
@@ -161,7 +176,7 @@ export function GlobalSearchModal({
             ref={inputRef}
             type="text"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => { setFailure(null); setQuery(e.target.value) }}
             onKeyDown={onInputKeyDown}
             placeholder="Search tasks, projects, meetings, decisions…"
             className="flex-1 text-sm text-kk-ink placeholder-kk-muted bg-transparent outline-none"
@@ -222,6 +237,38 @@ export function GlobalSearchModal({
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {failure && !loading && (
+          <div role="alert" className="px-4 py-6 text-center">
+            <p className="text-sm font-medium text-kk-ink">
+              {failure === 'stale' ? 'Kockpit has been updated' : 'Search failed'}
+            </p>
+            <p className="mt-1 text-xs text-kk-muted">
+              {failure === 'stale'
+                ? 'This tab is running an older version, so search cannot reach the server. Refresh to continue.'
+                : 'Something went wrong while searching. Check your connection and try again.'}
+            </p>
+            <div className="mt-3 flex justify-center gap-2">
+              {failure === 'stale' ? (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="rounded-lg bg-[#171717] px-3 py-1.5 text-xs font-semibold text-kraft-light"
+                >
+                  Refresh page
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setFailure(null); setRetryNonce(n => n + 1) }}
+                  className="rounded-lg bg-[#171717] px-3 py-1.5 text-xs font-semibold text-kraft-light"
+                >
+                  Try again
+                </button>
+              )}
+            </div>
           </div>
         )}
 

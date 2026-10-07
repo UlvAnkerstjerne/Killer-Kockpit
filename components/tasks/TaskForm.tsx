@@ -4,13 +4,16 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createTask, updateTask } from '@/lib/actions/tasks'
 import type { AppUser, Task, TaskStatus, TaskPriority } from '@/lib/types'
+import {
+  EDITABLE_TASK_STATUSES,
+  isWorkflowManagedStatus,
+  taskStatusLabel,
+} from '@/lib/tasks/status'
+import { buildTaskEditInput, dueAtToInputValue, inputValueToDueAt } from '@/lib/tasks/edit-payload'
 
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'proposed', label: 'Proposed' },
-  { value: 'open', label: 'Open' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'blocked', label: 'Blocked' },
-]
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = EDITABLE_TASK_STATUSES.map(
+  (value) => ({ value, label: taskStatusLabel(value) }),
+)
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 1, label: '1 — Critical' },
@@ -48,9 +51,10 @@ export default function TaskForm({
   const [projectId, setProjectId] = useState(task?.project_id || defaultProjectId || '')
   const [status, setStatus] = useState<TaskStatus>(task?.status || 'open')
   const [priority, setPriority] = useState<TaskPriority>(task?.priority || 2)
-  const [dueAt, setDueAt] = useState(
-    task?.due_at ? new Date(task.due_at).toISOString().slice(0, 16) : ''
-  )
+  const [dueAt, setDueAt] = useState(dueAtToInputValue(task?.due_at))
+
+  // Review/completion statuses are shown as-is and changed only by the workflow actions.
+  const statusLocked = mode === 'edit' && !!task && isWorkflowManagedStatus(task.status)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -62,20 +66,20 @@ export default function TaskForm({
     setSaved(false)
 
     startTransition(async () => {
-      const input = {
-        title: title.trim(),
-        description: description.trim() || undefined,
-        owner_user_id: ownerId,
-        project_id: projectId || undefined,
-        meeting_id: mode === 'create' ? defaultMeetingId || undefined : undefined,
-        status,
-        priority,
-        due_at: dueAt || undefined,
-      }
-
       const result = mode === 'create'
-        ? await createTask(input)
-        : await updateTask(task!.id, input)
+        ? await createTask({
+            title: title.trim(),
+            description: description.trim() || undefined,
+            owner_user_id: ownerId,
+            project_id: projectId || undefined,
+            meeting_id: defaultMeetingId || undefined,
+            status,
+            priority,
+            due_at: dueAt ? inputValueToDueAt(dueAt) : undefined,
+          })
+        : await updateTask(task!.id, buildTaskEditInput(task!, {
+            title, description, ownerId, projectId, status, priority, dueAt,
+          }))
 
       if (result.error) {
         setError(result.error)
@@ -158,19 +162,28 @@ export default function TaskForm({
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as TaskStatus)}
-            disabled={isPending}
+            disabled={isPending || statusLocked}
+            aria-describedby={statusLocked ? 'task-status-locked-hint' : undefined}
             className="w-full px-3 py-2.5 border border-kk-line rounded-xl text-sm text-kk-ink bg-white focus:outline-none focus:border-kk-ink transition-colors disabled:opacity-60"
           >
-            {STATUS_OPTIONS.map((opt) => (
+            {statusLocked && (
+              <option value={status}>{taskStatusLabel(status)}</option>
+            )}
+            {!statusLocked && STATUS_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
           </select>
+          {statusLocked && (
+            <p id="task-status-locked-hint" className="text-[11px] text-kk-muted mt-1">
+              Set by the task workflow (submit, review, complete), not by this form.
+            </p>
+          )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-kk-ink mb-1">Due date/time</label>
+          <label className="block text-sm font-medium text-kk-ink mb-1">Due date/time <span className="font-normal text-kk-muted">(Copenhagen)</span></label>
           <input
             type="datetime-local"
             value={dueAt}

@@ -11,7 +11,9 @@ import {
   canSendTaskBack,
   isAdminOverride,
 } from '@/lib/permissions'
-import type { ActionResult } from '@/lib/types'
+import { parseDbInstant } from '@/lib/time'
+import { isWorkflowManagedStatus } from '@/lib/tasks/status'
+import type { ActionResult, TaskStatus } from '@/lib/types'
 import {
   insertTaskWithAudit,
   normalizeTaskCreateInput,
@@ -39,6 +41,13 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
   revalidatePath('/today')
   if (normalized.data.project_id) revalidatePath(`/projects/${normalized.data.project_id}`)
   return { data: { id: taskId as string } }
+}
+
+function sameInstant(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return !a && !b
+  const ta = parseDbInstant(a)
+  const tb = parseDbInstant(b)
+  return ta && tb ? ta.getTime() === tb.getTime() : a === b
 }
 
 export async function updateTask(
@@ -72,11 +81,25 @@ export async function updateTask(
         ? (input[field as keyof typeof input] as string)?.trim() ?? null
         : input[field as keyof typeof input]
 
-      if (newVal !== current[field]) {
+      // due_at is an instant: "2026-10-07T20:00" and "2026-10-07T20:00:00+00:00" are the same value.
+      const unchanged = field === 'due_at'
+        ? sameInstant(newVal as string | null, current.due_at)
+        : newVal === current[field]
+
+      if (!unchanged) {
         patch[field] = newVal
         before[field] = current[field]
       }
     }
+  }
+
+  // Review/completion statuses belong to the workflow RPCs (submit, approve, send back,
+  // complete, cancel, reopen). A generic edit may not move a task into or out of them.
+  if (
+    'status' in patch &&
+    (isWorkflowManagedStatus(current.status) || isWorkflowManagedStatus(patch.status as TaskStatus))
+  ) {
+    return { error: 'This status is changed through the task workflow, not by editing the task.' }
   }
 
   if (Object.keys(patch).length === 0) return {}

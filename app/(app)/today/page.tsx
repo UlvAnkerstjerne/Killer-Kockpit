@@ -9,25 +9,18 @@ import {
   sortWorkItems,
 } from '@/lib/today/weekUtils'
 import { sortOpenTodos, filterTodosForToday } from '@/lib/today/todoUtils'
+import { buildMyTasks } from '@/lib/today/myTasks'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
 import QuickAddTask from './QuickAddTask'
+import MyTaskGroups from './MyTaskGroups'
+import { DUE_STATE_CONFIG, formatShortDate } from './dueDisplay'
 import QuickNewMeeting from './QuickNewMeeting'
 import CaptureBar from '@/components/layout/CaptureBar'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
 export const dynamic = 'force-dynamic'
-
-// ─── Due-state badge config ──────────────────────────────────────────────────
-
-const DUE_STATE_CONFIG = {
-  overdue:   { label: 'OVERDUE',  cls: 'text-white bg-[#AD3919] [box-shadow:2px_2px_0_#555555]' },
-  today:     { label: 'TODAY',    cls: 'text-kk-warn bg-kk-warn-bg [box-shadow:2px_2px_0_#555555]' },
-  tomorrow:  { label: 'TOMORROW', cls: 'text-kraft-light bg-[#171717] [box-shadow:2px_2px_0_#555555]' },
-  this_week: { label: '',         cls: '' },
-  no_date:   { label: '',         cls: '' },
-} as const
 
 // ─── Raw row types ───────────────────────────────────────────────────────────
 
@@ -69,13 +62,6 @@ function waitingForDisplay(wo: RawWO): string {
 function formatTime(dt: string | null): string | null {
   if (!dt) return null
   return new Date(dt).toLocaleTimeString('en-GB', { timeZone: 'Europe/Copenhagen', hour: '2-digit', minute: '2-digit' })
-}
-
-function formatShortDate(dt: string | null): string | null {
-  if (!dt) return null
-  return new Date(dt).toLocaleDateString('en-GB', {
-    timeZone: 'Europe/Copenhagen', weekday: 'short', day: 'numeric', month: 'short',
-  })
 }
 
 // ─── UI micro-components ─────────────────────────────────────────────────────
@@ -415,6 +401,15 @@ export default async function TodayPage({
   const pendingReviewTasks = (pendingReviewTasksRes.data || []) as RawPendingReview[]
   const returnedTasks      = (returnedTasksRes.data      || []) as RawReturned[]
 
+  // ─── My tasks: one deduplicated collection drives both the rows and the count ─
+
+  const myTasks = buildMyTasks({
+    pendingReview: pendingReviewTasks,
+    returned: returnedTasks,
+    tasks: unfinishedTasks,
+    now,
+  })
+
   // ─── At-a-glance summary counts ──────────────────────────────────────────
 
   const meetingsThisWeek = todayMeetings.length + laterMeetings.length
@@ -483,20 +478,18 @@ export default async function TodayPage({
         <div className="lg:hidden mb-5">
           <DashCard
             title="My tasks"
-            badge={(unfinishedTasks.length + pendingReviewTasks.length + returnedTasks.length) > 0
-              ? unfinishedTasks.length + pendingReviewTasks.length + returnedTasks.length
-              : undefined}
+            badge={myTasks.count > 0 ? myTasks.count : undefined}
             icon={<IconWorkWeek />}
             accentHeader
             maxRows={10}
           >
             <QuickAddTask />
-            {unfinishedTasks.length === 0 && pendingReviewTasks.length === 0 && returnedTasks.length === 0 ? (
+            {myTasks.count === 0 ? (
               <EmptyRow text="No tasks right now." />
             ) : (
               <div className="divide-y divide-[#171717]/15">
                 {/* Review items first */}
-                {pendingReviewTasks.map(t => {
+                {myTasks.review.map(t => {
                   const o = Array.isArray(t.owner) ? t.owner[0] : t.owner
                   return (
                     <Link
@@ -520,7 +513,7 @@ export default async function TodayPage({
                   )
                 })}
                 {/* Returned items */}
-                {returnedTasks.map(t => {
+                {myTasks.returned.map(t => {
                   const c = Array.isArray(t.creator) ? t.creator[0] : t.creator
                   return (
                     <Link
@@ -545,32 +538,7 @@ export default async function TodayPage({
                     </Link>
                   )
                 })}
-                {/* My assigned tasks (exclude ones already shown as review/returned) */}
-                {unfinishedTasks.filter(t => !pendingReviewTasks.some(r => r.id === t.id) && !returnedTasks.some(r => r.id === t.id)).map(t => {
-                  const s = getDueState(t.due_at, now, weekEnd)
-                  const cfg = DUE_STATE_CONFIG[s]
-                  return (
-                    <Link
-                      key={`task-${t.id}`}
-                      href={`/tasks/${t.id}?returnTo=/today`}
-                      className="flex items-center gap-3 px-4 py-2 hover:bg-[#B7A486]/25 transition-colors group"
-                    >
-                      <PriorityDot priority={t.priority} />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-kk-ink group-hover:underline truncate block">
-                          {t.title}
-                        </span>
-                      </div>
-                      {cfg.label ? (
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${cfg.cls}`}>
-                          {cfg.label}
-                        </span>
-                      ) : t.due_at ? (
-                        <span className="text-xs text-kk-muted shrink-0">{formatShortDate(t.due_at)}</span>
-                      ) : null}
-                    </Link>
-                  )
-                })}
+                <MyTaskGroups groups={myTasks.groups} now={now} weekEnd={weekEnd} />
               </div>
             )}
           </DashCard>

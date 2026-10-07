@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import Link from 'next/link'
 import RecordRecent from '@/components/nav/RecordRecent'
 import { createClient } from '@/lib/supabase/server'
+import { formatCopenhagen } from '@/lib/time'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import {
   canEditTaskTerms,
@@ -135,9 +136,7 @@ export default async function TaskDetailPage({
         <div>
           <div className="text-xs text-kk-muted mb-0.5">Due</div>
           <div className={`text-sm font-medium ${isOverdue ? 'text-kk-bad' : isDueToday ? 'text-kk-warn' : 'text-kk-ink'}`}>
-            {dueAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-            {' '}
-            {dueAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            {formatCopenhagen(task.due_at, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
             {isOverdue && ' · Overdue'}
             {isDueToday && !isOverdue && ' · Today'}
           </div>

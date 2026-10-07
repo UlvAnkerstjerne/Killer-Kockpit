@@ -1,4 +1,5 @@
 import type { ProjectStatus, TaskStatus } from '@/lib/types'
+import { TASK_STATUS_LABELS } from '@/lib/tasks/status'
 
 const PROJECT_STATUS_STYLES: Record<ProjectStatus, string> = {
   planned:   'bg-kk-soft text-kk-muted',
@@ -28,16 +29,6 @@ const TASK_STATUS_STYLES: Record<TaskStatus, string> = {
   pending_review: 'bg-purple-50 text-purple-700',
   done:           'bg-kk-good-bg text-kk-good',
   cancelled:      'bg-kk-soft text-kk-muted',
-}
-
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  proposed:       'Proposed',
-  open:           'Open',
-  in_progress:    'In progress',
-  blocked:        'Blocked',
-  pending_review: 'Pending review',
-  done:           'Done',
-  cancelled:      'Cancelled',
 }
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {

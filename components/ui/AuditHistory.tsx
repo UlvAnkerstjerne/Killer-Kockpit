@@ -1,42 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-
-function formatAction(action: string): string {
-  const map: Record<string, string> = {
-    'project.created': 'Project created',
-    'project.title.changed': 'Title changed',
-    'project.description.changed': 'Description changed',
-    'project.status.changed': 'Status changed',
-    'project.owner_user_id.changed': 'Owner changed',
-    'project.due_date.changed': 'Due date changed',
-    'project.progress.changed': 'Progress updated',
-    'project.archived': 'Project archived',
-    'task.created': 'Task created',
-    'task.title.changed': 'Title changed',
-    'task.description.changed': 'Description changed',
-    'task.status.changed': 'Status changed',
-    'task.owner_user_id.changed': 'Owner changed',
-    'task.due_at.changed': 'Due date changed',
-    'task.priority.changed': 'Priority changed',
-    'task.completed': 'Task completed',
-    'task.cancelled': 'Task cancelled',
-    'decision.members_notified': 'All members notified',
-  }
-  return map[action] || action
-}
-
-function formatValue(val: unknown): string {
-  if (val === null || val === undefined) return '—'
-  if (typeof val === 'boolean') return val ? 'Yes' : 'No'
-  if (typeof val === 'string') {
-    // Try to parse as date
-    const d = new Date(val)
-    if (!isNaN(d.getTime()) && val.includes('T')) {
-      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    }
-    return val
-  }
-  return String(val)
-}
+import { collectReferencedIds, describeAuditEvent, type AuditLookups } from '@/lib/audit/describe'
+import { formatCopenhagen } from '@/lib/time'
 
 export default async function AuditHistory({
   entityType,
@@ -50,7 +14,7 @@ export default async function AuditHistory({
   const { data: events, error } = await supabase
     .from('audit_events')
     .select(`
-      id, action, actor_type, before_json, after_json, created_at,
+      id, action, actor_type, before_json, after_json, metadata, created_at,
       actor:actor_user_id (id, display_name, email)
     `)
     .eq('entity_type', entityType)
@@ -70,18 +34,53 @@ export default async function AuditHistory({
     )
   }
 
+  // Resolve user / project references through the caller's own RLS-scoped client.
+  // Anything not returned (deleted, hidden) renders as "Unknown …" rather than a raw id.
+  const { userIds, projectIds } = collectReferencedIds(events)
+  const [usersRes, projectsRes] = await Promise.all([
+    userIds.length
+      ? supabase.from('app_users').select('id, display_name').in('id', userIds)
+      : Promise.resolve({ data: [] as { id: string; display_name: string }[] }),
+    projectIds.length
+      ? supabase.from('projects').select('id, title').in('id', projectIds)
+      : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+  ])
+  const lookups = {
+    users: new Map((usersRes.data ?? []).map(u => [u.id, u.display_name] as const)),
+    projects: new Map((projectsRes.data ?? []).map(p => [p.id, p.title] as const)),
+  }
+
+  return <AuditHistoryList events={events as AuditEventListItem[]} entityType={entityType} lookups={lookups} />
+}
+
+export type AuditEventListItem = {
+  id: string
+  action: string
+  before_json: Record<string, unknown> | null
+  after_json: Record<string, unknown> | null
+  metadata?: Record<string, unknown> | null
+  created_at: string
+  actor?: { display_name?: string | null } | { display_name?: string | null }[] | null
+}
+
+/** Presentational list; takes already-resolved lookups so it renders from fixtures. */
+export function AuditHistoryList({
+  events,
+  entityType,
+  lookups,
+}: {
+  events: AuditEventListItem[]
+  entityType: string
+  lookups: AuditLookups
+}) {
   return (
     <div className="space-y-0">
       {events.map((event) => {
         const actor = Array.isArray(event.actor) ? event.actor[0] : event.actor
         const actorName = actor?.display_name || 'System'
-        const date = new Date(event.created_at)
-        const dateStr = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-        const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-
-        // Extract the changed value for display
-        const beforeVal = event.before_json ? Object.values(event.before_json)[0] : null
-        const afterVal = event.after_json ? Object.values(event.after_json)[0] : null
+        const dateStr = formatCopenhagen(event.created_at, { day: 'numeric', month: 'short' })
+        const timeStr = formatCopenhagen(event.created_at, { hour: '2-digit', minute: '2-digit' })
+        const { title, lines } = describeAuditEvent(event, entityType, lookups)
 
         return (
           <div
@@ -93,17 +92,10 @@ export default async function AuditHistory({
               <div>{timeStr}</div>
             </div>
             <div>
-              <div className="text-sm text-kk-ink">{formatAction(event.action)}</div>
-              {beforeVal !== null && afterVal !== null && (
-                <div className="text-xs text-kk-muted mt-0.5">
-                  {formatValue(beforeVal)} → {formatValue(afterVal)}
-                </div>
-              )}
-              {beforeVal === null && afterVal !== null && (
-                <div className="text-xs text-kk-muted mt-0.5">
-                  {formatValue(afterVal)}
-                </div>
-              )}
+              <div className="text-sm text-kk-ink">{title}</div>
+              {lines.map((line, i) => (
+                <div key={i} className="text-xs text-kk-muted mt-0.5 break-words">{line}</div>
+              ))}
               <div className="text-xs text-kk-muted mt-0.5">{actorName}</div>
             </div>
           </div>
