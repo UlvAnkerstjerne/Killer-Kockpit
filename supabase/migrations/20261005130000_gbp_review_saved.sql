@@ -3,7 +3,7 @@
 -- main desk query until explicitly answered or dismissed.
 
 CREATE TABLE public.gbp_review_saved (
-  user_id   uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id   uuid NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
   review_id uuid NOT NULL REFERENCES public.gbp_reviews(id) ON DELETE CASCADE,
   saved_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, review_id)
