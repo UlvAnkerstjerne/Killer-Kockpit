@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import type { BrainData } from '@/lib/actions/marketing/creative-intelligence'
-import type { CreativeAnalytics, CreativePost, Dimension, MetricSummary, ObservationBusinessContext, BusinessContextSnapshot } from '@/lib/marketing/brain/types'
-import { label, signalEvidence } from '@/lib/marketing/brain/signals'
+import type { CreativeAnalytics, CreativePost, CreativeSignal, Dimension, MetricSummary, ObservationBusinessContext, BusinessContextSnapshot, Observation } from '@/lib/marketing/brain/types'
+import { label, signalEvidence, signalMetric, signalComparison } from '@/lib/marketing/brain/signals'
 import { MIN_PATTERN_POSTS } from '@/lib/marketing/brain/analytics'
 import IgThumbnail from '../organic/IgThumbnail'
 
@@ -47,16 +47,51 @@ function PostLinks({ ids, posts }: { ids: string[]; posts: CreativePost[] }) {
   })}</ul>
 }
 
+// ---------------------------------------------------------------------------
+// Classification chips
+// ---------------------------------------------------------------------------
+
+function ClassificationChips({ post }: { post: CreativePost }) {
+  if (!post.fingerprint) return null
+  const fp = post.fingerprint
+  const chips: string[] = []
+  if (fp.hook_type && !['unknown', 'no_clear_hook', 'none', 'other'].includes(fp.hook_type)) chips.push(label(fp.hook_type))
+  if (fp.primary_theme && !['unknown', 'other'].includes(fp.primary_theme)) chips.push(label(fp.primary_theme))
+  if (fp.product_focus && !['unknown', 'none', 'general_brand'].includes(fp.product_focus)) chips.push(label(fp.product_focus))
+  if (!chips.length) return null
+  return <p className="text-xs text-kk-muted">{chips.slice(0, 3).join(' · ')}</p>
+}
+
+// ---------------------------------------------------------------------------
+// Representative content
+// ---------------------------------------------------------------------------
+
+/** Select a representative post for a signal: exact post for exceptional, strongest for patterns. */
+export function representativePost(signal: CreativeSignal, posts: CreativePost[]): CreativePost | null {
+  if (signal.type === 'exceptional_post') {
+    return posts.find(p => p.id === signal.supporting_media_ids[0]) ?? null
+  }
+  const candidates = signal.supporting_media_ids
+    .map(id => posts.find(p => p.id === id))
+    .filter((p): p is CreativePost => p !== null)
+  if (!candidates.length) return null
+  return candidates.sort((a, b) => (b.normalized_exposure ?? 0) - (a.normalized_exposure ?? 0) || b.exposure - a.exposure)[0]
+}
+
+// ---------------------------------------------------------------------------
+// Business Context
+// ---------------------------------------------------------------------------
+
 const ROLE_LABELS: Record<string, string> = {
   proof_point: 'Proof point', timely_angle: 'Timely angle',
   case_study: 'Case study', subject_matter: 'Subject matter',
 }
 function BusinessContextBlock({ ctx }: { ctx: ObservationBusinessContext }) {
-  return <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 text-sm">
-    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-amber-700 mb-1.5">Business context</p>
-    <p className="font-medium text-kk-ink">{ctx.project_title}{ctx.occurred_on ? <span className="ml-2 font-normal text-kk-muted">{date(ctx.occurred_on)}</span> : null}</p>
-    <p className="mt-1 text-xs leading-relaxed text-kk-muted">&ldquo;{ctx.excerpt}&rdquo;</p>
-    <p className="mt-1.5 text-[10px] text-amber-700">Role: {ROLE_LABELS[ctx.role] ?? ctx.role}</p>
+  return <div className="rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2.5">
+    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-amber-700 mb-1">Business context</p>
+    <p className="text-sm font-medium text-kk-ink">{ctx.project_title}{ctx.occurred_on ? <span className="ml-2 font-normal text-kk-muted">{date(ctx.occurred_on)}</span> : null}</p>
+    <p className="mt-0.5 text-xs leading-relaxed text-kk-muted">&ldquo;{ctx.excerpt}&rdquo;</p>
+    <p className="mt-1 text-[10px] text-amber-700">{ROLE_LABELS[ctx.role] ?? ctx.role}</p>
   </div>
 }
 function BusinessContextOverview({ items }: { items: BusinessContextSnapshot[] }) {
@@ -74,15 +109,107 @@ function BusinessContextOverview({ items }: { items: BusinessContextSnapshot[] }
   </details>
 }
 
+// ---------------------------------------------------------------------------
+// Observation card
+// ---------------------------------------------------------------------------
+
+function ObservationCard({ observation, signal, posts }: { observation: Observation; signal: CreativeSignal | undefined; posts: CreativePost[] }) {
+  const post = signal ? representativePost(signal, posts) : null
+  const isIndividual = signal?.evidence_level === 'individual'
+  const postLabel = isIndividual ? null : 'Example supporting post'
+  const evidenceLabel = signal ? label(signal.evidence_level) : 'Emerging'
+
+  return <article className="overflow-hidden rounded-2xl border border-kk-line bg-kk-panel">
+    {/* Top bar: evidence level + format */}
+    <div className="flex items-center gap-2 px-5 pt-4 pb-2">
+      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-kk-muted">{evidenceLabel}</span>
+      {signal ? <span className="text-[10px] uppercase tracking-[0.1em] text-kk-muted">· {label(signal.format)}</span> : null}
+    </div>
+
+    {/* Content + metric row */}
+    <div className="flex gap-4 px-5 pb-3">
+      {post ? <div className="shrink-0">
+        <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden bg-kk-soft">
+          <IgThumbnail src={preview(post.thumbnail_url)} />
+        </div>
+        {postLabel ? <p className="mt-1 text-[10px] text-kk-muted text-center">{postLabel}</p> : null}
+      </div> : null}
+      <div className="min-w-0 flex-1">
+        {signal ? <p className="text-2xl font-semibold tabular-nums tracking-tight">{signalMetric(signal)}</p> : null}
+        {signal ? <p className="mt-0.5 text-xs text-kk-muted tabular-nums">{signalComparison(signal)}</p> : null}
+        {post ? <><ClassificationChips post={post} /><p className="mt-1 text-xs text-kk-muted">{date(post.published_at)} · {label(post.format)}{instagramLink(post.permalink) ? <> · <a href={instagramLink(post.permalink)} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">View ↗</a></> : null}</p></> : null}
+      </div>
+    </div>
+
+    {/* Headline */}
+    <div className="px-5 pb-3">
+      <h3 className="text-base font-semibold leading-snug">{observation.finding}</h3>
+    </div>
+
+    {/* Three-layer structure */}
+    <div className="space-y-3 px-5 pb-5">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-kk-muted mb-0.5">What we learned</p>
+        <p className="text-sm leading-relaxed">{observation.interpretation}</p>
+      </div>
+      {observation.business_context ? <BusinessContextBlock ctx={observation.business_context} /> : null}
+      <div className="border-t border-kk-line pt-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-kk-muted mb-0.5">Test next</p>
+        <p className="text-sm leading-relaxed">{observation.suggested_experiment}</p>
+      </div>
+      {signal ? <details className="text-xs text-kk-muted">
+        <summary className="cursor-pointer">Evidence and supporting content</summary>
+        <p className="mt-2 text-xs leading-relaxed">{signalEvidence(signal)}</p>
+        <p className="mt-2">Supporting posts</p>
+        <PostLinks ids={signal.supporting_media_ids} posts={posts} />
+        <p className="mt-2">Comparison posts</p>
+        <PostLinks ids={signal.comparison_media_ids} posts={posts} />
+      </details> : null}
+    </div>
+  </article>
+}
+
+// ---------------------------------------------------------------------------
+// Compact coverage
+// ---------------------------------------------------------------------------
+
+function CoverageSummary({ run, analytics }: { run: { generated_at: string; analysis_start: string; analysis_end: string; status: string; error: string | null }; analytics: CreativeAnalytics }) {
+  return <section aria-label="Analysis coverage" className="rounded-xl border border-kk-line bg-kk-panel px-5 py-3">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <p className="text-sm text-kk-ink">
+        <span className="font-medium">Last 90 days</span>
+        <span className="mx-1.5 text-kk-muted">·</span>{analytics.coverage.total} post{analytics.coverage.total !== 1 ? 's' : ''}
+        <span className="mx-1.5 text-kk-muted">·</span>{analytics.coverage.with_exposure} measured
+        <span className="mx-1.5 text-kk-muted">·</span>{analytics.coverage.classified} classified
+      </p>
+      <span className="text-xs text-kk-muted">Updated {date(run.generated_at)}{run.status === 'partial' ? ' · Partial' : ''}</span>
+    </div>
+    <details className="mt-2 text-xs text-kk-muted">
+      <summary className="cursor-pointer">Analysis details</summary>
+      <div className="mt-2 space-y-1.5 leading-relaxed">
+        <p>{date(run.analysis_start)} – {date(new Date(Date.parse(run.analysis_end) - 1).toISOString())} · UTC</p>
+        <p>Stored lifetime performance of posts published in this window, not engagement earned during the window. Views and reach are kept separate. Post ages differ; individual metric refresh dates are unavailable.</p>
+        {analytics.coverage.stale_syncs > 0 ? <p>{analytics.coverage.stale_syncs} posts were last synced more than 14 days ago.</p> : null}
+      </div>
+    </details>
+    {run.error ? <p role="status" className="mt-2 text-sm">{run.error}</p> : null}
+  </section>
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function BrainView({ data, refreshControl }: { data: BrainData; refreshControl?: ReactNode }) {
   const run = data.run
   const analytics = run?.analytics
-  return <div className="space-y-7 text-kk-ink">
+  return <div className="space-y-6 text-kk-ink">
     <header className="flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-kk-muted">Instagram · Organic</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Marketing Brain</h1>
-        <h2 className="mt-3 text-lg font-semibold">Creative Intelligence</h2>
-        <p className="mt-2 text-sm text-kk-muted">What the Instagram evidence suggests testing next.</p></div>
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Marketing Brain</h1>
+        <p className="mt-2 text-sm text-kk-muted">What we&rsquo;re learning from our marketing — and what to test next.</p>
+        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-kk-muted">Creative Intelligence · Instagram Organic</p>
+      </div>
       {data.canRefresh ? refreshControl : null}
     </header>
     {!data.allowed ? <p className="rounded-xl border border-kk-line bg-kk-panel p-5">Organic / Marketing access with paid_manage permission is required.</p>
@@ -95,27 +222,15 @@ export default function BrainView({ data, refreshControl }: { data: BrainData; r
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-kk-muted">Refresh to classify eligible Instagram content and compare its performance. Patterns appear only when there is enough measured content to support them.</p>
           {!data.canRefresh ? <p className="mt-4 text-sm text-kk-muted">A SUPER_ADMIN can generate the first analysis.</p> : null}
         </section> : <>
-          <section aria-label="Analysis coverage" className="rounded-2xl border border-kk-line bg-kk-panel p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-semibold">Last 90 completed publication days</h2><span className="text-xs text-kk-muted">Updated {date(run.generated_at)} · {run.status === 'partial' ? 'Partial result' : 'Saved analysis'}</span></div>
-            <p className="mt-1 text-sm text-kk-muted">{date(run.analysis_start)} – {date(new Date(Date.parse(run.analysis_end) - 1).toISOString())} · UTC</p>
-            <div className="mt-5 grid grid-cols-3 gap-4 border-t border-kk-line pt-4">{[
-              ['Published posts', analytics.coverage.total], ['With exposure', analytics.coverage.with_exposure], ['Classified', analytics.coverage.classified],
-            ].map(([name, count]) => <div key={name}><p className="text-2xl font-semibold tabular-nums">{count}</p><p className="mt-1 text-xs text-kk-muted">{name}</p></div>)}</div>
-            <p className="mt-4 text-xs leading-relaxed text-kk-muted">Stored lifetime performance of posts published in this window, not engagement earned during the window. Views and reach are kept separate. Post ages differ; individual metric refresh dates are unavailable. {analytics.coverage.stale_syncs > 0 ? `${analytics.coverage.stale_syncs} posts were last synced more than 14 days ago.` : ''}</p>
-            {run.error ? <p role="status" className="mt-3 text-sm">{run.error}</p> : null}
-          </section>
-          <section aria-labelledby="working-title"><div className="mb-4 flex flex-wrap items-baseline justify-between gap-2"><h2 id="working-title" className="text-xl font-semibold">What’s working</h2><span className="text-xs text-kk-muted">AI hypotheses · for human review</span></div>
-            <div className="grid gap-4 lg:grid-cols-2">{run.observations.length ? run.observations.map((observation, index) => {
+          <CoverageSummary run={run} analytics={analytics} />
+          <section aria-labelledby="learning-title">
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="learning-title" className="text-xl font-semibold">What we&rsquo;re learning</h2>
+              <span className="text-xs text-kk-muted">AI hypotheses · for human review</span>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">{run.observations.length ? run.observations.map(observation => {
               const signal = run.signals.find(s => s.id === observation.signal_id)
-              return <article key={observation.signal_id} className="rounded-2xl border border-kk-line bg-kk-panel p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-kk-muted">Observation {index + 1} · {label(signal?.evidence_level ?? 'emerging')}</p>
-                <h3 className="mt-2 text-lg font-semibold leading-snug">{observation.finding}</h3>
-                <p className="mt-4 rounded-xl bg-kk-soft p-3 text-sm leading-relaxed"><strong className="block text-xs uppercase tracking-wide">Evidence</strong>{signal ? signalEvidence(signal) : observation.evidence}</p>
-                <p className="mt-4 text-sm leading-relaxed"><strong className="block text-xs text-kk-muted">Hypothesis</strong>{observation.interpretation}</p>
-                {observation.business_context ? <BusinessContextBlock ctx={observation.business_context} /> : null}
-                <p className="mt-4 border-t border-kk-line pt-3 text-sm leading-relaxed"><strong className="block text-xs text-kk-muted">Suggested test</strong>{observation.suggested_experiment}</p>
-                {signal ? <details className="mt-4 text-xs text-kk-muted"><summary className="cursor-pointer">Supporting content and comparison</summary><p className="mt-2">Supporting posts</p><PostLinks ids={signal.supporting_media_ids} posts={analytics.posts} /><p className="mt-2">Comparison posts</p><PostLinks ids={signal.comparison_media_ids} posts={analytics.posts} /></details> : null}
-              </article>
+              return <ObservationCard key={observation.signal_id} observation={observation} signal={signal} posts={analytics.posts} />
             }) : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted lg:col-span-2">{run.signals.length ? 'Deterministic signals are available below. No AI observations were produced for this run.' : 'No repeated pattern meets the material evidence threshold yet. The tables show the current sample without drawing a conclusion.'}</p>}</div>
             {run.signals.length ? <details className="mt-4 rounded-xl border border-kk-line p-4 text-sm"><summary className="cursor-pointer font-medium">View {run.signals.length} deterministic signals</summary><ul className="mt-3 space-y-3">{run.signals.map(signal => <li key={signal.id}><strong>{label(signal.value)} · {label(signal.type)}</strong><p className="mt-1 text-xs leading-relaxed text-kk-muted">{signalEvidence(signal)}</p></li>)}</ul></details> : null}
             {analytics.business_context?.length ? <BusinessContextOverview items={analytics.business_context} /> : null}
@@ -134,17 +249,19 @@ export default function BrainView({ data, refreshControl }: { data: BrainData; r
               </div>) : <p className="mt-3 text-sm text-kk-muted">No measured posts</p>}</div>
             })}</div>
           </section>
-          <section><h2 className="text-xl font-semibold">Exceptional content</h2><p className="mt-1 text-xs text-kk-muted">At least 3× its format median. Individual standouts are not proof of a repeated pattern.</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{analytics.exceptional.map(post => <article key={post.id} className="overflow-hidden rounded-2xl border border-kk-line bg-kk-panel">
+          {analytics.exceptional.length > 0 ? <details className="rounded-2xl border border-kk-line bg-kk-panel p-5">
+            <summary className="cursor-pointer"><h2 className="inline text-lg font-semibold">Exceptional content</h2><span className="ml-2 text-xs text-kk-muted">{analytics.exceptional.length} post{analytics.exceptional.length !== 1 ? 's' : ''} · 3× format median or above</span></summary>
+            <p className="mt-2 text-xs text-kk-muted">Individual standouts are not proof of a repeated pattern.</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{analytics.exceptional.map(post => <article key={post.id} className="overflow-hidden rounded-xl border border-kk-line">
               <div className="aspect-[16/9] bg-kk-soft"><IgThumbnail src={preview(post.thumbnail_url)} /></div>
-              <div className="space-y-3 p-4"><div className="flex justify-between gap-2 text-xs text-kk-muted"><span>{date(post.published_at)}</span><span>{label(post.format)}</span></div>
-                <p className="text-xl font-semibold">{number(post.exposure)} {post.exposure_kind}</p><p className="text-sm">{number(post.normalized_exposure!)}× format median · {post.shares === null ? '—' : number(post.shares)} shares · {post.saves === null ? '—' : number(post.saves)} saves</p>
-                <p className="text-xs leading-relaxed text-kk-muted">{post.fingerprint ? `${label(post.fingerprint.hook_type)} (${post.fingerprint.hook_source}) · ${label(post.fingerprint.primary_theme)} · ${label(post.fingerprint.product_focus)}` : 'Not classified'}</p>
-                <p className="text-xs text-kk-muted">Last content sync {date(post.synced_at)}</p>
-                {instagramLink(post.permalink) ? <a href={instagramLink(post.permalink)} target="_blank" rel="noopener noreferrer" className="inline-block text-sm font-medium underline underline-offset-4">View on Instagram ↗</a> : null}
+              <div className="space-y-2 p-3"><div className="flex justify-between gap-2 text-xs text-kk-muted"><span>{date(post.published_at)}</span><span>{label(post.format)}</span></div>
+                <p className="text-lg font-semibold tabular-nums">{number(post.normalized_exposure!)}× format median</p>
+                <p className="text-xs text-kk-muted">{number(post.exposure)} {post.exposure_kind} · {post.shares === null ? '—' : number(post.shares)} shares · {post.saves === null ? '—' : number(post.saves)} saves</p>
+                <ClassificationChips post={post} />
+                {instagramLink(post.permalink) ? <a href={instagramLink(post.permalink)} target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-medium underline underline-offset-4">View on Instagram ↗</a> : null}
               </div>
-            </article>)}{analytics.exceptional.length === 0 ? <p className="text-sm text-kk-muted">No individual posts meet the exceptional-content threshold.</p> : null}</div>
-          </section>
+            </article>)}</div>
+          </details> : null}
         </>}
         <footer className="space-y-2 border-t border-kk-line pt-4 text-xs leading-relaxed text-kk-muted">
           <p>Hook classification currently uses available caption/opening copy. Video opening analysis will be added separately.</p>

@@ -1,11 +1,15 @@
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import BrainView, { instagramLink } from '@/app/(marketing)/marketing/brain/BrainView'
-import { savedRun } from '../../../helpers/creative-brain'
+import BrainView, { instagramLink, representativePost } from '@/app/(marketing)/marketing/brain/BrainView'
+import { savedRun, strongSample, media, fingerprint } from '../../../helpers/creative-brain'
 import type { BrainData } from '@/lib/actions/marketing/creative-intelligence'
+import type { CreativeRun, Observation, ObservationBusinessContext } from '@/lib/marketing/brain/types'
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import type { AppUser } from '@/lib/types'
+import { InterpretationSchema, validateInterpretation } from '@/lib/ai/creative-interpretation'
+import { buildAnalytics } from '@/lib/marketing/brain/analytics'
+import { buildCreativeSignals, signalFinding, signalEvidence } from '@/lib/marketing/brain/signals'
 
 const { load } = vi.hoisted(() => ({ load: vi.fn() }))
 vi.mock('@/lib/actions/marketing/creative-intelligence', () => ({ getCreativeIntelligence: load }))
@@ -26,7 +30,7 @@ describe('Marketing Brain page', () => {
   it('renders the persisted run with visible numeric evidence and every required section', async () => {
     load.mockResolvedValue({ ...base, run: savedRun() })
     const html = renderToStaticMarkup(await MarketingBrainPage())
-    for (const text of ['What’s working', 'Best hooks', 'Best themes', 'Best products', 'Format performance', 'Exceptional content', 'Evidence', 'Hypothesis', 'Suggested test', '4 Reel / video posts', 'lifetime performance']) expect(html).toContain(text)
+    for (const text of ['learning', 'Best hooks', 'Best themes', 'Best products', 'Format performance', 'What we learned', 'Test next', '4 Reel / video posts', 'lifetime performance']) expect(html).toContain(text)
     expect(load).toHaveBeenCalledTimes(1)
   })
   it('exposes the refresh control only to authorized admins and distinguishes a failed refresh', () => {
@@ -60,5 +64,185 @@ describe('Marketing Brain page', () => {
         writeFileSync(`${dir}/${name}.html`, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="style.css"><title>Synthetic Marketing Brain QA</title></head><body>${markup}</body></html>`)
       }
     }
+  })
+})
+
+describe('Marketing Brain usability', () => {
+  it('uses "What we\u2019re learning" instead of "What\u2019s working"', () => {
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run: savedRun() }} />)
+    expect(html).toContain('learning')
+    expect(html).not.toContain('What&#x27;s working')
+    expect(html).not.toContain("What's working")
+  })
+
+  it('shows page title "Marketing Brain" as primary heading with module label below', () => {
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run: savedRun() }} />)
+    expect(html).toContain('Marketing Brain')
+    expect(html).toContain('Creative Intelligence')
+    expect(html).toContain('Instagram Organic')
+  })
+
+  it('renders representative post for exceptional signal', () => {
+    const run = savedRun()
+    const exceptionalSignal = run.signals.find(s => s.type === 'exceptional_post')
+    if (!exceptionalSignal) return // No exceptional in strong sample
+    const post = representativePost(exceptionalSignal, run.analytics!.posts)
+    expect(post).not.toBeNull()
+    expect(post!.id).toBe(exceptionalSignal.supporting_media_ids[0])
+  })
+
+  it('renders representative post for repeated pattern signal and labels it as example', () => {
+    const run = savedRun()
+    const patternSignal = run.signals.find(s => s.type === 'hook_outperformance')!
+    const post = representativePost(patternSignal, run.analytics!.posts)
+    expect(post).not.toBeNull()
+    // Should be the strongest measured supporting post
+    expect(patternSignal.supporting_media_ids).toContain(post!.id)
+    // HTML should label it
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run }} />)
+    expect(html).toContain('Example supporting post')
+  })
+
+  it('surfaces metric prominently without AI rewriting', () => {
+    const run = savedRun()
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run }} />)
+    // The metric string (e.g. "1.5× format median") should appear in card
+    expect(html).toContain('format median')
+    // Comparison line too
+    expect(html).toContain('comparison n=')
+  })
+
+  it('omits unknown and generic fingerprint values from classification chips', () => {
+    const run = savedRun()
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run }} />)
+    // Should not show "Unknown" or "No clear hook" as classification chips
+    expect(html).not.toMatch(/Unknown\s*·/)
+    expect(html).not.toContain('No clear hook ·')
+    expect(html).not.toContain('General brand ·')
+  })
+
+  it('renders business context block distinctly when present', () => {
+    const run = savedRun()
+    const ctx: ObservationBusinessContext = {
+      update_id: 'upd-test', project_title: 'Killer Katering',
+      occurred_on: '2026-10-04', excerpt: 'Completed a big catering job',
+      role: 'case_study',
+    }
+    const runWithCtx: CreativeRun = {
+      ...run,
+      observations: run.observations.map((o, i) => i === 0 ? { ...o, business_context: ctx } : o),
+    }
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run: runWithCtx }} />)
+    expect(html).toContain('Business context')
+    expect(html).toContain('Killer Katering')
+    expect(html).toContain('Case study')
+    // The amber styling distinguishes it
+    expect(html).toContain('amber')
+  })
+
+  it('renders cleanly when no business context is present', () => {
+    const run = savedRun()
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run }} />)
+    // Should not crash, and should not show empty business context blocks
+    expect(html).not.toContain('Business context</p>')
+  })
+
+  it('renders old runs that lack optional business_context field', () => {
+    const run = savedRun()
+    // Simulate old run: no business_context on analytics, no business_context on observations
+    const oldRun: CreativeRun = {
+      ...run,
+      analytics: { ...run.analytics!, business_context: undefined },
+      observations: run.observations.map(o => {
+        const { business_context: _, ...rest } = o
+        return rest as Observation
+      }),
+    }
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run: oldRun }} />)
+    expect(html).toContain('learning')
+    expect(html).toContain('Best hooks')
+    expect(html).not.toContain('Business context available to Brain')
+  })
+
+  it('renders compact analysis coverage with expandable details', () => {
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run: savedRun() }} />)
+    expect(html).toContain('Last 90 days')
+    expect(html).toContain('measured')
+    expect(html).toContain('classified')
+    expect(html).toContain('Analysis details')
+    // Should not have the old large coverage card with separate count blocks
+    expect(html).not.toContain('Last 90 completed publication days')
+  })
+
+  it('does not use lg:grid-cols or fixed-width layouts that break on mobile', () => {
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run: savedRun() }} />)
+    // Cards should not require horizontal scrolling (no min-w on card containers)
+    // The observation grid uses responsive classes that stack on mobile
+    expect(html).toContain('lg:grid-cols-2')
+    // Cards themselves should not have min-width
+    expect(html).not.toMatch(/min-w-\[.*\].*article/)
+  })
+
+  it('validates shortened test length in interpretation schema', () => {
+    const valid = {
+      observations: [{
+        signal_id: 'sig-test',
+        interpretation: 'Short hypothesis that is valid and under the limit.',
+        experiment: { dimension: 'product_focus', value: 'catering', test: 'Make a catering Reel with bold-claim hook and similar pacing.' },
+      }],
+    }
+    expect(() => InterpretationSchema.parse(valid)).not.toThrow()
+
+    // Over 200 chars should fail
+    const tooLong = {
+      observations: [{
+        signal_id: 'sig-test',
+        interpretation: 'A'.repeat(201),
+        experiment: { dimension: 'product_focus', value: 'catering', test: 'Make a catering Reel with bold-claim hook and similar pacing.' },
+      }],
+    }
+    expect(() => InterpretationSchema.parse(tooLong)).toThrow()
+  })
+
+  it('preserves grounding restrictions in interpretation validation', () => {
+    const { signals } = strongSample()
+    const signal = signals[0]
+    // Numbers in interpretation should throw
+    expect(() => validateInterpretation({
+      observations: [{ signal_id: signal.id,
+        interpretation: 'This content reaches 50% more people.',
+        experiment: { dimension: signal.dimension, value: signal.value, test: 'Run a test comparing formats.' } }],
+    }, signals)).toThrow()
+    // Demographics should throw
+    expect(() => validateInterpretation({
+      observations: [{ signal_id: signal.id,
+        interpretation: 'Women respond well to this content.',
+        experiment: { dimension: signal.dimension, value: signal.value, test: 'Run a test comparing formats.' } }],
+    }, signals)).toThrow()
+  })
+
+  it('exceptional content section is collapsed by default when present', () => {
+    // Create a run with exceptional posts
+    const posts = [100, 100, 100, 100, 10000].map((plays, i) => media(i, { plays }))
+    const fps = posts.map(p => fingerprint(p))
+    const analytics = buildAnalytics(posts, fps, new Date('2026-09-24T12:00:00Z'))
+    const signals = buildCreativeSignals(analytics)
+    const run: CreativeRun = {
+      id: 'exc-run', generated_at: '2026-09-24T12:00:00Z',
+      analysis_start: analytics.window.start, analysis_end: analytics.window.end,
+      model: 'test', prompt_version: 'test', classification_version: 'test',
+      status: 'completed', analytics, signals,
+      observations: signals.map(s => ({
+        signal_id: s.id, finding: signalFinding(s), evidence: signalEvidence(s),
+        interpretation: 'This post stands out significantly in the current sample.',
+        suggested_experiment: 'Test replicating the specific creative approach.',
+      })),
+      classification_counts: { eligible: 5, classified: 5, skipped: 0, failed: 0, deferred: 0 },
+      error: null,
+    }
+    const html = renderToStaticMarkup(<BrainView data={{ ...base, run }} />)
+    // Exceptional content should be in a <details> element (collapsed)
+    expect(html).toContain('Exceptional content')
+    expect(html).toMatch(/<details[\s\S]*?Exceptional content/)
   })
 })

@@ -77,10 +77,27 @@ export function label(value: string): string {
   return value.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
 }
 export function signalFinding(signal: CreativeSignal): string {
-  if (signal.type === 'exceptional_post') return 'An individual post stands above its format median'
-  const metric = signal.metric === 'share_rate' ? 'shares' : signal.metric === 'save_rate' ? 'saves' : 'exposure'
-  const subject = signal.dimension === 'hook_type' ? 'caption hooks' : signal.dimension === 'primary_theme' ? 'content' : 'posts'
-  return `${label(signal.value)} ${subject}: higher median ${metric} in this sample`
+  const ratio = signal.baseline > 0 ? (signal.current / signal.baseline).toFixed(1) : null
+  if (signal.type === 'exceptional_post') {
+    return ratio ? `Exceptional ${label(signal.format)}: ${ratio}× the normal ${label(signal.format)} baseline` : `Exceptional ${label(signal.format)}`
+  }
+  if (signal.type === 'share_heavy_pattern') return `${label(signal.value)} content drives more shares than the comparison group`
+  if (signal.type === 'save_heavy_pattern') return `${label(signal.value)} content drives more saves than the comparison group`
+  if (signal.type === 'format_outperformance') return `${label(signal.value)} is outperforming other static formats`
+  return `${label(signal.value)} ${label(signal.format)}s are outperforming the comparison group`
+}
+/** Compact metric string for card display, e.g. "11.1× format median" or "30.0 shares / 1k views". */
+export function signalMetric(signal: CreativeSignal): string {
+  if (signal.metric === 'normalized_exposure') return `${signal.current.toFixed(1)}× format median`
+  if (signal.metric === 'exposure') return `${signal.current.toFixed(0)} median ${signal.exposure_kind}`
+  const unit = signal.metric === 'share_rate' ? 'shares' : 'saves'
+  return `${signal.current.toFixed(1)} ${unit} / 1k ${signal.exposure_kind}`
+}
+/** Compact comparison line for card display. */
+export function signalComparison(signal: CreativeSignal): string {
+  if (signal.metric === 'normalized_exposure') return `vs ${signal.baseline.toFixed(1)}× · comparison n=${signal.comparison_sample_size}`
+  if (signal.metric === 'exposure') return `vs ${signal.baseline.toFixed(0)} · comparison n=${signal.comparison_sample_size}`
+  return `vs ${signal.baseline.toFixed(1)} · comparison n=${signal.comparison_sample_size}`
 }
 export function signalEvidence(signal: CreativeSignal): string {
   const unit = signal.metric === 'normalized_exposure' ? '× format median' : signal.metric === 'exposure' ? signal.exposure_kind : `/ 1,000 ${signal.exposure_kind}`
