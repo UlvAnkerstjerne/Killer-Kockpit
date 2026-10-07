@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import type { BrainData } from '@/lib/actions/marketing/creative-intelligence'
-import type { CreativeAnalytics, CreativePost, Dimension, MetricSummary } from '@/lib/marketing/brain/types'
+import type { CreativeAnalytics, CreativePost, Dimension, MetricSummary, ObservationBusinessContext, BusinessContextSnapshot } from '@/lib/marketing/brain/types'
 import { label, signalEvidence } from '@/lib/marketing/brain/signals'
 import { MIN_PATTERN_POSTS } from '@/lib/marketing/brain/analytics'
 import IgThumbnail from '../organic/IgThumbnail'
@@ -46,6 +47,33 @@ function PostLinks({ ids, posts }: { ids: string[]; posts: CreativePost[] }) {
   })}</ul>
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  proof_point: 'Proof point', timely_angle: 'Timely angle',
+  case_study: 'Case study', subject_matter: 'Subject matter',
+}
+function BusinessContextBlock({ ctx }: { ctx: ObservationBusinessContext }) {
+  return <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 text-sm">
+    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-amber-700 mb-1.5">Business context</p>
+    <p className="font-medium text-kk-ink">{ctx.project_title}{ctx.occurred_on ? <span className="ml-2 font-normal text-kk-muted">{date(ctx.occurred_on)}</span> : null}</p>
+    <p className="mt-1 text-xs leading-relaxed text-kk-muted">&ldquo;{ctx.excerpt}&rdquo;</p>
+    <p className="mt-1.5 text-[10px] text-amber-700">Role: {ROLE_LABELS[ctx.role] ?? ctx.role}</p>
+  </div>
+}
+function BusinessContextOverview({ items }: { items: BusinessContextSnapshot[] }) {
+  if (!items.length) return null
+  return <details className="mt-4 rounded-xl border border-kk-line p-4 text-sm">
+    <summary className="cursor-pointer font-medium text-kk-ink">Business context available to Brain <span className="ml-1 text-xs text-kk-muted">· {items.length} item{items.length !== 1 ? 's' : ''}</span></summary>
+    <div className="mt-3 space-y-2">{items.map(item => <div key={item.update_id} className="flex items-baseline justify-between gap-3 text-xs border-b border-kk-line pb-2 last:border-0">
+      <div className="min-w-0 flex-1">
+        <Link href={`/projects/${item.project_id}`} className="font-medium text-kk-ink hover:underline">{item.project_title}</Link>
+        {item.parent_project_title ? <span className="ml-1 text-kk-muted">({item.parent_project_title})</span> : null}
+        <p className="mt-0.5 text-kk-muted truncate">{item.body.slice(0, 120)}{item.body.length > 120 ? '...' : ''}</p>
+      </div>
+      <span className="shrink-0 text-kk-muted tabular-nums">{item.occurred_on ? date(item.occurred_on) : `${item.age_days}d ago`}</span>
+    </div>)}</div>
+  </details>
+}
+
 export default function BrainView({ data, refreshControl }: { data: BrainData; refreshControl?: ReactNode }) {
   const run = data.run
   const analytics = run?.analytics
@@ -84,11 +112,13 @@ export default function BrainView({ data, refreshControl }: { data: BrainData; r
                 <h3 className="mt-2 text-lg font-semibold leading-snug">{observation.finding}</h3>
                 <p className="mt-4 rounded-xl bg-kk-soft p-3 text-sm leading-relaxed"><strong className="block text-xs uppercase tracking-wide">Evidence</strong>{signal ? signalEvidence(signal) : observation.evidence}</p>
                 <p className="mt-4 text-sm leading-relaxed"><strong className="block text-xs text-kk-muted">Hypothesis</strong>{observation.interpretation}</p>
+                {observation.business_context ? <BusinessContextBlock ctx={observation.business_context} /> : null}
                 <p className="mt-4 border-t border-kk-line pt-3 text-sm leading-relaxed"><strong className="block text-xs text-kk-muted">Suggested test</strong>{observation.suggested_experiment}</p>
                 {signal ? <details className="mt-4 text-xs text-kk-muted"><summary className="cursor-pointer">Supporting content and comparison</summary><p className="mt-2">Supporting posts</p><PostLinks ids={signal.supporting_media_ids} posts={analytics.posts} /><p className="mt-2">Comparison posts</p><PostLinks ids={signal.comparison_media_ids} posts={analytics.posts} /></details> : null}
               </article>
             }) : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted lg:col-span-2">{run.signals.length ? 'Deterministic signals are available below. No AI observations were produced for this run.' : 'No repeated pattern meets the material evidence threshold yet. The tables show the current sample without drawing a conclusion.'}</p>}</div>
             {run.signals.length ? <details className="mt-4 rounded-xl border border-kk-line p-4 text-sm"><summary className="cursor-pointer font-medium">View {run.signals.length} deterministic signals</summary><ul className="mt-3 space-y-3">{run.signals.map(signal => <li key={signal.id}><strong>{label(signal.value)} · {label(signal.type)}</strong><p className="mt-1 text-xs leading-relaxed text-kk-muted">{signalEvidence(signal)}</p></li>)}</ul></details> : null}
+            {analytics.business_context?.length ? <BusinessContextOverview items={analytics.business_context} /> : null}
           </section>
           <PatternTable title="Best hooks · caption copy" dimension="hook_type" analytics={analytics} />
           <PatternTable title="Best themes" dimension="primary_theme" analytics={analytics} />

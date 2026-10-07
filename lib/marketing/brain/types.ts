@@ -51,6 +51,16 @@ export interface FormatSummary {
   share_rate: MetricSummary
   save_rate: MetricSummary
 }
+export interface BusinessContextSnapshot {
+  update_id: string
+  project_id: string
+  project_title: string
+  parent_project_title: string | null
+  body: string
+  occurred_on: string | null
+  created_at: string
+  age_days: number
+}
 export interface CreativeAnalytics {
   window: { start: string; end: string }
   posts: CreativePost[]
@@ -58,6 +68,8 @@ export interface CreativeAnalytics {
   formats: FormatSummary[]
   exceptional: CreativePost[]
   coverage: { total: number; with_exposure: number; classified: number; stale_syncs: number }
+  /** Business context items available during this run. Absent for older runs. */
+  business_context?: BusinessContextSnapshot[]
 }
 export const SIGNAL_TYPES = ['hook_outperformance', 'theme_outperformance', 'product_outperformance', 'presentation_outperformance', 'share_heavy_pattern', 'save_heavy_pattern', 'format_outperformance', 'exceptional_post'] as const
 export type SignalType = typeof SIGNAL_TYPES[number]
@@ -79,12 +91,21 @@ export interface CreativeSignal {
   comparison_media_ids: string[]
   evidence_level: 'emerging' | 'supported' | 'individual'
 }
+export interface ObservationBusinessContext {
+  update_id: string
+  project_title: string
+  occurred_on: string | null
+  excerpt: string
+  role: 'proof_point' | 'timely_angle' | 'case_study' | 'subject_matter'
+}
 export interface Observation {
   signal_id: string
   finding: string
   evidence: string
   interpretation: string
   suggested_experiment: string
+  /** Optional business context from a Universal Update. Null/absent for older runs. */
+  business_context?: ObservationBusinessContext | null
 }
 export interface ClassificationCounts { eligible: number; classified: number; skipped: number; failed: number; deferred: number }
 export interface CreativeRun {

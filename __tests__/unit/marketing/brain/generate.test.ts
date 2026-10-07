@@ -3,10 +3,11 @@ import { fingerprint, NOW, strongSample } from '../../../helpers/creative-brain'
 import type { Media } from '@/lib/marketing/brain/types'
 import type { createServiceClient } from '@/lib/supabase/server'
 import { FingerprintSchema } from '@/lib/marketing/brain/taxonomy'
-const mocks = vi.hoisted(() => ({ classify: vi.fn(), interpret: vi.fn() }))
+const mocks = vi.hoisted(() => ({ classify: vi.fn(), interpret: vi.fn(), loadCtx: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/ai/creative-classifier', () => ({ callCreativeClassifier: mocks.classify }))
 vi.mock('@/lib/ai/creative-interpretation', () => ({ callCreativeInterpretation: mocks.interpret }))
+vi.mock('@/lib/marketing/brain/business-context', () => ({ loadMarketingBusinessContext: mocks.loadCtx }))
 import { generateCreativeIntelligence } from '@/lib/marketing/brain/generate'
 
 // A transport fake for orchestration/error sequencing. SQL semantics and RLS are
@@ -52,6 +53,7 @@ function storage(posts: Media[], opts: { locked?: boolean; failedRead?: boolean;
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW)
   mocks.interpret.mockResolvedValue({ ok: true, observations: [], model: 'synthetic' })
+  mocks.loadCtx.mockResolvedValue([])
   mocks.classify.mockImplementation(async inputs => ({ ok: true, model: 'synthetic', items: inputs.map((i: { media_id: string }) => {
     const f = fingerprint(strongSample().posts.find(p => p.id === i.media_id)!)
     return Object.fromEntries(Object.entries(f).filter(([key]) => key in FingerprintSchema.shape))
