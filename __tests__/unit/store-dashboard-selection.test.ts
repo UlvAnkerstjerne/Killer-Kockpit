@@ -23,6 +23,7 @@ function loaders() {
     fetchTasks: vi.fn(async (userId: string) => [`task:${userId}`]),
     fetchLatestAudit: vi.fn(async (locationId: string) => `audit:${locationId}`),
     fetchLatestDiner: vi.fn(async (locationId: string) => `diner:${locationId}`),
+    fetchStorePerformance: vi.fn(async (locationId: string) => `performance:${locationId}`),
   }
 }
 
@@ -73,6 +74,7 @@ describe('Store Manager location selection', () => {
     expect(dataLoaders.fetchTasks).not.toHaveBeenCalled()
     expect(dataLoaders.fetchLatestAudit).not.toHaveBeenCalled()
     expect(dataLoaders.fetchLatestDiner).not.toHaveBeenCalled()
+    expect(dataLoaders.fetchStorePerformance).not.toHaveBeenCalled()
   })
 
   it('keeps personal reads user-scoped and store reads location-scoped', async () => {
@@ -85,6 +87,15 @@ describe('Store Manager location selection', () => {
     expect(dataLoaders.fetchTasks).toHaveBeenCalledWith('user-1')
     expect(dataLoaders.fetchLatestAudit).toHaveBeenCalledWith(vesterbro.id)
     expect(dataLoaders.fetchLatestDiner).toHaveBeenCalledWith(vesterbro.id)
+    expect(dataLoaders.fetchStorePerformance).toHaveBeenCalledWith(vesterbro.id)
+  })
+
+  it('never requests Kalculator data for an unassigned requested location', async () => {
+    const dataLoaders = loaders()
+    const selection = selectAssignedStore([vesterbro], fisketorvet.id)
+
+    await expect(loadSelectedStoreData(selection, 'user-1', dataLoaders)).resolves.toBeNull()
+    expect(dataLoaders.fetchStorePerformance).not.toHaveBeenCalled()
   })
 
   it('changes only the store scope when switching locations', async () => {
@@ -106,6 +117,8 @@ describe('Store Manager location selection', () => {
     expect(firstLoaders.fetchLatestDiner).toHaveBeenCalledWith(vesterbro.id)
     expect(secondLoaders.fetchLatestAudit).toHaveBeenCalledWith(fisketorvet.id)
     expect(secondLoaders.fetchLatestDiner).toHaveBeenCalledWith(fisketorvet.id)
+    expect(firstLoaders.fetchStorePerformance).toHaveBeenCalledWith(vesterbro.id)
+    expect(secondLoaders.fetchStorePerformance).toHaveBeenCalledWith(fisketorvet.id)
     expect(secondLoaders.fetchTodos).toHaveBeenCalledWith('user-1')
     expect(secondLoaders.fetchTasks).toHaveBeenCalledWith('user-1')
   })

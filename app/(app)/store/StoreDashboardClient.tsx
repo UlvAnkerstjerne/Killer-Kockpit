@@ -22,11 +22,14 @@ import { reorderTodos } from '@/lib/actions/todos'
 import {
   formatWeekComparison,
 } from '@/lib/store/adapter'
+import {
+  formatPercent1,
+  formatRevenueCompact,
+  formatUnits,
+  type StorePerformance as StorePerformanceData,
+} from '@/lib/kalculator/types'
 import type {
-  RevenueMetrics,
-  LabourMetrics,
   KitchenMetrics,
-  SalesMixMetrics,
   GbpMetrics,
   StockTakeStatus,
   MeatUseStatus,
@@ -73,22 +76,12 @@ export interface StoreDashboardProps {
   storeName: string
   storeOptions?: Array<{ id: string; short_name: string }>
   managerName: string
-  revenueToday: RevenueMetrics
-  revenueYesterday: RevenueMetrics
-  revenueWeek: RevenueMetrics
-  revenueMonth: RevenueMetrics
-  labourToday: LabourMetrics
-  labourYesterday: LabourMetrics
-  labourWeek: LabourMetrics
-  labourMonth: LabourMetrics
+  /** Live from Killer Kalculator: Revenue ex VAT, Salary %, Kombo %, Lemonades. */
+  performance: StorePerformanceData
   kitchenToday: KitchenMetrics
   kitchenYesterday: KitchenMetrics
   kitchenWeek: KitchenMetrics
   kitchenMonth: KitchenMetrics
-  salesMixToday: SalesMixMetrics
-  salesMixYesterday: SalesMixMetrics
-  salesMixWeek: SalesMixMetrics
-  salesMixMonth: SalesMixMetrics
   gbp: GbpMetrics
   latestAudit: DashboardAudit | null
   latestDiner: DashboardDiner | null
@@ -196,17 +189,6 @@ function IconStore() {
 
 // ─── Format helpers ───────────────────────────────────────────────────────────
 
-function formatDKK(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`
-  return `${n}`
-}
-
-function formatPct(n: number, signed = false): string {
-  const s = (n * 100).toFixed(1)
-  return signed && n > 0 ? `+${s}%` : `${s}%`
-}
-
 function formatPp(n: number | null): string {
   if (n == null) return '—'
   const s = Math.abs(n).toFixed(1)
@@ -241,27 +223,18 @@ function routineLabel(status: RoutineStatus, lastAt: string | null): string {
 
 // ─── Store Performance ────────────────────────────────────────────────────────
 
-function StorePerformance({
-  revenueToday, revenueYesterday, revenueWeek, revenueMonth,
-  labourToday, labourYesterday, labourWeek, labourMonth,
+export function StorePerformance({
+  performance,
   kitchenToday, kitchenYesterday, kitchenWeek, kitchenMonth,
-  salesMixToday, salesMixYesterday, salesMixWeek, salesMixMonth,
 }: Pick<StoreDashboardProps,
-  'revenueToday' | 'revenueYesterday' | 'revenueWeek' | 'revenueMonth' |
-  'labourToday' | 'labourYesterday' | 'labourWeek' | 'labourMonth' |
-  'kitchenToday' | 'kitchenYesterday' | 'kitchenWeek' | 'kitchenMonth' |
-  'salesMixToday' | 'salesMixYesterday' | 'salesMixWeek' | 'salesMixMonth'
+  'performance' |
+  'kitchenToday' | 'kitchenYesterday' | 'kitchenWeek' | 'kitchenMonth'
 >) {
   const [period, setPeriod] = useState<Period>('today')
 
-  const revMap: Record<Period, RevenueMetrics> = { today: revenueToday, yesterday: revenueYesterday, week: revenueWeek, month: revenueMonth }
-  const labMap: Record<Period, LabourMetrics> = { today: labourToday, yesterday: labourYesterday, week: labourWeek, month: labourMonth }
   const kitMap: Record<Period, KitchenMetrics> = { today: kitchenToday, yesterday: kitchenYesterday, week: kitchenWeek, month: kitchenMonth }
-  const mixMap: Record<Period, SalesMixMetrics> = { today: salesMixToday, yesterday: salesMixYesterday, week: salesMixWeek, month: salesMixMonth }
-  const rev = revMap[period]
-  const lab = labMap[period]
+  const perf = performance[period]
   const kit = kitMap[period]
-  const mix = mixMap[period]
 
   const TABS: { key: Period; label: string }[] = [
     { key: 'today',     label: 'Today' },
@@ -300,33 +273,10 @@ function StorePerformance({
               Revenue
             </div>
             <div className="text-7xl font-black text-[#171717] leading-none text-center">
-              {formatDKK(rev.revenue)}
+              {formatRevenueCompact(perf.revenueExVat)}
             </div>
           </div>
-          <div className="mt-3">
-            {rev.vsLast != null && (
-              <div className="flex items-center gap-1.5">
-                <span className={[
-                  'text-sm font-bold',
-                  rev.vsLast >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
-                ].join(' ')}>
-                  {formatPct(rev.vsLast, true)}
-                </span>
-                <span className="text-[11px] text-[#8D795F]">vs last</span>
-              </div>
-            )}
-            {rev.vsBudget != null && (
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className={[
-                  'text-sm font-bold',
-                  rev.vsBudget >= 0 ? 'text-[#2f6d4c]' : 'text-[#AD3919]',
-                ].join(' ')}>
-                  {formatPct(rev.vsBudget, true)}
-                </span>
-                <span className="text-[11px] text-[#8D795F]">vs budget</span>
-              </div>
-            )}
-          </div>
+          <div className="mt-3 text-[11px] text-[#8D795F]">ex VAT</div>
         </div>
 
         {/* Labour + Kitchen — shared red column */}
@@ -337,13 +287,8 @@ function StorePerformance({
               Labour
             </div>
             <div className="text-3xl font-black text-white leading-none tracking-tight">
-              {lab.labourPct.toFixed(1)}%
+              {formatPercent1(perf.salaryPct)}
             </div>
-            {lab.vsTarget != null && (
-              <div className="text-[11px] text-[#D2C3A7] mt-1">
-                {formatPp(lab.vsTarget)} target
-              </div>
-            )}
           </div>
           {/* Kitchen */}
           <div className="flex-1 p-4">
@@ -362,25 +307,25 @@ function StorePerformance({
         </div>
       </div>
 
-      {/* Kombo-% + Lemonades */}
-      <div className="border-2 border-[#171717] rounded-xl shadow-[3px_3px_0_#555555] overflow-hidden flex mt-4">
+      {/* Kombo % + Lemonades sold — one split block */}
+      <div className="border-2 border-[#171717] bg-[#D2C3A7] flex mt-4">
         <div className="flex-1 p-5 border-r-2 border-[#171717]">
           <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
-            Kombo-%
+            Kombo %
           </div>
           <div className="h-10 flex items-end">
             <span className="text-4xl font-black text-[#171717] leading-none">
-              {mix.komboPct.toFixed(1)}%
+              {formatPercent1(perf.komboPct)}
             </span>
           </div>
         </div>
         <div className="flex-1 p-5">
           <div className="text-[11px] font-black tracking-[0.15em] uppercase text-[#171717] mb-2">
-            Lemonades
+            Lemonades sold
           </div>
           <div className="h-10 flex items-end">
             <span className="text-4xl font-black text-[#171717] leading-none">
-              {mix.lemonades}
+              {formatUnits(perf.lemonadeUnits)}
             </span>
           </div>
         </div>
@@ -799,10 +744,8 @@ function StoreRoutines({
 export default function StoreDashboardClient(props: StoreDashboardProps) {
   const {
     storeName,
-    revenueToday, revenueYesterday, revenueWeek, revenueMonth,
-    labourToday, labourYesterday, labourWeek, labourMonth,
+    performance,
     kitchenToday, kitchenYesterday, kitchenWeek, kitchenMonth,
-    salesMixToday, salesMixYesterday, salesMixWeek, salesMixMonth,
     gbp,
     latestAudit,
     latestDiner,
@@ -838,22 +781,11 @@ export default function StoreDashboardClient(props: StoreDashboardProps) {
           <section>
             <SectionHeading icon={<IconRevenue />}>Store Performance</SectionHeading>
             <StorePerformance
-              revenueToday={revenueToday}
-              revenueYesterday={revenueYesterday}
-              revenueWeek={revenueWeek}
-              revenueMonth={revenueMonth}
-              labourToday={labourToday}
-              labourYesterday={labourYesterday}
-              labourWeek={labourWeek}
-              labourMonth={labourMonth}
+              performance={performance}
               kitchenToday={kitchenToday}
               kitchenYesterday={kitchenYesterday}
               kitchenWeek={kitchenWeek}
               kitchenMonth={kitchenMonth}
-              salesMixToday={salesMixToday}
-              salesMixYesterday={salesMixYesterday}
-              salesMixWeek={salesMixWeek}
-              salesMixMonth={salesMixMonth}
             />
           </section>
 
