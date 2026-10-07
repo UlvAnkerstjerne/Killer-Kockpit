@@ -159,10 +159,10 @@ describe('budget plan compilation', () => {
     }
   })
 
-  it('rejects >25% budget change at compile time', () => {
+  it('rejects >20% budget change at compile time', () => {
     const result = compileExecutionPlan({ action_type: 'set_daily_budget', target_id: '123', target_type: 'campaign', target_daily_budget: 180 }, metaBudgetTarget)
     expect(result.ok).toBe(false)
-    expect((result as { reason: string }).reason).toContain('25%')
+    expect((result as { reason: string }).reason).toContain('20%')
   })
 
   it('rejects stale budget (zero daily budget)', () => {
@@ -186,9 +186,16 @@ describe('budget plan compilation', () => {
     expect((result as { reason: string }).reason).toContain('currency')
   })
 
-  it('accepts exactly 25% change', () => {
-    const result = compileExecutionPlan({ action_type: 'set_daily_budget', target_id: '123', target_type: 'campaign', target_daily_budget: 225 }, metaBudgetTarget)
+  it('accepts exactly 20% change', () => {
+    // 300 × 1.20 = 360 (exactly +20%)
+    const result = compileExecutionPlan({ action_type: 'set_daily_budget', target_id: '123', target_type: 'campaign', target_daily_budget: 360 }, metaBudgetTarget)
     expect(result.ok).toBe(true)
+  })
+
+  it('rejects >20% increase at compile time', () => {
+    // 300 × 1.21 = 363 (just over +20%)
+    const result = compileExecutionPlan({ action_type: 'set_daily_budget', target_id: '123', target_type: 'campaign', target_daily_budget: 363 }, metaBudgetTarget)
+    expect(result.ok).toBe(false)
   })
 
   it('percentage calculation: 300 DKK × -20% = 240 DKK accepted', () => {
@@ -205,7 +212,7 @@ describe('budget plan compilation', () => {
 describe('paid mutation guardrails', () => {
   const live: LivePaidTarget = { platform: 'meta', accountId: 'act_42', dailyBudget: 300, currency: 'DKK' }
   it('accepts a 20% budget reduction', () => expect(checkExecutionGuardrails(metaPlan, live).ok).toBe(true))
-  it('rejects over 25%, stale, non-positive and wrong-account budgets', () => {
+  it('rejects over 20%, stale, non-positive and wrong-account budgets', () => {
     expect(checkExecutionGuardrails({ ...metaPlan, target_daily_budget: 224 }, live).ok).toBe(false)
     expect(checkExecutionGuardrails(metaPlan, { ...live, dailyBudget: 301 }).ok).toBe(false)
     expect(PaidRecExecutionPlanSchema.safeParse({ ...metaPlan, target_daily_budget: 0 }).success).toBe(false)
@@ -329,13 +336,13 @@ describe('Google budget plan compilation with synced data', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('rejects Google budget exceeding 25% automation limit', () => {
+  it('rejects Google budget exceeding 20% automation limit', () => {
     const result = compileExecutionPlan(
       { action_type: 'set_daily_budget', target_id: '456', target_type: 'campaign', target_daily_budget: 30 }, // -40%
       googleBudgetTarget, configured,
     )
     expect(result.ok).toBe(false)
-    expect((result as { reason: string }).reason).toContain('25%')
+    expect((result as { reason: string }).reason).toContain('20%')
   })
 })
 

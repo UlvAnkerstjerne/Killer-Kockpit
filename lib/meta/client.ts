@@ -167,6 +167,19 @@ export async function fetchMetaAdSetState(id: string): Promise<{ id: string; sta
   return { id: row.id, status: row.status, daily_budget: row.daily_budget ?? null, campaign_id: row.campaign_id }
 }
 
+export async function fetchMetaAdState(id: string): Promise<{ id: string; status: string; ad_set_id: string }> {
+  if (!/^\d{1,30}$/.test(id)) throw new MetaApiError('Invalid Meta ad ID')
+  const row = await graphFetch(id, { fields: 'id,status,adset_id' }) as { id: string; status: string; adset_id: string }
+  return { id: row.id, status: row.status, ad_set_id: row.adset_id }
+}
+export async function updateMetaAdStatus(id: string, status: 'ACTIVE' | 'PAUSED') {
+  if (!/^\d{1,30}$/.test(id)) throw new MetaApiError('Invalid Meta ad ID')
+  return graphWrite(id, new URLSearchParams({ status }))
+}
+export async function updateMetaAdSetStatus(id: string, status: 'ACTIVE' | 'PAUSED') {
+  if (!/^\d{1,30}$/.test(id)) throw new MetaApiError('Invalid Meta ad set ID')
+  return graphWrite(id, new URLSearchParams({ status }))
+}
 export async function updateMetaCampaignStatus(id: string, status: 'ACTIVE' | 'PAUSED') { return graphWrite(id, new URLSearchParams({ status })) }
 export async function updateMetaCampaignBudget(id: string, dailyBudgetMinor: number) {
   if (!Number.isSafeInteger(dailyBudgetMinor) || dailyBudgetMinor <= 0) throw new MetaApiError('Invalid Meta daily budget')

@@ -1,6 +1,7 @@
 import type { PaidRecExecutionPlan } from './types'
 
-export const MAX_AUTOMATED_BUDGET_CHANGE = 0.25
+/** Maximum relative budget change per approved mutation. Killer Kebab policy: ±20%. */
+export const MAX_AUTOMATED_BUDGET_CHANGE = 0.20
 
 export type GuardrailResult = { ok: true } | { ok: false; reason: string }
 
@@ -17,7 +18,7 @@ export function checkExecutionGuardrails(
     if (!live.dailyBudget || live.dailyBudget <= 0 || live.dailyBudget !== plan.current_daily_budget) return { ok: false, reason: 'Budget changed since approval was proposed.' }
     if (live.currency !== plan.currency) return { ok: false, reason: 'Currency does not match the account.' }
     if (live.sharedBudget || ('shared_budget' in plan && plan.shared_budget)) return { ok: false, reason: 'Shared budgets require manual review.' }
-    if (Math.abs(plan.target_daily_budget / live.dailyBudget - 1) > MAX_AUTOMATED_BUDGET_CHANGE + Number.EPSILON) return { ok: false, reason: 'Budget change exceeds the 25% automation limit.' }
+    if (Math.abs(plan.target_daily_budget / live.dailyBudget - 1) > MAX_AUTOMATED_BUDGET_CHANGE + Number.EPSILON) return { ok: false, reason: `Budget change exceeds the ${Math.round(MAX_AUTOMATED_BUDGET_CHANGE * 100)}% automation limit.` }
   }
   return { ok: true }
 }

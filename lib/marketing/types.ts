@@ -54,4 +54,6 @@ export interface MarketingReviewItem {
   created_at: string
   /** Which permission key is required to action this item */
   requires_permission: MarketingPermission
+  /** Action-aware button label for paid recommendations. */
+  action_label?: string
 }
