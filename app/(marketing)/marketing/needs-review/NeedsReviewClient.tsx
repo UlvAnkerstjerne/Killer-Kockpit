@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { MarketingReviewItem } from '@/lib/marketing/types'
-import { approvePaidRecommendation, dismissPaidRecommendation } from '@/lib/actions/marketing/paid-recommendations'
+import { approvePaidRecommendation, dismissPaidRecommendation, createTaskForManualCase } from '@/lib/actions/marketing/paid-recommendations'
 
 // NeedsReviewClient renders the Needs Review list or empty state.
 // review_reply items link to the GBP review detail page for approval.
@@ -23,6 +23,13 @@ function PaidRecActions({ id, actionLabel }: { id: string; actionLabel?: string 
     })
   }
 
+  const handleCreateTask = () => {
+    startTransition(async () => {
+      await createTaskForManualCase(id)
+      router.refresh()
+    })
+  }
+
   const handleDismiss = () => {
     startTransition(async () => {
       await dismissPaidRecommendation(id)
@@ -36,7 +43,7 @@ function PaidRecActions({ id, actionLabel }: { id: string; actionLabel?: string 
         <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1.5">Manual action required</p>
         <div className="flex gap-2">
           <button
-            onClick={handleApprove}
+            onClick={handleCreateTask}
             disabled={isPending}
             className="rounded-lg border border-kk-line px-3 py-1.5 text-xs font-medium text-kk-ink hover:bg-kk-soft disabled:opacity-50 transition-colors"
           >

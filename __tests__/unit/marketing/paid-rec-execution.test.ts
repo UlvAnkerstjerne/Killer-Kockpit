@@ -2,7 +2,7 @@
  * Targeted tests for paid recommendation execution layer.
  *
  * Verified guarantees:
- *   1.  SIGNAL_EXECUTION_MAP — spend_no_results → create_task_and_monitor
+ *   1.  SIGNAL_EXECUTION_MAP — spend_no_results → platform_action (v2)
  *   2.  SIGNAL_EXECUTION_MAP — cpr_worsening → platform_action (v2)
  *   3.  SIGNAL_EXECUTION_MAP — cpr_improving → monitor
  *   4.  SIGNAL_EXECUTION_MAP — strong_performance → monitor
@@ -27,8 +27,8 @@ import { determineOutcome } from '@/lib/marketing/paid-recs/monitor'
 // ─── SIGNAL_EXECUTION_MAP ────────────────────────────────────────────────────
 
 describe('SIGNAL_EXECUTION_MAP', () => {
-  it('1. spend_no_results → create_task_and_monitor', () => {
-    expect(SIGNAL_EXECUTION_MAP.spend_no_results).toBe('create_task_and_monitor')
+  it('1. spend_no_results → platform_action (v2: diagnostic-driven)', () => {
+    expect(SIGNAL_EXECUTION_MAP.spend_no_results).toBe('platform_action')
   })
 
   it('2. cpr_worsening → platform_action (v2: diagnostic-driven remediation)', () => {

@@ -4,23 +4,20 @@
  * Orchestrator for Paid Recommendation generation.
  * Called by the API route after Meta + Google Ads syncs complete.
  *
- * Steps:
- *   1. Compute current and prior 7-day date windows (Copenhagen time)
- *   2. Load active Meta + Google Ads campaigns and 14 days of daily data
- *   3. Build deterministic signals (signals.ts — pure functions)
- *   4. If no signals: return early (no recommendations needed)
- *   5. Call Claude with signals (lib/ai/paid-recommendations.ts)
- *   6. If AI fails: return error (preserves existing needs_review records)
- *   7. Clear stale needs_review records only for campaigns receiving new recommendations
- *   8. Insert new recommendations (existing unresolved reviews for other campaigns survive)
+ * v2 pipeline for Meta cpr_worsening and spend_no_results:
+ *   1. Compute date windows
+ *   2. Load campaigns + campaign-level insights → detect signals
+ *   3. For Meta signals needing diagnosis: load ad sets, ads, ad insights
+ *   4. Run deterministic diagnosis → build remediation plan
+ *   5. Call Claude with signals + prepared remediation context
+ *   6. Persist recommendations with v2 remediation plan
  *
  * Security: all DB access uses createServiceClient (service_role).
- * No user identity is passed in — this is a background generation job.
  */
 
 import 'server-only'
 import { createServiceClient } from '@/lib/supabase/server'
-import type { MetaCampaignInsightRow, MetaCampaignRow } from '@/lib/marketing/types/meta'
+import type { MetaAdRow, MetaAdSetRow, MetaCampaignInsightRow, MetaCampaignRow } from '@/lib/marketing/types/meta'
 import type { GooglePaidAction, GooglePaidCampaign, GooglePaidDaily } from '@/lib/marketing/paid-performance'
 import {
   buildMetaSignals,
@@ -30,9 +27,10 @@ import {
   type GoogleCampaignInput,
 } from './signals'
 import { callPaidRecommendationsAI, PAID_REC_PROMPT_VERSION } from '@/lib/ai/paid-recommendations'
-import type { PaidRecSignal } from './types'
+import type { PaidRecSignal, PaidRemediationPlan } from './types'
 import { compileExecutionPlan, type SyncedTarget, type ConfiguredAccounts } from './compile-plan'
 import { GOOGLE_ADS_CUSTOMER_ID } from '@/lib/google/ads-sync'
+import { diagnosePerformance, buildRemediationPlan, type AdInsightRow, type MetaAdWithSet, type MetaAdSetInfo, type RemediationCampaignContext } from './diagnose-performance'
 
 // ─── Date ranges ──────────────────────────────────────────────────────────────
 
@@ -49,8 +47,8 @@ function recDateRanges(now = new Date()): RecDateRanges {
     return d.toISOString().slice(0, 10)
   }
   return {
-    current: { start: shift(7),  end: shift(1) },  // last 7 completed days
-    prior:   { start: shift(14), end: shift(8) },  // the 7 days before that
+    current: { start: shift(7),  end: shift(1) },
+    prior:   { start: shift(14), end: shift(8) },
   }
 }
 
@@ -95,7 +93,6 @@ async function loadMetaData(db: Db, ranges: RecDateRanges): Promise<MetaCampaign
 
   const currencyById = new Map(accounts.map(a => [a.id, a.currency]))
 
-  // Group insights by campaign_id and window
   const currentByCampaign = new Map<string, MetaCampaignInsightRow[]>()
   const priorByCampaign   = new Map<string, MetaCampaignInsightRow[]>()
   for (const row of insights) {
@@ -176,17 +173,61 @@ async function loadGoogleData(db: Db, ranges: RecDateRanges): Promise<GoogleCamp
   })
 }
 
+// ─── V2 diagnostic data loader ──────────────────────────────────────────────
+
+/** Loads ad sets, ads, and ad-level insights for a Meta campaign. */
+async function loadMetaDiagnosticData(
+  db: Db,
+  campaignId: string,
+  ranges: RecDateRanges,
+): Promise<{ adSets: MetaAdSetInfo[]; ads: MetaAdWithSet[]; currentAdInsights: AdInsightRow[]; priorAdInsights: AdInsightRow[] }> {
+  const [adSets, ads] = await Promise.all([
+    readPages<MetaAdSetRow>(offset =>
+      db.from('meta_ad_sets')
+        .select('id,campaign_id,name,status,daily_budget')
+        .eq('campaign_id', campaignId)
+        .order('id').range(offset, offset + 499)
+    ),
+    readPages<MetaAdRow>(offset =>
+      db.from('meta_ads')
+        .select('id,ad_set_id,name,status')
+        .order('id').range(offset, offset + 499)
+    ),
+  ])
+
+  // Filter ads to those belonging to this campaign's ad sets
+  const adSetIds = new Set(adSets.map(as => as.id))
+  const campaignAds = ads.filter(a => adSetIds.has(a.ad_set_id))
+  const adIds = campaignAds.map(a => a.id)
+
+  if (adIds.length === 0) {
+    return { adSets, ads: campaignAds, currentAdInsights: [], priorAdInsights: [] }
+  }
+
+  const adInsights = await readPages<AdInsightRow>(offset =>
+    db.from('meta_ad_insights')
+      .select('ad_id,date_start,impressions,reach,clicks,inline_link_clicks,spend,cpm,cpc,ctr,actions_json,cost_per_action_json,action_values_json')
+      .in('ad_id', adIds)
+      .gte('date_start', ranges.prior.start)
+      .lte('date_start', ranges.current.end)
+      .order('date_start').order('ad_id').range(offset, offset + 999)
+  )
+
+  const currentAdInsights = adInsights.filter(r => r.date_start >= ranges.current.start && r.date_start <= ranges.current.end)
+  const priorAdInsights = adInsights.filter(r => r.date_start >= ranges.prior.start && r.date_start <= ranges.prior.end)
+
+  return {
+    adSets: adSets.map(as => ({ id: as.id, campaign_id: as.campaign_id, name: as.name, status: as.status, daily_budget: as.daily_budget })),
+    ads: campaignAds.map(a => ({ id: a.id, ad_set_id: a.ad_set_id, name: a.name, status: a.status })),
+    currentAdInsights,
+    priorAdInsights,
+  }
+}
+
 // ─── DB writes ────────────────────────────────────────────────────────────────
 
-/**
- * Remove only the needs_review recommendations for campaigns that are about to
- * receive a fresh recommendation. Recommendations for other campaigns survive
- * until the user approves or dismisses them.
- */
 async function clearStaleReviews(db: Db, campaignKeys: Set<string>): Promise<void> {
   if (campaignKeys.size === 0) return
-  // Build list of campaign_ids to clear (platform-specific clearing is handled by
-  // the unique constraint on insert — each campaign only gets one needs_review row).
   const campaignIds = [...campaignKeys].map(k => k.split(':')[1])
   const { error } = await db
     .from('paid_recommendations')
@@ -204,15 +245,48 @@ async function insertRecommendations(
   generatedAt: string,
   targets: Map<string, SyncedTarget>,
   configuredAccounts: ConfiguredAccounts,
+  remediationPlans: Map<string, PaidRemediationPlan>,
 ): Promise<void> {
   if (!aiResult.ok) return
 
   const signalByCampaignId = new Map(signals.map(s => [s.campaign_id, s]))
   const rows = aiResult.output.recommendations.map(rec => {
     const signal = signalByCampaignId.get(rec.campaign_id)
-    const compiled = rec.action_intent ? compileExecutionPlan(rec.action_intent, targets.get(`${rec.platform}:${rec.campaign_id}`) ?? {
-      platform: rec.platform, campaignId: '', accountId: '', status: '', currency: '',
-    }, configuredAccounts) : { ok: false as const, reason: 'No structured action intent.' }
+    const key = `${rec.platform}:${rec.campaign_id}`
+    const v2Plan = remediationPlans.get(key)
+
+    // V2: use remediation plan if available. V1 fallback: compile from AI intent.
+    let executionPlan: unknown = null
+    let executionPlanVersion: string | null = null
+    let executionType: string | null = null
+
+    if (v2Plan) {
+      // Store the full v2 plan in execution_plan JSONB
+      executionPlan = v2Plan
+      executionPlanVersion = 'v2'
+      // Determine execution type from the plan's actions
+      const hasManual = v2Plan.actions.some(a => a.action_type === 'manual_action_required')
+      const hasMutation = v2Plan.actions.some(a =>
+        !['manual_action_required', 'monitor_only', 'run_tracking_diagnostic', 'create_task'].includes(a.action_type)
+      )
+      const hasDiag = v2Plan.actions.some(a => a.action_type === 'run_tracking_diagnostic')
+      if (hasManual) executionType = null // no automated execution
+      else if (hasMutation) executionType = 'platform_action'
+      else if (hasDiag) executionType = 'create_task' // diagnostic may create task
+      else executionType = 'monitor'
+    } else {
+      // V1 fallback for non-diagnostic signals (Google, cpr_improving, etc.)
+      const compiled = rec.action_intent ? compileExecutionPlan(rec.action_intent, targets.get(key) ?? {
+        platform: rec.platform, campaignId: '', accountId: '', status: '', currency: '',
+      }, configuredAccounts) : { ok: false as const, reason: 'No structured action intent.' }
+      if (compiled.ok) {
+        executionPlan = compiled.plan
+        executionPlanVersion = 'v1'
+        executionType = ['create_task', 'run_tracking_diagnostic'].includes(compiled.plan.action_type) ? 'create_task'
+          : compiled.plan.action_type === 'monitor_only' ? 'monitor' : 'platform_action'
+      }
+    }
+
     return {
       platform:              rec.platform,
       campaign_id:           rec.campaign_id,
@@ -233,11 +307,9 @@ async function insertRecommendations(
       recommended_action:    rec.recommended_action,
       urgency:               rec.urgency,
       status:                'needs_review' as const,
-      execution_type:        compiled.ok
-        ? (['create_task', 'run_tracking_diagnostic'].includes(compiled.plan.action_type) ? 'create_task' : compiled.plan.action_type === 'monitor_only' ? 'monitor' : 'platform_action')
-        : null,
-      execution_plan:        compiled.ok ? compiled.plan : null,
-      execution_plan_version: compiled.ok ? 'v1' : null,
+      execution_type:        executionType,
+      execution_plan:        executionPlan,
+      execution_plan_version: executionPlanVersion,
       execution_status:      'pending_approval' as const,
       ai_model:              model,
       prompt_version:        PAID_REC_PROMPT_VERSION,
@@ -257,17 +329,10 @@ export interface GenerateResult {
   ok: boolean
   signalCount: number
   recommendationCount: number
-  skipped: boolean     // true when no signals detected (not an error)
+  skipped: boolean
   error?: string
 }
 
-/**
- * Generates paid recommendations from the current 7-day vs prior 7-day campaign data.
- *
- * Existing needs_review recommendations survive unless the same campaign receives
- * a fresh recommendation (in which case the old one is replaced).
- * Approved, dismissed, and in-progress records are always preserved.
- */
 export async function generatePaidRecommendations(now = new Date()): Promise<GenerateResult> {
   const db = createServiceClient()
   const ranges = recDateRanges(now)
@@ -297,10 +362,7 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     return { ok: true, signalCount: 0, recommendationCount: 0, skipped: true }
   }
 
-  // 2b. Suppress signals for campaigns that already have an active/unresolved recommendation.
-  //     Suppress when a non-dismissed recommendation is pending_approval, executing, or in_motion.
-  //     Dismissed recommendations do NOT suppress — the user explicitly cleared them.
-  //     Terminal states (completed, failed, needs_attention) do not suppress.
+  // 2b. Suppress signals for campaigns with active recommendations
   const { data: activeRecs } = await db
     .from('paid_recommendations')
     .select('platform, campaign_id')
@@ -315,7 +377,50 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     return { ok: true, signalCount: signals.length, recommendationCount: 0, skipped: true }
   }
 
-  // 3. Call AI
+  // 3. V2 diagnostic: for Meta cpr_worsening and spend_no_results, run ad-level diagnosis
+  const remediationPlans = new Map<string, PaidRemediationPlan>()
+  const metaInputMap = new Map(metaInputs.map(i => [i.campaign.id, i]))
+
+  for (const signal of filteredSignals) {
+    if (signal.platform !== 'meta') continue
+    if (signal.signal_type !== 'cpr_worsening' && signal.signal_type !== 'spend_no_results') continue
+
+    const campaignInput = metaInputMap.get(signal.campaign_id)
+    if (!campaignInput) continue
+
+    try {
+      const diagData = await loadMetaDiagnosticData(db, signal.campaign_id, ranges)
+      const diagnosis = diagnosePerformance({
+        campaignId: signal.campaign_id,
+        campaignName: signal.campaign_name,
+        adAccountId: campaignInput.campaign.ad_account_id,
+        objective: campaignInput.campaign.objective ?? 'OUTCOME_AWARENESS',
+        currency: signal.currency,
+        dailyBudget: campaignInput.campaign.daily_budget ? Number(campaignInput.campaign.daily_budget) : null,
+        ads: diagData.ads,
+        adSets: diagData.adSets,
+        currentAdInsights: diagData.currentAdInsights,
+        priorAdInsights: diagData.priorAdInsights,
+      })
+
+      const campaignContext: RemediationCampaignContext = {
+        id: signal.campaign_id,
+        adAccountId: campaignInput.campaign.ad_account_id,
+        currency: signal.currency,
+        dailyBudget: campaignInput.campaign.daily_budget ? Number(campaignInput.campaign.daily_budget) : null,
+        adSets: diagData.adSets,
+      }
+      const plan = buildRemediationPlan(diagnosis, campaignContext)
+      remediationPlans.set(`meta:${signal.campaign_id}`, plan)
+
+      console.log(`[paid-recs/generate] V2 diagnostic for ${signal.campaign_name}: ${diagnosis.classification}`)
+    } catch (err) {
+      console.error(`[paid-recs/generate] Diagnostic failed for ${signal.campaign_id}:`, err instanceof Error ? err.message : err)
+      // Fall through to v1 AI-driven recommendation
+    }
+  }
+
+  // 4. Call AI
   const aiResult = await callPaidRecommendationsAI(filteredSignals, now)
   if (!aiResult.ok) {
     console.error('[paid-recs/generate] AI call failed:', aiResult.errorDetail)
@@ -325,28 +430,25 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
   const { recommendations } = aiResult.output
   const model = aiResult.model
 
-  // 4. Persist: clear stale needs_review for campaigns receiving new recs, then insert
+  // 5. Persist
   try {
     const newRecCampaignKeys = new Set(recommendations.map(r => `${r.platform}:${r.campaign_id}`))
     await clearStaleReviews(db, newRecCampaignKeys)
     const targets = new Map<string, SyncedTarget>()
     for (const input of metaInputs) targets.set(`meta:${input.campaign.id}`, { platform: 'meta', campaignId: input.campaign.id, accountId: input.campaign.ad_account_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget ? Number(input.campaign.daily_budget) : null })
     for (const input of googleInputs) targets.set(`google:${input.campaign.campaign_id}`, { platform: 'google', campaignId: input.campaign.campaign_id, accountId: input.campaign.customer_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget_micros ? input.campaign.daily_budget_micros / 1_000_000 : null, campaignBudgetResourceName: input.campaign.budget_resource_name ?? undefined, sharedBudget: input.campaign.budget_explicitly_shared ?? undefined })
-    // Resolve configured account IDs from canonical server-side config.
-    // Meta: META_AD_ACCOUNT_ID env var (same as sync uses).
-    // Google: GOOGLE_ADS_CUSTOMER_ID constant from ads-sync.ts (single source of truth).
     const configuredAccounts: ConfiguredAccounts = {
       metaAdAccountId: process.env.META_AD_ACCOUNT_ID,
       googleCustomerId: GOOGLE_ADS_CUSTOMER_ID || undefined,
     }
-    await insertRecommendations(db, filteredSignals, aiResult, model, generatedAt, targets, configuredAccounts)
+    await insertRecommendations(db, filteredSignals, aiResult, model, generatedAt, targets, configuredAccounts, remediationPlans)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     console.error('[paid-recs/generate] DB write failed:', msg)
     return { ok: false, signalCount: signals.length, recommendationCount: 0, skipped: false, error: msg }
   }
 
-  console.log(`[paid-recs/generate] Generated ${recommendations.length} recommendation(s) from ${filteredSignals.length} signal(s) (${signals.length - filteredSignals.length} suppressed).`)
+  console.log(`[paid-recs/generate] Generated ${recommendations.length} recommendation(s) from ${filteredSignals.length} signal(s) (${signals.length - filteredSignals.length} suppressed). ${remediationPlans.size} v2 diagnostic(s).`)
   return {
     ok: true,
     signalCount: signals.length,

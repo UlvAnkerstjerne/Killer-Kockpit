@@ -80,9 +80,9 @@ export interface PaidRecExecutionResult {
   tracking_diagnostic?: { diagnosed: boolean; fixed: false; likely_break?: string; explanation?: string; reason?: string; evidence?: Record<string, unknown>; next_steps?: string[] }
 }
 
-/** Maps signal_type to the DEFAULT execution plan when no diagnostic overrides it. */
+/** Maps signal_type to the DEFAULT execution plan when no v2 diagnostic overrides it. */
 export const SIGNAL_EXECUTION_MAP: Record<PaidRecSignalType, PaidRecExecutionType> = {
-  spend_no_results:   'create_task_and_monitor',
+  spend_no_results:   'platform_action',
   cpr_worsening:      'platform_action',
   cpr_improving:      'monitor',
   strong_performance: 'monitor',
@@ -95,8 +95,9 @@ export type DiagnosisClassification =
   | 'weak_adset'        // one ad set dragging campaign while others are healthy
   | 'broad_deterioration' // performance dropped across entire campaign
   | 'tracking_suspected'  // funnel evidence suggests conversion tracking issue
-  | 'landing_page_issue'  // evidence points at landing page / lead form
   | 'insufficient_evidence' // not enough data to diagnose
+  // landing_page_issue is not a first-stage classification — the tracking
+  // diagnostic (tracking-diagnostic.ts) is the correct second-stage tool
 
 export interface AdDiagnostic {
   ad_id: string

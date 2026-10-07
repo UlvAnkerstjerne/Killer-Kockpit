@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { approvePaidRecommendation, dismissPaidRecommendation } from '@/lib/actions/marketing/paid-recommendations'
+import { approvePaidRecommendation, dismissPaidRecommendation, createTaskForManualCase } from '@/lib/actions/marketing/paid-recommendations'
 import type { PaidRecommendationRow } from '@/lib/marketing/paid-recs/types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,6 +100,13 @@ function PaidRecCard({
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+
+  const handleCreateTask = () => {
+    startTransition(async () => {
+      await createTaskForManualCase(rec.id)
+      router.refresh()
+    })
+  }
 
   const handleApprove = () => {
     startTransition(async () => {
@@ -202,7 +209,7 @@ function PaidRecCard({
           )}
           <div className="flex gap-2">
             <button
-              onClick={handleApprove}
+              onClick={handleCreateTask}
               disabled={isPending}
               className="rounded-full border border-kk-line bg-white px-4 py-1.5 text-xs font-semibold text-kk-ink hover:bg-kk-soft disabled:opacity-50 transition-colors"
             >
