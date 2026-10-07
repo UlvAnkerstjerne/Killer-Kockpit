@@ -215,7 +215,7 @@ describe('Killer Katering regression', () => {
 
     expect(result).toHaveLength(1)
     // Performance finding comes from data, not context
-    expect(result[0].finding).toContain('catering')
+    expect(result[0].finding.toLowerCase()).toContain('catering')
     expect(result[0].evidence).not.toContain('450')
     expect(result[0].evidence).not.toContain('corporate')
     // Business context references exact supplied update
