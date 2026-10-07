@@ -336,25 +336,25 @@ export const MorningBriefAIOutputSchema = z.object({
   ai_summary: z.string().min(5).max(200),
 
   // Per-section assessments — 1–2 sentences each
-  paid_assessment: z.string().min(10).max(400),
-  organic_assessment: z.string().min(10).max(400),
+  paid_assessment: z.string().min(10).max(600),
+  organic_assessment: z.string().min(10).max(600),
 
   // null when GBP is pending_approval or no data
-  gbp_assessment: z.string().max(200).nullable(),
+  gbp_assessment: z.string().max(300).nullable(),
 
   // ≤ 18 words explaining the overall status (green/amber/red)
-  overall_reason: z.string().min(5).max(120),
+  overall_reason: z.string().min(5).max(200),
 
   // Actionable observations grounded in the supplied material signal candidates.
   // Target 5–8. Never pad. signal_id must correspond to a supplied candidate id.
   observations: z.array(
     z.object({
       signal_id:          z.string().min(1).max(100),
-      observation:        z.string().min(5).max(100),
-      evidence:           z.string().min(5).max(160),
-      interpretation:     z.string().min(10).max(400),
-      recommended_action: z.string().min(5).max(100),
-      creative_start:     z.string().max(200).nullable(),
+      observation:        z.string().min(5).max(150),
+      evidence:           z.string().min(5).max(250),
+      interpretation:     z.string().min(10).max(600),
+      recommended_action: z.string().min(5).max(150),
+      creative_start:     z.string().max(300).nullable(),
       // Driver Intelligence v1 — AI selects from supplied driver candidates.
       // Must exactly match a supplied driver candidate id, or null if no driver applies.
       driver_id:          z.string().max(100).nullable().optional(),
