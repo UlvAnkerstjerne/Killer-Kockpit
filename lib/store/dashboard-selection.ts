@@ -37,35 +37,38 @@ export function selectAssignedStore(
   return { state: 'selection_required', locations, invalidRequest: false }
 }
 
-interface StoreDashboardLoaders<TTodo, TTask, TAudit, TDiner> {
+interface StoreDashboardLoaders<TTodo, TTask, TAudit, TDiner, TPerformance> {
   fetchTodos: (userId: string) => Promise<TTodo>
   fetchTasks: (userId: string) => Promise<TTask>
   fetchLatestAudit: (locationId: string) => Promise<TAudit>
   fetchLatestDiner: (locationId: string) => Promise<TDiner>
+  fetchStorePerformance: (locationId: string) => Promise<TPerformance>
 }
 
 /**
  * The only entry point for live dashboard reads. Non-selected states return
  * before invoking any loader; personal and store scopes are passed separately.
  */
-export async function loadSelectedStoreData<TTodo, TTask, TAudit, TDiner>(
+export async function loadSelectedStoreData<TTodo, TTask, TAudit, TDiner, TPerformance>(
   selection: StoreSelection,
   userId: string,
-  loaders: StoreDashboardLoaders<TTodo, TTask, TAudit, TDiner>,
+  loaders: StoreDashboardLoaders<TTodo, TTask, TAudit, TDiner, TPerformance>,
 ): Promise<{
   todos: TTodo
   tasks: TTask
   latestAudit: TAudit
   latestDiner: TDiner
+  performance: TPerformance
 } | null> {
   if (selection.state !== 'selected') return null
 
-  const [todos, tasks, latestAudit, latestDiner] = await Promise.all([
+  const [todos, tasks, latestAudit, latestDiner, performance] = await Promise.all([
     loaders.fetchTodos(userId),
     loaders.fetchTasks(userId),
     loaders.fetchLatestAudit(selection.location.id),
     loaders.fetchLatestDiner(selection.location.id),
+    loaders.fetchStorePerformance(selection.location.id),
   ])
 
-  return { todos, tasks, latestAudit, latestDiner }
+  return { todos, tasks, latestAudit, latestDiner, performance }
 }

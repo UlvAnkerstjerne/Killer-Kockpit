@@ -3,13 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
 import {
-  getRevenueDemoData,
-  getLabourDemoData,
   getKitchenDemoData,
-  getSalesMixDemoData,
   getStockTakeDemoData,
   getMeatUseDemoData,
 } from '@/lib/store/adapter'
+import {
+  loadStorePerformance,
+  unavailableStorePerformance,
+  type StorePerformance,
+} from '@/lib/kalculator/client'
 import type { GbpMetrics } from '@/lib/store/adapter'
 import { computeRatingTrend } from '@/lib/store/adapter'
 import {
@@ -301,6 +303,25 @@ async function fetchLatestDiner(
   }
 }
 
+async function fetchStorePerformance(locationId: string): Promise<StorePerformance> {
+  // locationId comes from the authorised selection gate. The Kalculator slug is
+  // read from the persistent canonical mapping, never from request input.
+  // Any failure degrades to unavailable KPIs; it never fails the page.
+  try {
+    const service = createServiceClient()
+    const { data } = await service
+      .from('locations')
+      .select('kalculator_store_slug')
+      .eq('id', locationId)
+      .eq('active', true)
+      .maybeSingle()
+    const slug = (data as { kalculator_store_slug: string | null } | null)?.kalculator_store_slug ?? null
+    return await loadStorePerformance(slug)
+  } catch {
+    return unavailableStorePerformance()
+  }
+}
+
 // ─── Safe pre-dashboard states ────────────────────────────────────────────────
 //
 // Rendered server-side before a location has been authorised and selected.
@@ -420,28 +441,18 @@ export default async function StorePage({
     fetchTasks: userId => fetchTasks(supabase, userId),
     fetchLatestAudit,
     fetchLatestDiner,
+    fetchStorePerformance,
   })
 
   if (!dashboardData) return null
-  const { todos, tasks, latestAudit, latestDiner } = dashboardData
+  const { todos, tasks, latestAudit, latestDiner, performance } = dashboardData
 
-  // Adapter data — still demo for Revenue, Labour, Kitchen, Stock Take, Meat Use
-  const revenueToday     = getRevenueDemoData('today')
-  const revenueYesterday = getRevenueDemoData('yesterday')
-  const revenueWeek      = getRevenueDemoData('week')
-  const revenueMonth     = getRevenueDemoData('month')
-  const labourToday      = getLabourDemoData('today')
-  const labourYesterday  = getLabourDemoData('yesterday')
-  const labourWeek       = getLabourDemoData('week')
-  const labourMonth      = getLabourDemoData('month')
+  // Revenue, Labour (Salary %), Kombo % and Lemonades are live from Killer
+  // Kalculator via `performance`. Still demo: Kitchen, Stock Take, Meat Use.
   const kitchenToday     = getKitchenDemoData('today')
   const kitchenYesterday = getKitchenDemoData('yesterday')
   const kitchenWeek      = getKitchenDemoData('week')
   const kitchenMonth     = getKitchenDemoData('month')
-  const salesMixToday     = getSalesMixDemoData('today')
-  const salesMixYesterday = getSalesMixDemoData('yesterday')
-  const salesMixWeek      = getSalesMixDemoData('week')
-  const salesMixMonth     = getSalesMixDemoData('month')
   const gbp           = await fetchGbpMetrics(location.id)
   const stockTake     = getStockTakeDemoData()
   const meatUse       = getMeatUseDemoData()
@@ -451,22 +462,11 @@ export default async function StorePage({
       storeName={location.short_name}
       storeOptions={storeSelection.locations}
       managerName={user.display_name}
-      revenueToday={revenueToday}
-      revenueYesterday={revenueYesterday}
-      revenueWeek={revenueWeek}
-      revenueMonth={revenueMonth}
-      labourToday={labourToday}
-      labourYesterday={labourYesterday}
-      labourWeek={labourWeek}
-      labourMonth={labourMonth}
+      performance={performance}
       kitchenToday={kitchenToday}
       kitchenYesterday={kitchenYesterday}
       kitchenWeek={kitchenWeek}
       kitchenMonth={kitchenMonth}
-      salesMixToday={salesMixToday}
-      salesMixYesterday={salesMixYesterday}
-      salesMixWeek={salesMixWeek}
-      salesMixMonth={salesMixMonth}
       gbp={gbp}
       latestAudit={latestAudit}
       latestDiner={latestDiner}
