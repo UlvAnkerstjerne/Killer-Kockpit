@@ -8,11 +8,13 @@ import { approvePaidRecommendation, dismissPaidRecommendation } from '@/lib/acti
 
 // NeedsReviewClient renders the Needs Review list or empty state.
 // review_reply items link to the GBP review detail page for approval.
-// paid_recommendation items show inline approve/dismiss buttons.
+// paid_recommendation items show inline action-aware buttons.
 
-function PaidRecActions({ id }: { id: string }) {
+function PaidRecActions({ id, actionLabel }: { id: string; actionLabel?: string }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const label = actionLabel ?? 'Review'
+  const isManualOnly = label === 'Manual action required'
 
   const handleApprove = () => {
     startTransition(async () => {
@@ -28,6 +30,30 @@ function PaidRecActions({ id }: { id: string }) {
     })
   }
 
+  if (isManualOnly) {
+    return (
+      <div className="mt-3">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1.5">Manual action required</p>
+        <div className="flex gap-2">
+          <button
+            onClick={handleApprove}
+            disabled={isPending}
+            className="rounded-lg border border-kk-line px-3 py-1.5 text-xs font-medium text-kk-ink hover:bg-kk-soft disabled:opacity-50 transition-colors"
+          >
+            Create task
+          </button>
+          <button
+            onClick={handleDismiss}
+            disabled={isPending}
+            className="rounded-lg border border-kk-line px-3 py-1.5 text-xs font-medium text-kk-muted hover:bg-kk-line/30 disabled:opacity-50 transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex gap-2 mt-3">
       <button
@@ -35,7 +61,7 @@ function PaidRecActions({ id }: { id: string }) {
         disabled={isPending}
         className="rounded-lg bg-kk-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
       >
-        Approve
+        {isPending ? 'Executing\u2026' : label}
       </button>
       <button
         onClick={handleDismiss}
@@ -85,7 +111,7 @@ export default function NeedsReviewClient({
                   })}
                 </div>
                 {item.kind === 'paid_recommendation' && canActionPaid && (
-                  <PaidRecActions id={item.id} />
+                  <PaidRecActions id={item.id} actionLabel={item.action_label} />
                 )}
               </div>
               {href && (

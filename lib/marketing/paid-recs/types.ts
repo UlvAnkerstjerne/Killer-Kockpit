@@ -37,6 +37,10 @@ const base = { currency: z.string().regex(/^[A-Z]{3}$/), current_daily_budget: m
 export const PaidRecExecutionPlanSchema = z.discriminatedUnion('action_type', [
   z.object({ action_type: z.literal('meta_pause_campaign'), platform: z.literal('meta'), target_type: z.literal('campaign'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), expected_current_status: z.literal('ACTIVE') }).strict(),
   z.object({ action_type: z.literal('meta_resume_campaign'), platform: z.literal('meta'), target_type: z.literal('campaign'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), expected_current_status: z.literal('PAUSED') }).strict(),
+  z.object({ action_type: z.literal('meta_pause_ad'), platform: z.literal('meta'), target_type: z.literal('ad'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), ad_name: z.string().max(300), expected_current_status: z.literal('ACTIVE') }).strict(),
+  z.object({ action_type: z.literal('meta_resume_ad'), platform: z.literal('meta'), target_type: z.literal('ad'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), expected_current_status: z.literal('PAUSED') }).strict(),
+  z.object({ action_type: z.literal('meta_pause_adset'), platform: z.literal('meta'), target_type: z.literal('adset'), target_id: id, campaign_id: id, ad_account_id: z.string().regex(/^act_\d+$/), adset_name: z.string().max(300), expected_current_status: z.literal('ACTIVE') }).strict(),
+  z.object({ action_type: z.literal('meta_resume_adset'), platform: z.literal('meta'), target_type: z.literal('adset'), target_id: id, campaign_id: id, ad_account_id: z.string().regex(/^act_\d+$/), expected_current_status: z.literal('PAUSED') }).strict(),
   z.object({ action_type: z.literal('meta_set_campaign_budget'), platform: z.literal('meta'), target_type: z.literal('campaign'), target_id: id, ad_account_id: z.string().regex(/^act_\d+$/), ...base }).strict(),
   z.object({ action_type: z.literal('meta_set_adset_budget'), platform: z.literal('meta'), target_type: z.literal('adset'), target_id: id, campaign_id: id, ad_account_id: z.string().regex(/^act_\d+$/), ...base }).strict(),
   z.object({ action_type: z.literal('google_pause_campaign'), platform: z.literal('google'), customer_id: z.string().regex(/^\d{10}$/), campaign_id: id, expected_current_status: z.literal('ENABLED') }).strict(),
@@ -45,6 +49,7 @@ export const PaidRecExecutionPlanSchema = z.discriminatedUnion('action_type', [
   z.object({ action_type: z.literal('monitor_only'), platform: z.enum(['meta', 'google']), campaign_id: id }).strict(),
   z.object({ action_type: z.literal('run_tracking_diagnostic'), platform: z.enum(['meta', 'google']), campaign_id: id }).strict(),
   z.object({ action_type: z.literal('create_task'), platform: z.enum(['meta', 'google']), campaign_id: id, reason: z.string().min(10).max(300) }).strict(),
+  z.object({ action_type: z.literal('manual_action_required'), platform: z.enum(['meta', 'google']), campaign_id: id, reason: z.string().min(10).max(300) }).strict(),
 ])
 export type PaidRecExecutionPlan = z.infer<typeof PaidRecExecutionPlanSchema>
 
@@ -75,13 +80,80 @@ export interface PaidRecExecutionResult {
   tracking_diagnostic?: { diagnosed: boolean; fixed: false; likely_break?: string; explanation?: string; reason?: string; evidence?: Record<string, unknown>; next_steps?: string[] }
 }
 
-/** Maps signal_type to the execution plan. */
+/** Maps signal_type to the DEFAULT execution plan when no diagnostic overrides it. */
 export const SIGNAL_EXECUTION_MAP: Record<PaidRecSignalType, PaidRecExecutionType> = {
   spend_no_results:   'create_task_and_monitor',
-  cpr_worsening:      'create_task_and_monitor',
+  cpr_worsening:      'platform_action',
   cpr_improving:      'monitor',
   strong_performance: 'monitor',
 }
+
+// ─── Performance diagnosis ───────────────────────────────────────────────────
+
+export type DiagnosisClassification =
+  | 'weak_ad'           // one ad materially underperforming siblings
+  | 'weak_adset'        // one ad set dragging campaign while others are healthy
+  | 'broad_deterioration' // performance dropped across entire campaign
+  | 'tracking_suspected'  // funnel evidence suggests conversion tracking issue
+  | 'landing_page_issue'  // evidence points at landing page / lead form
+  | 'insufficient_evidence' // not enough data to diagnose
+
+export interface AdDiagnostic {
+  ad_id: string
+  ad_name: string
+  ad_set_id: string
+  status: string
+  spend_current: number
+  spend_prior: number
+  impressions_current: number
+  reach_current: number
+  clicks_current: number
+  ctr_current: number | null
+  cpc_current: number | null
+  results_current: number
+  cpl_current: number | null
+  results_prior: number
+  cpl_prior: number | null
+  frequency_current: number | null
+  is_weak: boolean
+}
+
+export interface AdSetDiagnostic {
+  adset_id: string
+  adset_name: string
+  status: string
+  spend_current: number
+  results_current: number
+  cpl_current: number | null
+  results_prior: number
+  cpl_prior: number | null
+  active_ad_count: number
+  is_weak: boolean
+  ads: AdDiagnostic[]
+}
+
+export interface PerformanceDiagnosis {
+  campaign_id: string
+  campaign_name: string
+  classification: DiagnosisClassification
+  evidence_summary: string
+  ad_sets: AdSetDiagnostic[]
+  weak_ad?: AdDiagnostic
+  weak_adset?: AdSetDiagnostic
+  healthy_sibling_count: number
+}
+
+/** Server-compiled multi-action remediation plan. Max 3 mutation actions. */
+export interface PaidRemediationPlan {
+  version: 'v2'
+  diagnosis: PerformanceDiagnosis
+  actions: PaidRecExecutionPlan[]  // max 3 mutation actions
+  monitoring_days: number
+  expected_outcome: string
+  fallback: string | null
+}
+
+export type PaidRecExecutionType_v2 = PaidRecExecutionType | 'remediation'
 
 // ─── Signal ───────────────────────────────────────────────────────────────────
 
@@ -166,4 +238,5 @@ export interface PaidRecommendationRow {
   linked_task_id: string | null
   execution_plan: PaidRecExecutionPlan | null
   execution_plan_version: string | null
+  remediation_plan: PaidRemediationPlan | null
 }

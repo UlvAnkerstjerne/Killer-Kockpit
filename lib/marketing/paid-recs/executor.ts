@@ -12,8 +12,8 @@ export type PlanExecution =
   | { ok: false; status: 'failed' | 'needs_attention'; reason: string; before?: LivePaidTarget; after?: LivePaidTarget; uncertain?: boolean }
 
 function matchesExpected(plan: PaidRecExecutionPlan, after: LivePaidTarget): boolean {
-  if (plan.action_type.includes('_pause_campaign')) return after.status === 'PAUSED'
-  if (plan.action_type.includes('_resume_campaign')) return after.status === (plan.platform === 'meta' ? 'ACTIVE' : 'ENABLED')
+  if (plan.action_type.includes('pause')) return after.status === 'PAUSED'
+  if (plan.action_type.includes('resume')) return after.status === (plan.platform === 'meta' ? 'ACTIVE' : 'ENABLED')
   if ('target_daily_budget' in plan) return after.dailyBudget === plan.target_daily_budget
   return true
 }
@@ -23,7 +23,7 @@ export async function executeTrustedPlan(input: unknown, adapter: PaidMutationAd
   const parsed = PaidRecExecutionPlanSchema.safeParse(input)
   if (!parsed.success) return { ok: false, status: 'needs_attention', reason: 'Stored execution plan is invalid.' }
   const plan = parsed.data
-  if (['monitor_only', 'run_tracking_diagnostic', 'create_task'].includes(plan.action_type)) return { ok: false, status: 'needs_attention', reason: 'Plan is not an external platform mutation.' }
+  if (['monitor_only', 'run_tracking_diagnostic', 'create_task', 'manual_action_required'].includes(plan.action_type)) return { ok: false, status: 'needs_attention', reason: 'Plan is not an external platform mutation.' }
   let before: LivePaidTarget
   try { before = await adapter.read(plan) } catch { return { ok: false, status: 'failed', reason: 'Could not read live state before mutation.' } }
   const guardrail = checkExecutionGuardrails(plan, before)

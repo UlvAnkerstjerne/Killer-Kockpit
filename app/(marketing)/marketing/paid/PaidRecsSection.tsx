@@ -29,35 +29,63 @@ function signalLabel(type: string): string {
   } as Record<string, string>)[type] ?? type
 }
 
-function actionLabel(rec: PaidRecommendationRow): string {
+/** Describes what a specific action plan will do. Shared between paid page and needs-review. */
+export function actionLabel(rec: PaidRecommendationRow): string {
+  // v2 remediation plan
+  const rp = rec.remediation_plan
+  if (rp && rp.actions.length > 0) {
+    const labels = rp.actions.map(a => {
+      if (a.action_type === 'meta_pause_ad' && 'ad_name' in a) return `Pause ad: "${a.ad_name}"`
+      if (a.action_type === 'meta_pause_adset' && 'adset_name' in a) return `Pause ad set: "${a.adset_name}"`
+      if (a.action_type === 'meta_pause_campaign') return `Pause campaign`
+      if ('target_daily_budget' in a) return `${a.current_daily_budget} → ${a.target_daily_budget} ${a.currency}/day`
+      if (a.action_type === 'run_tracking_diagnostic') return 'Run tracking diagnostic'
+      if (a.action_type === 'manual_action_required') return 'Manual action required'
+      return a.action_type.replace(/_/g, ' ')
+    })
+    return labels.join(' + ')
+  }
   const p = rec.execution_plan
   if (!p) return 'Manual review required'
+  if (p.action_type === 'meta_pause_ad' && 'ad_name' in p) return `Pause ad: "${p.ad_name}"`
+  if (p.action_type === 'meta_pause_adset' && 'adset_name' in p) return `Pause ad set: "${p.adset_name}"`
   if (p.action_type.includes('pause_campaign')) return `Pause ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
   if (p.action_type.includes('resume_campaign')) return `Resume ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
   if ('target_daily_budget' in p) return `Change daily budget: ${p.current_daily_budget} ${p.currency} → ${p.target_daily_budget} ${p.currency}`
   if (p.action_type === 'run_tracking_diagnostic') return 'Run tracking diagnostic'
   if (p.action_type === 'monitor_only') return 'Start monitoring'
-  if (p.action_type === 'create_task') return 'Create manual follow-up task'
+  if (p.action_type === 'create_task') return 'Create task'
+  if (p.action_type === 'manual_action_required') return 'Manual action required'
   return 'Action cannot be automated yet'
 }
 
-function approveButtonLabel(rec: PaidRecommendationRow): string {
-  if (rec.execution_type === 'platform_action') return 'Approve & execute'
+export function approveButtonLabel(rec: PaidRecommendationRow): string {
+  // manual_action_required should never show an approve button
+  if (rec.execution_plan?.action_type === 'manual_action_required') return 'Manual action required'
+  if (rec.remediation_plan?.actions.some(a => a.action_type === 'manual_action_required')) return 'Manual action required'
+  if (rec.execution_type === 'platform_action') return 'Approve & fix'
   if (rec.execution_plan?.action_type === 'run_tracking_diagnostic') return 'Run diagnostic'
-  return 'Approve & start'
+  if (rec.execution_plan?.action_type === 'monitor_only') return 'Start monitoring'
+  if (rec.execution_plan?.action_type === 'create_task') return 'Create task'
+  return 'Approve & fix'
 }
 
 /** True when the plan is fully validated and Kockpit can actually perform it safely. */
 function isExecutable(rec: PaidRecommendationRow): boolean {
-  if (!rec.execution_plan) return false
-  // monitor_only has no real mutation — it just starts a monitoring window
-  if (rec.execution_plan.action_type === 'monitor_only') return true
-  // create_task creates a follow-up task
-  if (rec.execution_plan.action_type === 'create_task') return true
-  // run_tracking_diagnostic runs a real diagnostic from synced data
-  if (rec.execution_plan.action_type === 'run_tracking_diagnostic') return true
-  // Platform actions are executable
+  // manual_action_required is never auto-executable
+  if (rec.execution_plan?.action_type === 'manual_action_required') return false
+  if (rec.remediation_plan?.actions.some(a => a.action_type === 'manual_action_required')) return false
+  if (!rec.execution_plan && !rec.remediation_plan) return false
+  if (rec.execution_plan?.action_type === 'monitor_only') return true
+  if (rec.execution_plan?.action_type === 'run_tracking_diagnostic') return true
   if (rec.execution_type === 'platform_action') return true
+  return false
+}
+
+/** True when the user should see a "Create task" secondary button instead of approval. */
+function isManualOnly(rec: PaidRecommendationRow): boolean {
+  if (rec.execution_plan?.action_type === 'manual_action_required') return true
+  if (rec.remediation_plan?.actions.some(a => a.action_type === 'manual_action_required')) return true
   return false
 }
 
@@ -166,9 +194,33 @@ function PaidRecCard({
           </button>
         </div>
       )}
-      {rec.status === 'needs_review' && canAction && !isExecutable(rec) && (
+      {rec.status === 'needs_review' && canAction && !isExecutable(rec) && isManualOnly(rec) && (
+        <div className="flex flex-col gap-2 px-5 py-3 border-t border-kk-line bg-amber-50/40">
+          <span className="text-xs font-bold text-amber-700 uppercase tracking-wide">Manual action required</span>
+          {rec.remediation_plan?.diagnosis && (
+            <p className="text-xs text-kk-muted">{rec.remediation_plan.diagnosis.evidence_summary}</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={handleApprove}
+              disabled={isPending}
+              className="rounded-full border border-kk-line bg-white px-4 py-1.5 text-xs font-semibold text-kk-ink hover:bg-kk-soft disabled:opacity-50 transition-colors"
+            >
+              Create task
+            </button>
+            <button
+              onClick={handleDismiss}
+              disabled={isPending}
+              className="rounded-full border border-kk-line bg-white px-4 py-1.5 text-xs font-semibold text-kk-muted hover:bg-kk-soft hover:text-kk-ink disabled:opacity-50 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      {rec.status === 'needs_review' && canAction && !isExecutable(rec) && !isManualOnly(rec) && (
         <div className="flex gap-2 px-5 py-3 border-t border-kk-line bg-kk-soft/50">
-          <span className="mr-auto text-xs font-medium text-kk-muted self-center">{rec.execution_plan ? 'Action cannot be automated yet' : 'Manual review required'}</span>
+          <span className="mr-auto text-xs font-medium text-kk-muted self-center">Manual review required</span>
           <button
             onClick={handleDismiss}
             disabled={isPending}

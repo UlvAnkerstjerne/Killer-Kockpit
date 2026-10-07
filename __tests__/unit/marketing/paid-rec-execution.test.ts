@@ -3,7 +3,7 @@
  *
  * Verified guarantees:
  *   1.  SIGNAL_EXECUTION_MAP — spend_no_results → create_task_and_monitor
- *   2.  SIGNAL_EXECUTION_MAP — cpr_worsening → create_task_and_monitor
+ *   2.  SIGNAL_EXECUTION_MAP — cpr_worsening → platform_action (v2)
  *   3.  SIGNAL_EXECUTION_MAP — cpr_improving → monitor
  *   4.  SIGNAL_EXECUTION_MAP — strong_performance → monitor
  *   5.  determineOutcome — baseline 0 results, now has results → improved
@@ -31,8 +31,8 @@ describe('SIGNAL_EXECUTION_MAP', () => {
     expect(SIGNAL_EXECUTION_MAP.spend_no_results).toBe('create_task_and_monitor')
   })
 
-  it('2. cpr_worsening → create_task_and_monitor', () => {
-    expect(SIGNAL_EXECUTION_MAP.cpr_worsening).toBe('create_task_and_monitor')
+  it('2. cpr_worsening → platform_action (v2: diagnostic-driven remediation)', () => {
+    expect(SIGNAL_EXECUTION_MAP.cpr_worsening).toBe('platform_action')
   })
 
   it('3. cpr_improving → monitor', () => {

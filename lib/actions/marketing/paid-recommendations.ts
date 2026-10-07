@@ -359,7 +359,7 @@ export async function getPendingPaidRecommendations(): Promise<MarketingReviewIt
 
   const { data, error } = await db
     .from('paid_recommendations')
-    .select('id,platform,campaign_name,signal_type,urgency,recommended_action,created_at')
+    .select('id,platform,campaign_name,signal_type,urgency,recommended_action,created_at,execution_plan,execution_type,remediation_plan')
     .eq('status', 'needs_review')
     .order('created_at', { ascending: false })
 
@@ -375,6 +375,15 @@ export async function getPendingPaidRecommendations(): Promise<MarketingReviewIt
     }
     const signalLabel = signalLabels[row.signal_type as string] ?? row.signal_type
 
+    // Derive action-aware button label
+    const plan = row.execution_plan as Record<string, unknown> | null
+    let btnLabel = 'Review'
+    if (plan?.action_type === 'manual_action_required') btnLabel = 'Manual action required'
+    else if (row.execution_type === 'platform_action') btnLabel = 'Approve & fix'
+    else if (plan?.action_type === 'run_tracking_diagnostic') btnLabel = 'Run diagnostic'
+    else if (plan?.action_type === 'monitor_only') btnLabel = 'Start monitoring'
+    else if (plan?.action_type === 'create_task') btnLabel = 'Create task'
+
     return {
       id:                  row.id as string,
       kind:                'paid_recommendation' as const,
@@ -382,6 +391,7 @@ export async function getPendingPaidRecommendations(): Promise<MarketingReviewIt
       description:         (row.recommended_action as string | null)?.slice(0, 120) ?? null,
       created_at:          row.created_at as string,
       requires_permission: 'paid_approve' as MarketingPermission,
+      action_label:        btnLabel,
     }
   })
 }

@@ -1,5 +1,5 @@
 import 'server-only'
-import { fetchMetaAdSetState, fetchMetaCampaignState, updateMetaAdSetBudget, updateMetaCampaignBudget, updateMetaCampaignStatus } from '@/lib/meta/client'
+import { fetchMetaAdSetState, fetchMetaAdState, fetchMetaCampaignState, updateMetaAdSetBudget, updateMetaAdSetStatus, updateMetaAdStatus, updateMetaCampaignBudget, updateMetaCampaignStatus } from '@/lib/meta/client'
 import { searchGoogleAds, updateGoogleCampaignBudget, updateGoogleCampaignStatus } from '@/lib/google/ads-client'
 import type { getGoogleOAuth2Client } from '@/lib/google/auth'
 import type { PaidMutationAdapter } from './executor'
@@ -10,12 +10,24 @@ export function metaMutationAdapter(currency: string): PaidMutationAdapter {
   return {
     async read(plan) {
       if (plan.platform !== 'meta' || !('target_id' in plan) || !('ad_account_id' in plan)) throw new Error('Wrong adapter')
-      const row = plan.target_type === 'adset' ? await fetchMetaAdSetState(plan.target_id) : await fetchMetaCampaignState(plan.target_id)
+      if (plan.target_type === 'ad') {
+        const row = await fetchMetaAdState(plan.target_id)
+        return { platform: 'meta', accountId: plan.ad_account_id, status: row.status, currency }
+      }
+      if (plan.target_type === 'adset') {
+        const row = await fetchMetaAdSetState(plan.target_id)
+        return { platform: 'meta', accountId: plan.ad_account_id, status: row.status, dailyBudget: row.daily_budget ? Number(row.daily_budget) / 100 : undefined, currency }
+      }
+      const row = await fetchMetaCampaignState(plan.target_id)
       return { platform: 'meta', accountId: plan.ad_account_id, status: row.status, dailyBudget: row.daily_budget ? Number(row.daily_budget) / 100 : undefined, currency }
     },
     async mutate(plan) {
       if (plan.action_type === 'meta_pause_campaign') await updateMetaCampaignStatus(plan.target_id, 'PAUSED')
       else if (plan.action_type === 'meta_resume_campaign') await updateMetaCampaignStatus(plan.target_id, 'ACTIVE')
+      else if (plan.action_type === 'meta_pause_ad') await updateMetaAdStatus(plan.target_id, 'PAUSED')
+      else if (plan.action_type === 'meta_resume_ad') await updateMetaAdStatus(plan.target_id, 'ACTIVE')
+      else if (plan.action_type === 'meta_pause_adset') await updateMetaAdSetStatus(plan.target_id, 'PAUSED')
+      else if (plan.action_type === 'meta_resume_adset') await updateMetaAdSetStatus(plan.target_id, 'ACTIVE')
       else if (plan.action_type === 'meta_set_campaign_budget') await updateMetaCampaignBudget(plan.target_id, Math.round(plan.target_daily_budget * 100))
       else if (plan.action_type === 'meta_set_adset_budget') await updateMetaAdSetBudget(plan.target_id, Math.round(plan.target_daily_budget * 100))
       else throw new Error('Unsupported Meta mutation')
