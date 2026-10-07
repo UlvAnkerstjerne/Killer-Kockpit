@@ -11,7 +11,7 @@ CREATE TABLE public.gbp_review_saved (
 
 ALTER TABLE public.gbp_review_saved ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.gbp_review_saved FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT, DELETE ON public.gbp_review_saved TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.gbp_review_saved TO service_role;
 
 -- Update get_gbp_review_desk to exclude saved reviews for the requesting user.
 CREATE OR REPLACE FUNCTION public.get_gbp_review_desk(
