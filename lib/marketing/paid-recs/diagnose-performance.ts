@@ -12,8 +12,11 @@
  *   weak_adset           — one ad set dragging while others are healthy
  *   broad_deterioration  — performance dropped across entire campaign
  *   tracking_suspected   — funnel evidence suggests conversion tracking issue
- *   landing_page_issue   — traffic exists but zero/near-zero conversion
  *   insufficient_evidence — not enough data to diagnose
+ *
+ * landing_page_issue is NOT a first-stage classification. The tracking
+ * diagnostic (tracking-diagnostic.ts) is the correct second-stage tool
+ * to distinguish tracking vs landing-page/form problems.
  */
 
 import type { MetaInsightActionItem } from '@/lib/marketing/types/meta'
@@ -35,9 +38,6 @@ export const MIN_AD_CLICKS = 10
 
 /** An ad's CPL must be this multiple of sibling median to be classified weak. */
 export const WEAK_AD_CPL_RATIO = 1.8
-
-/** An ad's CTR must be below this fraction of sibling median to support weakness. */
-export const WEAK_AD_CTR_RATIO = 0.6
 
 /** Minimum active sibling ads remaining after pausing the weak ad. */
 export const MIN_REMAINING_ADS = 1
@@ -123,7 +123,6 @@ export interface DiagnosticInput {
 export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosis {
   const { campaignId, campaignName, objective, ads, adSets, currentAdInsights, priorAdInsights } = input
 
-  // Build ad-level diagnostics
   const currentByAd = groupBy(currentAdInsights, r => r.ad_id)
   const priorByAd = groupBy(priorAdInsights, r => r.ad_id)
 
@@ -156,7 +155,7 @@ export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosi
       results_prior: priorResults,
       cpl_prior: priorResults > 0 ? priorSpend / priorResults : null,
       frequency_current: reach > 0 ? impressions / reach : null,
-      is_weak: false, // will be set below
+      is_weak: false,
     }
   })
 
@@ -184,24 +183,40 @@ export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosi
   })
 
   // ── Step 1: Identify weak ad ──
-  const measurableAds = adDiags.filter(a => a.spend_current >= MIN_AD_SPEND && a.impressions_current >= MIN_AD_IMPRESSIONS)
+  // An ad must meet ALL volume guards to be eligible for comparison.
+  const measurableAds = adDiags.filter(a =>
+    a.spend_current >= MIN_AD_SPEND &&
+    a.impressions_current >= MIN_AD_IMPRESSIONS &&
+    a.clicks_current >= MIN_AD_CLICKS
+  )
   const adsWithResults = measurableAds.filter(a => a.cpl_current !== null)
-  const adsWithoutResults = measurableAds.filter(a => a.results_current === 0 && a.spend_current >= MIN_AD_SPEND)
+  const adsWithoutResults = measurableAds.filter(a => a.results_current === 0)
 
   let weakAd: AdDiagnostic | undefined
   if (adsWithResults.length >= 2) {
-    const cpls = adsWithResults.map(a => a.cpl_current!)
-    const medianCpl = median(cpls)
-    if (medianCpl !== null && medianCpl > 0) {
-      const worst = adsWithResults.reduce((prev, cur) => (cur.cpl_current! > prev.cpl_current!) ? cur : prev)
-      const healthyCount = adsWithResults.filter(a => a.ad_id !== worst.ad_id).length
-      if (worst.cpl_current! >= medianCpl * WEAK_AD_CPL_RATIO && healthyCount >= MIN_REMAINING_ADS) {
-        worst.is_weak = true
-        weakAd = worst
+    // Compare each candidate against the median of its OTHER siblings (exclude candidate)
+    let worstAd: AdDiagnostic | undefined
+    let worstRatio = 0
+    for (const candidate of adsWithResults) {
+      const siblingCpls = adsWithResults
+        .filter(a => a.ad_id !== candidate.ad_id)
+        .map(a => a.cpl_current!)
+      const siblingMedian = median(siblingCpls)
+      if (siblingMedian === null || siblingMedian <= 0) continue
+      const ratio = candidate.cpl_current! / siblingMedian
+      if (ratio >= WEAK_AD_CPL_RATIO && ratio > worstRatio) {
+        const healthyCount = adsWithResults.filter(a => a.ad_id !== candidate.ad_id).length
+        if (healthyCount >= MIN_REMAINING_ADS) {
+          worstAd = candidate
+          worstRatio = ratio
+        }
       }
     }
+    if (worstAd) {
+      worstAd.is_weak = true
+      weakAd = worstAd
+    }
   } else if (adsWithoutResults.length > 0) {
-    // Ad spending with zero results while siblings have results
     const healthyAds = adDiags.filter(a => a.results_current > 0)
     if (healthyAds.length >= MIN_REMAINING_ADS) {
       const worst = adsWithoutResults.reduce((prev, cur) => cur.spend_current > prev.spend_current ? cur : prev)
@@ -215,15 +230,26 @@ export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosi
   const measurableAdSets = adSetDiags.filter(as => as.spend_current >= MIN_AD_SPEND)
   const adSetsWithResults = measurableAdSets.filter(as => as.cpl_current !== null)
   if (adSetsWithResults.length >= 2) {
-    const cpls = adSetsWithResults.map(as => as.cpl_current!)
-    const medianCpl = median(cpls)
-    if (medianCpl !== null && medianCpl > 0) {
-      const worst = adSetsWithResults.reduce((prev, cur) => (cur.cpl_current! > prev.cpl_current!) ? cur : prev)
-      const healthyCount = adSetsWithResults.filter(as => as.adset_id !== worst.adset_id).length
-      if (worst.cpl_current! >= medianCpl * WEAK_ADSET_CPL_RATIO && healthyCount >= MIN_REMAINING_ADSETS) {
-        worst.is_weak = true
-        weakAdSet = worst
+    let worstSet: AdSetDiagnostic | undefined
+    let worstRatio = 0
+    for (const candidate of adSetsWithResults) {
+      const siblingCpls = adSetsWithResults
+        .filter(as => as.adset_id !== candidate.adset_id)
+        .map(as => as.cpl_current!)
+      const siblingMedian = median(siblingCpls)
+      if (siblingMedian === null || siblingMedian <= 0) continue
+      const ratio = candidate.cpl_current! / siblingMedian
+      if (ratio >= WEAK_ADSET_CPL_RATIO && ratio > worstRatio) {
+        const healthyCount = adSetsWithResults.filter(as => as.adset_id !== candidate.adset_id).length
+        if (healthyCount >= MIN_REMAINING_ADSETS) {
+          worstSet = candidate
+          worstRatio = ratio
+        }
       }
+    }
+    if (worstSet) {
+      worstSet.is_weak = true
+      weakAdSet = worstSet
     }
   }
 
@@ -235,17 +261,22 @@ export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosi
   const totalCurrentSpend = adDiags.reduce((a, d) => a + d.spend_current, 0)
   const healthySiblings = adDiags.filter(a => !a.is_weak && a.results_current > 0).length
 
-  if (measurableAds.length === 0) {
+  if (measurableAds.length === 0 && adDiags.length === 0) {
     classification = 'insufficient_evidence'
-    evidenceSummary = 'Not enough measured ad data to perform a diagnostic.'
-  } else if (totalCurrentClicks > MIN_AD_CLICKS && totalCurrentResults === 0 && totalCurrentSpend >= MIN_AD_SPEND) {
-    // Traffic exists but zero conversions — tracking or landing page
+    evidenceSummary = 'No active ads found for diagnostic.'
+  } else if (measurableAds.length === 0) {
+    // Ads exist but none meet volume guards
+    classification = 'insufficient_evidence'
+    evidenceSummary = `${adDiags.length} active ad${adDiags.length !== 1 ? 's' : ''} found but none meet the minimum evidence thresholds for automated diagnosis.`
+  } else if (totalCurrentClicks >= MIN_AD_CLICKS && totalCurrentResults === 0 && totalCurrentSpend >= MIN_AD_SPEND) {
     classification = 'tracking_suspected'
-    evidenceSummary = `Campaign has ${totalCurrentClicks} clicks and ${totalCurrentSpend.toFixed(0)} ${input.currency} spend but zero results. Tracking or landing page issue suspected.`
+    evidenceSummary = `Campaign has ${totalCurrentClicks} clicks and ${totalCurrentSpend.toFixed(0)} ${input.currency} spend but zero results. Tracking issue suspected.`
   } else if (weakAd) {
     classification = 'weak_ad'
-    const ratio = weakAd.cpl_current !== null && median(adsWithResults.filter(a => a.ad_id !== weakAd!.ad_id).map(a => a.cpl_current!)) !== null
-      ? `${(weakAd.cpl_current / median(adsWithResults.filter(a => a.ad_id !== weakAd!.ad_id).map(a => a.cpl_current!))!).toFixed(1)}×`
+    const siblingCpls = adsWithResults.filter(a => a.ad_id !== weakAd!.ad_id).map(a => a.cpl_current!)
+    const sibMedian = median(siblingCpls)
+    const ratio = weakAd.cpl_current !== null && sibMedian !== null && sibMedian > 0
+      ? `${(weakAd.cpl_current / sibMedian).toFixed(1)}×`
       : ''
     evidenceSummary = weakAd.cpl_current !== null
       ? `Ad "${weakAd.ad_name}" has ${ratio} the CPL of active siblings. ${healthySiblings} healthy ad${healthySiblings !== 1 ? 's' : ''} remain.`
@@ -253,8 +284,9 @@ export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosi
   } else if (weakAdSet) {
     classification = 'weak_adset'
     const siblingCpls = adSetsWithResults.filter(as => as.adset_id !== weakAdSet!.adset_id).map(as => as.cpl_current!)
-    const ratio = weakAdSet.cpl_current !== null && median(siblingCpls) !== null
-      ? `${(weakAdSet.cpl_current / median(siblingCpls)!).toFixed(1)}×`
+    const sibMedian = median(siblingCpls)
+    const ratio = weakAdSet.cpl_current !== null && sibMedian !== null && sibMedian > 0
+      ? `${(weakAdSet.cpl_current / sibMedian).toFixed(1)}×`
       : ''
     evidenceSummary = `Ad set "${weakAdSet.adset_name}" has ${ratio} the CPL of active siblings.`
   } else {
@@ -279,12 +311,46 @@ export function diagnosePerformance(input: DiagnosticInput): PerformanceDiagnosi
 import type { PaidRecExecutionPlan, PaidRemediationPlan } from './types'
 import { MAX_AUTOMATED_BUDGET_CHANGE } from './guardrails'
 
+export interface RemediationCampaignContext {
+  id: string
+  adAccountId: string
+  currency: string
+  dailyBudget: number | null
+  adSets: MetaAdSetInfo[]
+}
+
+/**
+ * Resolves the best budget target for broad_deterioration.
+ * A. Campaign budget if available
+ * B. Single active ad set with known daily budget
+ * C. null if multiple ad sets or no budget info → manual
+ */
+function resolveBudgetTarget(campaign: RemediationCampaignContext): {
+  type: 'campaign' | 'adset'
+  targetId: string
+  campaignId: string
+  adsetName?: string
+  currentBudget: number
+} | null {
+  if (campaign.dailyBudget && campaign.dailyBudget > 0) {
+    return { type: 'campaign', targetId: campaign.id, campaignId: campaign.id, currentBudget: campaign.dailyBudget }
+  }
+  const activeAdSetsWithBudget = campaign.adSets
+    .filter(as => as.status === 'ACTIVE' && as.daily_budget && Number(as.daily_budget) > 0)
+  if (activeAdSetsWithBudget.length === 1) {
+    const as = activeAdSetsWithBudget[0]
+    const budget = Number(as.daily_budget) / 100 // Meta stores budget in minor units
+    return { type: 'adset', targetId: as.id, campaignId: campaign.id, adsetName: as.name, currentBudget: budget }
+  }
+  return null
+}
+
 export function buildRemediationPlan(
   diagnosis: PerformanceDiagnosis,
-  campaign: { id: string; adAccountId: string; currency: string; dailyBudget: number | null },
+  campaign: RemediationCampaignContext,
 ): PaidRemediationPlan {
   const actions: PaidRecExecutionPlan[] = []
-  let monitoringDays = 5
+  const monitoringDays = 5
   let expectedOutcome: string
   let fallback: string | null = null
 
@@ -321,26 +387,44 @@ export function buildRemediationPlan(
       break
     }
     case 'broad_deterioration': {
-      if (campaign.dailyBudget && campaign.dailyBudget > 0) {
-        const reduction = Math.round(campaign.dailyBudget * (1 - MAX_AUTOMATED_BUDGET_CHANGE))
-        actions.push({
-          action_type: 'meta_set_campaign_budget',
-          platform: 'meta',
-          target_type: 'campaign',
-          target_id: campaign.id,
-          ad_account_id: campaign.adAccountId,
-          currency: campaign.currency,
-          current_daily_budget: campaign.dailyBudget,
-          target_daily_budget: reduction,
-        })
-        expectedOutcome = `Reduce daily budget from ${campaign.dailyBudget} to ${reduction} ${campaign.currency} (${Math.round(MAX_AUTOMATED_BUDGET_CHANGE * 100)}% reduction) while monitoring for five days.`
+      const budgetTarget = resolveBudgetTarget(campaign)
+      if (budgetTarget) {
+        const reduction = Math.round(budgetTarget.currentBudget * (1 - MAX_AUTOMATED_BUDGET_CHANGE))
+        if (budgetTarget.type === 'campaign') {
+          actions.push({
+            action_type: 'meta_set_campaign_budget',
+            platform: 'meta',
+            target_type: 'campaign',
+            target_id: budgetTarget.targetId,
+            ad_account_id: campaign.adAccountId,
+            currency: campaign.currency,
+            current_daily_budget: budgetTarget.currentBudget,
+            target_daily_budget: reduction,
+          })
+        } else {
+          actions.push({
+            action_type: 'meta_set_adset_budget',
+            platform: 'meta',
+            target_type: 'adset',
+            target_id: budgetTarget.targetId,
+            campaign_id: budgetTarget.campaignId,
+            ad_account_id: campaign.adAccountId,
+            currency: campaign.currency,
+            current_daily_budget: budgetTarget.currentBudget,
+            target_daily_budget: reduction,
+          })
+        }
+        const targetLabel = budgetTarget.type === 'adset' && budgetTarget.adsetName
+          ? `ad-set "${budgetTarget.adsetName}" budget` : 'daily budget'
+        expectedOutcome = `Reduce ${targetLabel} from ${budgetTarget.currentBudget} to ${reduction} ${campaign.currency} (${Math.round(MAX_AUTOMATED_BUDGET_CHANGE * 100)}% reduction) while monitoring for five days.`
       } else {
-        // Cannot adjust budget — manual action required
         actions.push({
           action_type: 'manual_action_required',
           platform: 'meta',
           campaign_id: campaign.id,
-          reason: 'Performance deteriorated broadly but daily budget is unavailable for automated adjustment.',
+          reason: campaign.adSets.filter(as => as.status === 'ACTIVE').length > 1
+            ? 'Multiple active ad sets exist with no safe deterministic budget target for automated reduction.'
+            : 'No daily budget available for automated adjustment.',
         })
         expectedOutcome = 'Manual budget review required.'
       }
@@ -357,15 +441,12 @@ export function buildRemediationPlan(
       fallback = 'Manual tracking investigation required if diagnostic is inconclusive.'
       break
     }
-    case 'landing_page_issue':
     case 'insufficient_evidence': {
       actions.push({
         action_type: 'manual_action_required',
         platform: 'meta',
         campaign_id: campaign.id,
-        reason: diagnosis.classification === 'landing_page_issue'
-          ? 'Landing page or lead form performance requires a change Kockpit cannot safely perform yet.'
-          : 'Insufficient evidence for an automated remediation.',
+        reason: 'Insufficient evidence for an automated remediation.',
       })
       expectedOutcome = 'Manual investigation required.'
       break

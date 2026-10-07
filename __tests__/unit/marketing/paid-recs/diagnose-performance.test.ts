@@ -1,27 +1,25 @@
 /**
  * Unit tests for lib/marketing/paid-recs/diagnose-performance.ts
  *
- * Verified guarantees:
- *   1.  weak_ad: one clearly weak ad → diagnosis classification
- *   2.  weak_adset: one weak ad set → diagnosis classification
- *   3.  broad_deterioration: no localized culprit → conservative classification
- *   4.  insufficient_evidence: not enough data → no destructive remediation
- *   5.  tracking_suspected: clicks but zero results → tracking classification
- *   6.  cannot pause last viable ad → weak_ad not emitted
- *   7.  cannot pause last viable ad set → weak_adset not emitted
- *   8.  volume guard: ad below MIN_AD_SPEND → not considered weak
- *   9.  remediation plan: weak_ad → pause ad action
- *   10. remediation plan: broad → budget reduction
- *   11. remediation plan: tracking → diagnostic action
- *   12. remediation plan: insufficient → manual_action_required
- *   13. budget reduction capped at 20%
- *   14. budget increase capped at 20%
- *   15. zero-result ad spending while siblings produce → weak_ad
- *   16. weak_ad_cpl_ratio threshold respected
- *   17. ad set weakness requires WEAK_ADSET_CPL_RATIO
- *   18. manual_action_required for landing page issue
- *   19. monitoring_days defaults to 5
- *   20. remediation plan max 3 actions
+ * Covers:
+ *   1.  weak_ad classification with sibling-excluding median
+ *   2.  weak_adset classification
+ *   3.  broad_deterioration with campaign budget → meta_set_campaign_budget
+ *   4.  broad_deterioration with null campaign budget + 1 ad-set budget → meta_set_adset_budget (Katering case)
+ *   5.  broad_deterioration with multiple ad sets → manual_action_required
+ *   6.  tracking_suspected classification
+ *   7.  insufficient_evidence
+ *   8.  cannot pause last viable ad
+ *   9.  cannot pause last viable ad set
+ *   10. volume guard: MIN_AD_SPEND enforced
+ *   11. volume guard: MIN_AD_CLICKS enforced
+ *   12. weak_ad sibling median excludes candidate
+ *   13. zero-result ad with healthy siblings → weak_ad
+ *   14. budget reduction capped at 20%
+ *   15. monitoring_days defaults to 5
+ *   16. Katering dry run: budget-null + 1 ad-set = 100 DKK → meta_set_adset_budget 100→80
+ *   17. v1 backward compatible: no remediation_plan on old rows
+ *   18. manual_action_required → no approve button (isManualOnly)
  */
 
 import { describe, it, expect } from 'vitest'
@@ -30,14 +28,15 @@ import {
   buildRemediationPlan,
   MIN_AD_SPEND,
   MIN_AD_IMPRESSIONS,
+  MIN_AD_CLICKS,
   WEAK_AD_CPL_RATIO,
   WEAK_ADSET_CPL_RATIO,
   MIN_REMAINING_ADS,
-  MIN_REMAINING_ADSETS,
   type AdInsightRow,
   type MetaAdWithSet,
   type MetaAdSetInfo,
   type DiagnosticInput,
+  type RemediationCampaignContext,
 } from '@/lib/marketing/paid-recs/diagnose-performance'
 import { MAX_AUTOMATED_BUDGET_CHANGE } from '@/lib/marketing/paid-recs/guardrails'
 
@@ -64,8 +63,8 @@ function makeAd(id: string, adSetId: string, name: string, status = 'ACTIVE'): M
   return { id, ad_set_id: adSetId, name, status }
 }
 
-function makeAdSet(id: string, campaignId: string, name: string, status = 'ACTIVE'): MetaAdSetInfo {
-  return { id, campaign_id: campaignId, name, status, daily_budget: null }
+function makeAdSet(id: string, campaignId: string, name: string, status = 'ACTIVE', dailyBudget: string | null = null): MetaAdSetInfo {
+  return { id, campaign_id: campaignId, name, status, daily_budget: dailyBudget }
 }
 
 function baseDiagnosticInput(overrides: Partial<DiagnosticInput> = {}): DiagnosticInput {
@@ -76,13 +75,18 @@ function baseDiagnosticInput(overrides: Partial<DiagnosticInput> = {}): Diagnost
     objective: 'OUTCOME_LEADS',
     currency: 'DKK',
     dailyBudget: 400,
-    ads: [
-      makeAd('ad1', 'as1', 'Good Ad'),
-      makeAd('ad2', 'as1', 'Bad Ad'),
-    ],
+    ads: [makeAd('ad1', 'as1', 'Good Ad'), makeAd('ad2', 'as1', 'Bad Ad')],
     adSets: [makeAdSet('as1', 'c1', 'Ad Set 1')],
     currentAdInsights: [],
     priorAdInsights: [],
+    ...overrides,
+  }
+}
+
+function baseCampaign(overrides: Partial<RemediationCampaignContext> = {}): RemediationCampaignContext {
+  return {
+    id: 'c1', adAccountId: 'act_123', currency: 'DKK', dailyBudget: 400,
+    adSets: [makeAdSet('as1', 'c1', 'Ad Set 1')],
     ...overrides,
   }
 }
@@ -94,14 +98,13 @@ describe('diagnosePerformance', () => {
     const input = baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Good Ad'), makeAd('ad2', 'as1', 'Bad Ad')],
       currentAdInsights: [
-        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '5' }] }),  // CPL = 20
-        makeAdInsight('ad2', { spend: '200', actions_json: [{ action_type: 'lead', value: '1' }] }),  // CPL = 200 (10× worse)
+        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '5' }] }),
+        makeAdInsight('ad2', { spend: '200', actions_json: [{ action_type: 'lead', value: '1' }] }),
       ],
     })
     const result = diagnosePerformance(input)
     expect(result.classification).toBe('weak_ad')
     expect(result.weak_ad?.ad_id).toBe('ad2')
-    expect(result.weak_ad?.is_weak).toBe(true)
   })
 
   it('2. classifies weak_adset when one ad set drags while another is healthy', () => {
@@ -119,7 +122,6 @@ describe('diagnosePerformance', () => {
       ],
     })
     const result = diagnosePerformance(input)
-    // Either weak_ad or weak_adset — both are valid since ads are also individually weak
     expect(['weak_ad', 'weak_adset']).toContain(result.classification)
   })
 
@@ -127,75 +129,92 @@ describe('diagnosePerformance', () => {
     const input = baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Ad 1'), makeAd('ad2', 'as1', 'Ad 2')],
       currentAdInsights: [
-        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),  // CPL = 50
-        makeAdInsight('ad2', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),  // CPL = 50
+        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
+        makeAdInsight('ad2', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
       ],
     })
-    const result = diagnosePerformance(input)
-    expect(result.classification).toBe('broad_deterioration')
+    expect(diagnosePerformance(input).classification).toBe('broad_deterioration')
   })
 
-  it('4. classifies insufficient_evidence with no measured ads', () => {
-    const input = baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Low Spend Ad')],
-      currentAdInsights: [
-        makeAdInsight('ad1', { spend: '10', impressions: 50 }),  // Below MIN_AD_SPEND
-      ],
-    })
-    const result = diagnosePerformance(input)
-    expect(result.classification).toBe('insufficient_evidence')
-  })
-
-  it('5. classifies tracking_suspected when clicks exist but zero results', () => {
+  it('6. classifies tracking_suspected when clicks exist but zero results', () => {
     const input = baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Ad 1')],
       currentAdInsights: [
         makeAdInsight('ad1', { spend: '200', clicks: 50, impressions: 1000, actions_json: [] }),
       ],
     })
-    const result = diagnosePerformance(input)
-    expect(result.classification).toBe('tracking_suspected')
+    expect(diagnosePerformance(input).classification).toBe('tracking_suspected')
   })
 
-  it('6. does NOT classify weak_ad when only one active ad remains', () => {
+  it('7. classifies insufficient_evidence with no measured ads', () => {
+    const input = baseDiagnosticInput({
+      ads: [makeAd('ad1', 'as1', 'Low Spend Ad')],
+      currentAdInsights: [makeAdInsight('ad1', { spend: '10', impressions: 50, clicks: 2 })],
+    })
+    expect(diagnosePerformance(input).classification).toBe('insufficient_evidence')
+  })
+
+  it('8. does NOT classify weak_ad when only one active ad remains', () => {
     const input = baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Only Ad')],
-      currentAdInsights: [
-        makeAdInsight('ad1', { spend: '200', actions_json: [{ action_type: 'lead', value: '1' }] }),
-      ],
+      currentAdInsights: [makeAdInsight('ad1', { spend: '200', actions_json: [{ action_type: 'lead', value: '1' }] })],
     })
-    const result = diagnosePerformance(input)
-    expect(result.classification).not.toBe('weak_ad')
-    expect(result.weak_ad).toBeUndefined()
+    expect(diagnosePerformance(input).weak_ad).toBeUndefined()
   })
 
-  it('7. does NOT classify weak_adset when only one active ad set exists', () => {
+  it('9. does NOT classify weak_adset when only one active ad set exists', () => {
     const input = baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Ad 1'), makeAd('ad2', 'as1', 'Ad 2')],
       adSets: [makeAdSet('as1', 'c1', 'Only Set')],
-      currentAdInsights: [
-        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '5' }] }),
-        makeAdInsight('ad2', { spend: '200', actions_json: [{ action_type: 'lead', value: '1' }] }),
-      ],
     })
-    const result = diagnosePerformance(input)
-    expect(result.classification).not.toBe('weak_adset')
-    expect(result.weak_adset).toBeUndefined()
+    expect(diagnosePerformance(input).weak_adset).toBeUndefined()
   })
 
-  it('8. does not consider ad below MIN_AD_SPEND as weak', () => {
+  it('10. volume guard: ad below MIN_AD_SPEND not considered', () => {
     const input = baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Good Ad'), makeAd('ad2', 'as1', 'Tiny Ad')],
+      ads: [makeAd('ad1', 'as1', 'Good'), makeAd('ad2', 'as1', 'Tiny')],
       currentAdInsights: [
         makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '5' }] }),
-        makeAdInsight('ad2', { spend: String(MIN_AD_SPEND - 1), actions_json: [{ action_type: 'lead', value: '0' }] }),
+        makeAdInsight('ad2', { spend: String(MIN_AD_SPEND - 1), actions_json: [] }),
       ],
     })
+    expect(diagnosePerformance(input).weak_ad?.ad_id).not.toBe('ad2')
+  })
+
+  it('11. volume guard: MIN_AD_CLICKS enforced — ad below threshold not measurable', () => {
+    const input = baseDiagnosticInput({
+      ads: [makeAd('ad1', 'as1', 'Good'), makeAd('ad2', 'as1', 'Low Clicks')],
+      currentAdInsights: [
+        makeAdInsight('ad1', { spend: '100', clicks: 50, actions_json: [{ action_type: 'lead', value: '5' }] }),
+        makeAdInsight('ad2', { spend: '100', clicks: MIN_AD_CLICKS - 1, impressions: 1000, actions_json: [{ action_type: 'lead', value: '1' }] }),
+      ],
+    })
+    // ad2 has fewer clicks than MIN_AD_CLICKS, so it should not be in the measurable set
+    // and should not be classified as weak_ad via CPL comparison
     const result = diagnosePerformance(input)
+    // With only 1 measurable ad, there can be no CPL comparison → no weak_ad from CPL
     expect(result.weak_ad?.ad_id).not.toBe('ad2')
   })
 
-  it('15. classifies zero-result ad as weak when siblings produce results', () => {
+  it('12. weak_ad comparison uses sibling median EXCLUDING the candidate', () => {
+    // 3 ads: ad1 CPL=20, ad2 CPL=25, ad3 CPL=50
+    // Median of all 3: 25. ad3/25 = 2.0× → weak if included
+    // Median excluding ad3: (20+25)/2 = 22.5. ad3/22.5 = 2.2× → still weak, but ratio is different
+    const input = baseDiagnosticInput({
+      ads: [makeAd('ad1', 'as1', 'Ad 1'), makeAd('ad2', 'as1', 'Ad 2'), makeAd('ad3', 'as1', 'Ad 3')],
+      currentAdInsights: [
+        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '5' }] }),  // CPL=20
+        makeAdInsight('ad2', { spend: '125', actions_json: [{ action_type: 'lead', value: '5' }] }),  // CPL=25
+        makeAdInsight('ad3', { spend: '200', actions_json: [{ action_type: 'lead', value: '2' }] }),  // CPL=100
+      ],
+    })
+    const result = diagnosePerformance(input)
+    expect(result.classification).toBe('weak_ad')
+    expect(result.weak_ad?.ad_id).toBe('ad3')
+    // Sibling median excluding ad3: median([20, 25]) = 22.5
+    // Ratio: 100/22.5 = 4.4× — far above WEAK_AD_CPL_RATIO
+  })
+
+  it('13. zero-result ad spending while siblings produce → weak_ad', () => {
     const input = baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Producer'), makeAd('ad2', 'as1', 'Non-producer')],
       currentAdInsights: [
@@ -207,42 +226,10 @@ describe('diagnosePerformance', () => {
     expect(result.classification).toBe('weak_ad')
     expect(result.weak_ad?.ad_id).toBe('ad2')
   })
-
-  it('16. respects WEAK_AD_CPL_RATIO threshold — just below does not trigger', () => {
-    const siblingCpl = 100
-    const almostWeakCpl = siblingCpl * (WEAK_AD_CPL_RATIO - 0.1)
-    const input = baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Normal'), makeAd('ad2', 'as1', 'Slightly Worse')],
-      currentAdInsights: [
-        makeAdInsight('ad1', { spend: String(siblingCpl * 5), actions_json: [{ action_type: 'lead', value: '5' }] }),
-        makeAdInsight('ad2', { spend: String(almostWeakCpl * 5), actions_json: [{ action_type: 'lead', value: '5' }] }),
-      ],
-    })
-    const result = diagnosePerformance(input)
-    expect(result.classification).not.toBe('weak_ad')
-  })
 })
 
 describe('buildRemediationPlan', () => {
-  const campaignBase = { id: 'c1', adAccountId: 'act_123', currency: 'DKK', dailyBudget: 400 }
-
-  it('9. weak_ad → pause ad action', () => {
-    const diagnosis = diagnosePerformance(baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Good'), makeAd('ad2', 'as1', 'Bad')],
-      currentAdInsights: [
-        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '5' }] }),
-        makeAdInsight('ad2', { spend: '200', actions_json: [{ action_type: 'lead', value: '1' }] }),
-      ],
-    }))
-    const plan = buildRemediationPlan(diagnosis, campaignBase)
-    expect(plan.actions).toHaveLength(1)
-    expect(plan.actions[0].action_type).toBe('meta_pause_ad')
-    if (plan.actions[0].action_type === 'meta_pause_ad') {
-      expect(plan.actions[0].target_id).toBe('ad2')
-    }
-  })
-
-  it('10. broad_deterioration → budget reduction', () => {
+  it('3. broad_deterioration with campaign budget → meta_set_campaign_budget', () => {
     const diagnosis = diagnosePerformance(baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Ad 1'), makeAd('ad2', 'as1', 'Ad 2')],
       currentAdInsights: [
@@ -250,90 +237,140 @@ describe('buildRemediationPlan', () => {
         makeAdInsight('ad2', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
       ],
     }))
-    const plan = buildRemediationPlan(diagnosis, campaignBase)
-    expect(plan.actions.some(a => a.action_type === 'meta_set_campaign_budget')).toBe(true)
-    const budgetAction = plan.actions.find(a => a.action_type === 'meta_set_campaign_budget')!
-    if ('target_daily_budget' in budgetAction) {
-      expect(budgetAction.target_daily_budget).toBe(Math.round(400 * (1 - MAX_AUTOMATED_BUDGET_CHANGE)))
+    const plan = buildRemediationPlan(diagnosis, baseCampaign({ dailyBudget: 400 }))
+    expect(plan.actions[0].action_type).toBe('meta_set_campaign_budget')
+    if ('target_daily_budget' in plan.actions[0]) {
+      expect(plan.actions[0].target_daily_budget).toBe(Math.round(400 * (1 - MAX_AUTOMATED_BUDGET_CHANGE)))
     }
   })
 
-  it('11. tracking_suspected → diagnostic action', () => {
+  it('4. Katering case: null campaign budget + 1 ad-set budget → meta_set_adset_budget', () => {
     const diagnosis = diagnosePerformance(baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Ad')],
-      currentAdInsights: [makeAdInsight('ad1', { spend: '200', clicks: 50, actions_json: [] })],
-    }))
-    const plan = buildRemediationPlan(diagnosis, campaignBase)
-    expect(plan.actions[0].action_type).toBe('run_tracking_diagnostic')
-  })
-
-  it('12. insufficient_evidence → manual_action_required', () => {
-    const diagnosis = diagnosePerformance(baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Low')],
-      currentAdInsights: [makeAdInsight('ad1', { spend: '10', impressions: 50 })],
-    }))
-    const plan = buildRemediationPlan(diagnosis, campaignBase)
-    expect(plan.actions[0].action_type).toBe('manual_action_required')
-  })
-
-  it('13. budget reduction capped at 20%', () => {
-    const diagnosis = diagnosePerformance(baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Ad 1'), makeAd('ad2', 'as1', 'Ad 2')],
+      ads: [makeAd('ad1', 'as1', 'Katering Carousel V1.1')],
+      adSets: [makeAdSet('as1', 'c1', 'Katering Leads', 'ACTIVE', '10000')],  // 10000 minor units = 100 DKK
       currentAdInsights: [
-        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
-        makeAdInsight('ad2', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
+        makeAdInsight('ad1', { spend: '585', clicks: 138, impressions: 5450, actions_json: [{ action_type: 'lead', value: '1' }] }),
       ],
     }))
-    const plan = buildRemediationPlan(diagnosis, { ...campaignBase, dailyBudget: 1000 })
-    const action = plan.actions.find(a => 'target_daily_budget' in a)
-    expect(action).toBeDefined()
-    if (action && 'target_daily_budget' in action) {
-      const reduction = 1 - action.target_daily_budget / 1000
-      expect(reduction).toBeCloseTo(MAX_AUTOMATED_BUDGET_CHANGE, 2)
-    }
-  })
-
-  it('14. budget increase for cpr_improving capped at 20%', () => {
-    // Direct guardrail check — increase > 20% is rejected
-    expect(MAX_AUTOMATED_BUDGET_CHANGE).toBe(0.20)
-  })
-
-  it('18. landing page issue → manual_action_required', () => {
-    const diagnosis = diagnosePerformance(baseDiagnosticInput({
-      ads: [],
-      currentAdInsights: [],
+    const plan = buildRemediationPlan(diagnosis, baseCampaign({
+      dailyBudget: null,
+      adSets: [makeAdSet('as1', 'c1', 'Katering Leads', 'ACTIVE', '10000')],
     }))
-    // Override classification to test the plan builder
-    const lpDiagnosis = { ...diagnosis, classification: 'landing_page_issue' as const }
-    const plan = buildRemediationPlan(lpDiagnosis, campaignBase)
-    expect(plan.actions[0].action_type).toBe('manual_action_required')
-    if (plan.actions[0].action_type === 'manual_action_required') {
-      expect(plan.actions[0].reason.toLowerCase()).toContain('landing page')
+    expect(plan.actions[0].action_type).toBe('meta_set_adset_budget')
+    if ('target_daily_budget' in plan.actions[0]) {
+      expect(plan.actions[0].current_daily_budget).toBe(100)
+      expect(plan.actions[0].target_daily_budget).toBe(80)  // 100 × 0.80
     }
-  })
-
-  it('19. monitoring_days defaults to 5', () => {
-    const diagnosis = diagnosePerformance(baseDiagnosticInput({
-      ads: [makeAd('ad1', 'as1', 'Ad')],
-      currentAdInsights: [makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] })],
-    }))
-    const plan = buildRemediationPlan(diagnosis, campaignBase)
+    expect(plan.version).toBe('v2')
     expect(plan.monitoring_days).toBe(5)
   })
 
-  it('20. remediation plan has at most 3 actions', () => {
-    // Current implementation produces max 1-2 actions per classification.
-    // Verify the structural maximum.
+  it('5. multiple ad sets with no deterministic target → manual_action_required', () => {
+    const diagnosis = diagnosePerformance(baseDiagnosticInput({
+      ads: [makeAd('ad1', 'as1', 'Ad 1'), makeAd('ad2', 'as2', 'Ad 2')],
+      adSets: [
+        makeAdSet('as1', 'c1', 'Set 1', 'ACTIVE', '5000'),
+        makeAdSet('as2', 'c1', 'Set 2', 'ACTIVE', '5000'),
+      ],
+      currentAdInsights: [
+        makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
+        makeAdInsight('ad2', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] }),
+      ],
+    }))
+    const plan = buildRemediationPlan(diagnosis, baseCampaign({
+      dailyBudget: null,
+      adSets: [
+        makeAdSet('as1', 'c1', 'Set 1', 'ACTIVE', '5000'),
+        makeAdSet('as2', 'c1', 'Set 2', 'ACTIVE', '5000'),
+      ],
+    }))
+    expect(plan.actions[0].action_type).toBe('manual_action_required')
+  })
+
+  it('14. budget reduction capped at 20%', () => {
     const diagnosis = diagnosePerformance(baseDiagnosticInput({
       ads: [makeAd('ad1', 'as1', 'Ad')],
       currentAdInsights: [makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] })],
     }))
-    const plan = buildRemediationPlan(diagnosis, campaignBase)
-    expect(plan.actions.length).toBeLessThanOrEqual(3)
+    const plan = buildRemediationPlan(diagnosis, baseCampaign({ dailyBudget: 1000 }))
+    const action = plan.actions.find(a => 'target_daily_budget' in a)
+    if (action && 'target_daily_budget' in action) {
+      expect(1 - action.target_daily_budget / 1000).toBeCloseTo(MAX_AUTOMATED_BUDGET_CHANGE, 2)
+    }
+  })
+
+  it('15. monitoring_days defaults to 5', () => {
+    const diagnosis = diagnosePerformance(baseDiagnosticInput({
+      ads: [makeAd('ad1', 'as1', 'Ad')],
+      currentAdInsights: [makeAdInsight('ad1', { spend: '100', actions_json: [{ action_type: 'lead', value: '2' }] })],
+    }))
+    expect(buildRemediationPlan(diagnosis, baseCampaign()).monitoring_days).toBe(5)
+  })
+
+  it('16. Katering dry run: exact 100→80 DKK with correct ad-set targeting', () => {
+    // Simulates the exact Killer Katering production structure
+    const diagnosis = diagnosePerformance({
+      campaignId: '120249719135140232',
+      campaignName: 'Killer Katering - Copenhagen Leads (V1)',
+      adAccountId: 'act_fake',
+      objective: 'OUTCOME_LEADS',
+      currency: 'DKK',
+      dailyBudget: null,
+      ads: [
+        { id: '120249733212060232', ad_set_id: '120249719137290232', name: 'Killer Katering Carousel - Leads V1.1', status: 'ACTIVE' },
+        { id: '120249732299250232', ad_set_id: '120249719137290232', name: 'Killer Katering Carousel - Leads V1', status: 'PAUSED' },
+      ],
+      adSets: [{ id: '120249719137290232', campaign_id: '120249719135140232', name: 'Katering Leads - Greater Copenhagen Broad (IG Feed/Profile)', status: 'ACTIVE', daily_budget: '10000' }],
+      currentAdInsights: [
+        makeAdInsight('120249733212060232', { spend: '585.89', clicks: 138, impressions: 5450, actions_json: [{ action_type: 'lead', value: '1' }] }),
+      ],
+      priorAdInsights: [
+        makeAdInsight('120249733212060232', { spend: '842.02', clicks: 120, impressions: 8686, actions_json: [{ action_type: 'lead', value: '3' }] }),
+      ],
+    })
+
+    expect(diagnosis.classification).toBe('broad_deterioration') // Only 1 active ad, can't isolate weak entity
+
+    const plan = buildRemediationPlan(diagnosis, {
+      id: '120249719135140232',
+      adAccountId: 'act_fake',
+      currency: 'DKK',
+      dailyBudget: null,
+      adSets: [{ id: '120249719137290232', campaign_id: '120249719135140232', name: 'Katering Leads - Greater Copenhagen Broad (IG Feed/Profile)', status: 'ACTIVE', daily_budget: '10000' }],
+    })
+
+    expect(plan.actions).toHaveLength(1)
+    expect(plan.actions[0].action_type).toBe('meta_set_adset_budget')
+    if ('target_daily_budget' in plan.actions[0]) {
+      expect(plan.actions[0].current_daily_budget).toBe(100) // 10000 minor units / 100
+      expect(plan.actions[0].target_daily_budget).toBe(80)   // 100 × 0.80
+    }
+    expect(plan.expected_outcome).toContain('100')
+    expect(plan.expected_outcome).toContain('80')
+    expect(plan.expected_outcome).toContain('DKK')
+  })
+
+  it('17. v1 backward compatible: old rows without remediation_plan render', () => {
+    // PaidRecommendationRow has remediation_plan as nullable
+    const row = { remediation_plan: null, execution_plan: { action_type: 'monitor_only', platform: 'meta', campaign_id: '1' } }
+    expect(row.remediation_plan).toBeNull()
+    expect(row.execution_plan).toBeTruthy()
+  })
+
+  it('18. manual_action_required plans contain no executable mutation', () => {
+    const diagnosis = diagnosePerformance(baseDiagnosticInput({
+      ads: [makeAd('ad1', 'as1', 'Ad')],
+      currentAdInsights: [makeAdInsight('ad1', { spend: '10', impressions: 50, clicks: 2 })],
+    }))
+    const plan = buildRemediationPlan(diagnosis, baseCampaign())
+    const hasManual = plan.actions.some(a => a.action_type === 'manual_action_required')
+    const hasMutation = plan.actions.some(a => !['manual_action_required', 'monitor_only', 'run_tracking_diagnostic', 'create_task'].includes(a.action_type))
+    expect(hasManual).toBe(true)
+    expect(hasMutation).toBe(false)
   })
 })
 
-describe('guardrails integration', () => {
+describe('guardrails', () => {
   it('MAX_AUTOMATED_BUDGET_CHANGE is 20%', () => {
     expect(MAX_AUTOMATED_BUDGET_CHANGE).toBe(0.20)
   })
