@@ -136,94 +136,6 @@ export default function ReviewDesk({ initial, initialSaved }: { initial: ReviewD
     setFeedback(`Generated ${done} draft ${done === 1 ? 'reply' : 'replies'}.`)
   }
 
-  // Shared review card renderer for both desk and saved views
-  function ReviewCard({ row, isSaved }: { row: ReviewDeskItem | SavedReviewItem; isSaved: boolean }) {
-    const edit = editFor(row)
-    const draftPending = !row.reply_id || row.status === 'new' || !(row.approved_text?.trim() || row.draft_text?.trim())
-    const locked = !!row.publish_started_at
-    return (
-      <article key={row.id} className="rounded-2xl border border-kk-line bg-kk-panel p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-kk-muted">
-            {desk.canApprove && <label className="flex items-center gap-1.5 shrink-0">
-              <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
-            </label>}
-            <span className="text-lg font-bold text-kk-ink flex items-center gap-1.5"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-kk-muted"><path d="M2 6.5V14h12V6.5M1 3h14v3.5H1V3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M6 10h4v4H6v-4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>{row.store_short_name}</span>
-            <span className="text-lg text-amber-500" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
-            {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {!locked && (
-              isSaved ? (
-                <div className="flex items-center gap-1.5">
-                  <button type="button" onClick={() => handleUnsave(row as SavedReviewItem)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-brand hover:bg-kk-bad-bg transition-colors disabled:opacity-50">
-                    Move back
-                  </button>
-                  <button type="button" onClick={() => handleDismiss(row as SavedReviewItem)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors disabled:opacity-50">
-                    Won{"'"}t answer
-                  </button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => handleSave(row)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors disabled:opacity-50">
-                  Save for later
-                </button>
-              )
-            )}
-          </div>
-        </div>
-        <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-kk-muted mb-2">
-            <span className="font-medium text-kk-ink">{row.reviewer_name ?? 'Anonymous'}</span>
-            <span>{'\u00B7'}</span>
-            <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
-          </div>
-          <p className={`whitespace-pre-wrap break-words text-base leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
-            {row.review_text?.trim() || 'Rating only — no written comment.'}
-          </p>
-        </div>
-        {draftPending ? (
-          <div className="mt-3 flex items-center gap-3 text-sm text-kk-muted">
-            <span>Draft pending</span>
-            {desk.canApprove && !locked && <button type="button" disabled={pending} onClick={() => retry(row)} className="font-medium text-kk-brand hover:underline disabled:opacity-50">Retry draft</button>}
-          </div>
-        ) : (
-          <div className="mt-3">
-            <label htmlFor={`reply-${row.id}`} className="mb-1 block text-sm font-medium text-kk-muted">{desk.canApprove ? 'Reply to publish' : 'Prepared reply'}</label>
-            <textarea id={`reply-${row.id}`} value={edit.text} rows={3} maxLength={4096} readOnly={!desk.canApprove} disabled={pending || locked}
-              onChange={event => patch(row, { text: event.target.value })}
-              className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-base leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
-            {desk.canApprove && !locked && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                {['😊', '🙏', '❤️', '🔥', '👏', '💪', '🌯', '🧆', '⭐', '🙌'].map(emoji => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    disabled={pending}
-                    onClick={() => {
-                      const ta = document.getElementById(`reply-${row.id}`) as HTMLTextAreaElement | null
-                      const pos = ta?.selectionStart ?? edit.text.length
-                      const before = edit.text.slice(0, pos)
-                      const after = edit.text.slice(pos)
-                      patch(row, { text: before + emoji + after })
-                      setTimeout(() => { if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = pos + emoji.length } }, 0)
-                    }}
-                    className="w-7 h-7 flex items-center justify-center rounded-md text-base hover:bg-kk-soft transition-colors disabled:opacity-50"
-                    aria-label={`Insert ${emoji}`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            )}
-            {row.draft_text && edit.text !== row.draft_text && <details className="mt-1 text-xs text-kk-muted"><summary className="cursor-pointer">Original AI draft</summary><p className="mt-2 whitespace-pre-wrap break-words">{row.draft_text}</p></details>}
-          </div>
-        )}
-        {locked ? <p className="mt-2 text-xs text-kk-warn">Publication pending confirmation. Run GBP sync before retrying.</p> : null}
-        {edit.error || row.publish_error ? <p role="alert" className="mt-2 text-xs text-kk-bad">{edit.error ?? row.publish_error}</p> : null}
-      </article>
-    )
-  }
-
   return (
     <section className="mt-8 border-t border-kk-line pt-6" aria-labelledby="google-reviews-heading">
       <div className="mb-4">
@@ -299,9 +211,93 @@ export default function ReviewDesk({ initial, initialSaved }: { initial: ReviewD
         </div>
       )}
       <div className="space-y-3">
-        {filteredReviews.map(row => (
-          <ReviewCard key={row.id} row={row} isSaved={activeFilter === 'saved'} />
-        ))}
+        {filteredReviews.map(row => {
+          const edit = editFor(row)
+          const draftPending = !row.reply_id || row.status === 'new' || !(row.approved_text?.trim() || row.draft_text?.trim())
+          const locked = !!row.publish_started_at
+          const isSaved = activeFilter === 'saved'
+          return (
+            <article key={row.id} className="rounded-2xl border border-kk-line bg-kk-panel p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-kk-muted">
+                  {desk.canApprove && <label className="flex items-center gap-1.5 shrink-0">
+                    <input type="checkbox" checked={edit.included && !locked} disabled={pending || draftPending || locked} onChange={event => patch(row, { included: event.target.checked })} aria-label={`Include reply to ${row.reviewer_name ?? 'anonymous reviewer'}`} className="h-4 w-4 accent-kk-brand" />
+                  </label>}
+                  <span className="text-lg font-bold text-kk-ink flex items-center gap-1.5"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-kk-muted"><path d="M2 6.5V14h12V6.5M1 3h14v3.5H1V3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M6 10h4v4H6v-4Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>{row.store_short_name}</span>
+                  <span className="text-lg text-amber-500" aria-label={`${row.star_rating} out of 5 stars`}>{'★'.repeat(row.star_rating)}{'☆'.repeat(5 - row.star_rating)}</span>
+                  {!row.new_since_session ? <span className="text-kk-warn">Still needs attention</span> : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {!locked && (
+                    isSaved ? (
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={() => handleUnsave(row as SavedReviewItem)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-brand hover:bg-kk-bad-bg transition-colors disabled:opacity-50">
+                          Move back
+                        </button>
+                        <button type="button" onClick={() => handleDismiss(row as SavedReviewItem)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors disabled:opacity-50">
+                          Won{"'"}t answer
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => handleSave(row)} disabled={pending} className="rounded-full border border-kk-line bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted hover:bg-kk-line hover:text-kk-ink transition-colors disabled:opacity-50">
+                        Save for later
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-kk-muted mb-2">
+                  <span className="font-medium text-kk-ink">{row.reviewer_name ?? 'Anonymous'}</span>
+                  <span>{'\u00B7'}</span>
+                  <time dateTime={row.review_created_at}>{new Date(row.review_created_at).toLocaleDateString('en-GB', { timeZone: 'Europe/Copenhagen', day: 'numeric', month: 'short', year: 'numeric' })}</time>
+                </div>
+                <p className={`whitespace-pre-wrap break-words text-base leading-relaxed ${row.review_text?.trim() ? 'text-kk-ink' : 'italic text-kk-muted'}`}>
+                  {row.review_text?.trim() || 'Rating only — no written comment.'}
+                </p>
+              </div>
+              {draftPending ? (
+                <div className="mt-3 flex items-center gap-3 text-sm text-kk-muted">
+                  <span>Draft pending</span>
+                  {desk.canApprove && !locked && <button type="button" disabled={pending} onClick={() => retry(row)} className="font-medium text-kk-brand hover:underline disabled:opacity-50">Retry draft</button>}
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <label htmlFor={`reply-${row.id}`} className="mb-1 block text-sm font-medium text-kk-muted">{desk.canApprove ? 'Reply to publish' : 'Prepared reply'}</label>
+                  <textarea id={`reply-${row.id}`} value={edit.text} rows={3} maxLength={4096} readOnly={!desk.canApprove} disabled={pending || locked}
+                    onChange={event => patch(row, { text: event.target.value })}
+                    className="w-full resize-y rounded-xl border border-kk-line bg-white p-3 text-base leading-relaxed text-kk-ink focus:border-kk-brand focus:outline-none focus:ring-1 focus:ring-kk-brand disabled:opacity-60" />
+                  {desk.canApprove && !locked && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {['😊', '🙏', '❤️', '🔥', '👏', '💪', '🌯', '🧆', '⭐', '🙌'].map(emoji => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          disabled={pending}
+                          onClick={() => {
+                            const ta = document.getElementById(`reply-${row.id}`) as HTMLTextAreaElement | null
+                            const pos = ta?.selectionStart ?? edit.text.length
+                            const before = edit.text.slice(0, pos)
+                            const after = edit.text.slice(pos)
+                            patch(row, { text: before + emoji + after })
+                            setTimeout(() => { if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = pos + emoji.length } }, 0)
+                          }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md text-base hover:bg-kk-soft transition-colors disabled:opacity-50"
+                          aria-label={`Insert ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {row.draft_text && edit.text !== row.draft_text && <details className="mt-1 text-xs text-kk-muted"><summary className="cursor-pointer">Original AI draft</summary><p className="mt-2 whitespace-pre-wrap break-words">{row.draft_text}</p></details>}
+                </div>
+              )}
+              {locked ? <p className="mt-2 text-xs text-kk-warn">Publication pending confirmation. Run GBP sync before retrying.</p> : null}
+              {edit.error || row.publish_error ? <p role="alert" className="mt-2 text-xs text-kk-bad">{edit.error ?? row.publish_error}</p> : null}
+            </article>
+          )
+        })}
       </div>
       {desk.nextCursor ? (
         <div className="mt-4 flex justify-center">
