@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { rec } from '../../../helpers/paid-strategy'
-import { PaidStrategyOutputSchema, PaidStrategyRecommendationSchema, RECOMMENDATION_TYPES } from '@/lib/marketing/paid-strategy/types'
+import { FIELD_MAX_CHARS, FIELD_TARGET_CHARS, PaidStrategyOutputSchema, PaidStrategyRecommendationSchema, RECOMMENDATION_TYPES } from '@/lib/marketing/paid-strategy/types'
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/ai/usage', () => ({ trackAiCallWithRetries: (_m: unknown, call: () => unknown) => call(), SDK_DEFAULT_MAX_RETRIES: 2 }))
@@ -29,6 +29,31 @@ describe('Paid Strategy output schema', () => {
       expect(PaidStrategyRecommendationSchema.safeParse({ ...rec(), [extra]: '1' }).success, extra).toBe(false)
     }
     expect(PaidStrategyOutputSchema.safeParse({ recommendations: [], extra: true }).success).toBe(false)
+  })
+})
+
+describe('Paid Strategy field lengths', () => {
+  const padded = (base: string, n: number) => (base + ' lorem ipsum dolor sit amet'.repeat(80)).slice(0, n)
+  it('keeps hard maxima above the targets the model is told about', () => {
+    for (const key of Object.keys(FIELD_TARGET_CHARS) as (keyof typeof FIELD_TARGET_CHARS)[]) expect(FIELD_MAX_CHARS[key], key).toBeGreaterThan(FIELD_TARGET_CHARS[key])
+  })
+  it('accepts the modest overshoot seen in the first live run instead of discarding the analysis', () => {
+    // First live run (2026-10-08): interpretation 623/514/587, exact_test_or_action 727, evidence 612, limitations 587 against old caps of 500/700/600/500.
+    const live = rec(1, {
+      interpretation: padded('Interpretation. ', 623), exact_test_or_action: padded('Set up a test. ', 727),
+      evidence: padded('Evidence. ', 612), evidence_limitations: padded('Limitations. ', 587),
+    })
+    expect(PaidStrategyRecommendationSchema.safeParse(live).success).toBe(true)
+    expect(validatePaidStrategy({ recommendations: [live] })).toHaveLength(1)
+  })
+  it('still rejects runaway output', () => {
+    for (const key of Object.keys(FIELD_MAX_CHARS) as (keyof typeof FIELD_MAX_CHARS)[]) {
+      expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { [key]: padded('x ', FIELD_MAX_CHARS[key] + 1) })).success, key).toBe(false)
+    }
+  })
+  it('fits three maximal recommendations inside the database size bound', () => {
+    const max = Object.values(FIELD_MAX_CHARS).reduce((a, b) => a + b, 0) + 40
+    expect(max * 3).toBeLessThan(30_000)
   })
 })
 

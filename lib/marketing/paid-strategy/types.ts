@@ -16,17 +16,32 @@ export type PaidStrategyRecommendationType = (typeof RECOMMENDATION_TYPES)[numbe
 
 export const MAX_RECOMMENDATIONS = 3
 
+/**
+ * Constrained decoding cannot enforce string length, so the model is TOLD the targets
+ * (see KOCKPIT_RULES) and the schema keeps headroom above them. Without headroom a
+ * mild overshoot in one field discards an otherwise valid analysis (seen live: the
+ * first run failed because several fields ran 3-25% over a hard cap the model never saw).
+ */
+export const FIELD_TARGET_CHARS = {
+  title: 120, evidence: 600, interpretation: 500, hypothesis: 400,
+  exact_test_or_action: 700, success_metric: 300, evidence_limitations: 500,
+} as const
+export const FIELD_MAX_CHARS = {
+  title: 160, evidence: 900, interpretation: 800, hypothesis: 600,
+  exact_test_or_action: 1000, success_metric: 450, evidence_limitations: 800,
+} as const
+
 export const PaidStrategyRecommendationSchema = z.object({
-  title: z.string().min(5).max(120),
+  title: z.string().min(5).max(FIELD_MAX_CHARS.title),
   recommendation_type: z.enum(RECOMMENDATION_TYPES),
   /** FACTS only: numbers and structure present in the supplied data. */
-  evidence: z.string().min(10).max(600),
+  evidence: z.string().min(10).max(FIELD_MAX_CHARS.evidence),
   /** INFERENCE: what the facts might mean. Never stated as established. */
-  interpretation: z.string().min(10).max(500),
-  hypothesis: z.string().min(10).max(400),
-  exact_test_or_action: z.string().min(10).max(700),
-  success_metric: z.string().min(5).max(300),
-  evidence_limitations: z.string().min(5).max(500),
+  interpretation: z.string().min(10).max(FIELD_MAX_CHARS.interpretation),
+  hypothesis: z.string().min(10).max(FIELD_MAX_CHARS.hypothesis),
+  exact_test_or_action: z.string().min(10).max(FIELD_MAX_CHARS.exact_test_or_action),
+  success_metric: z.string().min(5).max(FIELD_MAX_CHARS.success_metric),
+  evidence_limitations: z.string().min(5).max(FIELD_MAX_CHARS.evidence_limitations),
 }).strict()
 
 export const PaidStrategyOutputSchema = z.object({

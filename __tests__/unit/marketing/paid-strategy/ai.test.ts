@@ -12,6 +12,7 @@ vi.mock('@/lib/ai/usage', () => ({
   SDK_DEFAULT_MAX_RETRIES: 2,
   trackAiCallWithRetries: (meta: unknown, call: () => unknown) => { mocks.track(meta); return call() },
 }))
+import { FIELD_TARGET_CHARS } from '@/lib/marketing/paid-strategy/types'
 import { buildPaidStrategySystemPrompt, buildPaidStrategyUserMessage, callPaidStrategyAI, KOCKPIT_RULES, PAID_STRATEGY_PROMPT_VERSION } from '@/lib/ai/paid-strategy'
 
 const skill: LoadedSkill = { name: 'mesper-meta-ads', version: '2.1.0', ref: 'mesper-meta-ads@2.1.0#cbfc19c', hash: 'b'.repeat(64), text: '### SKILL.md\n\n# MESPER Meta Ads Operator\nWinner = 10x median AND 600 EUR.' }
@@ -44,6 +45,10 @@ describe('Paid Strategy system prompt', () => {
       'evidence = FACTS only', 'interpretation = INFERENCE', 'DATA:', 'platform IDs', 'separate system with its own human approval',
       'Never add different action types together',
     ]) expect(prompt, text).toContain(text)
+  })
+  it('tells the model the per-field character budgets, which constrained decoding cannot enforce', () => {
+    for (const [field, chars] of Object.entries(FIELD_TARGET_CHARS)) expect(prompt, field).toContain(`${field} ${chars}`)
+    expect(prompt).toContain('one over-long field discards the whole analysis')
   })
   it('records a prompt version', () => { expect(PAID_STRATEGY_PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}-v\d+$/) })
 })

@@ -19,10 +19,10 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { SDK_DEFAULT_MAX_RETRIES, trackAiCallWithRetries } from '@/lib/ai/usage'
 import type { LoadedSkill } from '@/lib/ai/skills/mesper'
 import { MONTHLY_CEILING_DKK, type PaidStrategyEvidence } from '@/lib/marketing/paid-strategy/evidence'
-import { PaidStrategyOutputSchema, type PaidStrategyRecommendation } from '@/lib/marketing/paid-strategy/types'
+import { FIELD_TARGET_CHARS, PaidStrategyOutputSchema, type PaidStrategyRecommendation } from '@/lib/marketing/paid-strategy/types'
 
 /** Bump on any change to KOCKPIT_RULES, the schema, or the vendored skill. */
-export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-08-v1'
+export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-08-v2'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ Output
 - Fields: title, recommendation_type, evidence, interpretation, hypothesis, exact_test_or_action, success_metric, evidence_limitations.
 - evidence = FACTS only: numbers and structure that appear in the supplied data, with units and window. interpretation = INFERENCE and must read as inference ("this may mean", "one reading is"). Never present inference as fact and never put numbers in interpretation that are not in the data.
 - hypothesis = one falsifiable prediction. exact_test_or_action = one concrete experiment (what to set up, audience or angle, duration, the maximum extra spend in DKK, which Meta metric decides). success_metric = what result, on which stored metric, counts as success, with an explicit threshold only when it can be derived from the supplied data; otherwise a comparison against the account's own prior window.
+- Length: every field has a character budget, checked after you answer, and one over-long field discards the whole analysis. Stay inside these budgets (characters, not words): ${Object.entries(FIELD_TARGET_CHARS).map(([k, n]) => `${k} ${n}`).join(', ')}. Be selective and dense: one strong sentence beats three; cite only the numbers that carry the point.
 - The skill's table format, "no prose" rule, DECISION/WHY/NEXT STEP template and "no hedging" rule do not apply. Write plain, concise sentences in the fields.
 
 Calibration and honesty
