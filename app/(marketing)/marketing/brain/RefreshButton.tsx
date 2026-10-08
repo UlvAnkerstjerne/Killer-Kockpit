@@ -13,7 +13,7 @@ export default function RefreshButton() {
       setMessage('')
       try {
         const result = await refreshCreativeIntelligence()
-        setMessage(result.ok ? `${result.counts?.classified ?? 0} newly classified · ${result.counts?.skipped ?? 0} unchanged.${result.partial ? ' Partial result; see details below.' : ''}` : result.error ?? 'Refresh failed.')
+        setMessage(result.ok ? `${result.counts?.classified ?? 0} newly classified · ${result.counts?.skipped ?? 0} unchanged.${result.partial ? ' Partial result; see details below.' : ''}${result.organic === 'unavailable' ? ' Organic Strategy was unavailable; refresh again to retry.' : ''}` : result.error ?? 'Refresh failed.')
       } catch {
         setMessage('The refresh was interrupted. Reload to check the latest result before retrying.')
       }

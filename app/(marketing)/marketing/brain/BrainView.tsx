@@ -7,6 +7,7 @@ import { INTERPRETATION_PROMPT_VERSION } from '@/lib/marketing/brain/taxonomy'
 import { label, signalEvidence, signalMetric, signalComparison } from '@/lib/marketing/brain/signals'
 import { MIN_PATTERN_POSTS } from '@/lib/marketing/brain/analytics'
 import IgThumbnail from '../organic/IgThumbnail'
+import OrganicStrategySection from './OrganicStrategySection'
 
 const number = (n: number) => new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 }).format(n)
 function date(value: string) { return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) }
@@ -277,6 +278,7 @@ export default function BrainView({ data, refreshControl, paidStrategy }: { data
           {!data.canRefresh ? <p className="mt-4 text-sm text-kk-muted">A SUPER_ADMIN can generate the first analysis.</p> : null}
         </section> : <>
           <CoverageSummary run={run} analytics={analytics} />
+          <OrganicStrategySection strategy={analytics.organic_strategy} canRefresh={data.canRefresh} />
           <section aria-labelledby="learning-title">
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="learning-title" className="text-xl font-semibold">What we&rsquo;re learning</h2>

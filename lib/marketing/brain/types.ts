@@ -1,4 +1,5 @@
 import type { MetaIgMediaRow } from '@/lib/marketing/types/meta'
+import type { OrganicStrategyStored } from '@/lib/marketing/organic-strategy/types'
 import type { CreativeFormat, Fingerprint } from './taxonomy'
 
 export type Media = MetaIgMediaRow
@@ -72,6 +73,8 @@ export interface CreativeAnalytics {
   business_context?: BusinessContextSnapshot[]
   /** v2: Brain's short top-level synthesis. Absent for runs generated before the v2 interpretation. */
   brain_take?: string | null
+  /** Organic Strategy (specialist layer). Absent on runs created before it existed. */
+  organic_strategy?: OrganicStrategyStored
 }
 export const SIGNAL_TYPES = ['hook_outperformance', 'theme_outperformance', 'product_outperformance', 'presentation_outperformance', 'share_heavy_pattern', 'save_heavy_pattern', 'format_outperformance', 'exceptional_post'] as const
 export type SignalType = typeof SIGNAL_TYPES[number]

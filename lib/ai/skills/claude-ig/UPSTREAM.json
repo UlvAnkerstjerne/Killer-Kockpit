@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "name": "claude-ig",
+  "version": "2.0.0",
+  "upstream": {
+    "repo": "https://github.com/nicojunk/claude-ig",
+    "commit": "5e9b2d95ed9b8c0d28f8fe5d0fd4c8b8a4c7f3e0",
+    "commit_date": "2026-09-06",
+    "commit_message": "Fix: Repo-URLs auf korrekte Kleinschreibung",
+    "tree_sha": "8726f557fbbd22e6d5a24cfa4c5dc4badbe10f51",
+    "release_tag": "none (CHANGELOG version 2.0.0)"
+  },
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "copyright": "Copyright (c) 2026 NicoJunk",
+    "notice": "Vendored unmodified. The MIT licence and copyright notice must accompany these files."
+  },
+  "files": [
+    {
+      "path": "skills/ig-analyze/SKILL.md",
+      "blob_sha": "f8292767bc39f0ad0f860b36ddf91dcdfecc5626",
+      "sha256": "9484b8b053d665e300ebc842e7d4cf10d015425dff0382db1bc0ab22b4ee71eb",
+      "bytes": 5332,
+      "why": "Metric definitions (engagement, save and DM-send rate on reach) and the pattern-detection method: best and worst performers, format comparison, hook-category grouping, save leaders. Its data-collection phase is not used: Kockpit supplies the data."
+    },
+    {
+      "path": "skills/ig-strategy/SKILL.md",
+      "blob_sha": "23242ce4149a57ec943e055930403e7deebeab89",
+      "sha256": "dcf84e85b0cbd5af4c9ad6cfe96c979ceff78552f7f38fe8ae77b1eaeb3ce4f4",
+      "bytes": 7146,
+      "why": "Topic, format and hook-category gap identification and pillar-depth review: the basis for what to make next. Its demographic audience mapping and 30/60/90 plan are not used."
+    },
+    {
+      "path": "skills/ig-hook/SKILL.md",
+      "blob_sha": "a8364f714e13b7f335d88e109828a1dad37cd77d",
+      "sha256": "2fab0ab167488f3743a7dd7db7a635ba74a8c24121d721c71e16762ad8139bc2",
+      "bytes": 8636,
+      "why": "Hook category method (correction, identity trigger, bold claim, curiosity gap, relatable pain) and the first-3-seconds discipline, used to shape Reel hooks. Its German examples and scoring are not used."
+    },
+    {
+      "path": "skills/ig-reel/SKILL.md",
+      "blob_sha": "234d5fb8dd5dba71cfad5eaf4c491f8ccacf0f32",
+      "sha256": "8c59220b2e19ae0ae922d731d741c48e81e5cdc64d86473f6246c7906ee30351",
+      "bytes": 13446,
+      "why": "Reel structure (hook, problem, solution, payoff), spoken-delivery rules and content types, used to make Reel concepts executable. Its German caption rules, scoring and quality gates are not used."
+    },
+    {
+      "path": "skills/ig-carousel/SKILL.md",
+      "blob_sha": "47c06dc61eb7851cbba9059afb27755c1017e0b6",
+      "sha256": "76fc69cd1330b9a5b6c278512ca9dbd9c2e5f202f455ad9e344593daa109b704",
+      "bytes": 4714,
+      "why": "Carousel structure (cover hook, one idea per slide, swipe motivation, last-slide CTA), used to make carousel concepts executable. Its German CTA examples and scoring are not used."
+    },
+    {
+      "path": "skills/ig/references/algorithm-2026.md",
+      "blob_sha": "76f0fabc0c32bf84dd315e292b83b14b2b8e3de5",
+      "sha256": "c6276fe309444e0b49ba2daee00b5fb57e20fa886f8ffa39798071ebb1e602a8",
+      "bytes": 13536,
+      "why": "Signal hierarchy (watch time, shares, saves above likes) used to prioritise reach, shares and saves. Its numeric thresholds, retention figures, posting times and hashtag rules are generic benchmarks from another account type and must not be cited as facts about Killer Kebab."
+    }
+  ],
+  "excluded": [
+    {
+      "path": "skills/ig/references/affiliate-compliance.md, skills/ig-affiliate/",
+      "reason": "German affiliate advertising rules and affiliate content. Not applicable."
+    },
+    {
+      "path": "skills/ig/references/account-baseline.md",
+      "reason": "Unfilled template for a different account."
+    },
+    {
+      "path": "skills/ig/references/hook-library.md",
+      "reason": "40 KB of German fitness hook templates; copying templates is discouraged by the skill itself and would import niche phrasing."
+    },
+    {
+      "path": "skills/ig/references/{scoring-system,content-rules,format-specs,conversion-pipeline,competitor-framework,repurpose-playbook,comment-responder,story-strategy}.md",
+      "reason": "Scoring rubric, original creator brand rules, production specs, lead funnel, competitor research, cross-platform repurposing, comment handling and Stories. Out of scope for an evidence-led organic strategy."
+    },
+    {
+      "path": "skills/ig/SKILL.md, skills/ig-audit/, skills/ig-caption/, skills/ig-calendar/, skills/ig-competitor/, skills/ig-comment/, skills/ig-repurpose/, skills/ig-story/",
+      "reason": "Orchestrator, Claude Code subagent audit, and workflows for tasks Kockpit does not perform."
+    },
+    {
+      "path": "agents/, scripts/, tests/, install.sh, uninstall.sh, requirements.txt",
+      "reason": "Claude Code agents and the Instagram Graph API / Apify fetching machinery. Kockpit already holds the data and adds no new Instagram connection."
+    }
+  ],
+  "known_upstream_assumptions_overridden_by_kockpit_rules": [
+    "Fitness niche, German language, women 40+ audience, DACH posting times",
+    "Hard bans on controversial or opinion-led hooks (derived from a different account; Kockpit decides only from its own evidence)",
+    "Numeric retention, completion and 3-second thresholds (no such data is stored)",
+    "Demographic audience mapping and 30/60/90 growth plans",
+    "Instagram MCP and Apify data collection, 100-point scoring, 500-character caption rules"
+  ],
+  "update_policy": "Any change requires re-pinning commit and hashes here, re-reading the diff, re-checking the Kockpit overrides, and bumping ORGANIC_STRATEGY_PROMPT_VERSION."
+}
