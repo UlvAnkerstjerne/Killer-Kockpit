@@ -72,15 +72,16 @@ export async function generateCreativeIntelligence(db: Db, actorId: string, opti
     // Load business context from canonical projects' Universal Updates.
     // This is a separate contextual layer — it does NOT affect classification or signals.
     const businessContext = await loadMarketingBusinessContext(db, now)
-    const interpretation = await callCreativeInterpretation(signals, businessContext)
+    const interpretation = await callCreativeInterpretation(signals, businessContext,
+      { posts_in_analysis: analytics.coverage.total, measured_posts: analytics.coverage.with_exposure })
     await heartbeat()
     // Persist the business context snapshot with the analytics so the run records
     // which real-world updates were available when the interpretation was generated.
-    const analyticsWithContext = { ...analytics, business_context: businessContext }
+    const analyticsWithContext = { ...analytics, business_context: businessContext, brain_take: interpretation.ok ? interpretation.brain_take : null }
     const partial = classified.counts.failed > 0 || classified.counts.deferred > 0 || !interpretation.ok
     const completed = await db.from('marketing_creative_intelligence_runs').update({
       status: partial ? 'partial' : 'completed', generated_at: new Date().toISOString(), lease_expires_at: null,
-      analytics: analyticsWithContext, signals, observations: interpretation.ok ? interpretation.observations : [],
+      analytics: analyticsWithContext, signals, observations: interpretation.ok ? interpretation.insights : [],
       model: interpretation.ok ? interpretation.model : null, classification_counts: classified.counts,
       error: !interpretation.ok ? interpretation.error : partial ? 'Some content could not be classified. Refresh again to retry remaining items.' : null,
     }).eq('id', runId).eq('status', 'running').select('id').single()

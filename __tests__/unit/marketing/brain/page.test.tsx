@@ -2,7 +2,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import BrainView, { instagramLink, representativePost } from '@/app/(marketing)/marketing/brain/BrainView'
-import { savedRun, strongSample, media, fingerprint } from '../../../helpers/creative-brain'
+import { savedRun, currentRun, strongSample, media, fingerprint } from '../../../helpers/creative-brain'
 import type { BrainData } from '@/lib/actions/marketing/creative-intelligence'
 import type { CreativeRun, Observation, ObservationBusinessContext } from '@/lib/marketing/brain/types'
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -34,7 +34,7 @@ describe('Marketing Brain page', () => {
   it('renders the persisted run with visible numeric evidence and every required section', async () => {
     load.mockResolvedValue({ ...base, run: savedRun() })
     const html = renderToStaticMarkup(await MarketingBrainPage())
-    for (const text of ['learning', 'Best hooks', 'Best themes', 'Best products', 'Format performance', 'What we learned', 'Test next', '4 Reel / video posts', 'lifetime performance']) expect(html).toContain(text)
+    for (const text of ['learning', 'Best hooks', 'Best themes', 'Best products', 'Format performance', 'What we learned', 'Try next', '4 Reel / video posts', 'lifetime performance']) expect(html).toContain(text)
     expect(load).toHaveBeenCalledTimes(1)
   })
   it('exposes the refresh control only to authorized admins and distinguishes a failed refresh', () => {
@@ -64,7 +64,7 @@ describe('Marketing Brain page', () => {
       mkdirSync(dir, { recursive: true })
       const css = readdirSync('.next/static/chunks').filter(f => f.endsWith('.css')).map(f => readFileSync(`.next/static/chunks/${f}`, 'utf8')).join('\n')
       writeFileSync(`${dir}/style.css`, css)
-      for (const [name, markup] of [['populated', html], ['empty', render(null)]]) {
+      for (const [name, markup] of [['populated', html], ['empty', render(null)], ['v2-current', render(currentRun())]]) {
         writeFileSync(`${dir}/${name}.html`, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="style.css"><title>Synthetic Marketing Brain QA</title></head><body>${markup}</body></html>`)
       }
     }
@@ -187,42 +187,23 @@ describe('Marketing Brain usability', () => {
     expect(html).not.toMatch(/min-w-\[.*\].*article/)
   })
 
-  it('validates shortened test length in interpretation schema', () => {
-    const valid = {
-      observations: [{
-        signal_id: 'sig-test',
-        interpretation: 'Short hypothesis that is valid and under the limit.',
-        experiment: { dimension: 'product_focus', value: 'catering', test: 'Make a catering Reel with bold-claim hook and similar pacing.' },
-      }],
-    }
+  it('validates length limits in the v2 interpretation schema', () => {
+    const valid = { brain_take: 'Short and plain take that is valid.', insights: [{ signal_ids: ['sig-test'], headline: 'A short headline',
+      take: 'A short take that is valid and under the limit.', next_move: 'Make a catering Reel with a similar opening and pacing.' }] }
     expect(() => InterpretationSchema.parse(valid)).not.toThrow()
-
-    // Over 200 chars should fail
-    const tooLong = {
-      observations: [{
-        signal_id: 'sig-test',
-        interpretation: 'A'.repeat(201),
-        experiment: { dimension: 'product_focus', value: 'catering', test: 'Make a catering Reel with bold-claim hook and similar pacing.' },
-      }],
-    }
-    expect(() => InterpretationSchema.parse(tooLong)).toThrow()
+    expect(() => InterpretationSchema.parse({ ...valid, insights: [{ ...valid.insights[0], take: 'A'.repeat(601) }] })).toThrow()
+    expect(() => InterpretationSchema.parse({ ...valid, insights: [{ ...valid.insights[0], signal_ids: [] }] })).toThrow()
+    expect(() => InterpretationSchema.parse({ ...valid, insights: [{ ...valid.insights[0], signal_ids: ['a', 'b', 'c', 'd', 'e'] }] })).toThrow()
   })
 
   it('preserves grounding restrictions in interpretation validation', () => {
     const { signals } = strongSample()
-    const signal = signals[0]
-    // Numbers in interpretation should throw
-    expect(() => validateInterpretation({
-      observations: [{ signal_id: signal.id,
-        interpretation: 'This content reaches 50% more people.',
-        experiment: { dimension: signal.dimension, value: signal.value, test: 'Run a test comparing formats.' } }],
-    }, signals)).toThrow()
-    // Demographics should throw
-    expect(() => validateInterpretation({
-      observations: [{ signal_id: signal.id,
-        interpretation: 'Women respond well to this content.',
-        experiment: { dimension: signal.dimension, value: signal.value, test: 'Run a test comparing formats.' } }],
-    }, signals)).toThrow()
+    const base = { brain_take: 'These posts stand out, but it is early to say why.', insights: [{ signal_ids: [signals[0].id], headline: 'These posts stand out',
+      take: 'This is worth another look before we decide anything.', next_move: 'Run a test comparing the two formats side by side.' }] }
+    expect(() => validateInterpretation(base, signals)).not.toThrow()
+    const withTake = (take: string) => ({ ...base, insights: [{ ...base.insights[0], take }] })
+    expect(() => validateInterpretation(withTake('This content reaches 50% more people.'), signals)).toThrow()
+    expect(() => validateInterpretation(withTake('Women respond well to this content.'), signals)).toThrow()
   })
 
   it('exceptional content section is collapsed by default when present', () => {

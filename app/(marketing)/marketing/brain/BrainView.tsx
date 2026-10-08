@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import type { BrainData } from '@/lib/actions/marketing/creative-intelligence'
-import type { CreativeAnalytics, CreativePost, CreativeSignal, Dimension, MetricSummary, ObservationBusinessContext, BusinessContextSnapshot, Observation } from '@/lib/marketing/brain/types'
+import type { CreativeAnalytics, CreativePost, CreativeSignal, Dimension, MetricSummary, ObservationBusinessContext, BusinessContextSnapshot, Observation, Insight } from '@/lib/marketing/brain/types'
+import { isInsight } from '@/lib/marketing/brain/types'
+import { INTERPRETATION_PROMPT_VERSION } from '@/lib/marketing/brain/taxonomy'
 import { label, signalEvidence, signalMetric, signalComparison } from '@/lib/marketing/brain/signals'
 import { MIN_PATTERN_POSTS } from '@/lib/marketing/brain/analytics'
 import IgThumbnail from '../organic/IgThumbnail'
@@ -154,7 +156,7 @@ function ObservationCard({ observation, signal, posts }: { observation: Observat
       </div>
       {observation.business_context ? <BusinessContextBlock ctx={observation.business_context} /> : null}
       <div className="border-t border-kk-line pt-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-kk-muted mb-0.5">Test next</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-kk-muted mb-0.5">Try next</p>
         <p className="text-sm leading-relaxed">{observation.suggested_experiment}</p>
       </div>
       {signal ? <details className="text-xs text-kk-muted">
@@ -170,10 +172,60 @@ function ObservationCard({ observation, signal, posts }: { observation: Observat
 }
 
 // ---------------------------------------------------------------------------
+// v2 Insight card + Brain's take
+// ---------------------------------------------------------------------------
+
+function BrainTake({ text }: { text: string }) {
+  return <section aria-label="Brain's take" className="rounded-2xl border-2 border-[#171717] bg-kk-panel px-5 py-4 [box-shadow:4px_4px_0_#555555]">
+    <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-kk-muted mb-1">Brain&rsquo;s take</p>
+    <p className="text-base leading-relaxed">{text}</p>
+  </section>
+}
+
+function InsightCard({ insight, signals, posts }: { insight: Insight; signals: CreativeSignal[]; posts: CreativePost[] }) {
+  const used = insight.signal_ids.map(id => signals.find(s => s.id === id)).filter((s): s is CreativeSignal => !!s)
+  const thumbs = used.map(s => ({ signal: s, post: representativePost(s, posts) })).filter((t): t is { signal: CreativeSignal; post: CreativePost } => !!t.post)
+  return <article className="overflow-hidden rounded-2xl border border-kk-line bg-kk-panel">
+    <div className="px-5 pt-5">
+      <h3 className="text-lg font-semibold leading-snug">{insight.headline}</h3>
+      <p className="mt-2 text-sm leading-relaxed">{insight.take}</p>
+    </div>
+    {used.length ? <div className="mt-4 space-y-3 px-5">
+      {used.map(signal => {
+        const post = thumbs.find(t => t.signal.id === signal.id)?.post
+        return <div key={signal.id} className="flex items-center gap-3 rounded-xl bg-kk-soft/60 p-2.5">
+          {post ? <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-kk-soft"><IgThumbnail src={preview(post.thumbnail_url)} /></div> : null}
+          <div className="min-w-0">
+            <p className="text-lg font-semibold tabular-nums leading-tight">{signalMetric(signal)}</p>
+            <p className="text-xs text-kk-muted tabular-nums">{signalComparison(signal)} · {label(signal.evidence_level)} · {label(signal.format)}</p>
+            {post ? <p className="text-xs text-kk-muted">{date(post.published_at)}{instagramLink(post.permalink) ? <> · <a href={instagramLink(post.permalink)} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">View on Instagram ↗</a></> : null}</p> : null}
+          </div>
+        </div>
+      })}
+    </div> : null}
+    <div className="space-y-3 px-5 pb-5 pt-4">
+      {insight.business_context?.map(ctx => <BusinessContextBlock key={ctx.update_id} ctx={ctx} />)}
+      <div className="border-t border-kk-line pt-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-kk-muted mb-0.5">Try next</p>
+        <p className="text-sm leading-relaxed">{insight.next_move}</p>
+      </div>
+      {used.length ? <details className="text-xs text-kk-muted">
+        <summary className="cursor-pointer">Evidence and supporting content</summary>
+        {used.map(signal => <div key={signal.id} className="mt-2">
+          <p className="leading-relaxed">{signalEvidence(signal)}</p>
+          <p className="mt-1">Supporting posts</p><PostLinks ids={signal.supporting_media_ids} posts={posts} />
+          <p className="mt-1">Comparison posts</p><PostLinks ids={signal.comparison_media_ids} posts={posts} />
+        </div>)}
+      </details> : null}
+    </div>
+  </article>
+}
+
+// ---------------------------------------------------------------------------
 // Compact coverage
 // ---------------------------------------------------------------------------
 
-function CoverageSummary({ run, analytics }: { run: { generated_at: string; analysis_start: string; analysis_end: string; status: string; error: string | null }; analytics: CreativeAnalytics }) {
+function CoverageSummary({ run, analytics }: { run: { generated_at: string; analysis_start: string; analysis_end: string; status: string; error: string | null; prompt_version: string }; analytics: CreativeAnalytics }) {
   return <section aria-label="Analysis coverage" className="rounded-xl border border-kk-line bg-kk-panel px-5 py-3">
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <p className="text-sm text-kk-ink">
@@ -182,7 +234,8 @@ function CoverageSummary({ run, analytics }: { run: { generated_at: string; anal
         <span className="mx-1.5 text-kk-muted">·</span>{analytics.coverage.with_exposure} measured
         <span className="mx-1.5 text-kk-muted">·</span>{analytics.coverage.classified} classified
       </p>
-      <span className="text-xs text-kk-muted">Updated {date(run.generated_at)}{run.status === 'partial' ? ' · Partial' : ''}</span>
+      <span className="text-xs text-kk-muted">Updated {date(run.generated_at)}{run.status === 'partial' ? ' · Partial' : ''}
+        {run.prompt_version !== INTERPRETATION_PROMPT_VERSION ? <span data-testid="stale-brain-version" className="block text-right text-[11px]">Generated with an older Brain version · Refresh recommended</span> : null}</span>
     </div>
     <details className="mt-2 text-xs text-kk-muted">
       <summary className="cursor-pointer">Analysis details</summary>
@@ -229,10 +282,11 @@ export default function BrainView({ data, refreshControl, paidStrategy }: { data
               <h2 id="learning-title" className="text-xl font-semibold">What we&rsquo;re learning</h2>
               <span className="text-xs text-kk-muted">AI hypotheses · for human review</span>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">{run.observations.length ? run.observations.map(observation => {
-              const signal = run.signals.find(s => s.id === observation.signal_id)
-              return <ObservationCard key={observation.signal_id} observation={observation} signal={signal} posts={analytics.posts} />
-            }) : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted lg:col-span-2">{run.signals.length ? 'Deterministic signals are available below. No AI observations were produced for this run.' : 'No repeated pattern meets the material evidence threshold yet. The tables show the current sample without drawing a conclusion.'}</p>}</div>
+            {analytics.brain_take ? <div className="mb-4"><BrainTake text={analytics.brain_take} /></div> : null}
+            <div className="grid gap-4 lg:grid-cols-2">{run.observations.length ? run.observations.map(observation => isInsight(observation)
+              ? <InsightCard key={observation.signal_ids.join('|')} insight={observation} signals={run.signals} posts={analytics.posts} />
+              : <ObservationCard key={observation.signal_id} observation={observation} signal={run.signals.find(s => s.id === observation.signal_id)} posts={analytics.posts} />
+            ) : analytics.brain_take ? null : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted lg:col-span-2">{run.signals.length ? 'Deterministic signals are available below. No AI observations were produced for this run.' : 'No repeated pattern meets the material evidence threshold yet. The tables show the current sample without drawing a conclusion.'}</p>}</div>
             {run.signals.length ? <details className="mt-4 rounded-xl border border-kk-line p-4 text-sm"><summary className="cursor-pointer font-medium">View {run.signals.length} deterministic signals</summary><ul className="mt-3 space-y-3">{run.signals.map(signal => <li key={signal.id}><strong>{label(signal.value)} · {label(signal.type)}</strong><p className="mt-1 text-xs leading-relaxed text-kk-muted">{signalEvidence(signal)}</p></li>)}</ul></details> : null}
             {analytics.business_context?.length ? <BusinessContextOverview items={analytics.business_context} /> : null}
           </section>

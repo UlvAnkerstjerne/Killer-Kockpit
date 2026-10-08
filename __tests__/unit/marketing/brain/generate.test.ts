@@ -52,7 +52,7 @@ function storage(posts: Media[], opts: { locked?: boolean; failedRead?: boolean;
 }
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW)
-  mocks.interpret.mockResolvedValue({ ok: true, observations: [], model: 'synthetic' })
+  mocks.interpret.mockResolvedValue({ ok: true, brain_take: null, insights: [], model: 'synthetic' })
   mocks.loadCtx.mockResolvedValue([])
   mocks.classify.mockImplementation(async inputs => ({ ok: true, model: 'synthetic', items: inputs.map((i: { media_id: string }) => {
     const f = fingerprint(strongSample().posts.find(p => p.id === i.media_id)!)
