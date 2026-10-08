@@ -186,8 +186,8 @@ describe('non-management users', () => {
   })
 })
 
-describe('heading and New task pill', () => {
-  it('puts "+ New task" beside the heading (not pushed to the far right) and keeps its action', async () => {
+describe('heading and + Task pill', () => {
+  it('puts "+ Task" beside the heading (not pushed to the far right) and keeps its action', async () => {
     const html = await render()
     const row = html.slice(html.indexOf('<h1'), html.indexOf('</div>', html.indexOf('<h1')))
     expect(row).toContain('Tasks')
