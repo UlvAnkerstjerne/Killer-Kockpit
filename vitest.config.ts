@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
@@ -8,7 +9,7 @@ export default defineConfig({
       // server-only is a build-time marker that throws when imported in
       // client bundles. In tests there is no client/server boundary, so
       // we resolve it to an empty module.
-      'server-only': new URL('./__tests__/helpers/server-only-stub.ts', import.meta.url).pathname,
+      'server-only': fileURLToPath(new URL('./__tests__/helpers/server-only-stub.ts', import.meta.url)),
     },
   },
   test: {
