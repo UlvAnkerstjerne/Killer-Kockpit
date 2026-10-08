@@ -253,6 +253,21 @@ async function detectGbpIntegrationStatus(db: Db): Promise<GbpIntegrationStatus>
   }
 }
 
+// ── Awaiting replies, excluding "Saved for later" reviews ─────────────────────
+//
+// A review saved on the Review Desk (gbp_review_saved) is deferred on purpose, so it must not be
+// counted as outstanding work in the Brief. It returns to the count when the save is removed
+// (dismissed/unsaved) and leaves it for good once answered (status no longer awaiting_review).
+
+export async function countAwaitingRepliesExcludingSaved(db: Db): Promise<number> {
+  const [{ data: awaiting }, { data: saved }] = await Promise.all([
+    db.from('gbp_review_replies').select('id, review_id').eq('status', 'awaiting_review'),
+    db.from('gbp_review_saved').select('review_id'),
+  ])
+  const savedIds = new Set((saved ?? []).map(s => s.review_id as string))
+  return (awaiting ?? []).filter(r => !savedIds.has(r.review_id as string)).length
+}
+
 // ── GBP review data ───────────────────────────────────────────────────────────
 
 async function collectGbpData(db: Db, yesterday: string, gbpStatus: GbpIntegrationStatus): Promise<GbpBriefData> {
@@ -266,10 +281,7 @@ async function collectGbpData(db: Db, yesterday: string, gbpStatus: GbpIntegrati
   }
 
   // Count replies awaiting review
-  const { count: pendingCount } = await db
-    .from('gbp_review_replies')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'awaiting_review')
+  const pendingCount = await countAwaitingRepliesExcludingSaved(db)
 
   // New reviews yesterday
   const { count: newYesterday } = await db
@@ -293,7 +305,7 @@ async function collectGbpData(db: Db, yesterday: string, gbpStatus: GbpIntegrati
 
   return {
     integration_status: gbpStatus,
-    pending_reply_count: pendingCount ?? 0,
+    pending_reply_count: pendingCount,
     new_reviews_yesterday: newYesterday ?? 0,
     avg_star_rating_7d: avgRating,
   }
@@ -308,11 +320,9 @@ async function collectGbpData(db: Db, yesterday: string, gbpStatus: GbpIntegrati
 // logic — this helper is count-only for Brief snapshot purposes.
 
 export async function collectNeedsReviewCounts(db: Db): Promise<NeedsReviewCount> {
-  const [{ count: reviewReplyCount }, { count: paidRecoCount }, { count: contentCount }] =
+  const [reviewReplyCount, { count: paidRecoCount }, { count: contentCount }] =
     await Promise.all([
-      db.from('gbp_review_replies')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'awaiting_review'),
+      countAwaitingRepliesExcludingSaved(db),
       // paid_recommendations table does not exist in v1 — returns 0
       // When M4 paid recommendation feature is added, replace this placeholder
       Promise.resolve({ count: 0 }),
@@ -320,7 +330,7 @@ export async function collectNeedsReviewCounts(db: Db): Promise<NeedsReviewCount
       Promise.resolve({ count: 0 }),
     ])
 
-  const review_reply       = reviewReplyCount ?? 0
+  const review_reply       = reviewReplyCount
   const paid_recommendation = paidRecoCount ?? 0
   const content_approval   = contentCount ?? 0
 

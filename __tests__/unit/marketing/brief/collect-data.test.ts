@@ -110,3 +110,52 @@ describe('freshness thresholds', () => {
     expect(DEEP_SYNC_STALENESS_HOURS).toBeGreaterThanOrEqual(7 * 24)
   })
 })
+
+// ── Saved-for-later reviews stay out of the Brief ─────────────────────────────
+
+import { countAwaitingRepliesExcludingSaved, collectNeedsReviewCounts } from '@/lib/marketing/brief/collect-data'
+
+function fakeDb(tables: Record<string, Record<string, unknown>[]>) {
+  return {
+    from(t: string) {
+      let rows = tables[t] ?? []
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: (c: string, v: unknown) => { rows = rows.filter(r => r[c] === v); return b },
+        then: (res: (v: unknown) => unknown) => Promise.resolve({ data: rows, count: rows.length, error: null }).then(res),
+      }
+      return b
+    },
+  } as never
+}
+
+describe('Brief excludes saved reviews until answered or dismissed', () => {
+  const replies = [
+    { id: 'p1', review_id: 'r1', status: 'awaiting_review' },
+    { id: 'p2', review_id: 'r2', status: 'awaiting_review' },
+    { id: 'p3', review_id: 'r3', status: 'awaiting_review' },
+    { id: 'p4', review_id: 'r4', status: 'published' },
+  ]
+
+  it('counts every awaiting reply when nothing is saved', async () => {
+    expect(await countAwaitingRepliesExcludingSaved(fakeDb({ gbp_review_replies: replies, gbp_review_saved: [] }))).toBe(3)
+  })
+
+  it('leaves saved reviews out of the count', async () => {
+    const db = fakeDb({ gbp_review_replies: replies, gbp_review_saved: [{ review_id: 'r2' }] })
+    expect(await countAwaitingRepliesExcludingSaved(db)).toBe(2)
+  })
+
+  it('an answered saved review stays out; a dismissed (unsaved) one returns', async () => {
+    const answered = replies.map(r => (r.review_id === 'r2' ? { ...r, status: 'published' } : r))
+    expect(await countAwaitingRepliesExcludingSaved(fakeDb({ gbp_review_replies: answered, gbp_review_saved: [{ review_id: 'r2' }] }))).toBe(2)
+    expect(await countAwaitingRepliesExcludingSaved(fakeDb({ gbp_review_replies: replies, gbp_review_saved: [] }))).toBe(3)
+  })
+
+  it('Needs Review counts in the Brief also exclude saved reviews', async () => {
+    const db = fakeDb({ gbp_review_replies: replies, gbp_review_saved: [{ review_id: 'r1' }, { review_id: 'r3' }] })
+    const out = await collectNeedsReviewCounts(db)
+    expect(out.review_reply).toBe(1)
+    expect(out.total).toBe(1)
+  })
+})
