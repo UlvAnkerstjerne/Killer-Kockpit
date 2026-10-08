@@ -35,11 +35,12 @@ describe('Organic strategy section: a completed strategy', () => {
     expect(html.indexOf('What happened')).toBeLessThan(html.indexOf('What it may mean'))
   })
 
-  it('labels evidence strength in plain words', () => {
+  it('labels evidence strength in plain, modest words', () => {
     const all = render(storedStrategy({ output: validOutput({
       main_learnings: ['proven_pattern', 'reasonable_inference', 'weak_signal'].map((s, i) => ({ ...validOutput().main_learnings[0], title: `Learning number ${i + 1}`, evidence_strength: s as 'proven_pattern' })),
     }) }))
-    for (const label of ['Proven pattern', 'Reasonable inference', 'Weak signal']) expect(all).toContain(label)
+    for (const label of ['Strong repeated pattern', 'Reasonable inference', 'Weak signal']) expect(all).toContain(label)
+    expect(all).not.toContain('Proven pattern') // small data must never read as proof
     expect(html).toContain('Weak signal') // the opportunity in the fixture
     expect(html).toContain('Reasonable inference')
   })
@@ -128,13 +129,73 @@ describe('Organic strategy section: empty lists and non-completed states', () =>
   })
 })
 
-describe('inside the existing Marketing Brain', () => {
-  it('appears after the coverage summary and before the existing observations', () => {
+describe('carousel concepts stay quiet when the carousel evidence is thin', () => {
+  const withCarousels = (n: number) => storedStrategy({
+    posts: [
+      ...Array.from({ length: n }, (_, i) => ({ ref: `P${i + 1}`, published_at: '2026-09-20T10:00:00Z', media_type: 'CAROUSEL_ALBUM', permalink: null })),
+      { ref: `P${n + 1}`, published_at: '2026-09-01T10:00:00Z', media_type: 'VIDEO', permalink: null },
+    ],
+    output: validOutput({ carousel_concepts: [carousel(1)] }),
+  })
+  it('marks carousel ideas exploratory, says why, and drops the accent border, when fewer than 5 carousels are measured', () => {
+    const html = render(withCarousels(1))
+    expect(html).toContain('Exploratory: only 1 carousel has performance data, too few to show how the format performs.')
+    expect(html).toContain('>Exploratory<')
+    const card = html.slice(html.indexOf('Carousel concept 1') - 200, html.indexOf('Carousel concept 1'))
+    expect(card).toContain('border-kk-line')
+    expect(card).not.toContain('border-kk-brand/40')
+  })
+  it('treats measured carousels only: unmeasured (U) references do not count as evidence', () => {
+    const html = render(storedStrategy({
+      posts: [{ ref: 'P1', published_at: '2026-09-20T10:00:00Z', media_type: 'VIDEO', permalink: null },
+        ...Array.from({ length: 6 }, (_, i) => ({ ref: `U${i + 1}`, published_at: '2026-09-01T10:00:00Z', media_type: 'CAROUSEL_ALBUM', permalink: null }))],
+      output: validOutput({ carousel_concepts: [carousel(1)] }),
+    }))
+    expect(html).toContain('Exploratory: only 0 carousels have performance data')
+  })
+  it('keeps exploratory carousel ideas collapsed by default, so they never outweigh the Reels', () => {
+    const html = render(withCarousels(1))
+    const details = html.match(/<details[^>]*>(?:(?!<\/details>)[\s\S])*Carousel concepts/)?.[0] ?? ''
+    expect(details).toContain('border-dashed')
+    expect(details).not.toMatch(/<details[^>]*\sopen/)
+    expect(html).toContain('Carousel concept 1') // still present for anyone who expands it
+  })
+  it('gives carousel ideas full prominence once there is a real carousel baseline (5 or more measured)', () => {
+    const html = render(withCarousels(5))
+    expect(html).not.toContain('Exploratory')
+    expect(html).not.toContain('border-dashed bg-kk-panel/60') // no collapsed wrapper
+    expect(html).toContain('border-kk-brand/40')
+  })
+  it('never lets carousels outweigh Reels in the page order', () => {
+    const html = render(storedStrategy({ output: validOutput({ carousel_concepts: [carousel(1), carousel(2), carousel(3)] }) }))
+    expect(html.indexOf('>Reel concepts')).toBeLessThan(html.indexOf('>Carousel concepts'))
+  })
+})
+
+describe('inside the combined Marketing Brain (v2 + Organic Strategy)', () => {
+  it('reads in order: coverage, what the evidence says (Brain v2), what to make next (Organic Strategy), then the deeper evidence', () => {
     const html = renderToStaticMarkup(<BrainView data={brain(full())} />)
     const at = (t: string) => html.indexOf(t)
-    expect(at('Analysis coverage')).toBeGreaterThan(-1)
-    expect(at('Organic strategy')).toBeGreaterThan(at('Analysis coverage'))
-    expect(at('Organic strategy')).toBeLessThan(at('id="learning-title"')) // the existing observations section
+    const order = [at('Analysis coverage'), at('id="learning-title"'), at('id="organic-strategy-title"'), at('Best hooks'), at('Format performance')]
+    expect(order.every(i => i > -1)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
+  it('tells the two layers apart with one short line each, not an essay', () => {
+    const html = renderToStaticMarkup(<BrainView data={brain(full())} />)
+    expect(html).toContain('What the evidence says')
+    expect(html).toContain('What to make next')
+    expect(html.indexOf('What the evidence says')).toBeLessThan(html.indexOf('What to make next'))
+  })
+
+  it('has exactly one "Brain\u2019s take": Organic Strategy does not compete with it', () => {
+    const data = brain(full())
+    const html = renderToStaticMarkup(<BrainView data={{ ...data, run: { ...data.run!, analytics: { ...data.run!.analytics!, brain_take: 'Debate-style Reels travelled furthest.' } } }} />)
+    expect(html).toContain('Debate-style Reels travelled furthest.')
+    expect(html.match(/<section aria-label="Brain(&#x27;|')s take"/g)).toHaveLength(1) // v2's single component
+    expect(html.match(/>Brain’s take</g)).toHaveLength(1) // its one visible label
+    const organic = html.slice(html.indexOf('id="organic-strategy-title"'), html.indexOf('Best hooks'))
+    expect(organic).not.toMatch(/Brain(&#x27;|')s take|Brain’s take/) // nothing inside Organic Strategy competes with it
   })
 
   it('keeps every existing Creative Intelligence section visible alongside it', () => {

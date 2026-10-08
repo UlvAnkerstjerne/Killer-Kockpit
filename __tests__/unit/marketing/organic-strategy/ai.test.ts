@@ -13,7 +13,8 @@ vi.mock('@/lib/ai/usage', () => ({
   trackAiCallWithRetries: (meta: unknown, call: () => unknown) => { mocks.track(meta); return call() },
 }))
 import {
-  buildOrganicSystemPrompt, buildOrganicUserMessage, callOrganicStrategyAI, ORGANIC_RULES, ORGANIC_STRATEGY_PROMPT_VERSION,
+  buildOrganicSystemPrompt, buildOrganicUserMessage, callOrganicStrategyAI, ORGANIC_MAX_TOKENS, ORGANIC_REQUEST_TIMEOUT_MS, ORGANIC_RULES, ORGANIC_STRATEGY_PROMPT_VERSION,
+  RETRY_ONLY_IF_FAILED_FASTER_THAN_MS,
 } from '@/lib/ai/organic-strategy'
 
 const skill: LoadedClaudeIgSkill = { name: 'claude-ig', version: '2.0.0', ref: 'claude-ig@2.0.0#5e9b2d9', hash: 'b'.repeat(64), text: '### skills/ig-analyze/SKILL.md\n\n# IG Analyze\nUse reach, shares and saves.' }
@@ -241,5 +242,33 @@ describe('callOrganicStrategyAI', () => {
 
   it('carries a prompt version', () => {
     expect(ORGANIC_STRATEGY_PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}-v\d+$/)
+  })
+})
+
+describe('latency policy, set from measured live behaviour', () => {
+  it('allows a full answer: the live answers took 128 s and 109 s, so the old 120 s limit would have cut one off', () => {
+    expect(ORGANIC_REQUEST_TIMEOUT_MS).toBeGreaterThan(128_000)
+    expect(ORGANIC_REQUEST_TIMEOUT_MS).toBeLessThan(5 * 60_000) // and inside the refresh lease, so one slow call cannot lose it
+    expect(ORGANIC_MAX_TOKENS).toBeLessThanOrEqual(8000)
+  })
+  it('builds the client with that timeout and no hidden retries, and caps output length', async () => {
+    await callOrganicStrategyAI(skill, evidence, ctx)
+    expect(mocks.ctor).toHaveBeenCalledWith(expect.objectContaining({ timeout: ORGANIC_REQUEST_TIMEOUT_MS, maxRetries: 0 }))
+    expect(mocks.parse.mock.calls[0][0].max_tokens).toBe(ORGANIC_MAX_TOKENS)
+  })
+  it('re-asks after a FAST validation failure', async () => {
+    const bad = validOutput({ main_learnings: [{ ...validOutput().main_learnings[0], evidence: 'See https://example.com for 90,000 views.' }] })
+    mocks.parse.mockResolvedValueOnce({ parsed_output: bad }).mockResolvedValueOnce({ parsed_output: validOutput() })
+    expect(await callOrganicStrategyAI(skill, evidence, ctx)).toMatchObject({ ok: true })
+    expect(mocks.parse).toHaveBeenCalledTimes(2)
+  })
+  it('does NOT re-ask after a SLOW failure: a second multi-minute call inside one refresh is not worth the risk', async () => {
+    const bad = validOutput({ main_learnings: [{ ...validOutput().main_learnings[0], evidence: 'See https://example.com for 90,000 views.' }] })
+    const realNow = Date.now.bind(Date)
+    let offset = 0
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + offset)
+    mocks.parse.mockImplementation(async () => { offset += RETRY_ONLY_IF_FAILED_FASTER_THAN_MS + 10_000; return { parsed_output: bad } })
+    expect(await callOrganicStrategyAI(skill, evidence, ctx)).toMatchObject({ ok: false })
+    expect(mocks.parse).toHaveBeenCalledTimes(1)
   })
 })

@@ -3,8 +3,11 @@ import type {
   CarouselConcept, ContentOpportunity, EvidenceStrength, MainLearning, OrganicStrategyStored, ReelConcept,
 } from '@/lib/marketing/organic-strategy/types'
 
+/** Same bar the Brain uses for any format baseline (MIN_BASELINE_POSTS). */
+const MIN_CAROUSELS_FOR_A_FORMAT_VIEW = 5
+
 const STRENGTH: Record<EvidenceStrength, { label: string; hint: string; className: string }> = {
-  proven_pattern: { label: 'Proven pattern', hint: 'Repeated across several measured posts', className: 'bg-kk-brand text-white' },
+  proven_pattern: { label: 'Strong repeated pattern', hint: 'Repeated across several measured posts. Still a small dataset, not proof', className: 'bg-kk-brand text-white' },
   reasonable_inference: { label: 'Reasonable inference', hint: 'Supported by the data, but not repeated enough to call proven', className: 'border border-kk-line bg-kk-soft text-kk-ink' },
   weak_signal: { label: 'Weak signal', hint: 'Thin evidence, often a single post', className: 'border border-dashed border-kk-line text-kk-muted' },
 }
@@ -64,9 +67,9 @@ function ReelCard({ item }: { item: ReelConcept }) {
   </article>
 }
 
-function CarouselCard({ item }: { item: CarouselConcept }) {
-  return <article className="rounded-2xl border border-kk-brand/40 bg-kk-panel p-5">
-    <h4 className="text-base font-semibold leading-snug">{item.concept_title}</h4>
+function CarouselCard({ item, exploratory }: { item: CarouselConcept; exploratory: boolean }) {
+  return <article className={`rounded-2xl border bg-kk-panel p-5 ${exploratory ? 'border-kk-line' : 'border-kk-brand/40'}`}>
+    <div className="flex items-start justify-between gap-3"><h4 className="text-base font-semibold leading-snug">{item.concept_title}</h4>{exploratory ? <span className="shrink-0 rounded-full border border-dashed border-kk-line px-2.5 py-1 text-[11px] font-medium text-kk-muted">Exploratory</span> : null}</div>
     <div className="mt-3"><Label>Opening slide</Label><p className="mt-0.5 border-l-4 border-kk-brand pl-3 text-base font-medium leading-snug">{item.opening_slide}</p></div>
     <div className="mt-4"><Label>Slides</Label>
       <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm leading-relaxed">{item.slide_structure.map((slide, i) => <li key={i}>{slide}</li>)}</ol>
@@ -76,11 +79,12 @@ function CarouselCard({ item }: { item: CarouselConcept }) {
   </article>
 }
 
-function Frame({ children, action }: { children: ReactNode; action?: string }) {
-  return <section aria-labelledby="organic-strategy-title" className="space-y-4">
+function Frame({ children }: { children: ReactNode }) {
+  return <section aria-labelledby="organic-strategy-title" className="space-y-4 rounded-3xl border border-kk-brand/25 bg-kk-soft/60 p-5 sm:p-6">
     <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-kk-brand">What to make next</p>
       <h2 id="organic-strategy-title" className="text-xl font-semibold">Organic strategy</h2>
-      <p className="mt-1 text-xs text-kk-muted">What to make next, based on what has worked on Instagram · AI suggestions for human review{action ? ` · ${action}` : ''}</p>
+      <p className="mt-1 text-xs text-kk-muted">Based on what has actually worked on Instagram · AI suggestions for human review</p>
     </div>
     {children}
   </section>
@@ -106,6 +110,9 @@ export default function OrganicStrategySection({ strategy, canRefresh }: { strat
   }
 
   const { output: o, evidence_summary: s } = strategy
+  // Measured carousels (P refs only). With fewer than 5 there is no format baseline, so carousel ideas are exploratory.
+  const measuredCarousels = strategy.posts.filter(p => p.ref.startsWith('P') && p.media_type === 'CAROUSEL_ALBUM').length
+  const exploratoryCarousels = measuredCarousels < MIN_CAROUSELS_FOR_A_FORMAT_VIEW
   const empty = !o.main_learnings.length && !o.content_opportunities.length && !o.reel_concepts.length && !o.carousel_concepts.length
   return <Frame>
     <p className="text-xs text-kk-muted">
@@ -115,7 +122,18 @@ export default function OrganicStrategySection({ strategy, canRefresh }: { strat
     {o.main_learnings.length ? <Block title="Main learnings" count={o.main_learnings.length}><div className="grid gap-4 lg:grid-cols-2">{o.main_learnings.map((x, i) => <LearningCard key={`${i}-${x.title}`} item={x} />)}</div></Block> : null}
     {o.content_opportunities.length ? <Block title="Content opportunities" count={o.content_opportunities.length}><div className="grid gap-4 lg:grid-cols-2">{o.content_opportunities.map((x, i) => <OpportunityCard key={`${i}-${x.title}`} item={x} />)}</div></Block> : null}
     {o.reel_concepts.length ? <Block title="Reel concepts" count={o.reel_concepts.length}><div className="grid gap-4 lg:grid-cols-3">{o.reel_concepts.map((x, i) => <ReelCard key={`${i}-${x.concept_title}`} item={x} />)}</div></Block> : null}
-    {o.carousel_concepts.length ? <Block title="Carousel concepts" count={o.carousel_concepts.length}><div className="grid gap-4 lg:grid-cols-3">{o.carousel_concepts.map((x, i) => <CarouselCard key={`${i}-${x.concept_title}`} item={x} />)}</div></Block> : null}
+    {o.carousel_concepts.length ? (exploratoryCarousels
+      // Thin evidence: keep the ideas available but closed, so they do not weigh as much as the Reels.
+      ? <details className="rounded-2xl border border-dashed border-kk-line bg-kk-panel/60 p-4">
+        <summary className="cursor-pointer">
+          <h3 className="inline text-base font-semibold">Carousel concepts</h3><span className="ml-2 text-xs text-kk-muted">{o.carousel_concepts.length}</span>
+          <span className="mt-1 block text-xs font-normal text-kk-muted">Exploratory: only {measuredCarousels} carousel{measuredCarousels === 1 ? '' : 's'} {measuredCarousels === 1 ? 'has' : 'have'} performance data, too few to show how the format performs.</span>
+        </summary>
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">{o.carousel_concepts.map((x, i) => <CarouselCard key={`${i}-${x.concept_title}`} item={x} exploratory />)}</div>
+      </details>
+      : <Block title="Carousel concepts" count={o.carousel_concepts.length}>
+        <div className="grid gap-4 lg:grid-cols-3">{o.carousel_concepts.map((x, i) => <CarouselCard key={`${i}-${x.concept_title}`} item={x} exploratory={false} />)}</div>
+      </Block>) : null}
     {strategy.posts.length ? <details className="rounded-xl border border-kk-line p-4 text-sm">
       <summary className="cursor-pointer font-medium">Posts behind these references ({strategy.posts.length})</summary>
       <p className="mt-2 text-xs text-kk-muted">P = has performance data. U = no metrics, listed only so already-covered subjects are known.</p>

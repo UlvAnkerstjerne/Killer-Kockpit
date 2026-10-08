@@ -5,7 +5,7 @@ import {
   CarouselConceptSchema, EVIDENCE_STRENGTHS, FIELD_MAX_CHARS, FIELD_TARGET_CHARS, MAX_CAROUSELS, MAX_LEARNINGS, MAX_OPPORTUNITIES, MAX_REELS, MAX_SLIDES,
   OrganicStrategyOutputSchema,
 } from '@/lib/marketing/organic-strategy/types'
-import { OrganicStrategyValidationError, unmatchedFigures, validateOrganicStrategy } from '@/lib/ai/organic-strategy'
+import { assertsClaim, OrganicStrategyValidationError, unmatchedFigures, validateOrganicStrategy } from '@/lib/ai/organic-strategy'
 
 const ctx = { measuredInPrompt: 9, unmeasuredInPrompt: 12, businessItems: 2 }
 const learning = (n: number, over: Record<string, unknown> = {}) => ({ ...validOutput().main_learnings[0], title: `Distinct learning ${n} title`, ...over })
@@ -172,5 +172,70 @@ describe('Organic Strategy output validation: figure check is telemetry, not a g
     const result = validateOrganicStrategy(o, ctx, evidence)
     expect(result.unmatchedFigures.length).toBeGreaterThan(0)
     expect(result.output.main_learnings).toHaveLength(1)
+  })
+})
+
+// ── Regression: the first live evaluation rejected BOTH answers for sentences that DENY or HEDGE the claim ──
+
+describe('Organic Strategy validation: asserted claims are rejected, negated or hedged ones are not', () => {
+  const opp = (evidence_basis: string) => out({ content_opportunities: [opportunity(1, { evidence_basis })] })
+  const reelEvidence = (evidence_basis: string) => out({ reel_concepts: [reel(1, { evidence_basis })] })
+  const learningEvidence = (evidence: string) => out({ main_learnings: [learning(1, { evidence })] })
+
+  it('accepts the exact sentence that failed live attempt 1: it denies causality', () => {
+    const live = 'P9: 35× format median, 3.8 shares/1k views — highest share rate in the dataset. Single post; cannot confirm the opening line drove reach, but the combination of the framing and the result is notable.'
+    expect(validateOrganicStrategy(opp(live), ctx)).toBeTruthy()
+  })
+  it('accepts the exact sentence that failed live attempt 2: it says the visual angle is untested', () => {
+    const live = 'P2 1.04x median; P4 0.58x with highest save rate (3.6/1k); P5 11.1x median; P7 0.96x. Process-subject consistency across 4 posts. Format variation (visual-first) is untested.'
+    expect(validateOrganicStrategy(reelEvidence(live), ctx)).toBeTruthy()
+  })
+  it('accepts statements that the data is missing, which is what we want the model to say', () => {
+    expect(validateOrganicStrategy(learningEvidence('P1 reached 90,000 views. There is no retention data for these posts, so watch time is unknown.'), ctx)).toBeTruthy()
+    expect(validateOrganicStrategy(learningEvidence('P1 reached 90,000 views. Whether it reached non-followers is unknown.'), ctx)).toBeTruthy()
+  })
+
+  it.each([
+    ['causal, bare', 'The question in P1 drove reach and 700 shares.'],
+    ['causal, because of', 'P1 reached 90,000 views because of its question.'],
+    ['causal, led to', 'The strong claim in P2 led to 30,000 views.'],
+  ])('still rejects an asserted cause: %s', (_n, text) => {
+    rejects(opp(text), /causal language/)
+  })
+  it.each([
+    ['visual, bare', 'The footage in P1 was brightly lit and reached 90,000 views.'],
+    ['visual, thumbnail', 'P1 had a striking thumbnail and reached 90,000 views.'],
+  ])('still rejects an asserted visual claim: %s', (_n, text) => {
+    rejects(reelEvidence(text), /visual claim/)
+  })
+  it.each([
+    ['retention, bare', 'P1 had higher retention than P2, with 90,000 views.'],
+    ['follower split, bare', 'P1 reached 90,000 views, mostly non-followers.'],
+  ])('still rejects invented data: %s', (_n, text) => {
+    rejects(learningEvidence(text), /retention or follower-split/)
+  })
+
+  it('a hedge in a DIFFERENT sentence does not rescue an assertion', () => {
+    rejects(opp('There is no other explanation in the data. The question in P1 drove reach.'), /causal language/)
+    rejects(reelEvidence('Nothing else was analysed. The footage in P1 was bright.'), /visual claim/)
+  })
+  it('a far-away hedge in the same sentence does not rescue an assertion either', () => {
+    rejects(opp('The question in P1 drove reach across all nine posts that were measured in the dataset and shown here, which is a result.'), /causal language/)
+  })
+
+  describe('assertsClaim', () => {
+    const causal = /\b(drove|caused?)\b/
+    it('flags unhedged matches and clears hedged or negated ones', () => {
+      expect(assertsClaim('P1 drove reach.', causal)).toBe(true)
+      expect(assertsClaim('P1 may be why, but we cannot say it drove reach.', causal)).toBe(false)
+      expect(assertsClaim('It is unclear whether the caption caused the spike.', causal)).toBe(false)
+      expect(assertsClaim('The caption caused the spike, which is not proven.', causal)).toBe(false)
+      expect(assertsClaim('No post is the cause. P2 caused the spike.', causal)).toBe(true)
+    })
+    it('treats every sentence separately and handles empty text', () => {
+      expect(assertsClaim('', causal)).toBe(false)
+      expect(assertsClaim('Nothing here.', causal)).toBe(false)
+      expect(assertsClaim('Cannot confirm anything; P3 caused it.', causal)).toBe(true)
+    })
   })
 })

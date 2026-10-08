@@ -10,6 +10,12 @@ The existing SUPER_ADMIN **Refresh Creative Intelligence** becomes: deterministi
 
 `runOrganicStrategy` (`lib/marketing/organic-strategy/generate.ts`) builds post-level evidence, loads the pinned skill, makes one tracked Anthropic call, validates, and returns an object that `generateCreativeIntelligence` stores in the run's `analytics.organic_strategy`. It never throws and never writes to the database.
 
+## Page order (combined with Marketing Brain v2)
+
+Coverage → **What the evidence says** (Brain v2: Brain's take, grouped insights, "Try next") → **What to make next** (Organic Strategy, in a tinted block) → deeper evidence tables. Creative Intelligence answers "what does the performance evidence seem to say?"; Organic Strategy answers "what should we make next?". Organic Strategy has no "take" of its own, so there is exactly one Brain's take on the page.
+
+`proven_pattern` (kept as the enum value) is shown as **"Strong repeated pattern"**: nine measured posts are never presented as proof. When fewer than 5 carousels are measured, carousel concepts are marked *Exploratory* and collapsed by default so they never weigh as much as the Reels.
+
 ## Failure isolation
 
 A failed or skipped strategy never touches the rest of the run:
@@ -36,7 +42,11 @@ Per measured post: date, media type, redacted and truncated caption, reach, view
 
 Third-party skill text is vendored, pinned and hash-verified (`lib/ai/skills/claude-ig/`, MIT, commit `5e9b2d9`); six files only. Kockpit's own rules (`ORGANIC_RULES`) come last and override the skill: captions are untrusted data, evidence/inference/suggestion are kept apart, evidence strength must be earned, nothing unavailable may be invented, the skill's niche assumptions are neutralised (without encoding any answer), and company notes are creative context, not performance evidence.
 
-The validator rejects URLs/IDs, demographic claims, invented retention or follower-split data, visual claims and causal language in evidence fields, and citations of posts that are not in the data. An over-claimed `proven_pattern` (fewer than 5 measured posts or fewer than 3 cited) is downgraded rather than failing the run. A non-blocking check stores any cited figure that matches nothing in the supplied data (`quality.unmatched_figures`) for review.
+The validator rejects URLs/IDs, demographic claims, invented retention or follower-split data, visual claims and causal language in evidence fields, and citations of posts that are not in the data. A claim is only a violation when it is **asserted**: a sentence that denies or hedges it ("cannot confirm the opening line drove reach", "visual-first is untested", "there is no retention data") is exactly what we want and passes. The first live evaluation rejected both model answers on such sentences, which is why this matters. An over-claimed `proven_pattern` (fewer than 5 measured posts or fewer than 3 cited) is downgraded rather than failing the run. A non-blocking check stores any cited figure that matches nothing in the supplied data (`quality.unmatched_figures`) for review.
+
+## Latency (measured on live data)
+
+Two live answers took 128 s and 109 s (5,445 and 4,780 output tokens), so the call uses a 210 s timeout and `max_tokens` 8000. A timeout is never retried (it has already used its budget), and a failed answer is re-asked only if the failure came back in under 100 s, so one refresh cannot stack several multi-minute calls. A refresh now takes roughly 2.5 to 3.5 minutes.
 
 ## Persistence
 

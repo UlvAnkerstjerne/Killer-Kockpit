@@ -122,7 +122,7 @@ describe('Organic Strategy inside the Creative Intelligence refresh', () => {
 
   it('runs after the interpretation, on the stored media and current fingerprints, with business context and followers', async () => {
     const order: string[] = []
-    mocks.interpret.mockImplementation(async () => { order.push('interpretation'); return { ok: true, observations: [], model: 'synthetic' } })
+    mocks.interpret.mockImplementation(async () => { order.push('interpretation'); return { ok: true, brain_take: null, insights: [], model: 'synthetic' } })
     mocks.organic.mockImplementation(async () => { order.push('organic'); return storedStrategy() })
     mocks.loadCtx.mockResolvedValue([{ update_id: 'u1' }])
     const s = storage(strongSample().posts)
@@ -146,7 +146,7 @@ describe('Organic Strategy inside the Creative Intelligence refresh', () => {
   it('ISOLATES a failed Organic Strategy: classifications, analytics, signals and observations are all kept', async () => {
     const unavailable = storedStrategy({ status: 'unavailable', output: null, model: null, message: 'Organic Strategy analysis failed. Please try again.' })
     mocks.organic.mockResolvedValue(unavailable)
-    mocks.interpret.mockResolvedValue({ ok: true, observations: [{ signal_id: 'x', finding: 'f', evidence: 'e', interpretation: 'i', suggested_experiment: 't' }], model: 'synthetic' })
+    mocks.interpret.mockResolvedValue({ ok: true, brain_take: 'Brain take that must survive.', insights: [{ signal_ids: ['x'], title: 't', insight: 'i', try_next: 'n' }], model: 'synthetic' })
     const s = storage(strongSample().posts)
     const result = await generateCreativeIntelligence(s.db, 'admin')
     expect(result).toMatchObject({ ok: true, partial: true, organic: 'unavailable' })
@@ -154,6 +154,7 @@ describe('Organic Strategy inside the Creative Intelligence refresh', () => {
     const row = s.tables.marketing_creative_intelligence_runs[0] as Record<string, unknown> & { analytics: Record<string, unknown> }
     expect(row).toMatchObject({ status: 'partial', model: 'synthetic', lease_expires_at: null, error: 'Organic Strategy is unavailable. The rest of this run is complete. Refresh again to retry.' })
     expect(row.observations).toHaveLength(1)
+    expect(row.analytics.brain_take).toBe('Brain take that must survive.')
     expect(row.analytics.posts).toBeDefined()
     expect(row.analytics.organic_strategy).toMatchObject({ status: 'unavailable', output: null })
   })
@@ -183,5 +184,61 @@ describe('Organic Strategy inside the Creative Intelligence refresh', () => {
     const s = storage(strongSample().posts, { failedFinalWrite: true })
     expect((await generateCreativeIntelligence(s.db, 'admin')).ok).toBe(false)
     expect(s.tables.marketing_creative_intelligence_runs[0].status).toBe('failed')
+  })
+})
+
+describe('Marketing Brain v2 + Organic Strategy: two independently failure-isolated AI layers', () => {
+  const insights = [{ signal_ids: ['x'], title: 'A grouped insight', insight: 'Two related Reels travelled further.', try_next: 'Try the same angle again.' }]
+  const interpretationOk = { ok: true, brain_take: 'Brain take: the debate-style Reels travelled furthest.', insights, model: 'synthetic' }
+  const interpretationFail = { ok: false, error: 'Interpretation unavailable. Deterministic evidence is still available.' }
+  const organicOk = () => storedStrategy()
+  const organicFail = () => storedStrategy({ status: 'unavailable', output: null, model: null, message: 'Organic Strategy analysis failed. Please try again.' })
+  type Row = Record<string, unknown> & { status: string; error: string | null; observations: unknown[]; analytics: Record<string, unknown> }
+
+  const cases: [string, unknown, () => ReturnType<typeof storedStrategy>, { status: string; briefTake: boolean; insights: number; organic: string; error: string | null }][] = [
+    ['both layers succeed', interpretationOk, organicOk, { status: 'completed', briefTake: true, insights: 1, organic: 'completed', error: null }],
+    ['only the interpretation fails', interpretationFail, organicOk, { status: 'partial', briefTake: false, insights: 0, organic: 'completed', error: interpretationFail.error }],
+    ['only Organic Strategy fails', interpretationOk, organicFail, { status: 'partial', briefTake: true, insights: 1, organic: 'unavailable', error: 'Organic Strategy is unavailable. The rest of this run is complete. Refresh again to retry.' }],
+    ['both layers fail', interpretationFail, organicFail, { status: 'partial', briefTake: false, insights: 0, organic: 'unavailable', error: interpretationFail.error }],
+  ]
+  it.each(cases)('%s: deterministic evidence is always kept, and each layer keeps its own result', async (_name, interp, organic, expected) => {
+    mocks.interpret.mockResolvedValue(interp); mocks.organic.mockResolvedValue(organic())
+    const s = storage(strongSample().posts)
+    const result = await generateCreativeIntelligence(s.db, 'admin')
+    expect(result.ok).toBe(true)
+    const row = s.tables.marketing_creative_intelligence_runs[0] as Row
+    expect(row.status).toBe(expected.status)
+    expect(row.error).toBe(expected.error)
+    expect(row.observations).toHaveLength(expected.insights)
+    expect(Boolean(row.analytics.brain_take)).toBe(expected.briefTake)
+    expect((row.analytics.organic_strategy as { status: string }).status).toBe(expected.organic)
+    // Deterministic evidence is never lost, whatever the AI layers do.
+    expect(s.tables.marketing_content_fingerprints).toHaveLength(8)
+    for (const key of ['window', 'posts', 'patterns', 'formats', 'exceptional', 'coverage']) expect(row.analytics[key], key).toBeDefined()
+    expect(row.lease_expires_at).toBeNull()
+  })
+
+  it('runs the strategist even when the interpretation failed: neither layer depends on the other', async () => {
+    mocks.interpret.mockResolvedValue(interpretationFail)
+    const s = storage(strongSample().posts)
+    await generateCreativeIntelligence(s.db, 'admin')
+    expect(mocks.organic).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the v2 interpretation call exactly as before: only deterministic signals, business context and coverage facts', async () => {
+    const s = storage(strongSample().posts)
+    await generateCreativeIntelligence(s.db, 'admin')
+    const [signals, , facts] = mocks.interpret.mock.calls[0]
+    expect(Array.isArray(signals)).toBe(true)
+    expect(facts).toEqual({ posts_in_analysis: 8, measured_posts: 8 })
+    expect(JSON.stringify(mocks.interpret.mock.calls[0])).not.toMatch(/organic|claude-ig|caption/i)
+  })
+
+  it('does not start Organic Strategy before the interpretation has finished', async () => {
+    const events: string[] = []
+    mocks.interpret.mockImplementation(async () => { events.push('interpretation:start'); await Promise.resolve(); events.push('interpretation:end'); return interpretationOk })
+    mocks.organic.mockImplementation(async () => { events.push('organic'); return organicOk() })
+    await generateCreativeIntelligence(storage(strongSample().posts).db, 'admin')
+    expect(events).toEqual(['interpretation:start', 'interpretation:end', 'organic'])
   })
 })

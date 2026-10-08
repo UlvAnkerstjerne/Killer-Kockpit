@@ -94,4 +94,17 @@ describe('Organic Strategy AI usage instrumentation (real tracker)', () => {
     expect(mocks.inserts).toHaveLength(0)
     expect(mocks.parse).not.toHaveBeenCalled()
   })
+
+  it('never stacks SDK-style retries on a timeout: one slow request is one row, one request', async () => {
+    const timeout = Object.assign(new Error('Request timed out.'), { name: 'APIConnectionTimeoutError' })
+    mocks.parse.mockImplementation(async () => { vi.advanceTimersByTime(210_000); throw timeout })
+    expect(await settle(callOrganicStrategyAI(skill, built.evidence, ctx))).toMatchObject({ ok: false })
+    expect(mocks.parse).toHaveBeenCalledTimes(1)
+    expect(rows()).toEqual([[1, 'error']])
+  })
+  it('still retries fast transient errors such as an overloaded provider', async () => {
+    mocks.parse.mockRejectedValueOnce(apiError(529)).mockResolvedValueOnce(success())
+    expect(await settle(callOrganicStrategyAI(skill, built.evidence, ctx))).toMatchObject({ ok: true })
+    expect(rows()).toEqual([[1, 'error'], [2, 'success']])
+  })
 })

@@ -278,8 +278,8 @@ export default function BrainView({ data, refreshControl, paidStrategy }: { data
           {!data.canRefresh ? <p className="mt-4 text-sm text-kk-muted">A SUPER_ADMIN can generate the first analysis.</p> : null}
         </section> : <>
           <CoverageSummary run={run} analytics={analytics} />
-          <OrganicStrategySection strategy={analytics.organic_strategy} canRefresh={data.canRefresh} />
           <section aria-labelledby="learning-title">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-kk-muted">What the evidence says</p>
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="learning-title" className="text-xl font-semibold">What we&rsquo;re learning</h2>
               <span className="text-xs text-kk-muted">AI hypotheses · for human review</span>
@@ -292,6 +292,7 @@ export default function BrainView({ data, refreshControl, paidStrategy }: { data
             {run.signals.length ? <details className="mt-4 rounded-xl border border-kk-line p-4 text-sm"><summary className="cursor-pointer font-medium">View {run.signals.length} deterministic signals</summary><ul className="mt-3 space-y-3">{run.signals.map(signal => <li key={signal.id}><strong>{label(signal.value)} · {label(signal.type)}</strong><p className="mt-1 text-xs leading-relaxed text-kk-muted">{signalEvidence(signal)}</p></li>)}</ul></details> : null}
             {analytics.business_context?.length ? <BusinessContextOverview items={analytics.business_context} /> : null}
           </section>
+          <OrganicStrategySection strategy={analytics.organic_strategy} canRefresh={data.canRefresh} />
           <PatternTable title="Best hooks · caption copy" dimension="hook_type" analytics={analytics} />
           <PatternTable title="Best themes" dimension="primary_theme" analytics={analytics} />
           <PatternTable title="Best products / topics" dimension="product_focus" analytics={analytics} />

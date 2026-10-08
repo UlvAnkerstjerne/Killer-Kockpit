@@ -26,7 +26,7 @@ import {
 } from '@/lib/marketing/organic-strategy/types'
 
 /** Bump on any change to ORGANIC_RULES, the schema, the evidence shape, or the vendored skill. */
-export const ORGANIC_STRATEGY_PROMPT_VERSION = '2026-10-08-v1'
+export const ORGANIC_STRATEGY_PROMPT_VERSION = '2026-10-08-v2'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ Keep evidence, inference and suggestion apart
 - CREATIVE SUGGESTION is what might be worth trying. Put it in suggested_angle, hook, execution and concepts. It is a hypothesis to test, never a claim that it will work.
 
 Evidence strength (use honestly; default to the weaker label)
-- proven_pattern: only when the same pattern repeats across at least 3 separate measured posts with consistent results and is not explained by one outlier, AND at least 5 posts are measured overall. Cite those refs. With fewer posts it is impossible.
+- proven_pattern: only when the same pattern repeats across at least 3 separate measured posts with consistent results and is not explained by one outlier, AND at least 5 posts are measured overall. Cite those refs. With fewer posts it is impossible. The interface shows this label as "Strong repeated pattern": it is never proof. Even then, say how small the dataset is.
 - reasonable_inference: supported by 2 or more posts, or by one strong and clearly explained contrast.
 - weak_signal: a single post, or thin or mixed evidence. Say so.
 - Never generalise from one post, and never from one carousel. Small samples stay small: state how many posts a claim rests on.
@@ -98,6 +98,25 @@ const DEMOGRAPHICS = /\b(demograph\w*|gender|women|woman|female|male|millennials
 const INVENTED_DATA = /\b(retention|watch[- ]?time|watch rate|(?:average|avg\.?) (?:view|watch) (?:duration|time)|completion rate|drop[- ]?off|skip rate|hook rate|non-?followers?|new audiences? reached)\b/i
 const VISUAL_CLAIM = /\b(thumbnail|cover image|visual(?:ly)?|footage|lighting|colou?r(?:s|ful)?|camera angle|b-?roll|on-?camera|talking[- ]head|close-?ups?)\b/i
 const CAUSAL = /\b(caused?|causing|because of|due to|led to|leads to|drove|drives|driving|resulted in|proves?|proved|guarantees?|is why|explains why)\b/i
+
+// A claim is only a violation when it is ASSERTED. Careful sentences that deny or hedge it are exactly
+// what we want from the model ("cannot confirm the opening line drove reach", "visual-first is
+// untested", "there is no retention data"). The first live evaluation showed bare keyword matching
+// rejecting such sentences. A negation/hedge within a short window of the keyword clears it;
+// assertions without one are still rejected.
+const NEGATION = /\b(no|not|n't|never|without|lacks?|lacking|unavailable|unknown|missing|cannot|can't|untested|unverified|unclear|whether|impossible)\b/i
+const sentencesOf = (text: string) => text.split(/(?<=[.!?;:])\s+|\s[—–]\s/).filter(Boolean)
+export function assertsClaim(text: string, pattern: RegExp): boolean {
+  const re = new RegExp(pattern.source, 'gi')
+  for (const sentence of sentencesOf(text)) {
+    for (const m of sentence.matchAll(re)) {
+      const before = sentence.slice(Math.max(0, m.index - 60), m.index)
+      const after = sentence.slice(m.index + m[0].length, m.index + m[0].length + 40)
+      if (!NEGATION.test(before) && !NEGATION.test(after)) return true
+    }
+  }
+  return false
+}
 
 type Kind = 'evidence' | 'free' | 'limitation'
 interface Field { where: string; text: string; kind: Kind }
@@ -183,9 +202,9 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
     if (LEAKED_IDENTIFIER.test(field.text)) throw new OrganicStrategyValidationError(`${where}: URL, platform ID or credential-like string.`)
     if (PAYLOAD_SHAPE.test(field.text)) throw new OrganicStrategyValidationError(`${where}: looks like a platform payload.`)
     if (field.kind !== 'limitation' && DEMOGRAPHICS.test(field.text)) throw new OrganicStrategyValidationError(`${where}: demographic or audience claim; no such data exists.`)
-    if (field.kind === 'evidence' && INVENTED_DATA.test(field.text)) throw new OrganicStrategyValidationError(`${where}: retention or follower-split data is not available.`)
-    if (field.kind === 'evidence' && VISUAL_CLAIM.test(field.text)) throw new OrganicStrategyValidationError(`${where}: visual claim; visuals were not analysed.`)
-    if (field.kind === 'evidence' && CAUSAL.test(field.text)) throw new OrganicStrategyValidationError(`${where}: causal language in an evidence field.`)
+    if (field.kind === 'evidence' && assertsClaim(field.text, INVENTED_DATA)) throw new OrganicStrategyValidationError(`${where}: retention or follower-split data is not available.`)
+    if (field.kind === 'evidence' && assertsClaim(field.text, VISUAL_CLAIM)) throw new OrganicStrategyValidationError(`${where}: visual claim; visuals were not analysed.`)
+    if (field.kind === 'evidence' && assertsClaim(field.text, CAUSAL)) throw new OrganicStrategyValidationError(`${where}: causal language in an evidence field.`)
     for (const [, letter, n] of field.text.matchAll(/\b([PUB])(\d{1,3})\b/g)) {
       const max = letter === 'P' ? ctx.measuredInPrompt : letter === 'U' ? ctx.unmeasuredInPrompt : ctx.businessItems
       if (Number(n) < 1 || Number(n) > max) throw new OrganicStrategyValidationError(`${where}: cites ${letter}${n}, which is not in the data.`)
@@ -193,7 +212,7 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
   }
   // Interpretation is inference, but must still not invent unavailable data.
   parsed.main_learnings.forEach((l, i) => {
-    if (INVENTED_DATA.test(l.interpretation)) throw new OrganicStrategyValidationError(`main_learnings[${i}].interpretation: retention or follower-split data is not available.`)
+    if (assertsClaim(l.interpretation, INVENTED_DATA)) throw new OrganicStrategyValidationError(`main_learnings[${i}].interpretation: retention or follower-split data is not available.`)
   })
 
   for (const [name, titles] of [
@@ -227,6 +246,24 @@ export type OrganicStrategyAIResult =
   | { ok: false; error: string; errorDetail?: string }
 
 const MAX_ATTEMPTS = 2
+/**
+ * Measured on live data: 5,445 output tokens took 128 s and 4,780 took 109 s (about 42 tokens/s). The Paid-style
+ * 120 s timeout would have cut the first one off. 210 s covers a full answer; max_tokens is capped so even a maximal
+ * answer fits. Because a single call is this slow, a re-ask is only worth making after a FAST failure.
+ */
+export const ORGANIC_REQUEST_TIMEOUT_MS = 210_000
+export const ORGANIC_MAX_TOKENS = 8000
+export const RETRY_ONLY_IF_FAILED_FASTER_THAN_MS = 100_000
+
+/** A timeout has already used its whole budget: stacking more 3.5-minute SDK-style retries would hang the refresh. */
+function neverRetryTimeouts<T>(call: () => Promise<T>): () => Promise<T> {
+  return async () => {
+    try { return await call() } catch (err) {
+      if ((err as { name?: string } | null)?.name === 'APIConnectionTimeoutError') throw Object.assign(err as object, { headers: { 'x-should-retry': 'false' } })
+      throw err
+    }
+  }
+}
 
 export async function callOrganicStrategyAI(
   skill: LoadedClaudeIgSkill,
@@ -238,7 +275,7 @@ export async function callOrganicStrategyAI(
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return { ok: false, error: 'AI provider is not configured.', errorDetail: 'ANTHROPIC_API_KEY is not set.' }
 
-  const client = new Anthropic({ apiKey, timeout: 120_000, maxRetries: 0 }) // no hidden SDK retries: see trackAiCallWithRetries
+  const client = new Anthropic({ apiKey, timeout: ORGANIC_REQUEST_TIMEOUT_MS, maxRetries: 0 }) // no hidden SDK retries: see trackAiCallWithRetries
   const system = buildOrganicSystemPrompt(skill)
   const user = buildOrganicUserMessage(evidence)
   const startMs = Date.now()
@@ -246,13 +283,13 @@ export async function callOrganicStrategyAI(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const response = await trackAiCallWithRetries({ feature: 'organic_strategy', model }, () => client.messages.parse({
+      const response = await trackAiCallWithRetries({ feature: 'organic_strategy', model }, neverRetryTimeouts(() => client.messages.parse({
         model,
-        max_tokens: 10000,
+        max_tokens: ORGANIC_MAX_TOKENS,
         system,
         messages: [{ role: 'user', content: user }],
         output_config: { format: zodOutputFormat(OrganicStrategyOutputSchema) },
-      }), { attemptOffset: (attempt - 1) * (SDK_DEFAULT_MAX_RETRIES + 1) })
+      })), { attemptOffset: (attempt - 1) * (SDK_DEFAULT_MAX_RETRIES + 1) })
 
       if (!response.parsed_output) {
         return { ok: false, error: 'AI model did not return a valid response.', errorDetail: `stop_reason: ${response.stop_reason ?? 'unknown'}` }
@@ -260,6 +297,7 @@ export async function callOrganicStrategyAI(
       return { ok: true, validated: validateOrganicStrategy(response.parsed_output, ctx, evidence), model, durationMs: Date.now() - startMs }
     } catch (err) {
       lastError = err instanceof Error ? err.message : 'Unknown error'
+      if (Date.now() - startMs > RETRY_ONLY_IF_FAILED_FASTER_THAN_MS) break // too slow to risk a second long call inside one refresh
       if (attempt < MAX_ATTEMPTS) console.warn(`[ai/organic-strategy] Attempt ${attempt} failed (${lastError.slice(0, 300)}), retrying…`)
     }
   }
