@@ -20,6 +20,11 @@ export const WINDOW_DAYS = 28
 export const MAX_CAMPAIGNS = 12
 export const MAX_AD_SETS = 25
 export const MAX_ADS = 12
+/** Projection: how many recent completed days define the run rate, and how many of them an active campaign must have spent on. */
+export const RUN_RATE_DAYS = 7
+export const MIN_SPEND_DAYS_FOR_RELIABLE_RUN_RATE = 5
+/** Budgets are used as an upper bound only when they are this consistent with actual recent spend. */
+export const BUDGET_SANITY_RANGE = { min: 0.5, max: 3 } as const
 
 export type StrategyCampaign = Pick<MetaCampaignRow, 'id' | 'name' | 'status' | 'objective' | 'daily_budget' | 'created_at_meta'>
 export type StrategyAdSet = Pick<MetaAdSetRow, 'id' | 'campaign_id' | 'name' | 'status' | 'daily_budget'>
@@ -62,6 +67,11 @@ export function strategyWindows(now = new Date()): StrategyWindows {
 }
 
 const inRange = (date: string, w: DateWindow) => date >= w.start && date <= w.end
+const addDays = (date: string, days: number): string => {
+  const d = new Date(`${date}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
 const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000)
 
 // ── Number helpers ─────────────────────────────────────────────────────────────
@@ -69,6 +79,10 @@ const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z
 const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 const round = (n: number, dp = 2): number => { const f = 10 ** dp; return Math.round(n * f) / f }
 const safeDiv = (a: number, b: number): number | null => (b > 0 ? a / b : null)
+
+/** Meta stores budgets in the currency's minor unit (matches lib/marketing/paid-recs, which divides by 100). */
+const MINOR_UNITS_PER_CURRENCY_UNIT = 100
+const budgetAmount = (v: unknown): number | null => (v == null ? null : round(num(v) / MINOR_UNITS_PER_CURRENCY_UNIT))
 
 /** Platform-controlled text: prefix, strip control characters, truncate. */
 export function dataText(value: string | null | undefined, max = 80): string {
@@ -196,7 +210,7 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
       name: dataText(c.name),
       status: c.status,
       objective: c.objective ?? 'UNKNOWN',
-      daily_budget: c.daily_budget == null ? null : round(num(c.daily_budget)),
+      daily_budget: budgetAmount(c.daily_budget),
       age_days: c.created_at_meta ? Math.max(0, dayDiff(c.created_at_meta.slice(0, 10), w.today)) : null,
       ad_sets_total: sets.length,
       ad_sets_active: sets.filter(s => s.status === 'ACTIVE').length,
@@ -211,7 +225,7 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
     campaign_ref: campaignRef.get(s.campaign_id)!,
     name: dataText(s.name),
     status: s.status,
-    daily_budget: s.daily_budget == null ? null : round(num(s.daily_budget)),
+    daily_budget: budgetAmount(s.daily_budget),
   }))
 
   // Top ads by current-window spend, only those under included campaigns.
@@ -269,6 +283,55 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate()
   const daysElapsed = Math.max(0, dayDiff(monthStart, w.today))
 
+  // ── Projection (NOT a fact) ───────────────────────────────────────────────
+  // MTD only covers completed days. Currently ACTIVE campaigns keep spending, so the
+  // capacity left under the ceiling is the ceiling minus MTD minus what they are
+  // expected to spend for the rest of the month (today included).
+  const recent: DateWindow = { start: addDays(w.current.end, -(RUN_RATE_DAYS - 1)), end: w.current.end }
+  const activeCampaigns = eligible.filter(c => c.status === 'ACTIVE')
+  const activeIds = new Set(activeCampaigns.map(c => c.id))
+  const recentRows = input.campaignInsights.filter(r => activeIds.has(r.campaign_id) && inRange(r.date_start, recent))
+  const recentDaily = recentRows.reduce((s, r) => s + num(r.spend), 0) / RUN_RATE_DAYS
+  const thinCampaigns = activeCampaigns.filter(c =>
+    new Set(recentRows.filter(r => r.campaign_id === c.id && num(r.spend) > 0).map(r => r.date_start)).size < MIN_SPEND_DAYS_FOR_RELIABLE_RUN_RATE).length
+
+  // Daily-budget upper bound: campaign budget if set (CBO), else the ACTIVE ad-set budgets of that campaign.
+  let budgetTotal = 0
+  for (const c of activeCampaigns) {
+    const campaignBudget = budgetAmount(c.daily_budget)
+    budgetTotal += campaignBudget && campaignBudget > 0
+      ? campaignBudget
+      : input.adSets.filter(s => s.campaign_id === c.id && s.status === 'ACTIVE').reduce((sum, s) => sum + (budgetAmount(s.daily_budget) ?? 0), 0)
+  }
+  const budgetUsable = budgetTotal > 0 && recentDaily > 0
+    && budgetTotal >= recentDaily * BUDGET_SANITY_RANGE.min && budgetTotal <= recentDaily * BUDGET_SANITY_RANGE.max
+  const assumedDaily = Math.max(recentDaily, budgetUsable ? budgetTotal : 0)
+  const remainingDays = daysInMonth - daysElapsed
+  const projectedRemaining = assumedDaily * remainingDays
+  const projectedMonthEnd = mtd + projectedRemaining
+
+  const unreliable: string[] = []
+  if (input.currency !== 'DKK') unreliable.push(`Account currency is ${input.currency}, not DKK, so it cannot be compared with the DKK ceiling.`)
+  if (thinCampaigns > 0) unreliable.push(`${thinCampaigns} active campaign(s) spent on fewer than ${MIN_SPEND_DAYS_FOR_RELIABLE_RUN_RATE} of the last ${RUN_RATE_DAYS} days, so the recent run rate is not representative.`)
+  const reliable = unreliable.length === 0
+
+  const projection = {
+    label: 'PROJECTION, not a fact. Existing spend is extrapolated; the real month-end figure can differ.',
+    method: `Average daily spend of currently ACTIVE campaigns over the last ${RUN_RATE_DAYS} completed days (raised to their combined daily budgets when those are consistent with actual spend), repeated for every remaining day this month including today, added to month-to-date spend.`,
+    reliable,
+    unreliable_reasons: unreliable,
+    recent_daily_spend: round(recentDaily),
+    active_daily_budget_total: budgetTotal > 0 ? round(budgetTotal) : null,
+    active_daily_budget_used_as_upper_bound: budgetUsable,
+    assumed_daily_spend_for_existing_campaigns: round(assumedDaily),
+    remaining_days_in_month_including_today: remainingDays,
+    projected_remaining_existing_spend: round(projectedRemaining),
+    projected_month_end_spend: round(projectedMonthEnd),
+    /** The ONLY capacity available for new tests, shared by all of them. null = not reliable, so no test budget may be proposed. */
+    projected_incremental_headroom: reliable ? round(Math.max(0, MONTHLY_CEILING_DKK - projectedMonthEnd)) : null,
+    not_modelled: 'New campaigns, budget changes, lifetime budgets, and spend variation (Meta can exceed a daily budget on some days).',
+  }
+
   const data_gaps: string[] = [...DATA_GAPS_STATIC]
   if (input.currency !== 'DKK') data_gaps.push(`Ad account currency is ${input.currency}; the 15,000 ceiling is expressed in DKK and is not converted here.`)
   if (ranked.length > included.length) data_gaps.push(`${ranked.length - included.length} lower-spend campaigns are omitted from the campaign list (spend totals still include them).`)
@@ -285,9 +348,9 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
       month_to_date_spend: round(mtd),
       month_days_elapsed: daysElapsed,
       month_days_total: daysInMonth,
-      ceiling_headroom_this_month: round(Math.max(0, MONTHLY_CEILING_DKK - mtd)),
       spend_current_28d: round(spendCurrent),
       spend_prior_28d: round(spendPrior),
+      projection,
     },
     calibration: {
       known: { monthly_ceiling_dkk: MONTHLY_CEILING_DKK, ceiling_is_hard_cap: true },

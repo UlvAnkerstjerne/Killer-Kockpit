@@ -80,3 +80,54 @@ describe('Paid Strategy output validation', () => {
     expect(() => validatePaidStrategy({ recommendations: [{ ...rec(), campaign_id: '12' }] })).toThrow()
   })
 })
+
+describe('Paid Strategy shared budget headroom', () => {
+  const withHeadroom = (headroom: number | null) => ({ budget: { projection: { projected_incremental_headroom: headroom } } }) as never
+  const recs = (...amounts: number[]) => ({ recommendations: amounts.map((a, i) => rec(i + 1, { title: `Distinct idea number ${i + 1}`, incremental_budget_dkk: a })) })
+
+  it('requires incremental_budget_dkk on every recommendation and rejects negatives', () => {
+    const without: Record<string, unknown> = { ...rec() }
+    delete without.incremental_budget_dkk
+    expect(PaidStrategyRecommendationSchema.safeParse(without).success).toBe(false)
+    expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { incremental_budget_dkk: -1 })).success).toBe(false)
+    expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { incremental_budget_dkk: 0 })).success).toBe(true)
+  })
+  it('accepts combined budgets that fit, including exactly at the limit', () => {
+    expect(validatePaidStrategy(recs(900, 900, 900), withHeadroom(2721))).toHaveLength(3)
+    expect(validatePaidStrategy(recs(1000, 1000, 721), withHeadroom(2721))).toHaveLength(3)
+  })
+  it('rejects budgets that each fit alone but not together (the first live run: 2,000 + 1,500 + 1,500 vs ~2.7k)', () => {
+    expect(() => validatePaidStrategy(recs(2000, 1500, 1500), withHeadroom(2721))).toThrow('exceed projected headroom')
+    expect(() => validatePaidStrategy(recs(1500, 1500, 0), withHeadroom(2721))).toThrow(PaidStrategyValidationError)
+  })
+  it('rejects any test budget when headroom is not reliable, and accepts zero-spend recommendations', () => {
+    expect(() => validatePaidStrategy(recs(1, 0, 0), withHeadroom(null))).toThrow('not reliable')
+    expect(validatePaidStrategy(recs(0, 0, 0), withHeadroom(null))).toHaveLength(3)
+    expect(() => validatePaidStrategy(recs(1), withHeadroom(0))).toThrow('exceed projected headroom')
+  })
+  it('skips the budget check only when no evidence is supplied (content-only unit tests)', () => {
+    expect(validatePaidStrategy(recs(999999))).toHaveLength(1)
+  })
+})
+
+describe('Paid Strategy vanity-metric guard', () => {
+  const metric = (success_metric: string) => ({ recommendations: [rec(1, { success_metric })] })
+  it.each([
+    'Cost per link click below 20.50 DKK with at least 100 link clicks.',
+    "Cost_per_link_click below C5's prior 20.50 DKK over 14 days, with at least 100 link_clicks recorded.",
+    'CPM for the retargeting campaign lower than 91.09 DKK.',
+    'More profile visits and video views than the prior 28 days.',
+    'Higher CTR and more landing page views than the current ad.',
+  ])('rejects a success metric made only of vanity measures: %s', text => {
+    expect(() => validatePaidStrategy(metric(text))).toThrow('vanity metric')
+  })
+  it.each([
+    'At least 5 voucher redemptions attributed to the ad within 14 days.',
+    'Cost per lead at or below the prior 28 days; link clicks are tracked only as a diagnostic.',
+    'The app first-order event fires correctly for 20 test orders before any spend is added.',
+    'Catering leads that become closed orders, counted weekly against the same period.',
+    'Offer-code redemptions at the destination, not clicks to it.',
+  ])('accepts a business outcome or its measurement: %s', text => {
+    expect(validatePaidStrategy(metric(text))).toHaveLength(1)
+  })
+})

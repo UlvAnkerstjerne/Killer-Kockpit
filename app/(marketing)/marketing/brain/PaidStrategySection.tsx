@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { PaidStrategyData } from '@/lib/actions/marketing/paid-strategy'
-import type { PaidStrategyRecommendation, PaidStrategyRecommendationType, PaidStrategyRun } from '@/lib/marketing/paid-strategy/types'
+import type { PaidStrategyRecommendationType, PaidStrategyRun } from '@/lib/marketing/paid-strategy/types'
 
 const TYPE_LABELS: Record<PaidStrategyRecommendationType, string> = {
   campaign_structure: 'Campaign structure', retargeting: 'Retargeting', audience: 'Audience', creative: 'Creative',
@@ -16,7 +16,9 @@ function Field({ label, children, tone = 'default' }: { label: string; children:
   </div>
 }
 
-function StrategyCard({ rec, rank }: { rec: PaidStrategyRecommendation; rank: number }) {
+type StoredRecommendation = PaidStrategyRun['recommendations'][number]
+
+function StrategyCard({ rec, rank }: { rec: StoredRecommendation; rank: number }) {
   return <article className="rounded-2xl border border-kk-line bg-kk-panel p-5">
     <div className="flex items-start justify-between gap-3">
       <h3 className="text-base font-semibold leading-snug">{rank}. {rec.title}</h3>
@@ -27,6 +29,8 @@ function StrategyCard({ rec, rank }: { rec: PaidStrategyRecommendation; rank: nu
       <Field label="Interpretation · inference, not fact">{rec.interpretation}</Field>
       <Field label="Hypothesis">{rec.hypothesis}</Field>
       <Field label="Test or action">{rec.exact_test_or_action}</Field>
+      {typeof rec.incremental_budget_dkk === 'number'
+        ? <Field label="Extra budget needed">{rec.incremental_budget_dkk > 0 ? `${money(rec.incremental_budget_dkk)} DKK on top of existing spend` : 'None (no extra spend)'}</Field> : null}
       <Field label="Success metric">{rec.success_metric}</Field>
       <Field label="Evidence limitations" tone="muted">{rec.evidence_limitations}</Field>
     </dl>
@@ -39,6 +43,8 @@ function RunMeta({ run }: { run: PaidStrategyRun }) {
     Generated {day(run.generated_at)} · Meta Ads {day(run.window_start)} to {day(run.window_end)} · {run.skill_ref}{run.model ? ` · ${run.model}` : ''}
     {budget?.monthly_ceiling != null && budget.month_to_date_spend != null
       ? <> · Month to date {money(budget.month_to_date_spend)} of the {money(budget.monthly_ceiling)} {budget.currency ?? 'DKK'} ceiling (a hard cap, not a target)</> : null}
+    {budget?.projection?.projected_month_end_spend != null
+      ? <> · Projection: about {money(budget.projection.projected_month_end_spend)} by month end, {budget.projection.projected_incremental_headroom == null ? 'no reliable spare headroom' : `about ${money(budget.projection.projected_incremental_headroom)} ${budget.currency ?? 'DKK'} spare for new tests`}</> : null}
   </p>
 }
 

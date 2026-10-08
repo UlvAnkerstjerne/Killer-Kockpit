@@ -40,11 +40,31 @@ describe('Paid Strategy system prompt', () => {
   })
   it('keeps the model advisory, experiment-framed, within the hard cap and suspicious of platform text', () => {
     for (const text of [
-      'ADVISORY ONLY', 'at most THREE', 'HARD CAP, not a target', '15,000 DKK per month', 'ceiling_headroom_this_month',
+      'ADVISORY ONLY', 'at most THREE', 'HARD CAP, not a target', '15,000 DKK per month',
       'Calibration Check and Refuse-to-Act rules do NOT stop you', 'bounded EXPERIMENT', 'Never invent them',
       'evidence = FACTS only', 'interpretation = INFERENCE', 'DATA:', 'platform IDs', 'separate system with its own human approval',
       'Never add different action types together',
     ]) expect(prompt, text).toContain(text)
+  })
+  it('explains the projected, shared headroom and forbids inventing capacity', () => {
+    for (const text of [
+      'budget.projection is a PROJECTION', 'projected_incremental_headroom as the ONLY capacity', 'never present it as a fact',
+      'compete for the SAME headroom', 'incremental_budget_dkk', 'must not exceed projected_incremental_headroom',
+      'sequence them', 'Never invent capacity', 'NO DKK test budget',
+    ]) expect(prompt, text).toContain(text)
+    expect(prompt).not.toContain('ceiling_headroom_this_month')
+  })
+  it('puts business outcomes ahead of cheap traffic, as Killer Kebab rules in our own addendum', () => {
+    for (const text of [
+      'Business outcomes over vanity metrics', 'Business outcomes come first', 'diagnostic intermediate metrics',
+      'must not be the ultimate objective or the success_metric',
+      'Do not recommend a new TRAFFIC or ENGAGEMENT campaign because historical CPC, CPM or CTR was low',
+      'Do not claim, or imply, that cheap clicks, views or engagement mean commercial value',
+      'app first-order event', 'voucher or offer-code redemption', 'catering lead that becomes a closed order', 'preferred recommendation is to create a measurable path',
+    ]) expect(prompt, text).toContain(text)
+    expect(prompt.endsWith(KOCKPIT_RULES)).toBe(true)
+    expect(KOCKPIT_RULES).toContain('Business outcomes over vanity metrics')
+    expect(skill.text).not.toContain('Business outcomes over vanity metrics') // the addendum is ours, not the vendored skill
   })
   it('tells the model the per-field character budgets, which constrained decoding cannot enforce', () => {
     for (const [field, chars] of Object.entries(FIELD_TARGET_CHARS)) expect(prompt, field).toContain(`${field} ${chars}`)
@@ -54,6 +74,12 @@ describe('Paid Strategy system prompt', () => {
 })
 
 describe('Paid Strategy user message', () => {
+  it('carries the labelled projection and the shared headroom', () => {
+    const message = buildPaidStrategyUserMessage(evidence)
+    expect(message).toContain('"projection":{"label":"PROJECTION, not a fact.')
+    expect(message).toContain('"projected_incremental_headroom":')
+    expect(message).not.toContain('ceiling_headroom_this_month')
+  })
   it('is the whitelisted evidence only, with no platform IDs', () => {
     const message = buildPaidStrategyUserMessage(evidence)
     expect(message).toContain('"schema_version":"paid-strategy-evidence-v1"')
@@ -96,6 +122,17 @@ describe('callPaidStrategyAI', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) { expect(result.error).toBe('Paid strategy analysis failed. Please try again.'); expect(result.error).not.toContain('https') }
     expect(mocks.parse).toHaveBeenCalledTimes(2)
+  })
+  it('retries when combined test budgets exceed the shared headroom, then accepts a fitting answer', () => {
+    const headroom = evidence.budget.projection.projected_incremental_headroom!
+    const over = { recommendations: [rec(1, { incremental_budget_dkk: headroom }), rec(2, { title: 'Second distinct test idea', incremental_budget_dkk: headroom })] }
+    mocks.parse.mockResolvedValueOnce({ parsed_output: over }).mockResolvedValueOnce({ parsed_output: good })
+    return callPaidStrategyAI(skill, evidence).then(result => { expect(result.ok).toBe(true); expect(mocks.parse).toHaveBeenCalledTimes(2) })
+  })
+  it('fails safely if the model keeps stacking budgets past the headroom', async () => {
+    const headroom = evidence.budget.projection.projected_incremental_headroom!
+    mocks.parse.mockResolvedValue({ parsed_output: { recommendations: [rec(1, { incremental_budget_dkk: headroom + 1000 })] } })
+    expect(await callPaidStrategyAI(skill, evidence)).toMatchObject({ ok: false })
   })
   it('fails when the model returns no parsed output (for example a refusal)', async () => {
     mocks.parse.mockResolvedValue({ parsed_output: null, stop_reason: 'refusal' })

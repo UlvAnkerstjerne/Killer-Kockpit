@@ -53,6 +53,23 @@ describe('PAID STRATEGY section', () => {
     expect(html).not.toContain('<button')
     expect(html).not.toMatch(/Approve|Execute|Apply|Run now|Fix it/i)
   })
+  it('shows the projection next to the month-to-date figure and labels it a projection', () => {
+    const html = render({ latest: run() })
+    expect(html).toContain('Projection: about 6,200 by month end, about 8,800 DKK spare for new tests')
+    const unreliable = render({ latest: run({ evidence: { budget: { monthly_ceiling: 15000, month_to_date_spend: 1400, currency: 'DKK', projection: { projected_month_end_spend: 6200, projected_incremental_headroom: null, reliable: false } } } }) })
+    expect(unreliable).toContain('no reliable spare headroom')
+  })
+  it('shows each recommendation\'s extra budget, and copes with rows saved before the field existed', () => {
+    const html = render({ latest: run({ recommendations: [rec(1, { incremental_budget_dkk: 1200 }), rec(2, { title: 'A zero-spend measurement fix', incremental_budget_dkk: 0 })] }) })
+    expect(html).toContain('Extra budget needed')
+    expect(html).toContain('1,200 DKK on top of existing spend')
+    expect(html).toContain('None (no extra spend)')
+    const legacy: Record<string, unknown> = { ...rec(1) }
+    delete legacy.incremental_budget_dkk
+    const old = render({ latest: run({ recommendations: [legacy as never] }) })
+    expect(old).not.toContain('Extra budget needed')
+    expect(old).toContain('<article')
+  })
   it('lists what the analysis could not see', () => {
     expect(render({ latest: run() })).toContain('What this analysis could not see')
     expect(render({ latest: run({ evidence: null }) })).not.toContain('What this analysis could not see')

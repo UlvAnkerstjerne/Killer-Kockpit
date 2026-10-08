@@ -24,9 +24,24 @@ Nothing in `lib/marketing/paid-recs/` was changed. Paid Strategy cannot reach an
 
 ## Evidence
 
-Last 28 completed Copenhagen days vs the 28 before. Per campaign: status, objective, budget, ad set/ad counts, spend, impressions, link clicks, link CTR, CPM, cost per link click, impression-weighted daily frequency, top Meta action types (never summed — they overlap). Account: spend by objective, 8-week trend, month-to-date spend against the 15,000 DKK ceiling. Top ads by spend. Campaigns, ad sets and ads are referenced as `C1`/`S1`/`A1`; all platform names are prefixed `DATA:`.
+Last 28 completed Copenhagen days vs the 28 before. Per campaign: status, objective, budget, ad set/ad counts, spend, impressions, link clicks, link CTR, CPM, cost per link click, impression-weighted daily frequency, top Meta action types (never summed — they overlap). Account: spend by objective, 8-week trend, month-to-date spend (a fact) and a clearly labelled **projection** of month-end spend (see Budget headroom). Top ads by spend. Campaigns, ad sets and ads are referenced as `C1`/`S1`/`A1`; all platform names are prefixed `DATA:`.
 
 Not available in Kockpit data, and told to the model: targeting/audience definitions, ad copy and creative, revenue, target CPL/ROAS, margin, close rate.
+
+## Budget headroom
+
+Month-to-date spend is not spare capacity: active campaigns keep spending. The evidence therefore carries `budget.projection`:
+
+- run rate = average daily spend of currently ACTIVE campaigns over the last 7 completed days;
+- raised to their combined daily budgets (ad-set budgets, or the campaign budget if set; Meta stores minor units, so ÷100) when those are within 0.5×–3× of actual spend, as a conservative upper bound;
+- `projected_month_end_spend` = month-to-date + that daily figure × remaining days (today included);
+- `projected_incremental_headroom` = max(0, 15,000 − projected month-end), or `null` when the run rate is not representative (an active campaign spent on fewer than 5 of the last 7 days) or the account is not DKK.
+
+All recommendations draw on the **same** headroom. Each carries `incremental_budget_dkk`; the validator rejects a run whose combined budgets exceed the headroom, or any budget at all when headroom is `null`. The projection ignores new campaigns, budget changes, lifetime budgets and day-to-day variation.
+
+## Business outcomes over vanity metrics
+
+Killer Kebab rules in our own addendum (`KOCKPIT_RULES`, not the vendored skill): business outcomes (app first order, voucher or offer-code redemption, catering lead to closed order) outrank cheap reach, CPM, clicks, profile visits and engagement. Those may be diagnostic intermediate metrics only. No new TRAFFIC/ENGAGEMENT campaign because historical CPC was low, and no claim that cheap clicks imply commercial value. If conversion measurement is missing, the preferred recommendation is to build a measurable path. A validator rejects a success metric made only of vanity measures.
 
 ## Trust boundaries
 

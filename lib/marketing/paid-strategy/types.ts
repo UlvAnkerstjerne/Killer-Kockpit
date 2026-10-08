@@ -40,6 +40,8 @@ export const PaidStrategyRecommendationSchema = z.object({
   interpretation: z.string().min(10).max(FIELD_MAX_CHARS.interpretation),
   hypothesis: z.string().min(10).max(FIELD_MAX_CHARS.hypothesis),
   exact_test_or_action: z.string().min(10).max(FIELD_MAX_CHARS.exact_test_or_action),
+  /** Extra DKK this test needs ON TOP of existing spend. All recommendations draw on the SAME projected headroom. */
+  incremental_budget_dkk: z.number().min(0).describe('Extra DKK spend this test needs on top of existing spend. 0 if it is funded by reallocating existing spend or needs no spend. The sum across all recommendations must not exceed budget.projection.projected_incremental_headroom; must be 0 when that is null.'),
   success_metric: z.string().min(5).max(FIELD_MAX_CHARS.success_metric),
   evidence_limitations: z.string().min(5).max(FIELD_MAX_CHARS.evidence_limitations),
 }).strict()
@@ -66,7 +68,8 @@ export interface PaidStrategyRun {
   skill_ref: string
   skill_hash: string
   /** The exact evidence sent to the model (no platform IDs). Omitted when listing previous runs. */
-  evidence?: { budget?: { monthly_ceiling?: number; month_to_date_spend?: number; currency?: string }; data_gaps?: string[] } | null
-  recommendations: PaidStrategyRecommendation[]
+  evidence?: { budget?: { monthly_ceiling?: number; month_to_date_spend?: number; currency?: string; projection?: { projected_month_end_spend?: number; projected_incremental_headroom?: number | null; reliable?: boolean } }; data_gaps?: string[] } | null
+  /** Rows written before incremental_budget_dkk existed lack that field. */
+  recommendations: (Omit<PaidStrategyRecommendation, 'incremental_budget_dkk'> & { incremental_budget_dkk?: number })[]
   error: string | null
 }
