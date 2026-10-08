@@ -110,13 +110,16 @@ export default function OrganicStrategySection({ strategy, canRefresh }: { strat
   }
 
   const { output: o, evidence_summary: s } = strategy
+  // The window is deliberately NOT the Brain's 90 days: strong older posts are kept, so say which dates the evidence covers.
+  const { first_published: first, last_published: last } = strategy.evidence_window
+  const window = first && last ? (first === last ? day(first) : `${day(first)} to ${day(last)}`) : null
   // Measured carousels (P refs only). With fewer than 5 there is no format baseline, so carousel ideas are exploratory.
   const measuredCarousels = strategy.posts.filter(p => p.ref.startsWith('P') && p.media_type === 'CAROUSEL_ALBUM').length
   const exploratoryCarousels = measuredCarousels < MIN_CAROUSELS_FOR_A_FORMAT_VIEW
   const empty = !o.main_learnings.length && !o.content_opportunities.length && !o.reel_concepts.length && !o.carousel_concepts.length
   return <Frame>
     <p className="text-xs text-kk-muted">
-      Generated {day(strategy.generated_at)} · based on {s.measured_in_prompt} post{s.measured_in_prompt === 1 ? '' : 's'} with performance data (of {s.stored_posts} stored; the rest have no metrics) · {strategy.skill?.ref ?? 'skill unknown'}{strategy.model ? ` · ${strategy.model}` : ''}
+      Generated {day(strategy.generated_at)} · based on {s.measured_in_prompt} post{s.measured_in_prompt === 1 ? '' : 's'} with performance data{window ? `, published ${window}` : ''} (of {s.stored_posts} stored; the rest have no metrics) · {strategy.skill?.ref ?? 'skill unknown'}{strategy.model ? ` · ${strategy.model}` : ''}
     </p>
     {empty ? <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted">The data does not support a recommendation yet. That is a legitimate result with this few measured posts.</p> : null}
     {o.main_learnings.length ? <Block title="Main learnings" count={o.main_learnings.length}><div className="grid gap-4 lg:grid-cols-2">{o.main_learnings.map((x, i) => <LearningCard key={`${i}-${x.title}`} item={x} />)}</div></Block> : null}

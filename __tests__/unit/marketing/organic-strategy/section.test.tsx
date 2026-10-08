@@ -63,7 +63,7 @@ describe('Organic strategy section: a completed strategy', () => {
   })
 
   it('shows provenance: date, how many posts, the skill and the model', () => {
-    expect(html).toContain('based on 9 posts with performance data (of 214 stored; the rest have no metrics)')
+    expect(html).toMatch(/based on 9 posts with performance data, published 10 Jul 2026 to 20 Sep\w* 2026 \(of 214 stored; the rest have no metrics\)/)
     expect(html).toContain('claude-ig@2.0.0#5e9b2d9')
     expect(html).toContain('synthetic-model')
     expect(html).toContain('AI suggestions for human review')
@@ -222,5 +222,16 @@ describe('inside the combined Marketing Brain (v2 + Organic Strategy)', () => {
     expect(html).toContain('Organic Strategy is unavailable for this run')
     expect(html).toContain('Best hooks')
     expect(html).toContain('Format performance')
+  })
+})
+
+describe('the evidence window is explicit', () => {
+  it('shows the publication dates of the evidence, which may be older than the Brain\'s 90-day window', () => {
+    const html = render(storedStrategy({ evidence_window: { first_published: '2026-06-23', last_published: '2026-09-30', as_of: '2026-10-08' } }))
+    expect(html).toContain('published 23 Jun 2026 to 30 Sep')
+  })
+  it('handles a single date and an absent window without breaking the line', () => {
+    expect(render(storedStrategy({ evidence_window: { first_published: '2026-06-23', last_published: '2026-06-23', as_of: '2026-10-08' } }))).toContain('published 23 Jun 2026 (of')
+    expect(render(storedStrategy({ evidence_window: { first_published: null, last_published: null, as_of: '2026-10-08' } }))).toContain('with performance data (of 214 stored')
   })
 })
