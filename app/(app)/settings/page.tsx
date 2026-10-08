@@ -30,6 +30,14 @@ export default async function SettingsPage() {
       <h1 className="text-2xl font-black tracking-tight text-kk-ink mb-6">Settings</h1>
 
       <div className="space-y-5">
+        {isAdmin && (
+          <Link href="/settings/ai-usage" className="block rounded-xl border border-kk-line bg-kk-panel p-5 transition hover:border-kk-muted">
+            <p className="text-xs font-bold uppercase tracking-wide text-kk-brand">Admin</p>
+            <h2 className="mt-1 text-base font-black text-kk-ink">AI Usage</h2>
+            <p className="mt-1 text-sm leading-relaxed text-kk-muted">Monitor Kockpit AI calls, token usage and estimated API cost.</p>
+          </Link>
+        )}
+
         {isManagement && (
           <Link href="/settings/weekly-impact" className="block rounded-xl border border-kk-line bg-kk-panel p-5 transition hover:border-kk-muted">
             <div className="flex items-start justify-between gap-4">
