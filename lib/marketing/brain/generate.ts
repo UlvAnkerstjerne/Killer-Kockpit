@@ -3,6 +3,8 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import { callCreativeClassifier } from '@/lib/ai/creative-classifier'
 import { callCreativeInterpretation } from '@/lib/ai/creative-interpretation'
 import { analysisWindow, buildAnalytics } from './analytics'
+import { loadLatestFollowers, runOrganicStrategy } from '@/lib/marketing/organic-strategy/generate'
+import type { OrganicStrategyStatus } from '@/lib/marketing/organic-strategy/types'
 import { loadMarketingBusinessContext } from './business-context'
 import { classifyLibrary } from './classification'
 import { buildCreativeSignals } from './signals'
@@ -13,7 +15,7 @@ type Db = ReturnType<typeof createServiceClient>
 export const MAX_LIBRARY_ROWS = 1000
 const LEASE_MS = 5 * 60_000
 const MEDIA_COLUMNS = 'id,ig_account_id,media_type,caption,permalink,published_at,media_url,thumbnail_url,reach,plays,saved,likes,comments_count,shares,total_interactions,other_metrics_json,synced_at'
-export type RefreshResult = { ok: boolean; runId?: string; counts?: ClassificationCounts; partial?: boolean; error?: string }
+export type RefreshResult = { ok: boolean; runId?: string; counts?: ClassificationCounts; partial?: boolean; organic?: OrganicStrategyStatus; error?: string }
 
 async function loadLibrary<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: unknown }>): Promise<T[]> {
   const rows: T[] = []
@@ -74,18 +76,25 @@ export async function generateCreativeIntelligence(db: Db, actorId: string, opti
     const businessContext = await loadMarketingBusinessContext(db, now)
     const interpretation = await callCreativeInterpretation(signals, businessContext)
     await heartbeat()
+    // Organic Strategy: a second, specialist layer on top of the evidence above. It never throws, so a
+    // failure here leaves the deterministic run and the interpretation untouched; the next refresh retries.
+    const organic = await runOrganicStrategy({ media, fingerprints: classified.fingerprints, businessContext, followersLatest: await loadLatestFollowers(db), now })
+    await heartbeat()
     // Persist the business context snapshot with the analytics so the run records
     // which real-world updates were available when the interpretation was generated.
-    const analyticsWithContext = { ...analytics, business_context: businessContext }
-    const partial = classified.counts.failed > 0 || classified.counts.deferred > 0 || !interpretation.ok
+    const analyticsWithContext = { ...analytics, business_context: businessContext, organic_strategy: organic }
+    const organicUnavailable = organic.status === 'unavailable'
+    const partial = classified.counts.failed > 0 || classified.counts.deferred > 0 || !interpretation.ok || organicUnavailable
     const completed = await db.from('marketing_creative_intelligence_runs').update({
       status: partial ? 'partial' : 'completed', generated_at: new Date().toISOString(), lease_expires_at: null,
       analytics: analyticsWithContext, signals, observations: interpretation.ok ? interpretation.observations : [],
       model: interpretation.ok ? interpretation.model : null, classification_counts: classified.counts,
-      error: !interpretation.ok ? interpretation.error : partial ? 'Some content could not be classified. Refresh again to retry remaining items.' : null,
+      error: !interpretation.ok ? interpretation.error
+        : classified.counts.failed > 0 || classified.counts.deferred > 0 ? 'Some content could not be classified. Refresh again to retry remaining items.'
+        : organicUnavailable ? 'Organic Strategy is unavailable. The rest of this run is complete. Refresh again to retry.' : null,
     }).eq('id', runId).eq('status', 'running').select('id').single()
     if (completed.error || !completed.data) throw new Error('storage')
-    return { ok: true, runId, counts: classified.counts, partial }
+    return { ok: true, runId, counts: classified.counts, partial, organic: organic.status }
   } catch (error) {
     const message = error instanceof Error && error.message === 'library_limit'
       ? 'The library exceeds the v1 safety limit. Increase the bounded loader before refreshing.'
