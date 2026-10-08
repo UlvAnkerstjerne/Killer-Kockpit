@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveView } from '@/lib/view'
+import { hasMobileManagerExperience, isMobileRouteAllowed, MOBILE_MGMT_NAV } from '@/lib/mobile'
 import { canAccessManagementView, canAccessMarketing, canManagePeople, canManageLocations, canAccessQualityCheck } from '@/lib/permissions'
 import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
@@ -286,8 +287,6 @@ export default function AppShell({
     )
   }
 
-  // Routes available on mobile for manager roles (role-based; independent of Personal/Management data view)
-  const MOBILE_MGMT_ROUTES = new Set(['/today', '/todos', '/tasks', '/meetings', '/kkc/audit', '/kkc/ssp-cph'])
 
   // ── NavContent — shared between desktop sidebar and mobile drawer ──────────
   // onNavigate is called when a nav link is tapped (used to close the mobile drawer).
@@ -304,11 +303,12 @@ export default function AppShell({
               Operations
             </div>
             <div className="space-y-0.5">
-              <NavLink href="/today" label="Today" onNavigate={onNavigate} />
-              <NotificationBell />
-              <NavLink href="/todos" label="To-Dos" onNavigate={onNavigate} />
-              <NavLink href="/tasks" label="Tasks" onNavigate={onNavigate} />
-              <NavLink href="/meetings" label="Meetings" onNavigate={onNavigate} />
+              {MOBILE_MGMT_NAV.map((item, i) => (
+                <Fragment key={item.href}>
+                  <NavLink href={item.href} label={item.label} onNavigate={onNavigate} />
+                  {i === 0 && <NotificationBell />}
+                </Fragment>
+              ))}
             </div>
           </div>
 
@@ -515,7 +515,7 @@ export default function AppShell({
             <NavContent
               onNavigate={() => setMobileMenuOpen(false)}
               onOpenSearch={() => { setMobileMenuOpen(false); setSearchOpen(true) }}
-              mobileManagement={managementAllowed}
+              mobileManagement={hasMobileManagerExperience(user.role)}
             />
             <SidebarFooter onSignOut={handleSignOut} />
           </div>
@@ -534,7 +534,7 @@ export default function AppShell({
         )}
         <main className="flex-1 p-4">
           {/* Desktop-only gate: in Management mode on mobile, restrict to allowed routes */}
-          {managementAllowed && ![...MOBILE_MGMT_ROUTES].some(r => pathname === r || pathname.startsWith(r + '/')) ? (
+          {hasMobileManagerExperience(user.role) && !isMobileRouteAllowed(pathname) ? (
             <>
               {/* Desktop: show content normally */}
               <div className="hidden md:block">{children}</div>

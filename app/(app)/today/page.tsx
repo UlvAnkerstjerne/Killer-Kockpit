@@ -18,6 +18,8 @@ import QuickAddTask from './QuickAddTask'
 import MyTaskGroups from './MyTaskGroups'
 import { DUE_STATE_CONFIG, formatShortDate } from './dueDisplay'
 import QuickNewMeeting from './QuickNewMeeting'
+import MobileQuickActions from './MobileQuickActions'
+import { hasMobileManagerExperience } from '@/lib/mobile'
 import CaptureBar from '@/components/layout/CaptureBar'
 import { PriorityDot, PRIORITY_CONFIG } from '@/components/ui/PriorityDot'
 
@@ -198,7 +200,7 @@ export default async function TodayPage({
   const isManagementView = view === 'management' && canManage
   // Mobile feature set follows the ROLE (Audit/KQC shortcuts, My tasks, Meetings), not the data view.
   // Personal/Management only decides which rows are loaded; it never hides or reveals mobile features.
-  const mobileManager = canManage
+  const mobileManager = hasMobileManagerExperience(user.role)
 
   const supabase = await createClient()
   const now = new Date()
@@ -506,7 +508,7 @@ export default async function TodayPage({
 
       {/* ── Mobile task queue — manager roles, hidden on desktop ──── */}
       {mobileManager && (
-        <div className="lg:hidden mb-5">
+        <div className="lg:hidden mb-5" data-testid="mobile-my-tasks">
           <DashCard
             title="My tasks"
             badge={myTasks.count > 0 ? myTasks.count : undefined}
@@ -578,7 +580,7 @@ export default async function TodayPage({
 
       {/* ── Mobile meetings — manager roles, hidden on desktop ────── */}
       {mobileManager && (
-        <div className="lg:hidden mb-2.5">
+        <div className="lg:hidden mb-2.5" data-testid="mobile-meetings">
           <DashCard
             title="Meetings"
             badge={meetingsThisWeek > 0 ? meetingsThisWeek : undefined}
@@ -629,29 +631,7 @@ export default async function TodayPage({
       )}
 
       {/* ── Mobile + Add Audit / KQC buttons — manager roles ─────────────── */}
-      {mobileManager && (
-        <div className="lg:hidden mb-2.5">
-          <Link
-            href="/kkc/audit"
-            className="flex items-center justify-center gap-2 w-full py-4 bg-[#AD3919] text-white text-base font-bold rounded-lg hover:opacity-90 transition-opacity [box-shadow:4px_4px_0_#555555]"
-          >
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-            </svg>
-            + Add Audit
-          </Link>
-          <Link
-            href="/kkc/ssp-cph"
-            className="flex items-center justify-center gap-2 w-full mt-2.5 py-4 bg-[#171717] text-kraft-light text-base font-bold rounded-lg hover:opacity-90 transition-opacity [box-shadow:4px_4px_0_#555555]"
-          >
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M8 1.5L9.8 5.2l4.2.6-3 2.9.7 4.1L8 10.8l-3.7 2 .7-4.1-3-2.9 4.2-.6L8 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-            </svg>
-            + Add KQC
-          </Link>
-        </div>
-      )}
+      {mobileManager && <MobileQuickActions />}
 
       {/* ── Dashboard grid — hidden on mobile in Management, visible on desktop ── */}
       <div className={`grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch ${mobileManager ? 'hidden lg:grid' : ''}`}>

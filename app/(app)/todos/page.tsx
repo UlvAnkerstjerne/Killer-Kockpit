@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView, canAssignToOthers, MANAGEMENT_ROLES } from '@/lib/permissions'
-import { resolveView } from '@/lib/view'
+import { resolveView, ownedBy } from '@/lib/view'
 import type { Todo, TeamTodo } from '@/lib/types'
 import TeamColumn from './TeamColumn'
 import MobileTodoView from './MobileTodoView'
@@ -74,7 +74,8 @@ export default async function TodosPage({
       .order('title'),
   ])
 
-  const todos = (myData ?? []) as Todo[]
+  // Personal list is strictly the signed-in user's own (RLS lets managers read other users' rows).
+  const todos = ownedBy((myData ?? []) as Todo[], user.id, 'user_id')
   const openTodos = todos
 
   type CompletedTodoItem = {

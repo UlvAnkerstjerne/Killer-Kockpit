@@ -1,0 +1,38 @@
+name: Release guard
+
+# Required before release: mobile experience + personal data scoping regression checks.
+# Railway deploys main only after this check passes (Railway → Service → Settings → "Wait for CI").
+# See "Mobile experience & personal scoping" in CLAUDE.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  mobile-guard:
+    name: mobile-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      # Placeholders: the guard renders against fixtures and never contacts Supabase.
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: placeholder
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+      E2E_FIXTURE_DIR: .e2e-fixtures
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Mobile + personal-scoping unit tests (also writes browser fixtures)
+        run: npx vitest run __tests__/unit/mobile __tests__/unit/view.test.ts
+      - name: Build (produces the production CSS used by the browser checks)
+        run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Mobile browser checks
+        run: npm run test:e2e

@@ -36,6 +36,14 @@
 - `createClient()` is async — always `await` it.
 - `createServiceClient()` is synchronous.
 
+## Mobile experience & personal scoping (regression-protected)
+
+For `UM` and `SUPER_ADMIN`:
+- **Mobile features follow role only** (`hasMobileManagerExperience(role)` in `lib/mobile.ts`), never the Personal/Management view. Mobile Today must keep `+ Add Audit` (`/kkc/audit`), `+ Add KQC` (`/kkc/ssp-cph`), *My tasks* with quick add, and *Meetings* with quick add. Mobile nav stays compact (Today, To-Dos, Tasks, Meetings) and other sections keep the "Open this section on desktop" gate (`MOBILE_MGMT_ROUTES`).
+- **Personal lists are owner-only** — tasks, to-dos, recurring to-dos, waiting-ons and their counts. RLS lets managers read other users' rows, so always scope by `user.id` in the query **and** with `ownedBy()` (`lib/view.ts`).
+- **Data view is separate**: `resolveView()` defaults to Personal; Management is explicit `?view=management` and stays available on desktop. Do not couple mobile visibility to it.
+- Guarded by `__tests__/unit/mobile/*`, `e2e/mobile-today.spec.ts` and the required `mobile-guard` job in `.github/workflows/release-guard.yml`. Run locally: `E2E_FIXTURE_DIR=.e2e-fixtures npx vitest run __tests__/unit/mobile && NODE_OPTIONS=--max-old-space-size=8192 npm run build && npm run test:e2e`. Changing these behaviours intentionally means updating the tests in the same commit.
+
 ## Task delegation semantics
 
 - `created_by_user_id` = Requested by · `owner_user_id` = Responsible
@@ -76,7 +84,7 @@
 - Inspect existing architecture before changing it.
 - One feature or tightly related slice per implementation run.
 - Avoid unrelated cleanup in feature commits.
-- Run `npm test && npx tsc --noEmit && npm run build` before every commit.
+- Run `npm test && npx tsc --noEmit && npm run build` before every commit (use `NODE_OPTIONS=--max-old-space-size=8192` for `tsc`/`build`; they run out of memory otherwise).
 - **Do not deploy without explicit user approval.**
 - Apply Supabase migrations through the MCP connector and retain migration files in Git. Never reapply an already-applied migration.
 
