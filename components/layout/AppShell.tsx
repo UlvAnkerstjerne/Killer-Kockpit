@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveView } from '@/lib/view'
 import { canAccessManagementView, canAccessMarketing, canManagePeople, canManageLocations, canAccessQualityCheck } from '@/lib/permissions'
 import type { AppUser, ViewMode } from '@/lib/types'
 import CaptureBar from './CaptureBar'
@@ -232,8 +233,8 @@ export default function AppShell({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  const currentView = (searchParams.get('view') as ViewMode) ??
-    (managementAllowed ? 'management' : 'personal')
+  // Personal unless Management was explicitly requested (and the role allows it).
+  const currentView: ViewMode = resolveView(user.role, searchParams.get('view'))
 
   function setView(v: ViewMode) {
     const params = new URLSearchParams(searchParams.toString())

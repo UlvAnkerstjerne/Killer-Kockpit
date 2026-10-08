@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView } from '@/lib/permissions'
 import WaitingOnList from '@/components/waiting-ons/WaitingOnList'
+import { resolveView } from '@/lib/view'
 import type { ViewMode } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,7 @@ export default async function WaitingOnsPage({
   const [user, params, allUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
-  const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
+  const view: ViewMode = resolveView(user.role, params.view)
   const canManage = canAccessManagementView(user.role)
   const statusFilter = params.status || 'open'
 

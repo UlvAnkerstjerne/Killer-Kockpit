@@ -10,6 +10,7 @@ import {
 } from '@/lib/today/weekUtils'
 import { sortOpenTodos, filterTodosForToday } from '@/lib/today/todoUtils'
 import { buildMyTasks } from '@/lib/today/myTasks'
+import { resolveView, ownedBy } from '@/lib/view'
 import type { WorkItem } from '@/lib/today/weekUtils'
 import type { ViewMode, Todo } from '@/lib/types'
 import TodoBlock from '../todos/TodoBlock'
@@ -191,7 +192,8 @@ export default async function TodayPage({
   const [user, params, allActiveUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
-  const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
+  // Personal by default; Management only when explicitly requested and permitted.
+  const view: ViewMode = resolveView(user.role, params.view)
   const canManage = canAccessManagementView(user.role)
   const isManagementView = view === 'management' && canManage
 
@@ -219,6 +221,7 @@ export default async function TodayPage({
     pendingReviewTasksRes,
     returnedTasksRes,
     activeProjectsRes,
+    myOwnTasksRes,
   ] = await Promise.all([
 
     // Unfinished tasks: overdue OR due this week (not done/cancelled, not archived)
@@ -323,12 +326,33 @@ export default async function TodayPage({
       .is('archived_at', null)
       .not('status', 'eq', 'completed')
       .order('title'),
+
+    // The signed-in user's own unfinished tasks. In Management view the first query is
+    // organisation-wide, so the personal "My tasks" list needs its own owner-scoped read.
+    isManagementView
+      ? supabase.from('tasks')
+          .select('id, title, priority, due_at, completed_at, owner_user_id, owner:owner_user_id (id, display_name)')
+          .eq('owner_user_id', user.id)
+          .lt('due_at', weekEndISO)
+          .not('due_at', 'is', null)
+          .not('status', 'in', '("done","cancelled")')
+          .is('archived_at', null)
+      : Promise.resolve(null),
   ])
 
   // ─── Build unified work items list ────────────────────────────────────────
 
-  const unfinishedTasks = (unfinishedTasksRes.data || []) as RawTask[]
-  const allOpenWOs      = (allOpenWOsRes.data       || []) as RawWO[]
+  // Org-wide only in explicit Management view; otherwise strictly the user's own.
+  const unfinishedRaw = (unfinishedTasksRes.data || []) as RawTask[]
+  const unfinishedTasks = isManagementView ? unfinishedRaw : ownedBy(unfinishedRaw, user.id, 'owner_user_id')
+  // Personal task list: always the signed-in user's own tasks (never the org-wide read).
+  const myOwnTasks: RawTask[] = ownedBy(
+    ((isManagementView ? myOwnTasksRes?.data : unfinishedTasksRes.data) || []) as RawTask[],
+    user.id,
+    'owner_user_id',
+  )
+  const allOpenWOsRaw   = (allOpenWOsRes.data       || []) as RawWO[]
+  const allOpenWOs      = isManagementView ? allOpenWOsRaw : ownedBy(allOpenWOsRaw, user.id, 'owner_user_id')
   const draftMeetings   = (draftMeetingsRes.data    || []) as { id: string; title: string; scheduled_start: string | null }[]
 
   // For the work items list, only include WOs due within this week
@@ -378,7 +402,11 @@ export default async function TodayPage({
 
   // ─── Todos ────────────────────────────────────────────────────────────────
 
-  const openTodos = sortOpenTodos(filterTodosForToday((openTodosRes.data ?? []) as Todo[], todayDateStr))
+  // To-dos are strictly personal (RLS lets managers read others' rows, so scope explicitly).
+  const openTodos = sortOpenTodos(filterTodosForToday(
+    ownedBy((openTodosRes.data ?? []) as Todo[], user.id, 'user_id'),
+    todayDateStr,
+  ))
 
   // ─── Upgrade-to-task modal data (personal view only) ─────────────────────
 
@@ -406,7 +434,7 @@ export default async function TodayPage({
   const myTasks = buildMyTasks({
     pendingReview: pendingReviewTasks,
     returned: returnedTasks,
-    tasks: unfinishedTasks,
+    tasks: myOwnTasks,
     now,
   })
 

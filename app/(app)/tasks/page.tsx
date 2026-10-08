@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
-import { canAccessManagementView } from '@/lib/permissions'
 import TaskList from '@/components/tasks/TaskList'
 import EmptyState from '@/components/ui/EmptyState'
+import { resolveView } from '@/lib/view'
 import type { ViewMode } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +16,7 @@ export default async function TasksPage({
   const [user, params, allUsers] = await Promise.all([getCurrentUser(), searchParams, getActiveUsers()])
   if (!user) return null
 
-  const view = (params.view || (canAccessManagementView(user.role) ? 'management' : 'personal')) as ViewMode
+  const view: ViewMode = resolveView(user.role, params.view)
   const statusFilter = params.status
 
   const supabase = await createClient()

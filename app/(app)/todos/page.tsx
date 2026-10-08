@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView, canAssignToOthers, MANAGEMENT_ROLES } from '@/lib/permissions'
+import { resolveView } from '@/lib/view'
 import type { Todo, TeamTodo } from '@/lib/types'
 import TeamColumn from './TeamColumn'
 import MobileTodoView from './MobileTodoView'
@@ -34,14 +35,15 @@ const TEAM_ORDER = ['Kasper Kristiansen', 'Adam Vearey', 'Lydia Mertiri', 'Sara 
 export default async function TodosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string }>
+  searchParams: Promise<{ returnTo?: string; view?: string }>
 }) {
   const sp = await searchParams
   const returnTo = sp.returnTo
   const user = await getCurrentUser()
   if (!user) return null
 
-  const canSeeTeam = canAccessManagementView(user.role)
+  // Team to-dos are an explicit Management overview (?view=management, role-gated); the default is personal.
+  const canSeeTeam = canAccessManagementView(user.role) && resolveView(user.role, sp.view) === 'management'
   const supabase = await createClient()
 
   // Always load the user's own todos for the interactive column
@@ -180,7 +182,7 @@ export default async function TodosPage({
       <div className="hidden sm:block">
         <div className="mb-5">
           <h1 className="text-2xl font-black tracking-tight text-kk-ink">To-Dos</h1>
-          <p className="text-sm text-kk-muted mt-0.5">Everyone&apos;s to-dos</p>
+          <p className="text-sm text-kk-muted mt-0.5">{canSeeTeam ? "Everyone's to-dos" : 'Your to-dos'}</p>
         </div>
 
         <div className={`grid gap-4`} style={canSeeTeam ? { gridTemplateColumns: `repeat(${1 + teamColumns.length}, 1fr)` } : undefined}>
