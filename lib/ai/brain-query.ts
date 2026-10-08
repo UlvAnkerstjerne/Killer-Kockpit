@@ -17,7 +17,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { trackAiCall } from '@/lib/ai/usage'
+import { trackAiCallWithRetries } from '@/lib/ai/usage'
 import type { BrainQualityContext }       from '@/lib/brain/quality'
 import type { BrainMeetingContext }       from '@/lib/brain/meetings'
 import type { BrainReviewContext }        from '@/lib/brain/reviews'
@@ -981,6 +981,7 @@ export async function queryBrain(
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
   const client = new Anthropic({
     apiKey,
+    maxRetries: 0, // no hidden SDK retries: see trackAiCallWithRetries
     ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
   })
 
@@ -991,7 +992,7 @@ export async function queryBrain(
   )
 
   try {
-    const message = await trackAiCall({ feature: 'brain_query', model }, () => client.messages.create({
+    const message = await trackAiCallWithRetries({ feature: 'brain_query', model }, () => client.messages.create({
       model,
       max_tokens: MAX_ANSWER_TOKENS,
       system:     SYSTEM_PROMPT,

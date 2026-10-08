@@ -22,7 +22,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { trackAiCall } from '@/lib/ai/usage'
+import { trackAiCallWithRetries, SDK_DEFAULT_MAX_RETRIES } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { MorningBriefAIOutputSchema, type MorningBriefAIOutput } from '@/lib/marketing/brief/types'
 import { MORNING_BRIEF_SYSTEM_PROMPT, BRIEF_PROMPT_VERSION } from '@/lib/marketing/brief/build-prompt'
@@ -86,7 +86,7 @@ export async function callMorningBriefAI(
     }
   }
 
-  const client = new Anthropic({ apiKey })
+  const client = new Anthropic({ apiKey, maxRetries: 0 }) // no hidden SDK retries: see trackAiCallWithRetries
   const startMs = Date.now()
 
   const MAX_ATTEMPTS = 2
@@ -94,7 +94,7 @@ export async function callMorningBriefAI(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const response = await trackAiCall({ feature: 'morning_brief', model, attempt: attempt }, () => client.messages.parse({
+      const response = await trackAiCallWithRetries({ feature: 'morning_brief', model }, () => client.messages.parse({
         model,
         max_tokens: 2048,
         system: MORNING_BRIEF_SYSTEM_PROMPT,
@@ -102,7 +102,7 @@ export async function callMorningBriefAI(
         output_config: {
           format: zodOutputFormat(MorningBriefAIOutputSchema),
         },
-      }))
+      }), { attemptOffset: (attempt - 1) * (SDK_DEFAULT_MAX_RETRIES + 1) })
 
       const parsed = response.parsed_output
 

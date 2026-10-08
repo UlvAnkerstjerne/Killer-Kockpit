@@ -31,7 +31,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { trackAiCall, isBillingCreditError, BILLING_ERROR_USER_MESSAGE } from '@/lib/ai/usage'
+import { trackAiCallWithRetries, isBillingCreditError, BILLING_ERROR_USER_MESSAGE } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import {
   CaptureAnalysisOutputSchema,
@@ -187,6 +187,7 @@ export async function analyzeCapture(
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
   const client = new Anthropic({
     apiKey,
+    maxRetries: 0, // no hidden SDK retries: see trackAiCallWithRetries
     ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
   })
 
@@ -195,7 +196,7 @@ export async function analyzeCapture(
   // ── Structured model call ──────────────────────────────────────────────────
   let parsedOutput: CaptureAnalysisOutput
   try {
-    const message = await trackAiCall({ feature: 'quick_capture', model }, () => client.messages.parse({
+    const message = await trackAiCallWithRetries({ feature: 'quick_capture', model }, () => client.messages.parse({
       model,
       max_tokens: OUTPUT_RESERVE_TOKENS,
       system:     SYSTEM_PROMPT,

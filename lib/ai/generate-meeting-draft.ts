@@ -23,7 +23,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { trackAiCall } from '@/lib/ai/usage'
+import { trackAiCallWithRetries } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { MeetingDraftOutputSchema, type MeetingDraftOutput } from './meeting-draft-schema'
 import { normaliseTranscript } from './parse-transcript'
@@ -204,6 +204,7 @@ export async function generateDraftFromContext(
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
   const client = new Anthropic({
     apiKey,
+    maxRetries: 0, // no hidden SDK retries: see trackAiCallWithRetries
     ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
   })
   const userContent = buildUserMessage(ctx)
@@ -214,7 +215,7 @@ export async function generateDraftFromContext(
   // fast with a clear error rather than silently truncating.
   let inputTokens: number
   try {
-    const countResult = await trackAiCall({ feature: 'meeting_draft', model, operation: 'count_tokens' }, () => client.messages.countTokens({
+    const countResult = await trackAiCallWithRetries({ feature: 'meeting_draft', model, operation: 'count_tokens' }, () => client.messages.countTokens({
       model,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
@@ -251,7 +252,7 @@ export async function generateDraftFromContext(
   // ── Structured model call ─────────────────────────────────────────────────
   let parsedOutput: MeetingDraftOutput
   try {
-    const message = await trackAiCall({ feature: 'meeting_draft', model }, () => client.messages.parse({
+    const message = await trackAiCallWithRetries({ feature: 'meeting_draft', model }, () => client.messages.parse({
       model,
       max_tokens: OUTPUT_RESERVE_TOKENS,
       system: SYSTEM_PROMPT,

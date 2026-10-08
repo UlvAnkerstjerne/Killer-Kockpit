@@ -227,3 +227,74 @@ export async function trackAiCall<T extends object>(meta: TrackMeta, call: () =>
   })
   return response
 }
+
+// ─── Explicit, visible retries ───────────────────────────────────────────────
+//
+// Anthropic clients are created with maxRetries: 0 so the SDK never retries behind our back.
+// Features that previously relied on the SDK's default (2 retries) use this wrapper instead,
+// which reproduces the SDK's policy but sends every attempt through trackAiCall(), so each
+// actual HTTP request is exactly one telemetry row.
+
+/** Same budget as the SDK default (maxRetries = 2 → up to 3 requests). */
+export const SDK_DEFAULT_MAX_RETRIES = 2
+
+type HeaderBag = { get?: (name: string) => string | null | undefined } & Record<string, unknown>
+
+function header(err: unknown, name: string): string | null {
+  const h = (err as { headers?: HeaderBag } | null)?.headers
+  if (!h) return null
+  if (typeof h.get === 'function') return h.get(name) ?? null
+  const v = h[name]
+  return typeof v === 'string' ? v : null
+}
+
+/** Mirrors the SDK's shouldRetry(): x-should-retry wins, then 408/409/429/5xx and connection errors/timeouts. */
+export function isRetryableAiError(err: unknown): boolean {
+  const e = (err && typeof err === 'object' ? err : {}) as { status?: unknown; name?: unknown }
+  const hint = header(err, 'x-should-retry')
+  if (hint === 'true') return true
+  if (hint === 'false') return false
+  if (typeof e.status === 'number') return e.status === 408 || e.status === 409 || e.status === 429 || e.status >= 500
+  // No HTTP status: connection failures and timeouts are retried; a user abort never is.
+  return e.name === 'APIConnectionError' || e.name === 'APIConnectionTimeoutError'
+}
+
+/** Mirrors the SDK's backoff: retry-after(-ms) when sane, else 0.5s·2^n capped at 8s with up to 25% jitter. */
+export function retryDelayMs(err: unknown, retryIndex: number): number {
+  const ms = Number.parseFloat(header(err, 'retry-after-ms') ?? '')
+  if (Number.isFinite(ms) && ms >= 0 && ms <= 60_000) return ms
+  const sec = Number.parseFloat(header(err, 'retry-after') ?? '')
+  if (Number.isFinite(sec) && sec >= 0 && sec <= 60) return sec * 1000
+  return Math.min(0.5 * 2 ** retryIndex, 8) * (1 - Math.random() * 0.25) * 1000
+}
+
+export type RetryOptions = {
+  maxRetries?: number
+  /** Request-count offset for operations that already loop (attempt numbers stay unique per request). */
+  attemptOffset?: number
+  sleep?: (ms: number) => Promise<void>
+}
+
+const defaultSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+/**
+ * Run one logical provider operation with SDK-equivalent retries. Every attempt is a separate
+ * trackAiCall() → one HTTP request → one telemetry row. The final error is re-thrown unchanged.
+ */
+export async function trackAiCallWithRetries<T extends object>(
+  meta: Omit<TrackMeta, 'attempt'>,
+  call: () => Promise<T>,
+  opts: RetryOptions = {},
+): Promise<T> {
+  const maxRetries = opts.maxRetries ?? SDK_DEFAULT_MAX_RETRIES
+  const sleep = opts.sleep ?? defaultSleep
+  const offset = opts.attemptOffset ?? 0
+  for (let retry = 0; ; retry++) {
+    try {
+      return await trackAiCall({ ...meta, attempt: offset + retry + 1 }, call)
+    } catch (err) {
+      if (retry >= maxRetries || !isRetryableAiError(err)) throw err
+      await sleep(retryDelayMs(err, retry))
+    }
+  }
+}

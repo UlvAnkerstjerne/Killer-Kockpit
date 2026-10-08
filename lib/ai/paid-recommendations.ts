@@ -19,7 +19,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { trackAiCall } from '@/lib/ai/usage'
+import { trackAiCallWithRetries, SDK_DEFAULT_MAX_RETRIES } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { PaidRecAIOutputSchema, type PaidRecAIOutput, type PaidRecSignal } from '@/lib/marketing/paid-recs/types'
 
@@ -142,7 +142,7 @@ export async function callPaidRecommendationsAI(
     }
   }
 
-  const client = new Anthropic({ apiKey })
+  const client = new Anthropic({ apiKey, maxRetries: 0 }) // no hidden SDK retries: see trackAiCallWithRetries
   const userMessage = buildPaidRecUserMessage(signals, now)
   const startMs = Date.now()
 
@@ -151,7 +151,7 @@ export async function callPaidRecommendationsAI(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const response = await trackAiCall({ feature: 'paid_recommendations', model, attempt: attempt }, () => client.messages.parse({
+      const response = await trackAiCallWithRetries({ feature: 'paid_recommendations', model }, () => client.messages.parse({
         model,
         max_tokens: 2048,
         system: SYSTEM_PROMPT,
@@ -159,7 +159,7 @@ export async function callPaidRecommendationsAI(
         output_config: {
           format: zodOutputFormat(PaidRecAIOutputSchema),
         },
-      }))
+      }), { attemptOffset: (attempt - 1) * (SDK_DEFAULT_MAX_RETRIES + 1) })
 
       const parsed = response.parsed_output
       if (!parsed) {

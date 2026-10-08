@@ -25,7 +25,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { trackAiCall } from '@/lib/ai/usage'
+import { trackAiCallWithRetries } from '@/lib/ai/usage'
 
 /** Current prompt version. Increment when the system prompt changes. */
 export const REVIEW_REPLY_PROMPT_VERSION = 'v3'
@@ -173,11 +173,11 @@ export async function draftReviewReply(
     return { ok: false, error: 'AI provider is not configured. Set ANTHROPIC_API_KEY in your environment.' }
   }
 
-  const client = new Anthropic({ apiKey })
+  const client = new Anthropic({ apiKey, maxRetries: 0 }) // no hidden SDK retries: see trackAiCallWithRetries
   const userContent = buildUserMessage(ctx)
 
   try {
-    const message = await trackAiCall({ feature: 'review_reply_draft', model }, () => client.messages.create({
+    const message = await trackAiCallWithRetries({ feature: 'review_reply_draft', model }, () => client.messages.create({
       model,
       max_tokens: 512,
       system:     `${SYSTEM_PROMPT}\n\nTRUSTED BRAND PRINCIPLES:\n${ctx.brandContext}`,
