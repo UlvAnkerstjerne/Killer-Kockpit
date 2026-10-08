@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "name": "mesper-meta-ads",
+  "version": "2.1.0",
+  "upstream": {
+    "repo": "https://github.com/mesper-marketing/claude-skills",
+    "path": "mesper-meta-ads",
+    "commit": "cbfc19caf473ab5d57d17be784279af7b90f2d1c",
+    "commit_date": "2026-05-29",
+    "commit_message": "v2.1.0: translate skill + references to English for international audience",
+    "tree_sha": "6f7ed7b938a46d94e12064810d973a3bf211c570"
+  },
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "copyright": "Copyright (c) 2026 MESPER Marketing",
+    "notice": "Vendored unmodified. The MIT licence and copyright notice must accompany these files."
+  },
+  "omitted": [
+    "references/calibration-template.md",
+    "references/csv-schema.md"
+  ],
+  "omitted_reason": "Intake-only material (client questionnaire, CSV column schema). Kockpit supplies structured data itself.",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "0fa084c53ea76b71bc805151e9acf61a5f72cc04a0d63916406d6c4b350ad25a",
+      "bytes": 13153
+    },
+    {
+      "path": "references/cadence-by-tier.md",
+      "sha256": "eb10d470243ec2a0ebd44fd465e2e2ddeae9ffcf50b8cc88cec919f51ec5a406",
+      "bytes": 2208
+    },
+    {
+      "path": "references/hit-rates-by-vertical.md",
+      "sha256": "c11d4bd99327ad6e1d7ecbeec06dddcd4d2a805f769749bb8f6fcef727578596",
+      "bytes": 3075
+    }
+  ],
+  "update_policy": "Any change requires re-pinning commit + hashes here, re-reading the diff, and bumping PAID_STRATEGY_PROMPT_VERSION."
+}

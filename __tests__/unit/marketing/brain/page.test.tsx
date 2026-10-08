@@ -13,6 +13,10 @@ import { buildCreativeSignals, signalFinding, signalEvidence } from '@/lib/marke
 
 const { load } = vi.hoisted(() => ({ load: vi.fn() }))
 vi.mock('@/lib/actions/marketing/creative-intelligence', () => ({ getCreativeIntelligence: load }))
+vi.mock('@/lib/actions/marketing/paid-strategy', () => ({
+  getPaidStrategy: async () => ({ allowed: false, canGenerate: false, latest: null, previous: [], latestAttempt: null, error: null }),
+  generatePaidStrategyAnalysis: vi.fn(),
+}))
 vi.mock('@/app/(marketing)/marketing/brain/RefreshButton', () => ({ default: () => <button>Refresh Creative Intelligence</button> }))
 vi.mock('next/navigation', () => ({ usePathname: () => '/marketing/brain', useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))

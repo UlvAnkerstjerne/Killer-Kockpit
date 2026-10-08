@@ -200,7 +200,7 @@ function CoverageSummary({ run, analytics }: { run: { generated_at: string; anal
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function BrainView({ data, refreshControl }: { data: BrainData; refreshControl?: ReactNode }) {
+export default function BrainView({ data, refreshControl, paidStrategy }: { data: BrainData; refreshControl?: ReactNode; paidStrategy?: ReactNode }) {
   const run = data.run
   const analytics = run?.analytics
   return <div className="space-y-6 text-kk-ink">
@@ -212,6 +212,7 @@ export default function BrainView({ data, refreshControl }: { data: BrainData; r
       </div>
       {data.canRefresh ? refreshControl : null}
     </header>
+    {paidStrategy}
     {!data.allowed ? <p className="rounded-xl border border-kk-line bg-kk-panel p-5">Organic / Marketing access with paid_manage permission is required.</p>
       : data.error ? <p role="alert" className="rounded-xl border border-kk-line bg-kk-panel p-5">{data.error}</p>
       : <>
