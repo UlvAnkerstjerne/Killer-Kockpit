@@ -1,5 +1,6 @@
 import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { collectWeeklyImpactEvidence } from './collect-evidence'
 import { buildWeeklyImpactPrompt, WEEKLY_IMPACT_PROMPT_VERSION, WEEKLY_IMPACT_SYSTEM_PROMPT } from './prompt'
@@ -18,11 +19,11 @@ export async function generateWeeklyImpactPreview(userId: string, selectedDate: 
   if (!apiKey) throw new Error('AI provider is not configured.')
   // One synthesis call. No editorial passes, automatic retries or reasoning overrides.
   const client = new Anthropic({ apiKey, maxRetries: 0 })
-  const response = await client.messages.parse({
+  const response = await trackAiCall({ feature: 'weekly_impact', model }, () => client.messages.parse({
     model, max_tokens: 3000, system: WEEKLY_IMPACT_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildWeeklyImpactPrompt(evidence, activityAnalysis) }],
     output_config: { format: zodOutputFormat(WeeklyImpactBriefSchema) },
-  })
+  }))
   if (!response.parsed_output) throw new Error(`No valid structured output (${response.stop_reason ?? 'unknown'})`)
   const brief = resolveBriefReferences(response.parsed_output, references)
   validateWeeklyImpactBrief(brief, evidence)

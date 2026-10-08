@@ -31,6 +31,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall, isBillingCreditError, BILLING_ERROR_USER_MESSAGE } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import {
   CaptureAnalysisOutputSchema,
@@ -194,7 +195,7 @@ export async function analyzeCapture(
   // ── Structured model call ──────────────────────────────────────────────────
   let parsedOutput: CaptureAnalysisOutput
   try {
-    const message = await client.messages.parse({
+    const message = await trackAiCall({ feature: 'quick_capture', model }, () => client.messages.parse({
       model,
       max_tokens: OUTPUT_RESERVE_TOKENS,
       system:     SYSTEM_PROMPT,
@@ -202,7 +203,7 @@ export async function analyzeCapture(
       output_config: {
         format: zodOutputFormat(CaptureAnalysisOutputSchema),
       },
-    })
+    }))
 
     const output = message.parsed_output
     if (output == null) {
@@ -227,6 +228,7 @@ export async function analyzeCapture(
       '| type:', errType ?? 'n/a',
       '| message:', err instanceof Error ? err.message : 'unknown',
     )
+    if (isBillingCreditError(err)) return { ok: false, error: BILLING_ERROR_USER_MESSAGE }
     return { ok: false, error: 'The AI analysis request failed. Please try again.' }
   }
 

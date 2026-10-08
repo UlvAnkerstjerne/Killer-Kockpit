@@ -1,5 +1,6 @@
 import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { ClassificationOutputSchema } from '@/lib/marketing/brain/taxonomy'
 import { validateClassification, type ClassificationInput, type ClassifierResult } from '@/lib/marketing/brain/classification'
@@ -26,9 +27,9 @@ export async function callCreativeClassifier(inputs: ClassificationInput[]): Pro
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 0 })
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await client.messages.parse({ model, max_tokens: 6000,
+      const response = await trackAiCall({ feature: 'creative_classifier', model, attempt: attempt + 1 }, () => client.messages.parse({ model, max_tokens: 6000,
         system: CLASSIFIER_SYSTEM_PROMPT, messages: [{ role: 'user', content: buildClassifierMessage(inputs) }],
-        output_config: { format: zodOutputFormat(ClassificationOutputSchema) } })
+        output_config: { format: zodOutputFormat(ClassificationOutputSchema) } }))
       return { ok: true, items: validateClassification(response.parsed_output, inputs), model }
     } catch {
       // Never log external captions, SDK request payloads or provider errors.

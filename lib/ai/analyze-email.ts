@@ -29,6 +29,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { EmailAnalysisOutputSchema, type EmailAnalysisOutput } from './email-analysis-schema'
 
@@ -250,7 +251,7 @@ export async function analyzeEmail(
   // ── Structured model call ──────────────────────────────────────────────────
   let parsedOutput: EmailAnalysisOutput
   try {
-    const message = await client.messages.parse({
+    const message = await trackAiCall({ feature: 'email_analysis', model }, () => client.messages.parse({
       model,
       max_tokens: OUTPUT_RESERVE_TOKENS,
       system:     SYSTEM_PROMPT,
@@ -258,7 +259,7 @@ export async function analyzeEmail(
       output_config: {
         format: zodOutputFormat(EmailAnalysisOutputSchema),
       },
-    })
+    }))
 
     const output = message.parsed_output
     if (output == null) {

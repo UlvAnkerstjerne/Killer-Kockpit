@@ -19,6 +19,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { PaidRecAIOutputSchema, type PaidRecAIOutput, type PaidRecSignal } from '@/lib/marketing/paid-recs/types'
 
@@ -150,7 +151,7 @@ export async function callPaidRecommendationsAI(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const response = await client.messages.parse({
+      const response = await trackAiCall({ feature: 'paid_recommendations', model, attempt: attempt }, () => client.messages.parse({
         model,
         max_tokens: 2048,
         system: SYSTEM_PROMPT,
@@ -158,7 +159,7 @@ export async function callPaidRecommendationsAI(
         output_config: {
           format: zodOutputFormat(PaidRecAIOutputSchema),
         },
-      })
+      }))
 
       const parsed = response.parsed_output
       if (!parsed) {

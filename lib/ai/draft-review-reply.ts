@@ -25,6 +25,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 
 /** Current prompt version. Increment when the system prompt changes. */
 export const REVIEW_REPLY_PROMPT_VERSION = 'v3'
@@ -176,12 +177,12 @@ export async function draftReviewReply(
   const userContent = buildUserMessage(ctx)
 
   try {
-    const message = await client.messages.create({
+    const message = await trackAiCall({ feature: 'review_reply_draft', model }, () => client.messages.create({
       model,
       max_tokens: 512,
       system:     `${SYSTEM_PROMPT}\n\nTRUSTED BRAND PRINCIPLES:\n${ctx.brandContext}`,
       messages:   [{ role: 'user', content: userContent }],
-    })
+    }))
 
     const textBlock = message.content.find((b) => b.type === 'text')
     if (!textBlock || textBlock.type !== 'text' || !textBlock.text.trim()) {

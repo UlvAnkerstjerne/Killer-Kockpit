@@ -23,6 +23,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { MeetingDraftOutputSchema, type MeetingDraftOutput } from './meeting-draft-schema'
 import { normaliseTranscript } from './parse-transcript'
@@ -213,11 +214,11 @@ export async function generateDraftFromContext(
   // fast with a clear error rather than silently truncating.
   let inputTokens: number
   try {
-    const countResult = await client.messages.countTokens({
+    const countResult = await trackAiCall({ feature: 'meeting_draft', model, operation: 'count_tokens' }, () => client.messages.countTokens({
       model,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
-    })
+    }))
     inputTokens = countResult.input_tokens
   } catch (err) {
     // countTokens is a cheap pre-flight; a failure here is likely an API/auth/config issue.
@@ -250,7 +251,7 @@ export async function generateDraftFromContext(
   // ── Structured model call ─────────────────────────────────────────────────
   let parsedOutput: MeetingDraftOutput
   try {
-    const message = await client.messages.parse({
+    const message = await trackAiCall({ feature: 'meeting_draft', model }, () => client.messages.parse({
       model,
       max_tokens: OUTPUT_RESERVE_TOKENS,
       system: SYSTEM_PROMPT,
@@ -258,7 +259,7 @@ export async function generateDraftFromContext(
       output_config: {
         format: zodOutputFormat(MeetingDraftOutputSchema),
       },
-    })
+    }))
 
     const output = message.parsed_output
     if (output == null) {

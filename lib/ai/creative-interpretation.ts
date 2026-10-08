@@ -1,5 +1,6 @@
 import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import { FORMATS, HOOK_TYPES, PRODUCTS, THEMES, PRESENTATION_STYLES } from '@/lib/marketing/brain/taxonomy'
@@ -130,9 +131,9 @@ export async function callCreativeInterpretation(
   // One interpretation request per refresh. If it fails, persist the evidence
   // without AI prose and let the next explicit refresh retry.
   try {
-    const response = await client.messages.parse({ model, max_tokens: 2400,
+    const response = await trackAiCall({ feature: 'creative_interpretation', model }, () => client.messages.parse({ model, max_tokens: 2400,
       system: systemPrompt, messages: [{ role: 'user', content: buildInterpretationMessage(signals, businessContext) }],
-      output_config: { format: zodOutputFormat(InterpretationSchema) } })
+      output_config: { format: zodOutputFormat(InterpretationSchema) } }))
     return { ok: true, observations: validateInterpretation(response.parsed_output, signals, businessContext), model }
   } catch {
     return { ok: false, error: 'Interpretation unavailable. Deterministic evidence is still available.' }

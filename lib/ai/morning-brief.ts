@@ -22,6 +22,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { MorningBriefAIOutputSchema, type MorningBriefAIOutput } from '@/lib/marketing/brief/types'
 import { MORNING_BRIEF_SYSTEM_PROMPT, BRIEF_PROMPT_VERSION } from '@/lib/marketing/brief/build-prompt'
@@ -93,7 +94,7 @@ export async function callMorningBriefAI(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const response = await client.messages.parse({
+      const response = await trackAiCall({ feature: 'morning_brief', model, attempt: attempt }, () => client.messages.parse({
         model,
         max_tokens: 2048,
         system: MORNING_BRIEF_SYSTEM_PROMPT,
@@ -101,7 +102,7 @@ export async function callMorningBriefAI(
         output_config: {
           format: zodOutputFormat(MorningBriefAIOutputSchema),
         },
-      })
+      }))
 
       const parsed = response.parsed_output
 

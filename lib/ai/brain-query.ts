@@ -17,6 +17,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { trackAiCall } from '@/lib/ai/usage'
 import type { BrainQualityContext }       from '@/lib/brain/quality'
 import type { BrainMeetingContext }       from '@/lib/brain/meetings'
 import type { BrainReviewContext }        from '@/lib/brain/reviews'
@@ -990,12 +991,12 @@ export async function queryBrain(
   )
 
   try {
-    const message = await client.messages.create({
+    const message = await trackAiCall({ feature: 'brain_query', model }, () => client.messages.create({
       model,
       max_tokens: MAX_ANSWER_TOKENS,
       system:     SYSTEM_PROMPT,
       messages:   [{ role: 'user', content: userContent }],
-    })
+    }))
 
     const textBlock = message.content.find(b => b.type === 'text')
     if (!textBlock || textBlock.type !== 'text') {
