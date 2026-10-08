@@ -122,7 +122,7 @@ export async function analyzeCapture(
   const [projectsResult, employeesResult, locationsResult] = await Promise.all([
     supabase
       .from('projects')
-      .select('id, title')
+      .select('id, title, description')
       .is('archived_at', null)
       .not('status', 'in', '("completed","archived","cancelled")')
       .order('title'),

@@ -11,8 +11,11 @@
  *   ambiguity through its own exact/partial/ambiguous/not_found logic.
  * • No persistence IDs — this output is ephemeral, returned for human review
  *   and never written to any database table.
- * • Each CandidateUpdate represents ONE atomic institutional fact.
- *   The model must not merge two different facts into a single candidate.
+ * • Each CandidateUpdate represents ONE distinct piece of organisational memory
+ *   (event, observation/learning, issue, opportunity/open question or identified
+ *   need). The model must not merge distinct memories, and must preserve each
+ *   one's epistemic status (a need stays a need, a question stays a question).
+ *   Candidates are memory, never tasks.
  */
 
 import { z } from 'zod'
@@ -32,8 +35,10 @@ export const CandidateEntityRefSchema = z.object({
 
 export const CandidateUpdateSchema = z.object({
   /**
-   * Past-tense declarative statement of one institutional fact.
-   * Must describe something that has happened, not something to do.
+   * One self-contained statement of organisational memory — an event, an
+   * attributed observation, an issue, an unresolved opportunity/question or an
+   * identified need. Preserves epistemic status; never an instruction or task,
+   * and never claims something is done when the note only said it is needed.
    */
   body: z.string().min(1),
   /**
@@ -51,7 +56,7 @@ export const CandidateUpdateSchema = z.object({
 // ─── Root output ──────────────────────────────────────────────────────────────
 
 export const CaptureAnalysisOutputSchema = z.object({
-  /** Zero or more atomic factual statements extracted from the note. */
+  /** Zero or more distinct memories extracted from the note (zero is uncommon). */
   candidates: z.array(CandidateUpdateSchema),
   /**
    * Optional explanation of ambiguity, why candidates were or were not

@@ -784,7 +784,7 @@ export default function QuickCaptureModal({
         {candidates.length === 0 && (
           <div className="text-center py-8 space-y-3">
             <p className="text-sm text-kk-muted">
-              Nothing here looks worth adding to organisational memory.
+              Kockpit couldn&apos;t extract a memory from this note.
             </p>
             <button
               onClick={handleBack}
