@@ -157,6 +157,9 @@ function TaskRow({
               title="Change owner"
             >
               <option value="">Unassigned</option>
+              {owner && !allUsers.some(u => u.id === owner.id) && (
+                <option value={owner.id}>{owner.display_name}</option>
+              )}
               {allUsers.map(u => (
                 <option key={u.id} value={u.id}>{u.display_name}</option>
               ))}
