@@ -186,6 +186,22 @@ describe('non-management users', () => {
   })
 })
 
+describe('heading and New task pill', () => {
+  it('puts "+ New task" beside the heading (not pushed to the far right) and keeps its action', async () => {
+    const html = await render()
+    const row = html.slice(html.indexOf('<h1'), html.indexOf('</div>', html.indexOf('<h1')))
+    expect(row).toContain('Tasks')
+    expect(row).toContain('href="/tasks/new"')
+    expect(row).toContain('rounded-full')
+    expect(html).not.toMatch(/justify-between[^"]*"><h1/)
+  })
+
+  it('every user (managers and members) still gets the pill', async () => {
+    mocks.user = shuhei
+    expect(await render()).toContain('href="/tasks/new"')
+  })
+})
+
 describe('records shown', () => {
   it("shows only the selected person's tasks even if the read returned more (RLS leak safety net)", async () => {
     await render({ owner: U.adam })

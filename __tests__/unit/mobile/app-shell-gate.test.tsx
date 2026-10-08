@@ -49,3 +49,23 @@ describe('AppShell — MEMBER and desktop', () => {
     expect(render('MEMBER', '/today')).not.toContain('>Org</button>')
   })
 })
+
+describe('AppShell quick-action row', () => {
+  it('is removed on /tasks (the page has its own New task pill)', () => {
+    for (const role of ['UM', 'SUPER_ADMIN', 'MEMBER']) {
+      const html = render(role, '/tasks')
+      expect(html).not.toContain('+ Capture')
+      expect(html).not.toContain('+ Waiting On')
+      expect(html).not.toContain('+ Project')
+    }
+  })
+  it('stays on other pages', () => {
+    const html = render('UM', '/meetings')
+    expect(html).toContain('+ Capture')
+    expect(html).toContain('+ Waiting On')
+    expect(html).toContain('+ Project')
+  })
+  it('only /tasks itself is affected, not task detail pages', () => {
+    expect(render('UM', '/tasks/abc')).toContain('+ Capture')
+  })
+})

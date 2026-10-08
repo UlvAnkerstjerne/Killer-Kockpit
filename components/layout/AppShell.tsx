@@ -527,7 +527,7 @@ export default function AppShell({
 
         {/* Mobile header with hamburger — hidden; mobile nav is handled by bottom tab or direct links */}
 
-        {pathname !== '/today' && pathname !== '/todos' && !(pathname.startsWith('/decisions/') && !pathname.startsWith('/decisions/new')) && (
+        {pathname !== '/today' && pathname !== '/todos' && pathname !== '/tasks' && !(pathname.startsWith('/decisions/') && !pathname.startsWith('/decisions/new')) && (
           <div className={`hidden md:block ${searchParams.get('returnTo') === '/store' ? 'md:hidden sm:block' : ''}`}>
             <CaptureBar user={user} currentView={currentView} />
           </div>

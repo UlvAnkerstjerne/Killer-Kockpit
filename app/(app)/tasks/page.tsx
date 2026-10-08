@@ -82,11 +82,11 @@ export default async function TasksPage({
 
   return (
     <div className="-m-4 p-4 min-h-screen bg-kraft-light">
-      <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3">
         <h1 className="text-2xl font-black tracking-tight text-kk-ink">Tasks</h1>
         <Link
           href="/tasks/new"
-          className="shrink-0 px-4 py-2 bg-[#171717] text-kraft-light text-sm font-medium rounded-lg hover:opacity-80 transition-opacity [box-shadow:3px_3px_0_#555555]"
+          className="shrink-0 inline-flex items-center rounded-full bg-[#171717] px-3.5 py-1 text-sm font-medium text-kraft-light hover:opacity-80 transition-opacity [box-shadow:2px_2px_0_#555555]"
         >
           New task
         </Link>
