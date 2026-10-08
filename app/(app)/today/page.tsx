@@ -196,6 +196,9 @@ export default async function TodayPage({
   const view: ViewMode = resolveView(user.role, params.view)
   const canManage = canAccessManagementView(user.role)
   const isManagementView = view === 'management' && canManage
+  // Mobile feature set follows the ROLE (Audit/KQC shortcuts, My tasks, Meetings), not the data view.
+  // Personal/Management only decides which rows are loaded; it never hides or reveals mobile features.
+  const mobileManager = canManage
 
   const supabase = await createClient()
   const now = new Date()
@@ -501,8 +504,8 @@ export default async function TodayPage({
         />
       </div>
 
-      {/* ── Mobile task queue — Management mode only, hidden on desktop ──── */}
-      {isManagementView && (
+      {/* ── Mobile task queue — manager roles, hidden on desktop ──── */}
+      {mobileManager && (
         <div className="lg:hidden mb-5">
           <DashCard
             title="My tasks"
@@ -573,8 +576,8 @@ export default async function TodayPage({
         </div>
       )}
 
-      {/* ── Mobile meetings — Management mode only, hidden on desktop ────── */}
-      {isManagementView && (
+      {/* ── Mobile meetings — manager roles, hidden on desktop ────── */}
+      {mobileManager && (
         <div className="lg:hidden mb-2.5">
           <DashCard
             title="Meetings"
@@ -625,8 +628,8 @@ export default async function TodayPage({
         </div>
       )}
 
-      {/* ── Mobile + Add Audit button — Management mode only ─────────────── */}
-      {isManagementView && (
+      {/* ── Mobile + Add Audit / KQC buttons — manager roles ─────────────── */}
+      {mobileManager && (
         <div className="lg:hidden mb-2.5">
           <Link
             href="/kkc/audit"
@@ -651,7 +654,7 @@ export default async function TodayPage({
       )}
 
       {/* ── Dashboard grid — hidden on mobile in Management, visible on desktop ── */}
-      <div className={`grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch ${isManagementView ? 'hidden lg:grid' : ''}`}>
+      <div className={`grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch ${mobileManager ? 'hidden lg:grid' : ''}`}>
 
         {/* ═══ Left col, row 1 — Urgent Now ═══════════════════════════════ */}
         <div className="order-1 lg:order-none">

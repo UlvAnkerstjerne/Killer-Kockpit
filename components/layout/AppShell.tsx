@@ -286,7 +286,7 @@ export default function AppShell({
     )
   }
 
-  // Routes available on mobile in Management mode
+  // Routes available on mobile for manager roles (role-based; independent of Personal/Management data view)
   const MOBILE_MGMT_ROUTES = new Set(['/today', '/todos', '/tasks', '/meetings', '/kkc/audit', '/kkc/ssp-cph'])
 
   // ── NavContent — shared between desktop sidebar and mobile drawer ──────────
@@ -515,7 +515,7 @@ export default function AppShell({
             <NavContent
               onNavigate={() => setMobileMenuOpen(false)}
               onOpenSearch={() => { setMobileMenuOpen(false); setSearchOpen(true) }}
-              mobileManagement={managementAllowed && currentView === 'management'}
+              mobileManagement={managementAllowed}
             />
             <SidebarFooter onSignOut={handleSignOut} />
           </div>
@@ -534,7 +534,7 @@ export default function AppShell({
         )}
         <main className="flex-1 p-4">
           {/* Desktop-only gate: in Management mode on mobile, restrict to allowed routes */}
-          {managementAllowed && currentView === 'management' && ![...MOBILE_MGMT_ROUTES].some(r => pathname === r || pathname.startsWith(r + '/')) ? (
+          {managementAllowed && ![...MOBILE_MGMT_ROUTES].some(r => pathname === r || pathname.startsWith(r + '/')) ? (
             <>
               {/* Desktop: show content normally */}
               <div className="hidden md:block">{children}</div>
