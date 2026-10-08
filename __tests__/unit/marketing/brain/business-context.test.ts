@@ -92,22 +92,6 @@ function makeAirportContext(): MarketingBusinessContextItem {
   }
 }
 
-// A valid raw AI output that references the catering signal with context
-function makeValidOutput(bc?: { update_id: string; role: string } | null) {
-  return {
-    observations: [{
-      signal_id: 'sig-catering-saves',
-      interpretation: 'Catering content shows unusually strong engagement with high save rates, suggesting this content type resonates with the audience.',
-      experiment: { dimension: 'product_focus' as const, value: 'catering', test: 'Publish a catering-focused Reel featuring recent event footage and measure save rate against current median.' },
-      business_context: bc ?? null,
-    }],
-  }
-}
-
-// ---------------------------------------------------------------------------
-// buildInterpretationMessage
-// ---------------------------------------------------------------------------
-
 describe('buildInterpretationMessage', () => {
   it('includes signals without context when no business context provided', () => {
     const msg = JSON.parse(buildInterpretationMessage([makeSignal()]))
@@ -138,156 +122,94 @@ describe('buildInterpretationMessage', () => {
   })
 })
 
+// A valid v2 raw AI output about the catering signal, optionally with context references
+function makeValidOutput(bc?: { update_id: string; role: string }[] | null) {
+  return {
+    brain_take: 'Catering posts are getting saved more than the rest, which is worth a closer look. I wouldn\'t read too much into it yet.',
+    insights: [{
+      signal_ids: ['sig-catering-saves'],
+      headline: 'Catering posts are getting saved',
+      take: 'People are saving these more than other Reels. That is interesting, but we don\'t know yet what about them made people save.',
+      next_move: 'Make the next catering Reel around a real job and see whether the saves hold up.',
+      business_context: bc ?? null,
+    }],
+  }
+}
+
 // ---------------------------------------------------------------------------
-// validateInterpretation — Business Context
+// validateInterpretation — Business Context (v2)
 // ---------------------------------------------------------------------------
 
 describe('validateInterpretation with business context', () => {
-  it('resolves valid business context reference', () => {
-    const output = makeValidOutput({ update_id: 'upd-katering-450', role: 'case_study' })
-    const result = validateInterpretation(output, [makeSignal()], [makeKateringContext()])
-    expect(result).toHaveLength(1)
-    expect(result[0].business_context).not.toBeNull()
-    expect(result[0].business_context!.update_id).toBe('upd-katering-450')
-    expect(result[0].business_context!.project_title).toBe('Killer Katering')
-    expect(result[0].business_context!.role).toBe('case_study')
-    expect(result[0].business_context!.excerpt).toContain('450-guest')
+  it('resolves a valid business context reference', () => {
+    const output = makeValidOutput([{ update_id: 'upd-katering-450', role: 'case_study' }])
+    const { insights } = validateInterpretation(output, [makeSignal()], [makeKateringContext()])
+    expect(insights).toHaveLength(1)
+    const ctx = insights[0].business_context!
+    expect(ctx).toHaveLength(1)
+    expect(ctx[0]).toMatchObject({ update_id: 'upd-katering-450', project_title: 'Killer Katering', role: 'case_study' })
+    expect(ctx[0].excerpt).toContain('450-guest')
   })
 
-  it('nullifies unknown context ID without crashing', () => {
-    const output = makeValidOutput({ update_id: 'nonexistent-id', role: 'proof_point' })
-    const result = validateInterpretation(output, [makeSignal()], [makeKateringContext()])
-    expect(result).toHaveLength(1)
-    expect(result[0].business_context).toBeNull()
+  it('allows up to two context items and rejects three at the schema', () => {
+    const two = [{ update_id: 'upd-katering-450', role: 'case_study' }, { update_id: 'upd-airport-admin', role: 'subject_matter' }]
+    const { insights } = validateInterpretation(makeValidOutput(two), [makeSignal()], [makeKateringContext(), makeAirportContext()])
+    expect(insights[0].business_context).toHaveLength(2)
+    const three = [...two, { update_id: 'x', role: 'proof_point' }]
+    expect(() => InterpretationSchema.parse(makeValidOutput(three))).toThrow()
   })
 
-  it('allows null business_context (no association)', () => {
-    const output = makeValidOutput(null)
-    const result = validateInterpretation(output, [makeSignal()], [makeKateringContext()])
-    expect(result).toHaveLength(1)
-    expect(result[0].business_context).toBeNull()
+  it('drops unknown context IDs without crashing', () => {
+    const { insights } = validateInterpretation(makeValidOutput([{ update_id: 'nonexistent-id', role: 'proof_point' }]), [makeSignal()], [makeKateringContext()])
+    expect(insights).toHaveLength(1)
+    expect(insights[0].business_context).toBeUndefined()
   })
 
-  it('allows missing business_context field (backward compat)', () => {
-    const output = {
-      observations: [{
-        signal_id: 'sig-catering-saves',
-        interpretation: 'Catering content shows strong save-rate performance compared to the cohort median.',
-        experiment: { dimension: 'product_focus' as const, value: 'catering', test: 'Test a catering-focused Reel and compare saves.' },
-      }],
+  it('allows null or missing business_context (no forced association)', () => {
+    expect(validateInterpretation(makeValidOutput(null), [makeSignal()], [makeKateringContext()]).insights[0].business_context).toBeUndefined()
+    const o = makeValidOutput(); delete (o.insights[0] as { business_context?: unknown }).business_context
+    expect(validateInterpretation(o, [makeSignal()], [makeKateringContext()]).insights).toHaveLength(1)
+  })
+
+  it('context is never performance evidence: a performance claim about the context topic is rejected', () => {
+    for (const claim of ['Katering content performs really well with our audience.', 'The Katering story clearly works and drives saves.']) {
+      const o = makeValidOutput(); o.insights[0].take = claim
+      expect(() => validateInterpretation(o, [makeSignal()], [makeKateringContext()])).toThrow(/performance evidence/)
     }
-    const result = validateInterpretation(output, [makeSignal()], [makeKateringContext()])
-    expect(result).toHaveLength(1)
-    expect(result[0].business_context).toBeNull()
+    const nextMove = makeValidOutput(); nextMove.insights[0].next_move = 'Use the first Killer Katering delivery as the subject of the next Reel and see if it happens again.'
+    expect(() => validateInterpretation(nextMove, [makeSignal()], [makeKateringContext()])).not.toThrow()
   })
 
-  it('preserves deterministic finding and evidence regardless of context', () => {
-    const output = makeValidOutput({ update_id: 'upd-katering-450', role: 'case_study' })
-    const withCtx = validateInterpretation(output, [makeSignal()], [makeKateringContext()])
-    const outputNoCtx = makeValidOutput(null)
-    const withoutCtx = validateInterpretation(outputNoCtx, [makeSignal()], [])
-
-    // finding and evidence come from the signal, not context
-    expect(withCtx[0].finding).toBe(withoutCtx[0].finding)
-    expect(withCtx[0].evidence).toBe(withoutCtx[0].evidence)
+  it('truncates a long context body in the excerpt', () => {
+    const { insights } = validateInterpretation(makeValidOutput([{ update_id: 'upd-katering-450', role: 'proof_point' }]), [makeSignal()], [makeKateringContext({ body: 'A'.repeat(300) })])
+    expect(insights[0].business_context![0].excerpt.length).toBeLessThanOrEqual(203)
   })
 
-  it('truncates long context body in excerpt', () => {
-    const longBody = 'A'.repeat(300)
-    const ctx = makeKateringContext({ body: longBody })
-    const output = makeValidOutput({ update_id: 'upd-katering-450', role: 'proof_point' })
-    const result = validateInterpretation(output, [makeSignal()], [ctx])
-    expect(result[0].business_context!.excerpt.length).toBeLessThanOrEqual(203) // 200 + '...'
+  it('no context parameter works', () => {
+    expect(validateInterpretation(makeValidOutput(null), [makeSignal()]).insights).toHaveLength(1)
   })
 })
-
-// ---------------------------------------------------------------------------
-// Killer Katering regression test
-// ---------------------------------------------------------------------------
-
-describe('Killer Katering regression', () => {
-  it('catering signal with catering context produces correct association', () => {
-    const signal = makeSignal() // product_focus=catering, save_rate outperformance
-    const context = makeKateringContext()
-    const output = makeValidOutput({ update_id: 'upd-katering-450', role: 'case_study' })
-
-    const result = validateInterpretation(output, [signal], [context])
-
-    expect(result).toHaveLength(1)
-    // Performance finding comes from data, not context
-    expect(result[0].finding.toLowerCase()).toContain('catering')
-    expect(result[0].evidence).not.toContain('450')
-    expect(result[0].evidence).not.toContain('corporate')
-    // Business context references exact supplied update
-    expect(result[0].business_context!.update_id).toBe('upd-katering-450')
-    expect(result[0].business_context!.project_title).toBe('Killer Katering')
-    expect(result[0].business_context!.role).toBe('case_study')
-    // Excerpt preserves source material
-    expect(result[0].business_context!.excerpt).toContain('450-guest')
-    expect(result[0].business_context!.excerpt).toContain('rebooked')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Irrelevant context test
-// ---------------------------------------------------------------------------
 
 describe('irrelevant context', () => {
-  it('falafel signal with unrelated airport context — null association is accepted', () => {
-    const signal = makeFalafelSignal()
-    const context = makeAirportContext()
+  it('unrelated airport context — no association is accepted', () => {
     const output = {
-      observations: [{
-        signal_id: 'sig-falafel-exposure',
-        interpretation: 'Falafel-focused Reels attract notably higher reach than the cohort median, suggesting organic interest in this product.',
-        experiment: { dimension: 'product_focus' as const, value: 'falafel', test: 'Test a falafel-focused Reel with food-process footage.' },
-        business_context: null,
-      }],
+      brain_take: 'Falafel Reels are reaching more people than the rest, but it is early.',
+      insights: [{ signal_ids: ['sig-falafel-exposure'], headline: 'Falafel Reels are getting more reach',
+        take: 'They are reaching more people than our usual Reel. Worth another look before we call it a pattern.',
+        next_move: 'Shoot the next falafel Reel with the same food-process footage and compare reach.', business_context: null }],
     }
-    const result = validateInterpretation(output, [signal], [context])
-    expect(result).toHaveLength(1)
-    expect(result[0].business_context).toBeNull()
+    const { insights } = validateInterpretation(output, [makeFalafelSignal()], [makeAirportContext()])
+    expect(insights[0].business_context).toBeUndefined()
   })
 })
-
-// ---------------------------------------------------------------------------
-// Backward compatibility
-// ---------------------------------------------------------------------------
 
 describe('backward compatibility', () => {
-  it('old Observation without business_context field renders correctly', () => {
+  it('old Observation without business_context field is still a valid stored shape', () => {
     const oldObservation: Observation = {
-      signal_id: 'sig-1',
-      finding: 'Catering content outperforms',
-      evidence: '3.1x format median',
-      interpretation: 'Strong save engagement.',
-      suggested_experiment: 'Test catering. Publish a Reel.',
+      signal_id: 'sig-1', finding: 'Catering content outperforms', evidence: '3.1x format median',
+      interpretation: 'Strong save engagement.', suggested_experiment: 'Test catering. Publish a Reel.',
     }
-    // No business_context field at all — should not crash
     expect(oldObservation.business_context).toBeUndefined()
-    expect(oldObservation.finding).toBeTruthy()
-  })
-})
-
-// ---------------------------------------------------------------------------
-// No context → existing behaviour unchanged
-// ---------------------------------------------------------------------------
-
-describe('no context mode', () => {
-  it('validation works without business context parameter', () => {
-    const output = {
-      observations: [{
-        signal_id: 'sig-catering-saves',
-        interpretation: 'Catering content demonstrates strong save-rate engagement versus the cohort median.',
-        experiment: { dimension: 'product_focus' as const, value: 'catering', test: 'Test a catering Reel and track saves relative to the format baseline.' },
-      }],
-    }
-    // No context argument — defaults to undefined
-    const result = validateInterpretation(output, [makeSignal()])
-    expect(result).toHaveLength(1)
-    expect(result[0].business_context).toBeNull()
-    expect(result[0].finding).toBeTruthy()
-    expect(result[0].evidence).toBeTruthy()
   })
 })
 
@@ -316,29 +238,15 @@ describe('prompt injection treatment', () => {
 describe('InterpretationSchema', () => {
   it('accepts valid role values', () => {
     for (const role of ['proof_point', 'timely_angle', 'case_study', 'subject_matter']) {
-      const output = makeValidOutput({ update_id: 'upd-1', role })
-      expect(() => InterpretationSchema.parse(output)).not.toThrow()
+      expect(() => InterpretationSchema.parse(makeValidOutput([{ update_id: 'upd-1', role }]))).not.toThrow()
     }
   })
-
-  it('rejects invalid role value', () => {
-    const output = makeValidOutput({ update_id: 'upd-1', role: 'invented_role' })
-    expect(() => InterpretationSchema.parse(output)).toThrow()
+  it('rejects an invalid role value', () => {
+    expect(() => InterpretationSchema.parse(makeValidOutput([{ update_id: 'upd-1', role: 'invented_role' }]))).toThrow()
   })
-
-  it('accepts null business_context', () => {
-    const output = makeValidOutput(null)
-    expect(() => InterpretationSchema.parse(output)).not.toThrow()
-  })
-
-  it('accepts absent business_context', () => {
-    const output = {
-      observations: [{
-        signal_id: 'sig-1',
-        interpretation: 'A valid interpretation with enough characters to pass the minimum.',
-        experiment: { dimension: 'product_focus' as const, value: 'catering', test: 'A valid test description with enough characters to pass.' },
-      }],
-    }
-    expect(() => InterpretationSchema.parse(output)).not.toThrow()
+  it('accepts null and absent business_context', () => {
+    expect(() => InterpretationSchema.parse(makeValidOutput(null))).not.toThrow()
+    const o = makeValidOutput(); delete (o.insights[0] as { business_context?: unknown }).business_context
+    expect(() => InterpretationSchema.parse(o)).not.toThrow()
   })
 })

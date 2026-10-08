@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 export const CLASSIFICATION_VERSION = 'creative-v1'
 export const CLASSIFIER_PROMPT_VERSION = '2026-09-24-v1'
-export const INTERPRETATION_PROMPT_VERSION = '2026-09-24-v1'
+// Bump this whenever interpretation semantics, schema or voice materially change.
+export const INTERPRETATION_PROMPT_VERSION = '2026-10-08-v2'
 
 export const HOOK_TYPES = ['question', 'bold_claim', 'contrarian', 'comparison', 'curiosity', 'problem_solution', 'direct_product', 'story', 'list', 'social_proof', 'offer', 'no_clear_hook', 'unknown'] as const
 export const THEMES = ['product', 'food_process', 'education_explainer', 'humour', 'behind_the_scenes', 'founder_personality', 'people_team', 'social_proof', 'community', 'offer_promotion', 'brand_story', 'other'] as const

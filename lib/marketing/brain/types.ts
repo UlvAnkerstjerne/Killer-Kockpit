@@ -70,6 +70,8 @@ export interface CreativeAnalytics {
   coverage: { total: number; with_exposure: number; classified: number; stale_syncs: number }
   /** Business context items available during this run. Absent for older runs. */
   business_context?: BusinessContextSnapshot[]
+  /** v2: Brain's short top-level synthesis. Absent for runs generated before the v2 interpretation. */
+  brain_take?: string | null
 }
 export const SIGNAL_TYPES = ['hook_outperformance', 'theme_outperformance', 'product_outperformance', 'presentation_outperformance', 'share_heavy_pattern', 'save_heavy_pattern', 'format_outperformance', 'exceptional_post'] as const
 export type SignalType = typeof SIGNAL_TYPES[number]
@@ -107,6 +109,20 @@ export interface Observation {
   /** Optional business context from a Universal Update. Null/absent for older runs. */
   business_context?: ObservationBusinessContext | null
 }
+/** v2 interpretation: one conclusion that may synthesise 1–4 related deterministic signals. */
+export interface Insight {
+  signal_ids: string[]
+  headline: string
+  take: string
+  next_move: string
+  /** Up to two Universal Updates used as creative material (never performance evidence). */
+  business_context?: ObservationBusinessContext[]
+}
+/** A persisted run holds legacy one-signal observations (v1) or v2 insights. */
+export type StoredObservation = Observation | Insight
+export function isInsight(o: StoredObservation): o is Insight {
+  return Array.isArray((o as Insight).signal_ids)
+}
 export interface ClassificationCounts { eligible: number; classified: number; skipped: number; failed: number; deferred: number }
 export interface CreativeRun {
   id: string
@@ -119,7 +135,7 @@ export interface CreativeRun {
   status: 'running' | 'completed' | 'partial' | 'failed'
   analytics: CreativeAnalytics | null
   signals: CreativeSignal[]
-  observations: Observation[]
+  observations: StoredObservation[]
   classification_counts: ClassificationCounts
   error: string | null
 }

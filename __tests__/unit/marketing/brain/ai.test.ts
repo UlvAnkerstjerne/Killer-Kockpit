@@ -12,8 +12,10 @@ beforeEach(() => { vi.clearAllMocks(); vi.stubEnv('BRIEF_AI_MODEL', 'synthetic-m
 afterEach(() => vi.unstubAllEnvs())
 function output() {
   const signal = strongSample().signals[0]
-  return { observations: [{ signal_id: signal.id, interpretation: 'The explanatory copy may give people a reason to share.',
-    experiment: { dimension: signal.dimension, value: signal.value, test: 'Compare this caption approach with direct product copy using the same edit.' } }] }
+  return { brain_take: 'These posts are getting shared more than the rest, which is worth a closer look.',
+    insights: [{ signal_ids: [signal.id], headline: 'These posts get shared more',
+      take: 'The explanatory copy may give people a reason to share. We would need another run to know.',
+      next_move: 'Compare this caption approach with direct product copy using the same edit.', business_context: null }] }
 }
 
 describe('Creative classifier AI boundary', () => {
@@ -44,24 +46,22 @@ describe('Creative interpretation AI boundary', () => {
     const message = buildInterpretationMessage(signals)
     expect(message).not.toMatch(/SYSTEM|caption|hook_text|customer_email|private@example/)
     expect(JSON.parse(message).signals[0]).toMatchObject({ sample_size: 4 })
-    expect(INTERPRETATION_SYSTEM_PROMPT).toContain('Hook labels refer to caption copy only')
+    expect(INTERPRETATION_SYSTEM_PROMPT).toContain('hook labels come from caption/opening copy only')
   })
-  it('enforces max five observations, known unique IDs, taxonomy and experiment grounding', () => {
+  it('enforces max three insights, known signal IDs, no repeated signal sets and no demographics', () => {
     const signals = strongSample().signals
-    expect(validateInterpretation(output(), signals)).toHaveLength(1)
-    expect(() => validateInterpretation({ observations: Array(6).fill(output().observations[0]) }, signals)).toThrow()
-    expect(() => validateInterpretation({ observations: [{ ...output().observations[0], signal_id: 'unknown' }] }, signals)).toThrow()
-    expect(() => validateInterpretation({ observations: [output().observations[0], output().observations[0]] }, signals)).toThrow()
-    const wrong = output(); wrong.observations[0].experiment.value = 'beer'
-    expect(() => validateInterpretation(wrong, signals)).toThrow()
-    const demographics = output(); demographics.observations[0].interpretation = 'Women aged 25 respond better because of their preferences.'
-    expect(() => validateInterpretation(demographics, signals)).toThrow()
+    const one = output().insights[0]
+    expect(validateInterpretation(output(), signals).insights).toHaveLength(1)
+    expect(() => validateInterpretation({ ...output(), insights: Array(4).fill(one) }, signals)).toThrow()
+    expect(() => validateInterpretation({ ...output(), insights: [{ ...one, signal_ids: ['unknown'] }] }, signals)).toThrow()
+    expect(() => validateInterpretation({ ...output(), insights: [one, one] }, signals)).toThrow()
+    expect(() => validateInterpretation({ ...output(), insights: [{ ...one, take: 'Women aged twenty respond better to this because of their preferences.' }] }, signals)).toThrow()
   })
-  it('builds factual finding/evidence in code; calls AI once and skips empty signals', async () => {
+  it('builds the deterministic evidence in the app; calls AI once and skips empty signals', async () => {
     parse.mockResolvedValue({ parsed_output: output() })
     const result = await callCreativeInterpretation(strongSample().signals)
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.observations[0].evidence).toContain('4 Reel / video posts')
+    if (result.ok) { expect(result.insights[0].signal_ids).toHaveLength(1); expect(result.brain_take).toContain('shared more') }
     expect(parse).toHaveBeenCalledTimes(1)
     await callCreativeInterpretation([])
     expect(parse).toHaveBeenCalledTimes(1)
