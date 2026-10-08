@@ -1,5 +1,6 @@
 'use server'
 
+import { normalizePaidRecommendation } from '@/lib/marketing/paid-recs/normalize'
 import { getCurrentUser } from '@/lib/auth'
 import { canAccessMarketing, hasMarketingPermission } from '@/lib/permissions'
 import { getUserMarketingPermissions } from '@/lib/actions/marketing/permissions'
@@ -488,7 +489,7 @@ export async function getPendingPaidRecommendations(): Promise<MarketingReviewIt
 
   const { data, error } = await db
     .from('paid_recommendations')
-    .select('id,platform,campaign_name,signal_type,urgency,recommended_action,created_at,execution_plan,execution_type,remediation_plan')
+    .select('id,platform,campaign_name,signal_type,urgency,recommended_action,created_at,execution_plan,execution_type,execution_plan_version')
     .eq('status', 'needs_review')
     .order('created_at', { ascending: false })
 
@@ -506,8 +507,11 @@ export async function getPendingPaidRecommendations(): Promise<MarketingReviewIt
 
     // Derive action-aware button label
     const plan = row.execution_plan as Record<string, unknown> | null
+    const v2Actions = row.execution_plan_version === 'v2' && Array.isArray(plan?.actions)
+      ? (plan!.actions as Array<Record<string, unknown>>) : null
     let btnLabel = 'Review'
-    if (plan?.action_type === 'manual_action_required') btnLabel = 'Manual action required'
+    if (v2Actions?.some(a => a.action_type === 'manual_action_required')) btnLabel = 'Manual action required'
+    else if (plan?.action_type === 'manual_action_required') btnLabel = 'Manual action required'
     else if (row.execution_type === 'platform_action') btnLabel = 'Approve & fix'
     else if (plan?.action_type === 'run_tracking_diagnostic') btnLabel = 'Run diagnostic'
     else if (plan?.action_type === 'monitor_only') btnLabel = 'Start monitoring'
@@ -546,5 +550,5 @@ export async function getPaidRecommendations(): Promise<PaidRecommendationRow[]>
     .order('created_at', { ascending: false })
 
   if (error || !data) return []
-  return data as PaidRecommendationRow[]
+  return (data as PaidRecommendationRow[]).map(normalizePaidRecommendation)
 }

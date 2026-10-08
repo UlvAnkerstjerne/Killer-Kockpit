@@ -41,7 +41,7 @@ export function actionLabel(rec: PaidRecommendationRow): string {
       if ('target_daily_budget' in a) return `${a.current_daily_budget} → ${a.target_daily_budget} ${a.currency}/day`
       if (a.action_type === 'run_tracking_diagnostic') return 'Run tracking diagnostic'
       if (a.action_type === 'manual_action_required') return 'Manual action required'
-      return a.action_type.replace(/_/g, ' ')
+      return (a.action_type ?? 'action').replace(/_/g, ' ')
     })
     return labels.join(' + ')
   }
@@ -49,8 +49,8 @@ export function actionLabel(rec: PaidRecommendationRow): string {
   if (!p) return 'Manual review required'
   if (p.action_type === 'meta_pause_ad' && 'ad_name' in p) return `Pause ad: "${p.ad_name}"`
   if (p.action_type === 'meta_pause_adset' && 'adset_name' in p) return `Pause ad set: "${p.adset_name}"`
-  if (p.action_type.includes('pause_campaign')) return `Pause ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
-  if (p.action_type.includes('resume_campaign')) return `Resume ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
+  if (p.action_type?.includes('pause_campaign')) return `Pause ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
+  if (p.action_type?.includes('resume_campaign')) return `Resume ${rec.platform === 'meta' ? 'Meta' : 'Google'} campaign`
   if ('target_daily_budget' in p) return `Change daily budget: ${p.current_daily_budget} ${p.currency} → ${p.target_daily_budget} ${p.currency}`
   if (p.action_type === 'run_tracking_diagnostic') return 'Run tracking diagnostic'
   if (p.action_type === 'monitor_only') return 'Start monitoring'
