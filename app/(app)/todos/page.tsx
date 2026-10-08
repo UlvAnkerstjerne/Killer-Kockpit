@@ -1,7 +1,10 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, getActiveUsers } from '@/lib/auth'
 import { canAccessManagementView, canAssignToOthers, MANAGEMENT_ROLES } from '@/lib/permissions'
-import { resolveView, ownedBy } from '@/lib/view'
+import { orderPeople, resolveSelectedOwner, todosHref, type TeamPerson } from '@/lib/tasks/tasks-url'
+import { ownedBy } from '@/lib/view'
+import PersonPills from '@/components/people/PersonPills'
 import type { Todo, TeamTodo } from '@/lib/types'
 import TeamColumn from './TeamColumn'
 import MobileTodoView from './MobileTodoView'
@@ -9,44 +12,81 @@ import CompletedTodosSection from './CompletedTodosSection'
 
 export const dynamic = 'force-dynamic'
 
-type RawTeamTodo = {
-  id: string
-  user_id: string
-  title: string
-  priority: number
-  created_at: string
-  updated_at: string
-  completed_at: string | null
-  cancelled_at: string | null
-  notes: string | null
-  scheduled_for: string | null
-  recurrence_rule: string | null
-  recurrence_day: number | null
-  parent_todo_id: string | null
-  owner:
-    | { id: string; display_name: string }
-    | Array<{ id: string; display_name: string }>
-    | null
-}
-
-// Hardcoded display order: current user first, then team
-const TEAM_ORDER = ['Kasper Kristiansen', 'Adam Vearey', 'Lydia Mertiri', 'Sara Jørgensen']
-
 export default async function TodosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string; view?: string }>
+  searchParams: Promise<{ returnTo?: string; owner?: string }>
 }) {
   const sp = await searchParams
   const returnTo = sp.returnTo
   const user = await getCurrentUser()
   if (!user) return null
 
-  // Team to-dos are an explicit Management overview (?view=management, role-gated); the default is personal.
-  const canSeeTeam = canAccessManagementView(user.role) && resolveView(user.role, sp.view) === 'management'
+  const isManagement = canAccessManagementView(user.role)
   const supabase = await createClient()
 
-  // Always load the user's own todos for the interactive column
+  // Team selector: active management users. Only management users see it or can pick another
+  // person; everyone else is always themselves, whatever the URL says.
+  const peopleRes = isManagement
+    ? await supabase.from('app_users').select('id, display_name').eq('active', true).in('role', MANAGEMENT_ROLES)
+    : { data: [] as TeamPerson[] }
+  const people = orderPeople((peopleRes.data ?? []) as TeamPerson[])
+  const selectedId = resolveSelectedOwner({
+    isManagement, currentUserId: user.id, ownerParam: sp.owner, people,
+  })
+  const viewingOwn = selectedId === user.id
+
+  const pills = isManagement ? (
+    <PersonPills
+      people={people}
+      selectedId={selectedId}
+      hrefFor={id => todosHref({ owner: id === user.id ? null : id, returnTo })}
+    />
+  ) : null
+
+  // ── Another person's list: one read-only column ──────────────────────────────
+  // Reads go through the signed-in user's RLS client (management roles may read team to-dos);
+  // nothing here can create, complete, edit or reopen another person's to-do.
+  if (!viewingOwn) {
+    const person = people.find(p => p.id === selectedId)!
+    const { data } = await supabase
+      .from('todos')
+      .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id')
+      .eq('user_id', selectedId)
+      .is('cancelled_at', null)
+      .is('completed_at', null)
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(500)
+
+    // Defence in depth: RLS lets managers read other users' rows, so keep only the selected person's.
+    const theirTodos: TeamTodo[] = ownedBy((data ?? []) as Omit<TeamTodo, 'owner'>[], selectedId, 'user_id').map(t => ({
+      ...t,
+      priority: t.priority as 1 | 2 | 3 | 4,
+      owner: { id: person.id, display_name: person.display_name },
+    }))
+
+    return (
+      <div className="-m-4 p-4 min-h-screen bg-kraft-light">
+        <div className="mb-3">
+          {returnTo && (
+            <Link href={returnTo} className="sm:hidden flex items-center gap-1.5 text-sm text-kk-muted mb-3 py-1">
+              <span className="text-lg leading-none">&lsaquo;</span>
+              <span>{returnTo === '/store' ? 'Store Dashboard' : 'Back'}</span>
+            </Link>
+          )}
+          <h1 className="text-2xl font-black tracking-tight text-kk-ink">To-Dos</h1>
+        </div>
+        {pills}
+        <div className="max-w-2xl">
+          {/* No `interactive`: read-only on desktop and mobile. */}
+          <TeamColumn name={person.display_name.split(' ')[0]} todos={theirTodos} />
+        </div>
+      </div>
+    )
+  }
+
+  // ── Own list: fully interactive ──────────────────────────────────────────────
   const [{ data: myData }, { data: completedData }, allUsersResult, projectsResult] = await Promise.all([
     supabase
       .from('todos')
@@ -74,9 +114,8 @@ export default async function TodosPage({
       .order('title'),
   ])
 
-  // Personal list is strictly the signed-in user's own (RLS lets managers read other users' rows).
-  const todos = ownedBy((myData ?? []) as Todo[], user.id, 'user_id')
-  const openTodos = todos
+  // RLS lets managers read other users' rows, so scope to the signed-in user explicitly as well.
+  const openTodos = ownedBy((myData ?? []) as Todo[], user.id, 'user_id')
 
   type CompletedTodoItem = {
     id: string
@@ -91,65 +130,6 @@ export default async function TodosPage({
 
   const allUsers = (allUsersResult as { id: string; display_name: string; email: string }[])
     .map(u => ({ id: u.id, display_name: u.display_name, email: u.email }))
-
-  // For management: load team todos
-  let teamColumns: { name: string; todos: TeamTodo[] }[] = []
-
-  if (canSeeTeam) {
-    const [teamTodosRes, managementUsersRes] = await Promise.all([
-      supabase
-        .from('todos')
-        .select('id, user_id, title, priority, created_at, updated_at, completed_at, cancelled_at, notes, scheduled_for, recurrence_rule, recurrence_day, parent_todo_id, owner:user_id (id, display_name)')
-        .is('cancelled_at', null)
-        .is('completed_at', null)
-        .neq('user_id', user.id) // exclude self — shown in interactive column
-        .order('priority', { ascending: true })
-        .order('created_at', { ascending: false })
-        .limit(500),
-      supabase
-        .from('app_users')
-        .select('id, display_name')
-        .eq('active', true)
-        .in('role', MANAGEMENT_ROLES)
-        .neq('id', user.id)
-        .order('display_name'),
-    ])
-
-    const teamTodos: TeamTodo[] = ((teamTodosRes.data ?? []) as RawTeamTodo[]).map(t => {
-      const raw = t.owner
-      const ownerObj = Array.isArray(raw) ? raw[0] : raw
-      return {
-        id: t.id, user_id: t.user_id, title: t.title,
-        priority: t.priority as 1 | 2 | 3 | 4,
-        created_at: t.created_at, updated_at: t.updated_at,
-        completed_at: t.completed_at, cancelled_at: t.cancelled_at,
-        notes: t.notes, scheduled_for: t.scheduled_for,
-        recurrence_rule: t.recurrence_rule, recurrence_day: t.recurrence_day,
-        parent_todo_id: t.parent_todo_id,
-        owner: { id: ownerObj?.id ?? t.user_id, display_name: ownerObj?.display_name ?? '' },
-      }
-    })
-
-    const managementUsers = (managementUsersRes.data ?? []) as { id: string; display_name: string }[]
-
-    const todosByUser = new Map<string, TeamTodo[]>()
-    for (const t of teamTodos) {
-      const arr = todosByUser.get(t.user_id) ?? []
-      arr.push(t)
-      todosByUser.set(t.user_id, arr)
-    }
-
-    const sortedUsers = [...managementUsers].sort((a, b) => {
-      const ai = TEAM_ORDER.indexOf(a.display_name)
-      const bi = TEAM_ORDER.indexOf(b.display_name)
-      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
-    })
-
-    teamColumns = sortedUsers.map(u => ({
-      name: u.display_name.split(' ')[0],
-      todos: todosByUser.get(u.id) ?? [],
-    }))
-  }
 
   const myName = user.display_name?.split(' ')[0] ?? 'Me'
   const myTeamTodos: TeamTodo[] = openTodos.map(t => ({
@@ -170,23 +150,24 @@ export default async function TodosPage({
         <MobileTodoView
           myName={myName}
           myTodos={myTeamTodos}
-          teamColumns={canSeeTeam ? teamColumns : []}
+          teamColumns={[]}
           currentUserId={user.id}
           allUsers={allUsers}
           projects={projectsResult.data ?? []}
           returnTo={returnTo}
+          belowHeading={pills}
         />
         <CompletedTodosSection todos={completedTodos} />
       </div>
 
       {/* ── Desktop view (>= 640px) ── */}
       <div className="hidden sm:block">
-        <div className="mb-5">
+        <div className="mb-3">
           <h1 className="text-2xl font-black tracking-tight text-kk-ink">To-Dos</h1>
-          <p className="text-sm text-kk-muted mt-0.5">{canSeeTeam ? "Everyone's to-dos" : 'Your to-dos'}</p>
         </div>
+        {pills}
 
-        <div className={`grid gap-4`} style={canSeeTeam ? { gridTemplateColumns: `repeat(${1 + teamColumns.length}, 1fr)` } : undefined}>
+        <div className="max-w-2xl">
           <TeamColumn
             name={myName}
             todos={myTeamTodos}
@@ -195,9 +176,6 @@ export default async function TodosPage({
             allUsers={allUsers}
             projects={projectsResult.data ?? []}
           />
-          {teamColumns.map(col => (
-            <TeamColumn key={col.name} name={col.name} todos={col.todos} />
-          ))}
         </div>
 
         <CompletedTodosSection todos={completedTodos} />

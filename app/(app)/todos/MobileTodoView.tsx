@@ -19,6 +19,8 @@ interface Props {
   allUsers: UserOption[]
   projects: { id: string; title: string }[]
   returnTo?: string
+  /** Rendered directly under the page heading (e.g. the team-member selector). */
+  belowHeading?: React.ReactNode
 }
 
 export default function MobileTodoView({
@@ -29,6 +31,7 @@ export default function MobileTodoView({
   allUsers,
   projects,
   returnTo,
+  belowHeading,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -81,6 +84,8 @@ export default function MobileTodoView({
         )}
         <h1 className="text-2xl font-black tracking-tight text-kk-ink">To-Dos</h1>
       </div>
+
+      {belowHeading}
 
       {/* Person selector (only for management users with team columns) */}
       {teamColumns.length > 0 && (
