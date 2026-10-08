@@ -22,7 +22,7 @@ import { MONTHLY_CEILING_DKK, type PaidStrategyEvidence } from '@/lib/marketing/
 import { FIELD_TARGET_CHARS, PaidStrategyOutputSchema, type PaidStrategyRecommendation } from '@/lib/marketing/paid-strategy/types'
 
 /** Bump on any change to KOCKPIT_RULES, the schema, or the vendored skill. */
-export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-08-v3'
+export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-08-v4'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
@@ -51,7 +51,8 @@ Calibration and honesty
 - The following are UNKNOWN: target CPL, target ROAS, gross margin, lead-to-customer rate, customer value/AOV, sales cycle. Never invent them and never assume the skill's example values. The skill's Calibration Check and Refuse-to-Act rules do NOT stop you from answering. Instead, state the missing input in evidence_limitations and frame the recommendation as a bounded EXPERIMENT whose purpose is to learn, not as a scale or kill decision.
 - Fewer than 50 conversions, account age or sparse data: say so in evidence_limitations; do not make trend claims the data cannot support.
 - Retargeting, audience and copy conclusions are inference only: targeting definitions and ad copy are not in the data. Ad set and ad names are hints, not facts about targeting. You cannot confirm whether a retargeting audience exists; say what is visible and what is not.
-- Meta action types overlap. Never add different action types together; cite one type at a time.
+- Meta action types overlap. Never add different action types together. current_28d.business_outcomes already lists each business outcome (lead, purchase, order, app install, redemption and similar) ONCE, deduplicated, and is never truncated: it is the authoritative record of what Meta counted. top_actions is a truncated list of engagement context only. The absence of an outcome from top_actions is NOT evidence that it is missing; you may say an outcome event is absent only if business_outcomes has no entry for it.
+- observed_cost_per_outcome is window spend divided by the count, on a small sample (small_sample is true below 50). Present it as an observation, never as a target, a benchmark or a profitability result: no closed-order or revenue data exists, so a count of leads or redemptions says nothing yet about their value.
 - Benchmarks in the skill (hit rates, creatives per week, Motion 2026) are cross-industry and mostly USD/EUR. Use them only as context, name them as such, and never as a pass/fail rule for this account. The skill's EUR thresholds (for example the 600 winner floor) do not apply at this spend level.
 
 Budget

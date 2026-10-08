@@ -62,13 +62,15 @@ describe('Paid Strategy evidence preparation', () => {
     ])
   })
 
-  it('keeps overlapping Meta action types separate and never sums them', () => {
+  it('reports overlapping lead action names as one outcome, never summed', () => {
     const e = buildPaidStrategyEvidence(strategyInputs())
     const leads = e.campaigns.find(c => c.objective === 'OUTCOME_LEADS')!
-    expect(leads.current_28d.top_actions).toEqual(expect.arrayContaining([
-      { type: 'lead', count: 56 }, { type: 'offsite_conversion.fb_pixel_lead', count: 56 }, { type: 'link_click', count: 1680 },
-    ]))
-    expect(JSON.stringify(e)).not.toMatch(/total_leads|all_leads/)
+    // Fixture: `lead` and `offsite_conversion.fb_pixel_lead` are both 2/day = 56 over 28 days. That is 56 leads, not 112.
+    expect(leads.current_28d.business_outcomes).toEqual([
+      expect.objectContaining({ outcome: 'lead', count: 56, reported_as: [{ type: 'lead', count: 56 }, { type: 'offsite_conversion.fb_pixel_lead', count: 56 }] }),
+    ])
+    expect(leads.current_28d.top_actions).toEqual([{ type: 'link_click', count: 1680 }])
+    expect(JSON.stringify(e)).not.toMatch(/"count":112\b/)
   })
 
   it('computes derived rates from stored counters', () => {
@@ -230,5 +232,106 @@ describe('Paid Strategy budget projection', () => {
     const last = buildPaidStrategyEvidence(strategyInputs({ now: new Date('2026-10-31T10:00:00Z') })).budget
     expect(last.month_days_elapsed).toBe(30)
     expect(last.projection.remaining_days_in_month_including_today).toBe(1)
+  })
+})
+
+// ── Business outcomes (regression: first live run lost 6 real leads behind engagement actions) ──
+
+describe('Paid Strategy business outcomes survive the top-N action ranking', () => {
+  // The exact C2 failure: 12 engagement/context action types outrank the lead events, which sit at rank 13.
+  const engagement = [
+    ['page_engagement', 404], ['post_engagement', 404], ['link_click', 295], ['post_interaction_net', 112], ['post_interaction_gross', 109],
+    ['landing_page_view', 103], ['omni_landing_page_view', 103], ['post_reaction', 63], ['onsite_conversion.post_net_like', 62],
+    ['onsite_conversion.post_save', 25], ['onsite_conversion.post_net_save', 23], ['post', 21],
+  ] as const
+  const leadAliases = [['offsite_conversion.fb_pixel_lead', 6], ['onsite_web_lead', 6], ['offsite_lead_add_20_s_calls', 6], ['lead', 6]] as const
+  const actions = (pairs: readonly (readonly [string, number])[]) => pairs.map(([action_type, value]) => ({ action_type, value: String(value) }))
+
+  /** 21 spending days totalling exactly 1,972.29 DKK, all actions recorded on the first day. */
+  function c2(pairs: readonly (readonly [string, number])[]) {
+    const days = dates('2026-09-17', '2026-10-07')
+    const campaignInsights = days.map((d, i) => ({
+      campaign_id: 'c2', date_start: d, impressions: 1000, clicks: 10, inline_link_clicks: 5, spend: i === 0 ? '92.29' : '94', frequency: '1.1',
+      actions_json: i === 0 ? actions(pairs) : null,
+    }))
+    return buildPaidStrategyEvidence(strategyInputs({
+      campaigns: [campaign('c2', { name: 'Killer Katering - Copenhagen Leads (V1)' })], adSets: [], ads: [], adInsights: [], campaignInsights,
+    }))
+  }
+
+  it('keeps the 6 leads, once, although they rank below the top 8 actions', () => {
+    const e = c2([...engagement, ...leadAliases])
+    const w = e.campaigns[0].current_28d
+    expect(w.spend).toBe(1972.29)
+    expect(w.top_actions).toHaveLength(8)
+    expect(w.top_actions.map(a => a.type)).not.toEqual(expect.arrayContaining(['lead']))
+    expect(w.top_actions.map(a => a.type).join(' ')).not.toMatch(/lead/)
+    expect(w.business_outcomes).toHaveLength(1)
+    expect(w.business_outcomes[0]).toMatchObject({ outcome: 'lead', count: 6, small_sample: true })
+  })
+
+  it('does not double count the overlapping lead labels', () => {
+    const e = c2([...engagement, ...leadAliases])
+    const lead = e.campaigns[0].current_28d.business_outcomes[0]
+    expect(lead.count).toBe(6)
+    expect(lead.reported_as).toHaveLength(4)
+    expect(lead.reported_as.every(a => a.count === 6)).toBe(true)
+    expect(JSON.stringify(e)).not.toMatch(/"count":(12|18|24)\b/)
+    expect(e.account.business_outcomes_current_28d).toEqual([expect.objectContaining({ outcome: 'lead', count: 6 })])
+  })
+
+  it('states the observed cost per lead (~329 DKK) and flags it as a small sample', () => {
+    const lead = c2([...engagement, ...leadAliases]).campaigns[0].current_28d.business_outcomes[0]
+    expect(lead.observed_cost_per_outcome).toBeCloseTo(328.72, 2)
+    expect(lead.observed_cost_per_outcome).toBeGreaterThan(328)
+    expect(lead.observed_cost_per_outcome).toBeLessThan(330)
+    expect(lead.small_sample).toBe(true)
+  })
+
+  it('says plainly that outcomes carry no downstream value data', () => {
+    const gaps = c2([...engagement, ...leadAliases]).data_gaps.join(' ')
+    expect(gaps).toMatch(/no closed-order, revenue or customer-quality data/i)
+    expect(gaps).toMatch(/business_outcomes/)
+    expect(gaps).toMatch(/never truncated/)
+  })
+
+  it('prefers the canonical type, else the largest alias, when aliases disagree', () => {
+    expect(c2([...engagement, ['lead', 6], ['offsite_conversion.fb_pixel_lead', 5]]).campaigns[0].current_28d.business_outcomes[0].count).toBe(6)
+    expect(c2([...engagement, ['offsite_conversion.fb_pixel_lead', 5], ['onsite_web_lead', 6]]).campaigns[0].current_28d.business_outcomes[0].count).toBe(6)
+  })
+
+  it('keeps engagement context unchanged: top_actions still shows the highest-volume non-outcome types', () => {
+    const w = c2([...engagement, ...leadAliases]).campaigns[0].current_28d
+    expect(w.top_actions.map(a => a.type)).toEqual(['page_engagement', 'post_engagement', 'link_click', 'post_interaction_net', 'post_interaction_gross', 'landing_page_view', 'omni_landing_page_view', 'post_reaction'])
+  })
+
+  it('preserves other commercial outcomes however low their volume', () => {
+    const w = c2([
+      ...engagement, ['purchase', 2], ['omni_purchase', 2], ['offsite_conversion.fb_pixel_purchase', 2], ['complete_registration', 3], ['mobile_app_install', 4],
+      ['initiate_checkout', 5], ['omni_add_to_cart', 7], ['onsite_conversion.messaging_conversation_started_7d', 1], ['voucher_redemption', 1],
+      ['offsite_conversion.custom.123456789', 3],
+    ]).campaigns[0].current_28d
+    const byName = Object.fromEntries(w.business_outcomes.map(o => [o.outcome, o.count]))
+    expect(byName).toEqual({
+      purchase: 2, complete_registration: 3, app_install: 4, initiate_checkout: 5, add_to_cart: 7,
+      messaging_conversation_started: 1, voucher_redemption: 1, 'custom_conversion:offsite_conversion.custom.123456789': 3,
+    })
+    expect(w.top_actions).toHaveLength(8)
+  })
+
+  it('does not mistake engagement or landing-page actions for business outcomes', () => {
+    const w = c2([...engagement]).campaigns[0].current_28d
+    expect(w.business_outcomes).toEqual([])
+    expect(w.top_actions.map(a => a.type)).toContain('landing_page_view')
+  })
+
+  it('applies to ads and to the prior window too', () => {
+    const base = strategyInputs()
+    const e = buildPaidStrategyEvidence({
+      ...base,
+      adInsights: dates(CURRENT.start, CURRENT.end).map((d, i) => ({ ad_id: IDS.a3, date_start: d, impressions: 100, clicks: 1, inline_link_clicks: 1, spend: '10', actions_json: i === 0 ? actions([...engagement, ...leadAliases]) : null })),
+    })
+    expect(e.top_ads[0].current_28d.business_outcomes[0]).toMatchObject({ outcome: 'lead', count: 6 })
+    expect(e.campaigns[0].prior_28d.business_outcomes).toBeDefined()
   })
 })

@@ -109,6 +109,69 @@ const topActions = (totals: Map<string, number>, limit: number) =>
   [...totals.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit).map(([type, count]) => ({ type, count: round(count, 0) }))
 
+// ── Business outcomes ─────────────────────────────────────────────────────────
+//
+// Engagement actions are high-volume and truncated to a top-N list. Business outcomes are
+// low-volume and decisive, so they must NEVER compete with engagement for a slot: the first
+// live run lost 6 real leads behind 12 engagement types and the model was told no lead
+// event existed. Outcomes are therefore split out BEFORE ranking, always kept, and
+// deduplicated: Meta reports one underlying result under several related action names
+// (lead, offsite_conversion.fb_pixel_lead, onsite_web_lead, ...), so they are aliases, not
+// additive. One count per outcome: the canonical type if present, else the largest alias.
+
+interface OutcomeFamily { outcome: string; match: RegExp; canonical: string[] }
+export const OUTCOME_FAMILIES: OutcomeFamily[] = [
+  { outcome: 'lead', match: /lead/i, canonical: ['lead'] },
+  { outcome: 'purchase', match: /purchase/i, canonical: ['purchase', 'omni_purchase'] },
+  { outcome: 'order', match: /(^|[._])orders?($|[._])/i, canonical: ['order'] },
+  { outcome: 'complete_registration', match: /complete_registration/i, canonical: ['complete_registration', 'omni_complete_registration'] },
+  { outcome: 'app_install', match: /app_install/i, canonical: ['app_install', 'mobile_app_install', 'omni_app_install'] },
+  { outcome: 'initiate_checkout', match: /initiate_checkout/i, canonical: ['initiate_checkout', 'omni_initiated_checkout'] },
+  { outcome: 'add_to_cart', match: /add_to_cart/i, canonical: ['add_to_cart', 'omni_add_to_cart'] },
+  { outcome: 'messaging_conversation_started', match: /messaging_conversation_started/i, canonical: ['onsite_conversion.messaging_conversation_started_7d'] },
+  { outcome: 'voucher_redemption', match: /redemption|redeem|voucher|coupon/i, canonical: [] },
+  { outcome: 'contact', match: /(^|[._])contact($|[._])/i, canonical: ['contact'] },
+  { outcome: 'schedule', match: /(^|[._])schedule($|[._])/i, canonical: ['schedule'] },
+  { outcome: 'submit_application', match: /submit_application/i, canonical: ['submit_application'] },
+  { outcome: 'subscribe', match: /(^|[._])subscribe($|[._])/i, canonical: ['subscribe'] },
+]
+
+/** Account-defined custom conversions keep their own identity: their meaning is unknown, but they are commercial by definition. */
+const isCustomConversion = (type: string) => /^(offsite|onsite)_conversion\.custom/i.test(type)
+
+export interface BusinessOutcome {
+  /** One underlying result, counted once. */
+  outcome: string
+  count: number
+  /** The raw Meta action types that describe this same result. They are aliases: never add them. */
+  reported_as: { type: string; count: number }[]
+}
+
+export function splitBusinessOutcomes(totals: Map<string, number>): { outcomes: BusinessOutcome[]; rest: Map<string, number> } {
+  const rest = new Map<string, number>()
+  const groups = new Map<string, { canonical: string[]; items: { type: string; count: number }[] }>()
+  for (const [type, count] of totals) {
+    if (!(count > 0)) continue
+    const family = isCustomConversion(type) ? { outcome: `custom_conversion:${type}`, canonical: [type] } : OUTCOME_FAMILIES.find(f => f.match.test(type))
+    if (!family) { rest.set(type, count); continue }
+    const group = groups.get(family.outcome) ?? { canonical: family.canonical, items: [] }
+    group.items.push({ type, count })
+    groups.set(family.outcome, group)
+  }
+  const outcomes = [...groups.entries()].map(([outcome, g]) => {
+    const canonical = g.items.find(i => g.canonical.includes(i.type))
+    const count = canonical ? canonical.count : Math.max(...g.items.map(i => i.count))
+    return {
+      outcome, count: round(count, 0),
+      reported_as: [...g.items].sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)).map(i => ({ type: i.type, count: round(i.count, 0) })),
+    }
+  }).sort((a, b) => b.count - a.count || a.outcome.localeCompare(b.outcome))
+  return { outcomes, rest }
+}
+
+/** Below this many events an outcome is an observation, not a trend (MESPER minimum-data rule). */
+export const SMALL_SAMPLE_BELOW = 50
+
 export interface WindowSummary {
   spend: number
   impressions: number
@@ -118,7 +181,10 @@ export interface WindowSummary {
   cost_per_link_click: number | null
   avg_daily_frequency: number | null
   days_with_spend: number
+  /** Engagement/context actions only, truncated to the top N. NEVER evidence that an outcome is absent. */
   top_actions: { type: string; count: number }[]
+  /** Business outcomes: always present when recorded, deduplicated, never truncated. */
+  business_outcomes: (BusinessOutcome & { observed_cost_per_outcome: number | null; small_sample: boolean })[]
 }
 
 function summarise(rows: RawRow[], actionLimit: number): WindowSummary {
@@ -130,6 +196,7 @@ function summarise(rows: RawRow[], actionLimit: number): WindowSummary {
   const cpm = safeDiv(spend, impressions)
   const cplc = safeDiv(spend, linkClicks)
   const freq = rows.some(r => r.frequency != null) ? safeDiv(freqWeighted, impressions) : null
+  const { outcomes, rest } = splitBusinessOutcomes(sumActions(rows))
   return {
     spend: round(spend), impressions: round(impressions, 0), link_clicks: round(linkClicks, 0),
     link_ctr_pct: ctr === null ? null : round(ctr * 100),
@@ -137,7 +204,11 @@ function summarise(rows: RawRow[], actionLimit: number): WindowSummary {
     cost_per_link_click: cplc === null ? null : round(cplc),
     avg_daily_frequency: freq === null ? null : round(freq),
     days_with_spend: new Set(rows.filter(r => num(r.spend) > 0).map(r => r.date_start)).size,
-    top_actions: topActions(sumActions(rows), actionLimit),
+    top_actions: topActions(rest, actionLimit),
+    business_outcomes: outcomes.map(o => {
+      const cost = safeDiv(spend, o.count)
+      return { ...o, observed_cost_per_outcome: cost === null ? null : round(cost), small_sample: o.count < SMALL_SAMPLE_BELOW }
+    }),
   }
 }
 
@@ -148,6 +219,8 @@ export const DATA_GAPS_STATIC = [
   'Ad creative and ad copy text are not stored. Only ad names and delivery metrics are available.',
   'No revenue, conversion value, or CRM/close outcome is stored.',
   'Meta action types overlap (several lead types can describe the same lead). Never add action types together.',
+  'top_actions lists engagement and context actions only and is truncated. Business outcomes (leads, purchases, orders, installs, redemptions and similar) are listed separately in business_outcomes, once each and never truncated.',
+  'Outcome counts say nothing about value: no closed-order, revenue or customer-quality data exists for any outcome. observed_cost_per_outcome is window spend divided by the deduplicated count on a small sample.',
   'avg_daily_frequency is the impression-weighted mean of daily campaign frequency, not period reach frequency.',
   'Insights cover completed days only; today is excluded. Benchmarks in the skill are cross-industry and mostly USD/EUR.',
 ] as const
@@ -332,6 +405,12 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
     not_modelled: 'New campaigns, budget changes, lifetime budgets, and spend variation (Meta can exceed a daily budget on some days).',
   }
 
+  const accountSplit = splitBusinessOutcomes(sumActions(accountRows(w.current)))
+  const accountActions = {
+    top_actions_current_28d: topActions(accountSplit.rest, 10),
+    business_outcomes_current_28d: accountSplit.outcomes,
+  }
+
   const data_gaps: string[] = [...DATA_GAPS_STATIC]
   if (input.currency !== 'DKK') data_gaps.push(`Ad account currency is ${input.currency}; the 15,000 ceiling is expressed in DKK and is not converted here.`)
   if (ranked.length > included.length) data_gaps.push(`${ranked.length - included.length} lower-spend campaigns are omitted from the campaign list (spend totals still include them).`)
@@ -360,7 +439,7 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
       spend_by_objective: [...objectives.entries()].sort((a, b) => b[1].current - a[1].current)
         .map(([objective, e]) => ({ objective, current_28d: round(e.current), prior_28d: round(e.prior) })),
       weekly,
-      top_actions_current_28d: topActions(sumActions(accountRows(w.current)), 10),
+      ...accountActions,
     },
     campaigns,
     ad_sets,

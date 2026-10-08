@@ -28,6 +28,15 @@ Last 28 completed Copenhagen days vs the 28 before. Per campaign: status, object
 
 Not available in Kockpit data, and told to the model: targeting/audience definitions, ad copy and creative, revenue, target CPL/ROAS, margin, close rate.
 
+## Business outcomes in the evidence
+
+`top_actions` is a truncated list of engagement and context actions (top 8 per campaign). Business outcomes are low-volume and decisive, so they are split out **before** ranking and never truncated: `current_28d.business_outcomes` / `prior_28d.business_outcomes` (and the account-level `business_outcomes_current_28d`).
+
+- Families: lead, purchase, order, complete_registration, app_install, initiate_checkout, add_to_cart, messaging_conversation_started, voucher_redemption, contact, schedule, submit_application, subscribe, plus any account-defined custom conversion (kept under its own name).
+- **Deduplicated.** Meta reports one result under several names (`lead`, `offsite_conversion.fb_pixel_lead`, `onsite_web_lead`, ...). Those are aliases, not additive: the count is the canonical type if present, otherwise the largest alias. All raw names are kept in `reported_as` for transparency.
+- Each outcome carries `observed_cost_per_outcome` (window spend ÷ count) and `small_sample` (true below 50). It is an observation, never a target: no closed-order or revenue data exists.
+- Why: the first live runs ranked 6 real catering leads 13th behind engagement actions and told the model no lead event existed.
+
 ## Budget headroom
 
 Month-to-date spend is not spare capacity: active campaigns keep spending. The evidence therefore carries `budget.projection`:

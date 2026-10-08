@@ -66,6 +66,14 @@ describe('Paid Strategy system prompt', () => {
     expect(KOCKPIT_RULES).toContain('Business outcomes over vanity metrics')
     expect(skill.text).not.toContain('Business outcomes over vanity metrics') // the addendum is ours, not the vendored skill
   })
+  it('tells the model how to read outcomes: business_outcomes is authoritative, top_actions is truncated context', () => {
+    for (const text of [
+      'business_outcomes already lists each business outcome', 'ONCE, deduplicated, and is never truncated', 'authoritative record of what Meta counted',
+      'top_actions is a truncated list of engagement context only', 'The absence of an outcome from top_actions is NOT evidence that it is missing',
+      'only if business_outcomes has no entry for it', 'observed_cost_per_outcome is window spend divided by the count',
+      'never as a target, a benchmark or a profitability result',
+    ]) expect(prompt, text).toContain(text)
+  })
   it('tells the model the per-field character budgets, which constrained decoding cannot enforce', () => {
     for (const [field, chars] of Object.entries(FIELD_TARGET_CHARS)) expect(prompt, field).toContain(`${field} ${chars}`)
     expect(prompt).toContain('one over-long field discards the whole analysis')
@@ -74,6 +82,12 @@ describe('Paid Strategy system prompt', () => {
 })
 
 describe('Paid Strategy user message', () => {
+  it('carries deduplicated business outcomes with the observed cost per outcome', () => {
+    const message = buildPaidStrategyUserMessage(evidence)
+    expect(message).toContain('"business_outcomes":[{"outcome":"lead","count":56,"reported_as":[')
+    expect(message).toContain('"observed_cost_per_outcome":')
+    expect(message).toContain('"small_sample":false')
+  })
   it('carries the labelled projection and the shared headroom', () => {
     const message = buildPaidStrategyUserMessage(evidence)
     expect(message).toContain('"projection":{"label":"PROJECTION, not a fact.')
