@@ -134,7 +134,7 @@ describe('Marketing Brain usability', () => {
     }
     const runWithCtx: CreativeRun = {
       ...run,
-      observations: run.observations.map((o, i) => i === 0 ? { ...o, business_context: ctx } : o),
+      observations: run.observations.map((o, i) => i === 0 ? { ...(o as Observation), business_context: ctx } : o),
     }
     const html = renderToStaticMarkup(<BrainView data={{ ...base, run: runWithCtx }} />)
     expect(html).toContain('Business context')
