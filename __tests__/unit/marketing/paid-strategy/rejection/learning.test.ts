@@ -58,7 +58,7 @@ describe('the strategist is told how to treat a rejection', () => {
   it('the vendored skill is untouched: the rules are appended after it, and the prompt version moved', () => {
     const prompt = buildPaidStrategySystemPrompt({ name: 'm', version: '1', ref: 'mesper-meta-ads@2.1.0#x', hash: 'h', text: 'SKILL BODY' })
     expect(prompt).toContain('SKILL BODY'); expect(prompt.endsWith(KOCKPIT_RULES)).toBe(true)
-    expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-12-v6')
+    expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-12-v7')
   })
 })
 

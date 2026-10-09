@@ -39,9 +39,9 @@ export const REAL_RECS: PaidStrategyRun['recommendations'] = [
 
 /** Tone and clarity targets for the plain-language fields (a fixture of the register, not model output). */
 export const HUMAN_COPY = [
-  { display_title: 'Track which catering leads actually become customers', display_summary: "Right now we know when someone submits the catering form, but not whether they become a real booking. Let's fix that before we spend more." },
-  { display_title: 'Try a second catering ad with a clearer offer', display_summary: "We only have one active catering ad, so we don't know whether the creative is holding us back. Let's test a different angle without increasing spend." },
-  { display_title: 'Give our Copenhagen awareness ads something measurable', display_summary: "We're getting plenty of reach, but we can't tell whether it brings customers through the door. Let's test a simple offer we can actually track." },
+  { display_title: 'Track which catering leads actually become customers', display_summary: "Right now we know who fills in the catering form, but not who actually books. Let's fix that before we spend more." },
+  { display_title: 'Try a second catering ad with a clearer offer', display_summary: "We only have one catering ad, so we don't know if the message is holding us back. Let's test a second angle." },
+  { display_title: 'Give our Copenhagen awareness ads something measurable', display_summary: "We get plenty of reach but can't tell if it brings customers in. Let's test a simple offer we can track. This needs about 2,100 DKK extra spend." },
 ] as const
 
 /** The same three ideas as a NEW run stores them: detailed fields untouched, plus the display fields. */

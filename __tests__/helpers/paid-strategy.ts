@@ -73,7 +73,7 @@ export const rec = (n = 1, overrides: Partial<PaidStrategyRecommendation> = {}):
   success_metric: 'Cost per lead at or below the account cost per lead of the prior 28 days.',
   evidence_limitations: 'Audience definitions are not stored; target CPL and close rate are unknown.',
   display_title: `Follow up with people who already watched our Reels (${n})`,
-  display_summary: "Plenty of people watch our Reels but we don't follow up with them. Let's test a small, separate ad for them and see if they turn into catering enquiries.",
+  display_summary: "Plenty of people watch our Reels but we never follow up. Let's test a small ad for them. This needs about 50 DKK extra spend.",
   ...overrides,
 })
 

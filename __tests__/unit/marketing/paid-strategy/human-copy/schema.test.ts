@@ -19,13 +19,13 @@ describe('display_title and display_summary on new output', () => {
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_title: 'x'.repeat(FIELD_MAX_CHARS.display_title + 1) })).success).toBe(false)
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_title: 'x'.repeat(FIELD_MAX_CHARS.display_title) })).success).toBe(true)
   })
-  it('the display summary has a length floor and ceiling (target about 300, hard maximum above it)', () => {
-    expect(FIELD_TARGET_CHARS.display_summary).toBe(300); expect(FIELD_MAX_CHARS.display_summary).toBeGreaterThan(300)
+  it('the display summary has a length floor and ceiling (target about 220, hard maximum 280)', () => {
+    expect(FIELD_TARGET_CHARS.display_summary).toBe(220); expect(FIELD_MAX_CHARS.display_summary).toBe(280)
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_summary: 'Too short to explain.' })).success).toBe(false)
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_summary: 'x'.repeat(FIELD_MAX_CHARS.display_summary + 1) })).success).toBe(false)
   })
   it('the tone targets fit the budgets and the database size bound', () => {
-    for (const c of HUMAN_COPY) { expect(c.display_title.length).toBeLessThanOrEqual(90); expect(c.display_summary.length).toBeLessThanOrEqual(300) }
+    for (const c of HUMAN_COPY) { expect(c.display_title.length).toBeLessThanOrEqual(90); expect(c.display_summary.length).toBeLessThanOrEqual(280) }
     expect(Object.values(FIELD_MAX_CHARS).reduce((a, b) => a + b, 0) * 3).toBeLessThan(30_000)
   })
   it('the detailed recommendation fields are unchanged by the new fields', () => {
@@ -37,8 +37,19 @@ describe('display_title and display_summary on new output', () => {
   })
 })
 
-describe('display copy must be plain language', () => {
+describe('extra spend is said plainly when there is any', () => {
   const run = (over: Record<string, unknown>) => () => validatePaidStrategy({ recommendations: [rec(1, over as never)] })
+  it('a recommendation needing extra spend must say so in the summary, in plain words', () => {
+    expect(run({ incremental_budget_dkk: 1500, display_summary: "We only have one catering ad, so we don't know if the message is holding us back. Let's test a second angle. This needs about 1,500 DKK extra spend." })).not.toThrow()
+    expect(run({ incremental_budget_dkk: 1500, display_summary: "We only have one catering ad, so we don't know if the message is holding us back. Let's test a second angle." })).toThrow(/extra spend/)
+  })
+  it('with no extra spend the summary does not have to mention budget', () => {
+    expect(run({ incremental_budget_dkk: 0, display_summary: "Right now we know who fills in the catering form, but not who actually books. Let's fix that before we spend more." })).not.toThrow()
+  })
+})
+
+describe('display copy must be plain language', () => {
+  const run = (over: Record<string, unknown>) => () => validatePaidStrategy({ recommendations: [rec(1, { incremental_budget_dkk: 0, ...over } as never)] })
   it('accepts the plain register', () => {
     for (const c of HUMAN_COPY) expect(run(c)).not.toThrow()
   })

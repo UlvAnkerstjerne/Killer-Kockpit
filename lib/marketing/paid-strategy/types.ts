@@ -25,12 +25,12 @@ export const MAX_RECOMMENDATIONS = 3
 export const FIELD_TARGET_CHARS = {
   title: 120, evidence: 600, interpretation: 500, hypothesis: 400,
   exact_test_or_action: 700, success_metric: 300, evidence_limitations: 500,
-  display_title: 90, display_summary: 300,
+  display_title: 90, display_summary: 220,
 } as const
 export const FIELD_MAX_CHARS = {
   title: 160, evidence: 900, interpretation: 800, hypothesis: 600,
   exact_test_or_action: 1000, success_metric: 450, evidence_limitations: 800,
-  display_title: 130, display_summary: 420,
+  display_title: 130, display_summary: 280,
 } as const
 
 export const PaidStrategyRecommendationSchema = z.object({
