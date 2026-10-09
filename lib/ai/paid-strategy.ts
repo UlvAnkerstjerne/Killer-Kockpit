@@ -21,8 +21,8 @@ import type { LoadedSkill } from '@/lib/ai/skills/mesper'
 import { MONTHLY_CEILING_DKK, type PaidStrategyEvidence } from '@/lib/marketing/paid-strategy/evidence'
 import { FIELD_TARGET_CHARS, PaidStrategyOutputSchema, type PaidStrategyRecommendation } from '@/lib/marketing/paid-strategy/types'
 
-/** Bump on any change to KOCKPIT_RULES, the schema, or the vendored skill. */
-export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-11-v5'
+/** Bump on any material change to KOCKPIT_RULES (including the voice of any field), the schema, or the vendored skill. */
+export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-12-v6'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
@@ -41,11 +41,20 @@ Scope
 
 Output
 - Return at most THREE recommendations, ranked by expected value. Fewer is fine when the data supports fewer. Do not pad.
-- Fields: title, recommendation_type, evidence, interpretation, hypothesis, exact_test_or_action, success_metric, evidence_limitations.
+- Fields: title, recommendation_type, evidence, interpretation, hypothesis, exact_test_or_action, success_metric, evidence_limitations, then display_title and display_summary (written LAST; see "Plain-language display copy"). Every field except those two keeps its rigorous, technical voice.
 - evidence = FACTS only: numbers and structure that appear in the supplied data, with units and window. interpretation = INFERENCE and must read as inference ("this may mean", "one reading is"). Never present inference as fact and never put numbers in interpretation that are not in the data.
 - hypothesis = one falsifiable prediction. exact_test_or_action = one concrete experiment (what to set up, audience or angle, duration, the maximum extra spend in DKK, which Meta metric decides). success_metric = what result, on which stored metric, counts as success, with an explicit threshold only when it can be derived from the supplied data; otherwise a comparison against the account's own prior window.
 - Length: every field has a character budget, checked after you answer, and one over-long field discards the whole analysis. Stay inside these budgets (characters, not words): ${Object.entries(FIELD_TARGET_CHARS).map(([k, n]) => `${k} ${n}`).join(', ')}. Be selective and dense: one strong sentence beats three; cite only the numbers that carry the point.
 - The skill's table format, "no prose" rule, DECISION/WHY/NEXT STEP template and "no hedging" rule do not apply. Write plain, concise sentences in the fields.
+
+Plain-language display copy (display_title and display_summary)
+- These two fields are what a busy manager reads on the card. They are PRESENTATION ONLY: a faithful restatement of the detailed fields you already wrote, in plain management language. Write them last, after the detailed fields, and make sure they say the same thing.
+- Voice: a smart colleague explaining an idea to management. Plain conversational English. "We", "let's", "right now", "the problem is", "what I'd test" and "before we spend more" are welcome. No bullet points, no labels, no hedging stack.
+- display_title: short, natural and business-oriented, 6 to 12 words, understandable by someone who has never bought ads. Example of the register: "Track which catering leads actually become customers", "Try a second catering ad with a clearer offer", "Give our Copenhagen awareness ads something measurable".
+- display_summary: one or two short sentences. First what you want us to do, then why it matters to the business. Example of the register: "Right now we know when someone submits the catering form, but not whether they become a real booking. Let's fix that before we spend more."
+- Do NOT use jargon in these two fields. Never write: downstream outcome, conversion event, conversion signal, funnel, CPM, CPC, CTR, attribution, social-proof angle, redemption mechanic, projected headroom, incremental budget or spend, measurable pathway, instrumentation, optimisation, campaign structure, or campaign, ad set or ad references such as C1, C2, C3, S1, A1. Translate instead: a conversion event is "a way to see which leads become real bookings"; C2 is "our catering campaign"; a redemption mechanic is "an offer we can track"; a social-proof creative is "an ad showing a real catering job or customer"; incremental spend is "extra spend". Say "our Copenhagen ads" or "our catering ads", never a ref.
+- Simplify the WORDS, never the THINKING. Do not change the meaning, add a claim, number or promise that the detailed fields do not support, drop an important condition, or make an uncertain idea sound certain. If the idea needs extra spend say so plainly ("this needs about 2,100 DKK extra"); if it needs none, you may say it needs no extra spend. The evidence, limitations, thresholds and metrics belong in the detailed fields, which stay exactly as rigorous as before.
+- Both fields obey the same rules as everything else: no URLs, IDs, tokens or payloads; and they stay inside their character budgets.
 
 Calibration and honesty
 - The following are UNKNOWN: target CPL, target ROAS, gross margin, lead-to-customer rate, customer value/AOV, sales cycle. Never invent them and never assume the skill's example values. The skill's Calibration Check and Refuse-to-Act rules do NOT stop you from answering. Instead, state the missing input in evidence_limitations and frame the recommendation as a bounded EXPERIMENT whose purpose is to learn, not as a scale or kill decision.
@@ -98,6 +107,9 @@ const DECISION_VERB = /\b(kill|scale up|scale the|pause (?:the |this |that )?(?:
 const VANITY_METRIC = /\b(cpm|cpc|ctr|cost per (?:link )?click|click-through|link clicks?|clicks?|impressions?|reach|video views?|views?|profile visits?|landing[ _]page[ _]views?|engagement|likes?|followers?)\b/i
 const BUSINESS_OUTCOME = /\b(leads?|cpl|cpa|orders?|first[- ]order|redemptions?|redeem\w*|voucher\w*|offer[- ]codes?|catering|purchases?|bookings?|sign-?ups?|conversions?|revenue|customers?|installs?|acquisition)\b/i
 
+// Plain-language display fields must not carry media-buying jargon or campaign refs. Conservative on purpose: a miss only costs a retry.
+const DISPLAY_JARGON = /\b(?:[CSA]\d{1,2}\b|cpm|cpc|ctr|cpl|roas|funnel|attribution|attributed|headroom|incremental|conversion (?:event|signal)s?|downstream|redemption mechanic|social[- ]proof|measurable (?:pathway|path)|instrumentation|instrumented|optimi[sz]ation|campaign structure)\b/i
+
 export class PaidStrategyValidationError extends Error {}
 
 /**
@@ -119,6 +131,8 @@ export function validatePaidStrategy(output: unknown, evidence?: Pick<PaidStrate
     const key = rec.title.trim().toLowerCase()
     if (titles.has(key)) throw new PaidStrategyValidationError('Duplicate recommendation title.')
     titles.add(key)
+    const jargon = `${rec.display_title}\n${rec.display_summary}`.match(DISPLAY_JARGON)
+    if (jargon) throw new PaidStrategyValidationError(`Display copy uses jargon ("${jargon[0]}"); it must be plain language.`)
     const all = Object.values(rec).join('\n')
     if (LEAKED_IDENTIFIER.test(all)) throw new PaidStrategyValidationError('Recommendation contains a URL, platform ID or credential-like string.')
     if (PAYLOAD_SHAPE.test(all)) throw new PaidStrategyValidationError('Recommendation looks like a platform payload.')

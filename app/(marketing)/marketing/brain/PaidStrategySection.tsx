@@ -27,14 +27,17 @@ type StoredRecommendation = PaidStrategyRun['recommendations'][number]
  * A native <details> keeps it keyboard accessible with no client code, and each card opens independently.
  */
 function StrategyCard({ rec, rank, footer }: { rec: StoredRecommendation; rank: number; footer?: ReactNode }) {
-  const { action, reason } = compactSummary(rec)
+  // New runs carry plain-language copy written for the card. Older runs never had it and are never rewritten: they keep their
+  // own title and a deterministic summary of the stored text.
+  const human = rec.display_title && rec.display_summary ? { title: rec.display_title, summary: rec.display_summary } : null
+  const { action, reason } = human ? { action: null, reason: null } : compactSummary(rec)
   const budget = rec.incremental_budget_dkk
   return <article className="rounded-2xl border border-kk-line bg-kk-panel p-5">
     <div className="flex items-start justify-between gap-3">
-      <h3 className="text-base font-semibold leading-snug">{rank}. {rec.title}</h3>
+      <h3 className="text-base font-semibold leading-snug">{rank}. {human ? human.title : rec.title}</h3>
       <span className="shrink-0 rounded-full bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted">{TYPE_LABELS[rec.recommendation_type] ?? rec.recommendation_type}</span>
     </div>
-    <p data-summary className="mt-3 text-sm leading-relaxed">{action}{action && reason ? ' ' : null}<span className="text-kk-muted">{reason}</span></p>
+    <p data-summary className="mt-3 text-sm leading-relaxed">{human ? human.summary : <>{action}{action && reason ? ' ' : null}<span className="text-kk-muted">{reason}</span></>}</p>
     {typeof budget === 'number'
       ? <p className="mt-3"><span data-budget className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-medium ${budget > 0 ? 'bg-kk-brand/10 text-kk-brand' : 'bg-kk-soft text-kk-muted'}`}>{budget > 0 ? `+${money(budget)} DKK test budget` : 'No extra spend'}</span></p> : null}
     {footer}
@@ -44,6 +47,7 @@ function StrategyCard({ rec, rank, footer }: { rec: StoredRecommendation; rank: 
         <span className="group-open:hidden">Read more</span><span className="hidden group-open:inline">Show less</span>
       </summary>
       <dl className="mt-3 space-y-3">
+        {human ? <Field label="Full title">{rec.title}</Field> : null}
         <Field label="Facts · from our data">{rec.evidence}</Field>
         <Field label="Interpretation · inference, not fact">{rec.interpretation}</Field>
         <Field label="Hypothesis">{rec.hypothesis}</Field>

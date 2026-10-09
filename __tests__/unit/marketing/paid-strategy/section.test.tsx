@@ -33,7 +33,7 @@ describe('PAID STRATEGY section', () => {
   it('renders all three recommendations with every required field, separating facts from inference', () => {
     const html = render({ latest: run() })
     for (const text of [
-      '1. Test a retargeting layer for engaged viewers (1)', '2. Test a founder-led Reel angle', '3. Verify lead tracking before testing more',
+      '1. Follow up with people who already watched our Reels (1)', 'Test a retargeting layer for engaged viewers (1)', 'Test a founder-led Reel angle', 'Verify lead tracking before testing more',
       'Retargeting', 'Creative', 'Tracking',
       'Facts · from our data', 'Interpretation · inference, not fact', 'Hypothesis', 'Test or action', 'Success metric', 'Evidence limitations',
       'Copenhagen Brand - Always On (V2) (C1) spent DKK 2,800',

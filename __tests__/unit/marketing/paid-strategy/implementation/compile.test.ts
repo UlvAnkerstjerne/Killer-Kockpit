@@ -95,7 +95,7 @@ describe('what stops a creation, stated before the person confirms', () => {
 
 describe('server-side resolution, no AI platform ids', () => {
   it('the strategy schema still has no ID, payload or execution field', () => {
-    expect(Object.keys(PaidStrategyRecommendationSchema.shape).sort()).toEqual(['evidence', 'evidence_limitations', 'exact_test_or_action', 'hypothesis', 'incremental_budget_dkk', 'interpretation', 'recommendation_type', 'success_metric', 'title'])
+    expect(Object.keys(PaidStrategyRecommendationSchema.shape).sort()).toEqual(['display_summary', 'display_title', 'evidence', 'evidence_limitations', 'exact_test_or_action', 'hypothesis', 'incremental_budget_dkk', 'interpretation', 'recommendation_type', 'success_metric', 'title'])
   })
   it('an ID or account written into the advice is never used as a target', () => {
     const sneaky = { ...budget, exact_test_or_action: `Pause campaign ${IDS.c1} on account ${ACCOUNT} now.` }

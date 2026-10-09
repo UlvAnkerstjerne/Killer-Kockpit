@@ -25,10 +25,12 @@ export const MAX_RECOMMENDATIONS = 3
 export const FIELD_TARGET_CHARS = {
   title: 120, evidence: 600, interpretation: 500, hypothesis: 400,
   exact_test_or_action: 700, success_metric: 300, evidence_limitations: 500,
+  display_title: 90, display_summary: 300,
 } as const
 export const FIELD_MAX_CHARS = {
   title: 160, evidence: 900, interpretation: 800, hypothesis: 600,
   exact_test_or_action: 1000, success_metric: 450, evidence_limitations: 800,
+  display_title: 130, display_summary: 420,
 } as const
 
 export const PaidStrategyRecommendationSchema = z.object({
@@ -44,6 +46,13 @@ export const PaidStrategyRecommendationSchema = z.object({
   incremental_budget_dkk: z.number().min(0).describe('Extra DKK spend this test needs on top of existing spend. 0 if it is funded by reallocating existing spend or needs no spend. The sum across all recommendations must not exceed budget.projection.projected_incremental_headroom; must be 0 when that is null.'),
   success_metric: z.string().min(5).max(FIELD_MAX_CHARS.success_metric),
   evidence_limitations: z.string().min(5).max(FIELD_MAX_CHARS.evidence_limitations),
+  /**
+   * PRESENTATION ONLY: how the card talks to a non-specialist. Written last, as a faithful plain-language restatement of the
+   * detailed fields above. Nothing reads these for reasoning, budgets, execution or learning. Runs stored before they existed
+   * lack them, so the UI falls back to the title and a deterministic summary (see PaidStrategyRun.recommendations).
+   */
+  display_title: z.string().min(10).max(FIELD_MAX_CHARS.display_title),
+  display_summary: z.string().min(40).max(FIELD_MAX_CHARS.display_summary),
 }).strict()
 
 export const PaidStrategyOutputSchema = z.object({
@@ -69,7 +78,7 @@ export interface PaidStrategyRun {
   skill_hash: string
   /** The exact evidence sent to the model (no platform IDs). Omitted when listing previous runs. */
   evidence?: { budget?: { monthly_ceiling?: number; month_to_date_spend?: number; currency?: string; projection?: { projected_month_end_spend?: number; projected_incremental_headroom?: number | null; reliable?: boolean } }; data_gaps?: string[] } | null
-  /** Rows written before incremental_budget_dkk existed lack that field. */
-  recommendations: (Omit<PaidStrategyRecommendation, 'incremental_budget_dkk'> & { incremental_budget_dkk?: number })[]
+  /** Rows written before incremental_budget_dkk or the display fields existed lack them. They are never rewritten. */
+  recommendations: (Omit<PaidStrategyRecommendation, 'incremental_budget_dkk' | 'display_title' | 'display_summary'> & { incremental_budget_dkk?: number; display_title?: string; display_summary?: string })[]
   error: string | null
 }
