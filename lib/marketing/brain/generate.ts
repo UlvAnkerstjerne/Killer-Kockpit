@@ -6,6 +6,8 @@ import { analysisWindow, buildAnalytics } from './analytics'
 import { loadLatestFollowers, runOrganicStrategy } from '@/lib/marketing/organic-strategy/generate'
 import type { OrganicStrategyStatus } from '@/lib/marketing/organic-strategy/types'
 import { loadMarketingBusinessContext } from './business-context'
+import { loadPriorInsights } from '@/lib/marketing/insights/prior'
+import { captureCreativeRunById, captureQuietly, recordInformedQuietly } from '@/lib/marketing/insights/service'
 import { classifyLibrary } from './classification'
 import { buildCreativeSignals } from './signals'
 import { CLASSIFICATION_VERSION, INTERPRETATION_PROMPT_VERSION, type FingerprintRow } from './taxonomy'
@@ -79,7 +81,8 @@ export async function generateCreativeIntelligence(db: Db, actorId: string, opti
     await heartbeat()
     // Organic Strategy: a second, specialist layer on top of the evidence above. It never throws, so a
     // failure here leaves the deterministic run and the interpretation untouched; the next refresh retries.
-    const organic = await runOrganicStrategy({ media, fingerprints: classified.fingerprints, businessContext, followersLatest: await loadLatestFollowers(db), now })
+    const priorInsights = await loadPriorInsights(db, ['organic', 'creative'])
+    const organic = await runOrganicStrategy({ media, fingerprints: classified.fingerprints, businessContext, followersLatest: await loadLatestFollowers(db), now, priorInsights })
     await heartbeat()
     // Persist the business context snapshot with the analytics so the run records
     // which real-world updates were available when the interpretation was generated.
@@ -95,6 +98,9 @@ export async function generateCreativeIntelligence(db: Db, actorId: string, opti
         : organicUnavailable ? 'Organic Strategy is unavailable. The rest of this run is complete. Refresh again to retry.' : null,
     }).eq('id', runId).eq('status', 'running').select('id').single()
     if (completed.error || !completed.data) throw new Error('storage')
+    // Derived, best-effort views of the finished run: neither may fail it.
+    if (organic.status === 'completed') await recordInformedQuietly(db, priorInsights.map(i => i.id), { type: 'creative_run', runId })
+    await captureQuietly('creative intelligence', () => captureCreativeRunById(db, runId!))
     return { ok: true, runId, counts: classified.counts, partial, organic: organic.status }
   } catch (error) {
     const message = error instanceof Error && error.message === 'library_limit'

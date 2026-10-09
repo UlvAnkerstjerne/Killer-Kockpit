@@ -13,6 +13,8 @@ import { buildCreativeSignals, signalFinding, signalEvidence } from '@/lib/marke
 
 const { load } = vi.hoisted(() => ({ load: vi.fn() }))
 vi.mock('@/lib/actions/marketing/creative-intelligence', () => ({ getCreativeIntelligence: load }))
+// Insights have their own tests (insights/ui.test.tsx); here the section is simply absent.
+vi.mock('@/lib/actions/marketing/insights', () => ({ getMarketingInsights: vi.fn(async () => ({ allowed: false, canCapture: false, insights: [], error: null })) }))
 vi.mock('@/lib/actions/marketing/paid-strategy', () => ({
   getPaidStrategy: async () => ({ allowed: false, canGenerate: false, latest: null, previous: [], latestAttempt: null, error: null }),
   generatePaidStrategyAnalysis: vi.fn(),

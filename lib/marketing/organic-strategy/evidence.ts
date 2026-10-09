@@ -17,6 +17,7 @@
  *     present exposure, and are shown per 1,000 of the format's own exposure.
  */
 
+import { priorInsightsEvidence, type PriorInsightInput } from '@/lib/marketing/insights/prior'
 import { MIN_BASELINE_POSTS, mediaFormat, primaryExposure } from '@/lib/marketing/brain/analytics'
 import { captionSource } from '@/lib/marketing/brain/classification'
 import type { MarketingBusinessContextItem } from '@/lib/marketing/brain/business-context'
@@ -103,6 +104,8 @@ export const KNOWN_BLIND_SPOTS = [
 // ── builder ─────────────────────────────────────────────────────────────────────
 
 export interface OrganicEvidenceInput {
+  /** Earlier durable insights as context (never evidence). Optional: absent leaves the evidence exactly as before. */
+  priorInsights?: PriorInsightInput[]
   media: Media[]
   fingerprints: FingerprintRow[]
   businessContext: MarketingBusinessContextItem[]
@@ -228,6 +231,7 @@ export function buildOrganicEvidence(input: OrganicEvidenceInput) {
       purpose: 'Authentic subject matter from real company updates. NOT evidence of organic performance.',
       items: creative_context,
     },
+    ...priorInsightsSection(input.priorInsights),
   }
 
   const refs: OrganicStrategyPostRef[] = [
@@ -242,6 +246,12 @@ export function buildOrganicEvidence(input: OrganicEvidenceInput) {
     summary,
     window: { first_published: publishedDates[0] ?? null, last_published: publishedDates[publishedDates.length - 1] ?? null, as_of: evidence.as_of_date },
   }
+}
+
+/** Only present when there are prior insights, so a first run sees exactly the evidence it always did. */
+function priorInsightsSection(items: PriorInsightInput[] | undefined) {
+  const prior = priorInsightsEvidence(items ?? [], untrustedText)
+  return prior ? { prior_insights: prior } : {}
 }
 
 export type OrganicEvidence = ReturnType<typeof buildOrganicEvidence>['evidence']

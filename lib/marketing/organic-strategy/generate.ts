@@ -16,6 +16,7 @@ import { loadClaudeIgSkill, type LoadedClaudeIgSkill } from '@/lib/ai/skills/cla
 import type { MarketingBusinessContextItem } from '@/lib/marketing/brain/business-context'
 import type { FingerprintRow } from '@/lib/marketing/brain/taxonomy'
 import type { Media } from '@/lib/marketing/brain/types'
+import type { PriorInsightInput } from '@/lib/marketing/insights/prior'
 import { buildOrganicEvidence, MIN_MEASURED_POSTS_FOR_STRATEGY } from './evidence'
 import type { OrganicStrategyStored } from './types'
 
@@ -27,6 +28,8 @@ export interface RunOrganicStrategyArgs {
   businessContext: MarketingBusinessContextItem[]
   followersLatest: number | null
   now: Date
+  /** Earlier durable insights, as context only. */
+  priorInsights?: PriorInsightInput[]
   /** Test seams. */
   loadSkill?: () => LoadedClaudeIgSkill
   call?: typeof callOrganicStrategyAI
@@ -63,7 +66,7 @@ export async function runOrganicStrategy(args: RunOrganicStrategyArgs): Promise<
   try {
     const built = buildOrganicEvidence({
       media: args.media, fingerprints: args.fingerprints, businessContext: args.businessContext,
-      followersLatest: args.followersLatest, now: args.now,
+      followersLatest: args.followersLatest, now: args.now, priorInsights: args.priorInsights,
     })
     const shared = { evidence_window: built.window, evidence_summary: built.summary, posts: built.refs }
 

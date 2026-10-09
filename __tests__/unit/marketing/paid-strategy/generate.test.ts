@@ -4,9 +4,12 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import type { LoadedSkill } from '@/lib/ai/skills/mesper'
 
 const mocks = vi.hoisted(() => ({ ai: vi.fn(), loadSkill: vi.fn() }))
+const insights = vi.hoisted(() => ({ prior: vi.fn(), capture: vi.fn(), informed: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/ai/paid-strategy', () => ({ callPaidStrategyAI: mocks.ai, PAID_STRATEGY_PROMPT_VERSION: 'test-v1' }))
 vi.mock('@/lib/ai/skills/mesper', () => ({ loadMesperSkill: mocks.loadSkill }))
+vi.mock('@/lib/marketing/insights/prior', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/prior')>()), loadPriorInsights: insights.prior }))
+vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), capturePaidRunById: insights.capture, recordInformedQuietly: insights.informed }))
 import { generatePaidStrategy } from '@/lib/marketing/paid-strategy/generate'
 
 const skill: LoadedSkill = { name: 'mesper-meta-ads', version: '2.1.0', ref: 'mesper-meta-ads@2.1.0#cbfc19c', hash: 'c'.repeat(64), text: 'skill' }
@@ -61,6 +64,7 @@ function storage(opts: { locked?: boolean; failedRead?: boolean; failedFinalWrit
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW)
   mocks.loadSkill.mockReturnValue(skill)
+  insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined)
   mocks.ai.mockResolvedValue({ ok: true, recommendations: [rec(1), rec(2, { title: 'Second distinct idea' }), rec(3, { title: 'Third distinct idea' })], model: 'synthetic-model', durationMs: 5 })
 })
 afterEach(() => vi.useRealTimers())
@@ -137,5 +141,46 @@ describe('Paid Strategy run orchestration and persistence', () => {
     expect(result).toEqual({ ok: false, error: 'The pinned MESPER skill files could not be verified. No analysis was run.' })
     expect(s.from).not.toHaveBeenCalled()
     expect(mocks.ai).not.toHaveBeenCalled()
+  })
+})
+
+describe('CMO Insights around a Paid Strategy run', () => {
+  const prior = { id: 'i1', kind: 'finding', statement: 'Lead tracking is not set up end to end', strength: 'hypothesis', trend: 'steady', times_observed: 2, first_seen_at: '2026-09-20T09:00:00Z', last_supported_at: '2026-10-01T09:00:00Z' }
+  it('gives the model prior insights as labelled context and records which insights informed the run', async () => {
+    insights.prior.mockResolvedValue([prior])
+    const s = storage()
+    expect(await generatePaidStrategy(s.db, 'admin-id')).toMatchObject({ ok: true, runId: 'test-run' })
+    const evidence = mocks.ai.mock.calls[0][1] as { prior_insights?: { items: { statement: string }[] } }
+    expect(evidence.prior_insights?.items).toHaveLength(1)
+    expect(evidence.prior_insights?.items[0].statement).toBe('DATA:Lead tracking is not set up end to end')
+    expect(insights.prior).toHaveBeenCalledWith(s.db, ['paid'])
+    expect(insights.informed).toHaveBeenCalledWith(s.db, ['i1'], { type: 'paid_strategy_run', runId: 'test-run' })
+    expect(JSON.stringify(s.tables[RUNS][0].evidence)).toContain('prior_insights') // the exact evidence is stored with the run
+  })
+  it('a first run, with no insights yet, sends exactly the evidence it always did', async () => {
+    await generatePaidStrategy(storage().db, 'admin-id')
+    expect(mocks.ai.mock.calls[0][1]).not.toHaveProperty('prior_insights')
+  })
+  it('captures the insights of a completed run after saving it', async () => {
+    const s = storage()
+    await generatePaidStrategy(s.db, 'admin-id')
+    expect(insights.capture).toHaveBeenCalledWith(s.db, 'test-run')
+    expect(s.tables[RUNS][0]).toMatchObject({ status: 'completed' }) // saved before capturing
+  })
+  it('never fails the run because capture failed (for example the migration is not applied yet)', async () => {
+    insights.capture.mockRejectedValue(new Error('insights_storage'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const s = storage()
+    expect(await generatePaidStrategy(s.db, 'admin-id')).toMatchObject({ ok: true, recommendationCount: 3 })
+    expect(s.tables[RUNS][0]).toMatchObject({ status: 'completed', error: null })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('capture skipped'))
+    warn.mockRestore()
+  })
+  it('does not capture or record anything for a run that failed', async () => {
+    mocks.ai.mockResolvedValue({ ok: false, error: 'AI model did not return a valid response.' })
+    insights.prior.mockResolvedValue([prior])
+    await generatePaidStrategy(storage().db, 'admin-id')
+    expect(insights.capture).not.toHaveBeenCalled()
+    expect(insights.informed).not.toHaveBeenCalled()
   })
 })

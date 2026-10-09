@@ -11,6 +11,7 @@
  *   - Only the numeric fields listed here are copied. Nothing else survives.
  */
 
+import { priorInsightsEvidence, type PriorInsightInput } from '@/lib/marketing/insights/prior'
 import type { MetaAdRow, MetaAdSetRow, MetaCampaignInsightRow, MetaCampaignRow, MetaInsightActionItem } from '@/lib/marketing/types/meta'
 
 export const PAID_STRATEGY_EVIDENCE_VERSION = 'paid-strategy-evidence-v1'
@@ -44,6 +45,8 @@ export const MAX_HUMAN_DECISIONS = 10
 
 export interface StrategyInputs {
   now: Date
+  /** Earlier durable insights as context (never evidence). Optional: absent behaves exactly as before. */
+  priorInsights?: PriorInsightInput[]
   /** Recently rejected recommendations. Optional: absent behaves as none. */
   humanDecisions?: HumanStrategyDecisionInput[]
   currency: string
@@ -452,8 +455,15 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
     ad_sets,
     top_ads,
     human_strategy_decisions: humanDecisionsEvidence(input.humanDecisions ?? [], input.now),
+    ...priorInsightsSection(input.priorInsights),
     data_gaps,
   }
+}
+
+/** Only present when there are prior insights, so a first run sees exactly the evidence it always did. */
+function priorInsightsSection(items: PriorInsightInput[] | undefined) {
+  const prior = priorInsightsEvidence(items ?? [], dataText)
+  return prior ? { prior_insights: prior } : {}
 }
 
 /** Recent rejections only (last 180 days, at most 10, newest first). Free text is labelled untrusted data. */

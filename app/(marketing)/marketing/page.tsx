@@ -9,6 +9,9 @@ import { getPlatformSnapshot } from '@/lib/actions/marketing/platform-snapshot'
 import type { PlatformSnapshotData } from '@/lib/actions/marketing/platform-snapshot'
 import RegenerateButton from './RegenerateButton'
 import CmoRecommendations from './CmoRecommendations'
+import BriefInsights from './BriefInsights'
+import { getMarketingInsights } from '@/lib/actions/marketing/insights'
+import { selectBriefInsights, type BriefInsight } from '@/lib/marketing/insights/brief'
 import { getPaidStrategy } from '@/lib/actions/marketing/paid-strategy'
 import { getStrategyImplementations } from '@/lib/actions/marketing/paid-strategy-implementation'
 import { cmoBriefData, type CmoBriefData } from '@/lib/marketing/paid-strategy/implementation/surface'
@@ -782,13 +785,14 @@ function LegacyBriefContent({ sections }: { sections: MorningBriefSections }) {
 // Dispatches between v2 (observations) and v1 (legacy) layouts.
 
 export function MorningBriefContent({
-  brief, isStale, staleReason, snapshot, cmo,
+  brief, isStale, staleReason, snapshot, cmo, briefInsights,
 }: {
   brief: MorningBriefRow
   isStale?: boolean
   staleReason?: string
   snapshot?: PlatformSnapshotData | null
   cmo?: CmoBriefData | null
+  briefInsights?: BriefInsight[]
 }) {
   const sections = brief.sections_json
   // isBriefV2: observations field present (even if []) → v2; absent → v1 legacy
@@ -823,6 +827,7 @@ export function MorningBriefContent({
           <WhatMattersTodaySection observations={sections.observations ?? []} />
           {/* Live strategic state, read at render time (never stored in the brief). Hidden when nothing needs a decision. */}
           {cmo && <CmoRecommendations data={cmo} />}
+          {briefInsights?.length ? <BriefInsights items={briefInsights} /> : null}
           <hr className="border-kk-line" />
           <DetailsSection sections={sections} />
         </>
@@ -832,6 +837,7 @@ export function MorningBriefContent({
       {sections && !isV2 && (
         <>
           {cmo && <CmoRecommendations data={cmo} />}
+          {briefInsights?.length ? <BriefInsights items={briefInsights} /> : null}
           <LegacyBriefContent sections={sections} />
         </>
       )}
@@ -858,7 +864,7 @@ function StatePanel({ title, detail, action }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function MorningBriefPage() {
-  const [user, latestBrief, snapshot, reviewDesk, savedReviews, strategy, strategyImplementations] = await Promise.all([
+  const [user, latestBrief, snapshot, reviewDesk, savedReviews, strategy, strategyImplementations, insights] = await Promise.all([
     getCurrentUser(),
     getLatestMorningBrief(),
     getPlatformSnapshot(),
@@ -866,8 +872,10 @@ export default async function MorningBriefPage() {
     getSavedGbpReviews(),
     getPaidStrategy(),
     getStrategyImplementations(),
+    getMarketingInsights(),
   ])
   const cmo = cmoBriefData(strategy, strategyImplementations)
+  const briefInsights = selectBriefInsights(insights.insights, cmo, new Date())
 
   const isAdmin = user?.role === 'SUPER_ADMIN'
   const today   = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen' }).format(new Date())
@@ -937,11 +945,12 @@ export default async function MorningBriefPage() {
           staleReason={isStale ? staleReason : undefined}
           snapshot={snapshot}
           cmo={cmo}
+          briefInsights={briefInsights}
         />
       )}
 
       {/* No brief to place it in (still generating, failed, none yet): the live recommendations are independent of it. */}
-      {!displayBrief && cmo && <div className="mb-5"><CmoRecommendations data={cmo} /></div>}
+      {!displayBrief && cmo && <div className="mb-5 space-y-5"><CmoRecommendations data={cmo} />{briefInsights.length ? <BriefInsights items={briefInsights} /> : null}</div>}
 
       {stateMessage === 'generating' && !displayBrief && (
         <StatePanel
