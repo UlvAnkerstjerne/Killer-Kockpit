@@ -17,6 +17,10 @@ vi.mock('@/lib/actions/marketing/paid-strategy', () => ({
   getPaidStrategy: async () => ({ allowed: false, canGenerate: false, latest: null, previous: [], latestAttempt: null, error: null }),
   generatePaidStrategyAnalysis: vi.fn(),
 }))
+vi.mock('@/lib/actions/marketing/paid-strategy-implementation', () => ({
+  getStrategyImplementations: async () => ({ canApprove: false, views: [], error: null }),
+  prepareStrategyImplementation: vi.fn(), confirmStrategyImplementation: vi.fn(),
+}))
 vi.mock('@/app/(marketing)/marketing/brain/RefreshButton', () => ({ default: () => <button>Refresh Creative Intelligence</button> }))
 vi.mock('next/navigation', () => ({ usePathname: () => '/marketing/brain', useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { PaidStrategyData } from '@/lib/actions/marketing/paid-strategy'
+import type { StrategyImplementationData } from '@/lib/actions/marketing/paid-strategy-implementation'
+import ImplementationControl from './ImplementationControl'
 import type { PaidStrategyRecommendationType, PaidStrategyRun } from '@/lib/marketing/paid-strategy/types'
 
 const TYPE_LABELS: Record<PaidStrategyRecommendationType, string> = {
@@ -18,7 +20,7 @@ function Field({ label, children, tone = 'default' }: { label: string; children:
 
 type StoredRecommendation = PaidStrategyRun['recommendations'][number]
 
-function StrategyCard({ rec, rank }: { rec: StoredRecommendation; rank: number }) {
+function StrategyCard({ rec, rank, footer }: { rec: StoredRecommendation; rank: number; footer?: ReactNode }) {
   return <article className="rounded-2xl border border-kk-line bg-kk-panel p-5">
     <div className="flex items-start justify-between gap-3">
       <h3 className="text-base font-semibold leading-snug">{rank}. {rec.title}</h3>
@@ -34,6 +36,7 @@ function StrategyCard({ rec, rank }: { rec: StoredRecommendation; rank: number }
       <Field label="Success metric">{rec.success_metric}</Field>
       <Field label="Evidence limitations" tone="muted">{rec.evidence_limitations}</Field>
     </dl>
+    {footer}
   </article>
 }
 
@@ -48,9 +51,13 @@ function RunMeta({ run }: { run: PaidStrategyRun }) {
   </p>
 }
 
-export default function PaidStrategySection({ data, generateControl }: { data: PaidStrategyData; generateControl?: ReactNode }) {
+export default function PaidStrategySection({ data, generateControl, implementations }: { data: PaidStrategyData; generateControl?: ReactNode; implementations?: StrategyImplementationData }) {
   if (!data.allowed) return null
   const run = data.latest
+  const control = (runId: string, index: number, superseded: boolean) => implementations && !implementations.error
+    ? <ImplementationControl runId={runId} index={index} canApprove={implementations.canApprove} superseded={superseded}
+        view={implementations.views.find(v => v.strategyRunId === runId && v.recommendationIndex === index)} />
+    : null
   return <section aria-labelledby="paid-strategy-title" className="space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
@@ -60,6 +67,7 @@ export default function PaidStrategySection({ data, generateControl }: { data: P
       {data.canGenerate ? generateControl : null}
     </div>
 
+    {implementations?.error ? <p role="alert" className="rounded-xl border border-kk-line bg-kk-panel p-4 text-sm">{implementations.error}</p> : null}
     {data.error ? <p role="alert" className="rounded-xl border border-kk-line bg-kk-panel p-4 text-sm">{data.error}</p> : <>
       {data.latestAttempt?.status === 'running' ? <p role="status" className="text-sm text-kk-muted">A Paid Strategy analysis is running. The last saved result remains available.</p> : null}
       {data.latestAttempt?.status === 'failed' ? <p role="alert" className="rounded-xl border border-kk-line bg-kk-panel p-4 text-sm">{data.latestAttempt.error} {run ? 'Showing the last saved result below.' : ''}</p> : null}
@@ -71,7 +79,7 @@ export default function PaidStrategySection({ data, generateControl }: { data: P
       </div> : <>
         <RunMeta run={run} />
         {run.recommendations.length
-          ? <div className="grid gap-4 lg:grid-cols-3">{run.recommendations.map((rec, i) => <StrategyCard key={`${i}-${rec.title}`} rec={rec} rank={i + 1} />)}</div>
+          ? <div className="grid gap-4 lg:grid-cols-3">{run.recommendations.map((rec, i) => <StrategyCard key={`${i}-${rec.title}`} rec={rec} rank={i + 1} footer={control(run.id, i, false)} />)}</div>
           : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted">The analysis found nothing worth recommending from the current data.</p>}
         {run.evidence?.data_gaps?.length ? <details className="rounded-xl border border-kk-line p-4 text-sm">
           <summary className="cursor-pointer font-medium">What this analysis could not see</summary>
@@ -81,11 +89,11 @@ export default function PaidStrategySection({ data, generateControl }: { data: P
           <summary className="cursor-pointer font-medium">Previous runs ({data.previous.length})</summary>
           <div className="mt-3 space-y-3">{data.previous.map(prev => <details key={prev.id} className="rounded-lg border border-kk-line p-3">
             <summary className="cursor-pointer">{day(prev.generated_at)} · {prev.recommendations.length} recommendation{prev.recommendations.length === 1 ? '' : 's'} · {prev.skill_ref}</summary>
-            <div className="mt-3 grid gap-4 lg:grid-cols-3">{prev.recommendations.map((rec, i) => <StrategyCard key={`${prev.id}-${i}`} rec={rec} rank={i + 1} />)}</div>
+            <div className="mt-3 grid gap-4 lg:grid-cols-3">{prev.recommendations.map((rec, i) => <StrategyCard key={`${prev.id}-${i}`} rec={rec} rank={i + 1} footer={control(prev.id, i, true)} />)}</div>
           </details>)}</div>
         </details> : null}
       </>}
-      <p className="text-xs text-kk-muted">Advisory only. Nothing here changes a campaign. Operational changes still go through Paid Recommendations and Needs Review.</p>
+      <p className="text-xs text-kk-muted">Advisory only. Nothing here changes a campaign. Operational changes still go through Paid Recommendations and Needs Review.{implementations?.canApprove ? ' Implementing a recommendation only creates a task or launch package, or applies a guardrailed change to an existing campaign, after you confirm.' : null}</p>
     </>}
   </section>
 }
