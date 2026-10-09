@@ -5,7 +5,7 @@ import type { PaidStrategyRecommendationType, PaidStrategyRun } from '@/lib/mark
 import { compactSummary } from '@/lib/marketing/paid-strategy/summary'
 
 const TYPE_LABELS: Record<PaidStrategyRecommendationType, string> = {
-  campaign_structure: 'Campaign structure', retargeting: 'Retargeting', audience: 'Audience', creative: 'Creative',
+  campaign_structure: 'Campaign', retargeting: 'Retargeting', audience: 'Audience', creative: 'Creative',
   copy: 'Copy', budget: 'Budget', tracking: 'Tracking', funnel: 'Funnel',
 }
 /**
