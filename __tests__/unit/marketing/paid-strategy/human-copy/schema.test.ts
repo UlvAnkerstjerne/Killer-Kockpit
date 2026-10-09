@@ -19,13 +19,13 @@ describe('display_title and display_summary on new output', () => {
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_title: 'x'.repeat(FIELD_MAX_CHARS.display_title + 1) })).success).toBe(false)
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_title: 'x'.repeat(FIELD_MAX_CHARS.display_title) })).success).toBe(true)
   })
-  it('the display summary has a length floor and ceiling (target about 220, hard maximum 280)', () => {
-    expect(FIELD_TARGET_CHARS.display_summary).toBe(220); expect(FIELD_MAX_CHARS.display_summary).toBe(280)
+  it('the display summary has a length floor and ceiling (target about 220, hard maximum 320 so a small overshoot cannot fail the whole run)', () => {
+    expect(FIELD_TARGET_CHARS.display_summary).toBe(220); expect(FIELD_MAX_CHARS.display_summary).toBe(320)
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_summary: 'Too short to explain.' })).success).toBe(false)
     expect(PaidStrategyRecommendationSchema.safeParse(rec(1, { display_summary: 'x'.repeat(FIELD_MAX_CHARS.display_summary + 1) })).success).toBe(false)
   })
   it('the tone targets fit the budgets and the database size bound', () => {
-    for (const c of HUMAN_COPY) { expect(c.display_title.length).toBeLessThanOrEqual(90); expect(c.display_summary.length).toBeLessThanOrEqual(280) }
+    for (const c of HUMAN_COPY) { expect(c.display_title.length).toBeLessThanOrEqual(90); expect(c.display_summary.length).toBeLessThanOrEqual(220) }
     expect(Object.values(FIELD_MAX_CHARS).reduce((a, b) => a + b, 0) * 3).toBeLessThan(30_000)
   })
   it('the detailed recommendation fields are unchanged by the new fields', () => {
@@ -34,6 +34,27 @@ describe('display_title and display_summary on new output', () => {
   })
   it('stays advisory: still no id, payload or execution field', () => {
     for (const extra of ['campaign_id', 'payload', 'target_id']) expect(PaidStrategyRecommendationSchema.safeParse({ ...rec(), [extra]: '1' }).success, extra).toBe(false)
+  })
+})
+
+describe('display copy stays grounded: it cannot invent systems the detailed recommendation never mentions', () => {
+  const detailed = { title: 'Track which catering leads become bookings', evidence: 'Six leads were recorded from the catering form. No revenue or close-rate data exists in the account.', interpretation: 'One reading is that nothing confirms whether leads are qualified.', hypothesis: 'A confirmed-booking signal will show lead quality.', exact_test_or_action: 'Map the enquiry journey from form to confirmed booking and send one event when a booking is confirmed. Budget: 0 DKK.', success_metric: 'One confirmed-booking event appears in Events Manager within 14 days.', evidence_limitations: 'Only 6 leads; no CRM or booking system is mentioned in the data.', incremental_budget_dkk: 0 }
+  const run = (summary: string, over: Record<string, unknown> = {}) => () => validatePaidStrategy({ recommendations: [rec(1, { ...detailed, display_title: 'Track which catering leads become real bookings', display_summary: summary, ...over } as never)] })
+  it('the live-check drift is refused when nothing establishes a booking system', () => {
+    expect(run("We have 6 leads from our catering ads but no way to know if any became real orders. Let's connect our booking system to Meta so we can see which leads are worth paying for.", { evidence_limitations: 'Only 6 leads; close rate is unknown.' })).toThrow(/booking system.*does not establish/)
+  })
+  it('the grounded rewording passes', () => {
+    expect(run("We have 6 leads from our catering ads but no way to know if any became real orders. Let's track which catering enquiries actually turn into confirmed bookings.")).not.toThrow()
+  })
+  it('a system the detailed fields do name may be mentioned, with hyphens or spacing ignored', () => {
+    expect(run("We can't tell which enquiries become real orders. Let's use the booking-system record to find out.", { evidence_limitations: 'The booking system is mentioned in the notes but its data is not available.' })).not.toThrow()
+  })
+  it.each(['CRM', 'dashboard', 'spreadsheet', 'automation', 'integration', 'ordering system', 'workflow', 'software'])('refuses an invented %s in the title or summary', term => {
+    expect(run(`We can't tell which enquiries become real orders. Let's add a ${term} so we can see.`, { evidence_limitations: 'Close rate is unknown.' })).toThrow(/does not establish/)
+    expect(run("We can't tell which enquiries become real orders. Let's find out together.", { evidence_limitations: 'Close rate is unknown.', display_title: `Set up a ${term} for catering` })).toThrow(/does not establish/)
+  })
+  it('only the display fields are checked: the technical fields keep their vocabulary', () => {
+    expect(() => validatePaidStrategy({ recommendations: [rec(1, { exact_test_or_action: 'Build a CRM dashboard integration and an automation workflow in a spreadsheet.' })] })).not.toThrow()
   })
 })
 

@@ -27,12 +27,20 @@ describe('the prompt asks for plain management language in the display fields on
     expect(section).toMatch(/one breath/); expect(section).toMatch(/about 160 to 220 characters, never more than 280/); expect(section).toMatch(/Do not fill the space just because it exists/)
     expect(FIELD_TARGET_CHARS.display_summary).toBe(220)
   })
+  it('tells the model not to invent business infrastructure, with the exact bad and good examples', () => {
+    expect(section).toMatch(/must NOT invent or assume business infrastructure/); expect(section).toMatch(/Never add a system, tool, workflow, integration, process/)
+    expect(section).toContain('BAD: "Let\'s connect our booking system to Meta"'); expect(section).toContain('GOOD: "Let\'s track which catering enquiries actually turn into confirmed bookings."')
+    expect(section).toMatch(/Simplify the language, not the situation/)
+  })
+  it('keeps the model aiming at 280 at most: the larger schema maximum is a safety margin it is not told about', () => {
+    expect(section).toMatch(/never more than 280/); expect(section).not.toContain('320')
+  })
   it('requires extra spend to be said plainly when above zero, in non-technical words', () => {
     expect(section).toMatch(/when incremental_budget_dkk is above 0, display_summary must say so plainly/); expect(section).toContain('This needs about 1,500 DKK extra spend.')
     expect(section).toMatch(/Never write incremental budget, headroom or projected capacity/)
   })
   it('bumps the prompt version, keeps the system prompt ending with the Kockpit rules, and leaves the vendored skill text alone', () => {
-    expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-12-v7')
+    expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-12-v8')
     const prompt = buildPaidStrategySystemPrompt({ name: 'm', version: '1', ref: 'mesper-meta-ads@2.1.0#x', hash: 'h', text: 'SKILL BODY' })
     expect(prompt).toContain('SKILL BODY'); expect(prompt.endsWith(rules)).toBe(true)
   })

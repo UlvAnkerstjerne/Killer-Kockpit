@@ -30,7 +30,7 @@ export const FIELD_TARGET_CHARS = {
 export const FIELD_MAX_CHARS = {
   title: 160, evidence: 900, interpretation: 800, hypothesis: 600,
   exact_test_or_action: 1000, success_metric: 450, evidence_limitations: 800,
-  display_title: 130, display_summary: 280,
+  display_title: 130, display_summary: 320,
 } as const
 
 export const PaidStrategyRecommendationSchema = z.object({

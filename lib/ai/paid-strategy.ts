@@ -22,7 +22,7 @@ import { MONTHLY_CEILING_DKK, type PaidStrategyEvidence } from '@/lib/marketing/
 import { FIELD_TARGET_CHARS, PaidStrategyOutputSchema, type PaidStrategyRecommendation } from '@/lib/marketing/paid-strategy/types'
 
 /** Bump on any material change to KOCKPIT_RULES (including the voice of any field), the schema, or the vendored skill. */
-export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-12-v7'
+export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-12-v8'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
@@ -51,9 +51,10 @@ Plain-language display copy (display_title and display_summary)
 - These two fields are what a busy manager reads on the card. They are PRESENTATION ONLY: a faithful restatement of the detailed fields you already wrote, in plain management language. Write them last, after the detailed fields, and make sure they say the same thing.
 - Voice: a smart colleague explaining an idea to management. Plain conversational English. "We", "let's", "right now", "the problem is", "what I'd test" and "before we spend more" are welcome. No bullet points, no labels, no hedging stack.
 - display_title: short, natural and business-oriented, 6 to 12 words, understandable by someone who has never bought ads. Example of the register: "Track which catering leads actually become customers", "Try a second catering ad with a clearer offer", "Give our Copenhagen awareness ads something measurable".
-- display_summary: something a colleague would say in one breath: one very clear sentence or two short ones, about 160 to 220 characters, never more than 280. First why it matters to the business, then what you want us to do (or the other way round if that reads better). Do not fill the space just because it exists: cut every clause that is not needed. Count the characters: more than 280 discards the whole analysis, so aim for two sentences of about 100 characters each, and if a draft is over 240 cut it again before you answer. Example of the register: "Right now we know who fills in the catering form, but not who actually books. Let's fix that before we spend more." Another: "We only have one catering ad, so we don't know if the message is holding us back. Let's test a second angle. This needs about 1,500 DKK extra spend."
+- display_summary: something a colleague would say in one breath: one very clear sentence or two short ones, about 160 to 220 characters, never more than 280. First why it matters to the business, then what you want us to do (or the other way round if that reads better). Do not fill the space just because it exists: cut every clause that is not needed. Count the characters and stay under 280: aim for two sentences of about 100 characters each, and if a draft is over 240 cut it again before you answer. Example of the register: "Right now we know who fills in the catering form, but not who actually books. Let's fix that before we spend more." Another: "We only have one catering ad, so we don't know if the message is holding us back. Let's test a second angle. This needs about 1,500 DKK extra spend."
 - Extra spend: when incremental_budget_dkk is above 0, display_summary must say so plainly, in words like "This needs about 1,500 DKK extra spend." Never write incremental budget, headroom or projected capacity. When incremental_budget_dkk is 0 you may leave spend out unless it helps clarity.
 - Do NOT use jargon in these two fields. Never write: downstream outcome, conversion event, conversion signal, funnel, CPM, CPC, CTR, attribution, social-proof angle, redemption mechanic, projected headroom, incremental budget or spend, measurable pathway, instrumentation, optimisation, campaign structure, or campaign, ad set or ad references such as C1, C2, C3, S1, A1. Translate instead: a conversion event is "a way to see which leads become real bookings"; C2 is "our catering campaign"; a redemption mechanic is "an offer we can track"; a social-proof creative is "an ad showing a real catering job or customer"; incremental spend is "extra spend". Say "our Copenhagen ads" or "our catering ads", never a ref.
+- Stay grounded: the display fields must NOT invent or assume business infrastructure that the detailed fields and the data do not establish. Never add a system, tool, workflow, integration, process, person or team (a booking system, a CRM, a dashboard, "our team will follow up") that the detailed fields do not already name or the data does not show. Simplify the language, not the situation. BAD: "Let's connect our booking system to Meta" when nothing establishes that a booking system exists. GOOD: "Let's track which catering enquiries actually turn into confirmed bookings."
 - Simplify the WORDS, never the THINKING. Do not change the meaning, add a claim, number or promise that the detailed fields do not support, drop an important condition, or make an uncertain idea sound certain. If the idea needs extra spend say so plainly ("this needs about 2,100 DKK extra"); if it needs none, you may say it needs no extra spend. The evidence, limitations, thresholds and metrics belong in the detailed fields, which stay exactly as rigorous as before.
 - Both fields obey the same rules as everything else: no URLs, IDs, tokens or payloads; and they stay inside their character budgets.
 
@@ -108,6 +109,10 @@ const DECISION_VERB = /\b(kill|scale up|scale the|pause (?:the |this |that )?(?:
 const VANITY_METRIC = /\b(cpm|cpc|ctr|cost per (?:link )?click|click-through|link clicks?|clicks?|impressions?|reach|video views?|views?|profile visits?|landing[ _]page[ _]views?|engagement|likes?|followers?)\b/i
 const BUSINESS_OUTCOME = /\b(leads?|cpl|cpa|orders?|first[- ]order|redemptions?|redeem\w*|voucher\w*|offer[- ]codes?|catering|purchases?|bookings?|sign-?ups?|conversions?|revenue|customers?|installs?|acquisition)\b/i
 
+// Display copy must not name business infrastructure the detailed fields never mention (the "connect our booking system" drift).
+const INVENTED_INFRA = /\b(?:booking[- ]system|ordering[- ]system|order[- ]system|reservation[- ]system|pos[- ]system|crm|dashboard|spreadsheet|database|software|plugin|integration|workflow|automation|automated|chatbot|newsletter|loyalty (?:program|app|scheme)|call centre|sales team)\b/gi
+const norm = (s: string) => s.toLowerCase().replace(/[-\s]+/g, ' ')
+
 // Plain-language display fields must not carry media-buying jargon or campaign refs. Conservative on purpose: a miss only costs a retry.
 const DISPLAY_JARGON = /\b(?:[CSA]\d{1,2}\b|cpm|cpc|ctr|cpl|roas|funnel|attribution|attributed|headroom|incremental|conversion (?:event|signal)s?|downstream|redemption mechanic|social[- ]proof|measurable (?:pathway|path)|instrumentation|instrumented|optimi[sz]ation|campaign structure)\b/i
 
@@ -133,6 +138,9 @@ export function validatePaidStrategy(output: unknown, evidence?: Pick<PaidStrate
     if (titles.has(key)) throw new PaidStrategyValidationError('Duplicate recommendation title.')
     titles.add(key)
     if (rec.incremental_budget_dkk > 0 && !(/\d/.test(rec.display_summary) && /\bextra\b/i.test(rec.display_summary))) throw new PaidStrategyValidationError('Display summary must say plainly how much extra spend the idea needs.')
+    const detail = norm([rec.title, rec.evidence, rec.interpretation, rec.hypothesis, rec.exact_test_or_action, rec.success_metric, rec.evidence_limitations].join(' '))
+    const invented = [...`${rec.display_title} ${rec.display_summary}`.matchAll(INVENTED_INFRA)].map(m => m[0]).find(term => !detail.includes(norm(term)))
+    if (invented) throw new PaidStrategyValidationError(`Display copy mentions "${invented}", which the detailed recommendation does not establish; it must not invent systems, tools or processes.`)
     const jargon = `${rec.display_title}\n${rec.display_summary}`.match(DISPLAY_JARGON)
     if (jargon) throw new PaidStrategyValidationError(`Display copy uses jargon ("${jargon[0]}"); it must be plain language.`)
     const all = Object.values(rec).join('\n')
