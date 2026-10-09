@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "name": "facebook-ads",
+  "version": "1.0.0",
+  "upstream": {
+    "repo": "https://github.com/thatrebeccarae/claude-marketing",
+    "path": "skills/facebook-ads",
+    "commit": "13b4d57921f06468be068904e8c2f30e7dbaa791",
+    "commit_date": "2026-03-18",
+    "commit_message": "Add skill catalog site, search, tested metadata, and workflow examples",
+    "tree_sha": "4603229049abb5ef65ca3f2fae6c7e7f9660d15c"
+  },
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "copyright": "Copyright (c) 2026 Rebecca Rae Barton",
+    "notice": "Vendored unmodified. The MIT licence and copyright notice must accompany these files."
+  },
+  "omitted": [
+    "SKILL.md",
+    "REFERENCE.md",
+    "EXAMPLES.md",
+    "requirements.txt",
+    ".env.example"
+  ],
+  "omitted_reason": "Kockpit does not send this skill to a model. Only the audit checklist is used, as the specification for a small set of deterministic checks that stored Meta data can answer (see lib/marketing/insights/skill-checks/facebook-ads.ts). The rest is conversational guidance, API reference and examples.",
+  "files": [
+    {
+      "path": "CHECKS.md",
+      "sha256": "c64ffa8db49cd6b9ef71586962dfa2e1454833b4b65a2cd63c332e7ed9b27f6a",
+      "bytes": 14932
+    }
+  ],
+  "update_policy": "Any change requires re-pinning commit + hashes here, re-reading the diff against the thresholds in lib/marketing/insights/skill-checks/facebook-ads.ts (a test compares them), and re-checking which checks stored data can still assess."
+}

@@ -125,6 +125,38 @@ describe('CMO page Insights section', () => {
   })
 })
 
+describe('Meta Ads checklist findings', () => {
+  const checklist = insightView({
+    id: 'k', domain: 'paid', origin_kind: 'meta_account_checks', scope_key: 'paid:finding:facebook_ads_check', stable_key: 'facebook-ads:M-CR12',
+    title: 'Link click-through rate is below the checklist’s failing level', strength: 'reasonable_inference', trend: 'new',
+    refs: [{ type: 'skill_check', skill: 'facebook-ads@1.0.0#13b4d57', check_id: 'M-CR12', result: 'fail', measured: '0.30%', rule: 'M-CR12: pass when overall CTR is at least 1.0%; warning at 0.5-1.0%; fail below 0.5%.', window_start: day(1), window_end: day(8) }],
+  })
+  it('labels the origin and shows the check, its result, what was measured and the skill’s rule', () => {
+    const html = render(data([checklist]))
+    const t = text(html)
+    expect(t).toContain('Paid · Finding · Meta Ads checklist')
+    expect(t).toContain('Meta Ads checklist · M-CR12 · fail · 0.30%')
+    expect(html).toContain('title="M-CR12: pass when overall CTR is at least 1.0%')
+    expect(render(data([insightView()]))).not.toContain('· Meta Ads checklist</p>')
+  })
+  it('always shows what the checklist could not assess, and says no health score is given', () => {
+    const html = render(data([insightView()]))
+    expect(html).toContain('data-checklist-coverage')
+    const t = text(html)
+    expect(t).toMatch(/Meta Ads checklist: 4 of 46 checks can be assessed/)
+    expect(t).toContain('No health score or grade is given')
+    expect(t).toContain('M-PX1'); expect(t).toContain('M-AU6'); expect(t).toContain('M-ST17')
+    expect(t).toMatch(/facebook-ads@1\.0\.0#13b4d57/)
+    expect(t).toMatch(/not model opinions/)
+  })
+  it('lists every check that is not assessed exactly once', () => {
+    const ids = [...text(render(data([insightView()]))).matchAll(/\bM-[A-Z]+\d+\b/g)].map(m => m[0])
+    const notAssessed = ids.filter(id => !['M-CR12', 'M-CR2', 'M-ST18', 'M-CR4'].includes(id))
+    expect(new Set(notAssessed).size).toBe(notAssessed.length)
+    expect(notAssessed).toHaveLength(42)
+  })
+})
+
 describe('placement', () => {
   it('sits on the CMO page after the Paid Strategy section and before the creative learning', () => {
     const html = renderToStaticMarkup(<BrainView data={{ allowed: true, canRefresh: false, run: null, latestAttempt: null, error: null }}

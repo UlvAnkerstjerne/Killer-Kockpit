@@ -48,6 +48,12 @@ describe('Morning Brief insight selection', () => {
     const otherRun = insightView({ id: 'r', strength: 'hypothesis', times_observed: 3, last_seen_at: day(2), links: [link(0, 'p0')] })
     expect(selectBriefInsights([settled, otherRun], data, NOW)).toEqual([])
   })
+  it('shows a NEW failing checklist finding (a reasonable inference) but not a new warning, which is only a weak signal', () => {
+    const base = { origin_kind: 'meta_account_checks' as const, domain: 'paid' as const, times_observed: 1, first_seen_at: day(9), last_seen_at: day(9), trend: 'new' as const }
+    const fail = insightView({ ...base, id: 'f', strength: 'reasonable_inference' })
+    const warning = insightView({ ...base, id: 'w', strength: 'weak_signal' })
+    expect(selectBriefInsights([fail, warning], null, NOW).map(p => p.insight.id)).toEqual(['f'])
+  })
   it('never shows stale insights', () => {
     const stale = insightView({ id: 'z', status: 'stale', strength: 'strong_pattern', trend: 'strengthening', last_seen_at: day(9) })
     expect(selectBriefInsights([stale], null, NOW)).toEqual([])

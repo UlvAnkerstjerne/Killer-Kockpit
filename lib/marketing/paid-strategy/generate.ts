@@ -16,7 +16,7 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import { callPaidStrategyAI, PAID_STRATEGY_PROMPT_VERSION } from '@/lib/ai/paid-strategy'
 import { loadMesperSkill, type LoadedSkill } from '@/lib/ai/skills/mesper'
 import { loadPriorInsights } from '@/lib/marketing/insights/prior'
-import { capturePaidRunById, captureQuietly, recordInformedQuietly } from '@/lib/marketing/insights/service'
+import { captureFacebookAdsChecks, capturePaidRunById, captureQuietly, recordInformedQuietly } from '@/lib/marketing/insights/service'
 import {
   buildPaidStrategyEvidence, strategyWindows, HUMAN_DECISION_WINDOW_DAYS, MAX_HUMAN_DECISIONS, type HumanStrategyDecisionInput,
   type StrategyAd, type StrategyAdInsight, type StrategyAdSet, type StrategyCampaign, type StrategyCampaignInsight,
@@ -111,7 +111,8 @@ export async function generatePaidStrategy(
     runId = claim.data.id as string
 
     const priorInsights = await loadPriorInsights(db, ['paid'])
-    const evidence = buildPaidStrategyEvidence({ ...(await loadPaidStrategyInputs(db, now)), humanDecisions: await loadHumanStrategyDecisions(db, now), priorInsights })
+    const loaded = await loadPaidStrategyInputs(db, now)
+    const evidence = buildPaidStrategyEvidence({ ...loaded, humanDecisions: await loadHumanStrategyDecisions(db, now), priorInsights })
     if (evidence.budget.spend_current_28d + evidence.budget.spend_prior_28d <= 0) {
       return await fail(db, runId, 'No stored Meta Ads spend was found in the last 56 days, so there is nothing to analyse.')
     }
@@ -127,6 +128,8 @@ export async function generatePaidStrategy(
     // Derived, best-effort views of the finished run: neither may fail it.
     await recordInformedQuietly(db, priorInsights.map(i => i.id), { type: 'paid_strategy_run', runId })
     await captureQuietly('paid strategy', () => capturePaidRunById(db, runId!))
+    // The facebook-ads checklist, on exactly the stored data this run read. Deterministic; no model.
+    await captureQuietly('facebook-ads checklist', () => captureFacebookAdsChecks(db, loaded))
     return { ok: true, runId, recommendationCount: ai.recommendations.length }
   } catch {
     if (runId) {

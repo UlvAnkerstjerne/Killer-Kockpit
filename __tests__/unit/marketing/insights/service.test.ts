@@ -30,11 +30,12 @@ function fakeDb(creative: { id: string; at: string }[], paid: { id: string; at: 
         const list = (table.includes('creative') ? creative : paid).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit)
         return { data: list.map(r => ({ id: r.id })), error: null }
       }
+      if (table.startsWith('meta_')) return { data: [], error: null } // no stored Meta data: the checklist can assess nothing
       if (op === 'insert') { const row = { id: `ins-${created.length + 1}`, ...(payload as object) }; created.push(row); writes.push({ table, rows: payload }); return { data: row, error: null } }
       if (op !== 'read') { writes.push({ table, rows: payload }); return { data: null, error: null } }
       return { data: table === 'marketing_insights' ? created : [], error: null }
     }
-    q.select = () => q; q.order = () => q; q.in = () => q
+    q.select = () => q; q.order = () => q; q.in = () => q; q.gte = () => q; q.lte = () => q; q.range = () => q
     q.eq = (k: string, v: unknown) => { if (k === 'id') id = v as string; return q }
     q.limit = (n: number) => { limit = n; return q }
     q.maybeSingle = async () => done(); q.single = async () => done()
@@ -51,7 +52,7 @@ describe('backfillInsights', () => {
   it('replays the latest runs of each source, oldest first, so history is in real order', async () => {
     const f = fakeDb([{ id: 'c2', at: day(9) }, { id: 'c1', at: day(2) }], [{ id: 'p1', at: day(3) }])
     const out = await backfillInsights(f.db)
-    expect(out.creative).toBe(2); expect(out.paid).toBe(1)
+    expect(out.creative).toBe(2); expect(out.paid).toBe(1); expect(out.checklist).toBe(0) // nothing assessable, nothing to report
     const observed = f.writes.filter(w => w.table === 'marketing_insight_observations').flatMap(w => (w.rows as { source_run_id: string }[]).map(r => r.source_run_id))
     expect(observed.indexOf('c1')).toBeLessThan(observed.indexOf('c2'))
     expect(BACKFILL_RUNS_PER_SOURCE).toBeGreaterThanOrEqual(2)

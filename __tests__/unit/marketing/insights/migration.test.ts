@@ -30,8 +30,8 @@ beforeAll(async () => {
       VALUES ($1,$1,$2,'Synthetic reader',$3,$4,$5)`, [uid(n), `insights-${n}@example.invalid`, n === 1 ? 'SUPER_ADMIN' : 'MEMBER', n === 2 || n === 4, n !== 5])
   }
   await db.query(`INSERT INTO user_marketing_permissions(user_id,permission) VALUES ($1,'paid_manage'),($2,'paid_manage'),($3,'paid_manage')`, [uid(2), uid(3), uid(5)])
-  await db.exec(`INSERT INTO marketing_insights(id,domain,kind,scope_key,title,statement,strength,peak_strength,trend,first_seen_at,last_seen_at,last_supported_at)
-      VALUES ('${INSIGHT}','organic','finding','organic:finding','Title','Statement','weak_signal','weak_signal','new','2026-10-01','2026-10-01','2026-10-01');
+  await db.exec(`INSERT INTO marketing_insights(id,domain,origin_kind,kind,scope_key,title,statement,strength,peak_strength,trend,first_seen_at,last_seen_at,last_supported_at)
+      VALUES ('${INSIGHT}','organic','creative_run','finding','organic:finding','Title','Statement','weak_signal','weak_signal','new','2026-10-01','2026-10-01','2026-10-01');
     INSERT INTO marketing_insight_observations(insight_id,source_kind,source_run_id,observed_at,strength,change,statement)
       VALUES ('${INSIGHT}','creative_run','${RUN}','2026-10-01','weak_signal','new','Statement');
     INSERT INTO marketing_insight_links(insight_id,target_type,target_run_id,target_index,relation)
@@ -65,7 +65,7 @@ describe('CMO Insights real PostgreSQL migration', () => {
   })
   it('keeps the vocabularies closed: domain, kind, strength, trend, status, change, relation and link target', async () => {
     for (const sql of [
-      "UPDATE marketing_insights SET domain='social'", "UPDATE marketing_insights SET kind='recommendation'", "UPDATE marketing_insights SET strength='proven'",
+      "UPDATE marketing_insights SET domain='social'", "UPDATE marketing_insights SET origin_kind='morning_brief'", "UPDATE marketing_insights SET origin_kind=NULL", "UPDATE marketing_insights SET kind='recommendation'", "UPDATE marketing_insights SET strength='proven'",
       "UPDATE marketing_insights SET peak_strength='certain'", "UPDATE marketing_insights SET trend='rising'", "UPDATE marketing_insights SET status='retired'",
       "UPDATE marketing_insight_observations SET change='confirmed'", "UPDATE marketing_insight_observations SET source_kind='morning_brief'",
       "UPDATE marketing_insight_links SET relation='caused'", "UPDATE marketing_insight_links SET target_type='implementation'",
@@ -81,11 +81,21 @@ describe('CMO Insights real PostgreSQL migration', () => {
   it('admits an exact stable key only once per domain and kind, but allows many without one', async () => {
     await db.exec('SET ROLE service_role')
     try {
-      const insert = (key: string | null) => db.query(`INSERT INTO marketing_insights(domain,kind,scope_key,stable_key,title,statement,strength,peak_strength,trend,first_seen_at,last_seen_at,last_supported_at)
-        VALUES ('creative','finding','creative:finding',$1,'T','S','weak_signal','weak_signal','new','2026-10-01','2026-10-01','2026-10-01')`, [key])
+      const insert = (key: string | null) => db.query(`INSERT INTO marketing_insights(domain,origin_kind,kind,scope_key,stable_key,title,statement,strength,peak_strength,trend,first_seen_at,last_seen_at,last_supported_at)
+        VALUES ('creative','creative_run','finding','creative:finding',$1,'T','S','weak_signal','weak_signal','new','2026-10-01','2026-10-01','2026-10-01')`, [key])
       await insert('creative:a|b')
       await expect(insert('creative:a|b')).rejects.toThrow('duplicate key')
       await insert(null); await insert(null)
+    } finally { await db.exec('RESET ROLE') }
+  })
+  it('accepts the deterministic checklist as an origin and as an observation source', async () => {
+    await db.exec('SET ROLE service_role')
+    try {
+      await db.query(`INSERT INTO marketing_insights(id,domain,origin_kind,kind,scope_key,stable_key,title,statement,strength,peak_strength,trend,first_seen_at,last_seen_at,last_supported_at)
+        VALUES ('88000000-0000-4000-8000-000000000002','paid','meta_account_checks','finding','paid:finding:facebook_ads_check','facebook-ads:M-CR12','T','S','weak_signal','weak_signal','new','2026-10-01','2026-10-01','2026-10-01')`)
+      await db.query(`INSERT INTO marketing_insight_observations(insight_id,source_kind,source_run_id,observed_at,strength,change,statement)
+        VALUES ('88000000-0000-4000-8000-000000000002','meta_account_checks','${RUN}','2026-10-01','weak_signal','new','S')`)
+      await db.query("DELETE FROM marketing_insights WHERE id='88000000-0000-4000-8000-000000000002'")
     } finally { await db.exec('RESET ROLE') }
   })
   it('records one observation per insight and source run, so a replayed capture cannot double count', async () => {

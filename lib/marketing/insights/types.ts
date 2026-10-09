@@ -35,13 +35,19 @@ export type InsightStatus = (typeof INSIGHT_STATUSES)[number]
 export const OBSERVATION_CHANGES = ['new', 'strengthened', 'reconfirmed', 'weakened'] as const
 export type ObservationChange = (typeof OBSERVATION_CHANGES)[number]
 
-export type InsightSourceKind = 'creative_run' | 'paid_strategy_run'
+/**
+ * Where an insight came from. `meta_account_checks` is the deterministic facebook-ads checklist evaluated on stored Meta data:
+ * no model is involved, so it has its own origin and is never mixed up with what the model-driven analyses concluded.
+ */
+export type InsightSourceKind = 'creative_run' | 'paid_strategy_run' | 'meta_account_checks'
 
 /** Where a statement came from. Structured so evidence can be inspected; free text alone cannot be. */
 export type SourceRef =
   | { type: 'instagram_post'; ref: string | null; permalink: string | null; published_at: string | null; media_type: string | null }
   | { type: 'creative_signal'; signal_id: string; sample_size: number; evidence_level: string }
   | { type: 'paid_strategy_run'; run_id: string; index: number; window_start: string; window_end: string }
+  /** One check of a vendored third-party checklist, with what was measured and the skill's own pass/warning/fail wording. */
+  | { type: 'skill_check'; skill: string; check_id: string; result: 'warning' | 'fail'; measured: string; rule: string; window_start: string; window_end: string }
 
 export interface InsightCandidate {
   domain: InsightDomain
@@ -65,6 +71,8 @@ export interface InsightCandidate {
 export interface InsightRow {
   id: string
   domain: InsightDomain
+  /** The source that created it. Misses are only ever counted by the same source. */
+  origin_kind: InsightSourceKind
   kind: InsightKind
   scope_key: string
   stable_key: string | null
@@ -122,6 +130,11 @@ export interface RunExtraction {
   observedAt: string
   candidates: InsightCandidate[]
   coverage: Partial<Record<InsightDomain, boolean>>
+  /**
+   * When set, the run can only speak about these stable keys (a checklist run that could assess some checks and not others).
+   * Only insights with one of these keys can be counted as not reproduced. `coverage` still names which domains to load.
+   */
+  assessedKeys?: string[]
 }
 
 export const STRENGTH_RANK: Record<InsightStrength, number> = { strong_pattern: 3, reasonable_inference: 2, weak_signal: 1, hypothesis: 1 }
@@ -130,6 +143,9 @@ export const STRENGTH_LABEL: Record<InsightStrength, string> = {
 }
 export const TREND_LABEL: Record<InsightTrend, string> = {
   new: 'New', strengthening: 'Gaining support', steady: 'Holding', weakening: 'Losing support', unconfirmed: 'Not seen in the latest run',
+}
+export const ORIGIN_LABEL: Record<InsightSourceKind, string> = {
+  creative_run: 'Creative Intelligence', paid_strategy_run: 'Paid Strategy', meta_account_checks: 'Meta Ads checklist',
 }
 export const DOMAIN_LABEL: Record<InsightDomain, string> = { paid: 'Paid', organic: 'Organic', creative: 'Creative' }
 export const KIND_LABEL: Record<InsightKind, string> = {

@@ -7,8 +7,9 @@
  * single existing insight can absorb only one candidate per run. Every write is also idempotent per source run
  * (`last_source_run_id`), so replaying a run changes nothing.
  *
- * A miss only counts when the run actually covers the insight's domain (see RunExtraction.coverage): a failed or skipped
- * specialist step is silence, not evidence against an earlier conclusion.
+ * A miss only counts when the run actually covers the insight (see RunExtraction.coverage / assessedKeys) and is from the same
+ * source that created it: a failed or skipped specialist step, or a check that could not be assessed, is silence, not evidence
+ * against an earlier conclusion.
  */
 
 import { similarity } from './text'
@@ -57,7 +58,7 @@ export function reconcileRun(existing: InsightRow[], extraction: RunExtraction):
   // Every viable pairing, best first; ties go to the older insight so the result never depends on input order.
   const pairs: { c: number; e: number; score: number }[] = []
   candidates.forEach((candidate, c) => existing.forEach((row, e) => {
-    if (row.scope_key !== candidate.scope_key) return
+    if (row.scope_key !== candidate.scope_key || row.origin_kind !== extraction.sourceKind) return
     const score = matchScore(candidate, row)
     if (score > 0) pairs.push({ c, e, score })
   }))
@@ -103,7 +104,7 @@ export function reconcileRun(existing: InsightRow[], extraction: RunExtraction):
     plan.inserts.push({
       candidateIndex: c, observation: observationFor(extraction, candidate, 'new'),
       insert: {
-        domain: candidate.domain, kind: candidate.kind, scope_key: candidate.scope_key, stable_key: candidate.stable_key,
+        domain: candidate.domain, origin_kind: extraction.sourceKind, kind: candidate.kind, scope_key: candidate.scope_key, stable_key: candidate.stable_key,
         title: candidate.title, statement: candidate.statement, evidence_text: candidate.evidence_text, limitations: candidate.limitations,
         suggestion: candidate.suggestion, strength: candidate.strength, peak_strength: candidate.strength,
         trend: 'new', status: 'active', times_observed: 1, runs_since_seen: 0,
@@ -113,7 +114,9 @@ export function reconcileRun(existing: InsightRow[], extraction: RunExtraction):
   })
 
   existing.forEach((row, e) => {
-    if (claimedExisting.has(e) || !extraction.coverage[row.domain]) return
+    if (claimedExisting.has(e) || row.origin_kind !== extraction.sourceKind) return
+    const covered = extraction.assessedKeys ? row.stable_key !== null && extraction.assessedKeys.includes(row.stable_key) : !!extraction.coverage[row.domain]
+    if (!covered) return
     if (row.last_source_run_id === runId || Date.parse(row.last_seen_at) >= Date.parse(observedAt)) return
     const misses = row.runs_since_seen + 1
     plan.misses.push({

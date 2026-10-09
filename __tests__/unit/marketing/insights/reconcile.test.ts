@@ -131,3 +131,23 @@ describe('reconcileRun: idempotence and ordering', () => {
     expect(one.updates.map(u => u.insightId).sort()).toEqual(['x', 'y'])
   })
 })
+
+describe('reconcileRun: origin and assessed keys', () => {
+  const check = (over = {}) => insightRow({ id: 'chk', domain: 'paid', origin_kind: 'meta_account_checks', scope_key: 'paid:finding:facebook_ads_check', stable_key: 'facebook-ads:M-CR12', ...over })
+  const run = (over = {}) => extraction({ sourceKind: 'meta_account_checks', runId: 'chk-run-2', observedAt: day(8), candidates: [], coverage: { paid: true }, ...over })
+  it('counts a miss only for keys the run actually assessed', () => {
+    expect(reconcileRun([check()], run({ assessedKeys: ['facebook-ads:M-CR12'] })).misses).toHaveLength(1)
+    expect(reconcileRun([check()], run({ assessedKeys: ['facebook-ads:M-ST18'] })).misses).toHaveLength(0)
+    expect(reconcileRun([check()], run({ assessedKeys: [] })).misses).toHaveLength(0)
+  })
+  it('never counts a miss for an insight another source created, even in the same domain', () => {
+    const paidRunInsight = insightRow({ id: 'p', domain: 'paid', origin_kind: 'paid_strategy_run', scope_key: 'paid:finding:tracking' })
+    expect(reconcileRun([paidRunInsight], run({ assessedKeys: ['facebook-ads:M-CR12'] })).misses).toHaveLength(0)
+    expect(reconcileRun([check()], extraction({ sourceKind: 'paid_strategy_run', candidates: [], coverage: { paid: true }, observedAt: day(8) })).misses).toHaveLength(0)
+  })
+  it('never merges across origins, and stamps the origin on a new insight', () => {
+    const plan = reconcileRun([check({ title: 'Process stories draw shares', statement: 'Posts that explain a hidden preparation step were shared more than product-only posts.', scope_key: 'organic:finding' })], extraction({ runId: 'r2', observedAt: day(8) }))
+    expect(plan.updates).toHaveLength(0)
+    expect(plan.inserts[0].insert.origin_kind).toBe('creative_run')
+  })
+})

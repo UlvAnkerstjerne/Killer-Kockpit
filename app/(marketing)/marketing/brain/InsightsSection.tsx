@@ -2,8 +2,9 @@ import type { PaidStrategyData } from '@/lib/actions/marketing/paid-strategy'
 import type { StrategyImplementationData } from '@/lib/actions/marketing/paid-strategy-implementation'
 import type { InsightsData } from '@/lib/actions/marketing/insights'
 import {
-  DOMAIN_LABEL, KIND_LABEL, STRENGTH_LABEL, TREND_LABEL, type InsightKind, type InsightStrength, type InsightTrend, type SourceRef,
+  DOMAIN_LABEL, KIND_LABEL, ORIGIN_LABEL, STRENGTH_LABEL, TREND_LABEL, type InsightKind, type InsightStrength, type InsightTrend, type SourceRef,
 } from '@/lib/marketing/insights/types'
+import { EVALUATED_CHECK_IDS, FACEBOOK_ADS_NOT_ASSESSED, FACEBOOK_ADS_SKILL_REF } from '@/lib/marketing/insights/skill-checks/facebook-ads'
 import { clip } from '@/lib/marketing/insights/text'
 import { KIND_ORDER, linkedRecommendations, splitInsights, type InsightView } from '@/lib/marketing/insights/view'
 import { instagramLink } from './BrainView'
@@ -38,6 +39,7 @@ function SourceLine({ source }: { source: SourceRef }) {
     return <li>{link ? <a href={link} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">{text} ↗</a> : text}</li>
   }
   if (source.type === 'creative_signal') return <li>Creative signal · {source.sample_size} post{source.sample_size === 1 ? '' : 's'} · {source.evidence_level}</li>
+  if (source.type === 'skill_check') return <li title={source.rule}>Meta Ads checklist · {source.check_id} · {source.result}{source.measured ? ` · ${source.measured}` : ''} · {day(source.window_start)} to {day(source.window_end)}</li>
   return <li>Paid Strategy analysis · {day(source.window_start)} to {day(source.window_end)} · recommendation {source.index + 1}</li>
 }
 
@@ -47,7 +49,7 @@ function InsightCard({ insight, strategy, implementations }: { insight: InsightV
   const clipped = insight.statement.length > STATEMENT_PREVIEW_CHARS
   return <article data-insight data-kind={insight.kind} className="rounded-2xl border border-kk-line bg-kk-panel p-5">
     <div className="flex flex-wrap items-center gap-2">
-      <p className="mr-auto text-[11px] font-semibold uppercase tracking-wide text-kk-muted">{DOMAIN_LABEL[insight.domain]} · {KIND_LABEL[insight.kind]}</p>
+      <p className="mr-auto text-[11px] font-semibold uppercase tracking-wide text-kk-muted">{DOMAIN_LABEL[insight.domain]} · {KIND_LABEL[insight.kind]}{insight.origin_kind === 'meta_account_checks' ? ` · ${ORIGIN_LABEL.meta_account_checks}` : ''}</p>
       <Chip tone={STRENGTH_TONE[insight.strength]}>{STRENGTH_LABEL[insight.strength]}</Chip>
       <Chip tone={TREND_TONE[insight.trend]}>{TREND_LABEL[insight.trend]}</Chip>
     </div>
@@ -80,6 +82,23 @@ function InsightCard({ insight, strategy, implementations }: { insight: InsightV
 }
 
 /**
+ * What the facebook-ads checklist can and cannot say with the data Kockpit stores. Shown so a gap is visible, not mistaken for a
+ * pass: nothing here is a health score, and a check that is not listed as assessed was never judged.
+ */
+function ChecklistCoverage() {
+  const total = EVALUATED_CHECK_IDS.length + FACEBOOK_ADS_NOT_ASSESSED.reduce((n, g) => n + g.checks.length, 0)
+  return <details data-checklist-coverage className="rounded-xl border border-kk-line p-4 text-sm">
+    <summary className="cursor-pointer font-medium">Meta Ads checklist: {EVALUATED_CHECK_IDS.length} of {total} checks can be assessed</summary>
+    <div className="mt-3 space-y-3 text-xs leading-relaxed text-kk-muted">
+      <p>Findings labelled “Meta Ads checklist” come from the {EVALUATED_CHECK_IDS.length} checks of the facebook-ads skill ({FACEBOOK_ADS_SKILL_REF}) that Kockpit’s stored Meta data can answer: {EVALUATED_CHECK_IDS.join(', ')}. They are measurements against the skill’s own thresholds, not model opinions. A check that passes produces no finding.</p>
+      <p>No health score or grade is given: the Pixel / CAPI and Audience categories, half of the skill’s scoring weight, cannot be assessed at all, so a score would look more certain than it is.</p>
+      <p className="font-medium text-kk-ink">Not assessed, and why</p>
+      <ul className="space-y-2">{FACEBOOK_ADS_NOT_ASSESSED.map(group => <li key={group.checks[0]}>{group.blocker} <span className="font-medium text-kk-ink">({group.checks.join(', ')})</span></li>)}</ul>
+    </div>
+  </details>
+}
+
+/**
  * The accumulated, durable insights from the specialist analyses. Read-only here: insights are written when an analysis
  * finishes (or by the SUPER_ADMIN capture button). Recommendations and their decisions keep living in the Paid Strategy section;
  * an insight only points at them.
@@ -106,6 +125,7 @@ export default function InsightsSection({ data, strategy, implementations }: { d
         <div className="grid items-start gap-4 lg:grid-cols-2">{items.map(i => <InsightCard key={i.id} insight={i} strategy={strategy} implementations={implementations} />)}</div>
       </div>
     })}
+    <ChecklistCoverage />
     {stale.length ? <details className="rounded-xl border border-kk-line p-4 text-sm">
       <summary className="cursor-pointer font-medium">Not seen recently ({stale.length})</summary>
       <p className="mt-2 text-xs text-kk-muted">Later analyses did not reproduce these. They are kept, not deleted, in case they come back.</p>

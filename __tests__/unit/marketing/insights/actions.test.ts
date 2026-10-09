@@ -73,14 +73,14 @@ describe('captureMarketingInsights', () => {
   })
   it('replays saved runs and refreshes both surfaces', async () => {
     m.user.mockResolvedValue(admin); m.service.mockReturnValue('svc')
-    m.backfill.mockResolvedValue({ creative: 2, paid: 1, created: 5, updated: 2 })
-    expect(await captureMarketingInsights()).toEqual({ ok: true, message: 'Captured from 3 saved runs: 5 new, 2 updated.' })
+    m.backfill.mockResolvedValue({ creative: 2, paid: 1, checklist: 1, created: 5, updated: 2 })
+    expect(await captureMarketingInsights()).toEqual({ ok: true, message: 'Captured from 4 sources (saved runs and today’s Meta Ads checklist): 5 new, 2 updated.' })
     expect(m.backfill).toHaveBeenCalledWith('svc')
     expect(m.revalidate).toHaveBeenCalledWith('/marketing/brain'); expect(m.revalidate).toHaveBeenCalledWith('/marketing')
   })
   it('says so when there is nothing new, and reports a storage problem safely', async () => {
     m.user.mockResolvedValue(admin)
-    m.backfill.mockResolvedValue({ creative: 0, paid: 0, created: 0, updated: 0 })
+    m.backfill.mockResolvedValue({ creative: 0, paid: 0, checklist: 0, created: 0, updated: 0 })
     expect(await captureMarketingInsights()).toEqual({ ok: true, message: 'Everything saved was already captured.' })
     m.backfill.mockRejectedValue(new Error('insights_storage'))
     expect(await captureMarketingInsights()).toMatchObject({ ok: false, error: expect.stringContaining('migration') })

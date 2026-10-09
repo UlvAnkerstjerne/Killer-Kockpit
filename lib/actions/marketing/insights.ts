@@ -56,8 +56,8 @@ export async function captureMarketingInsights(): Promise<CaptureInsightsResult>
     const result = await backfillInsights(createServiceClient())
     revalidatePath('/marketing/brain')
     revalidatePath('/marketing')
-    const runs = result.creative + result.paid
-    return { ok: true, message: runs ? `Captured from ${runs} saved run${runs === 1 ? '' : 's'}: ${result.created} new, ${result.updated} updated.` : 'Everything saved was already captured.' }
+    const runs = result.creative + result.paid + result.checklist
+    return { ok: true, message: runs ? `Captured from ${runs} source${runs === 1 ? '' : 's'} (saved runs and today’s Meta Ads checklist): ${result.created} new, ${result.updated} updated.` : 'Everything saved was already captured.' }
   } catch {
     return { ok: false, error: 'Insights could not be captured. Confirm the insights migration has been applied.' }
   }

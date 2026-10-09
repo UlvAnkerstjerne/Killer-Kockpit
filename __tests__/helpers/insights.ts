@@ -28,7 +28,7 @@ export function extraction(over: Partial<RunExtraction> & { candidates?: Insight
 
 export function insightRow(over: Partial<InsightRow> = {}): InsightRow {
   return {
-    id: 'ins-1', domain: 'organic', kind: 'finding', scope_key: 'organic:finding', stable_key: null,
+    id: 'ins-1', domain: 'organic', origin_kind: 'creative_run', kind: 'finding', scope_key: 'organic:finding', stable_key: null,
     title: 'Process stories draw shares', statement: 'Posts that explain a hidden preparation step were shared more than product-only posts.',
     evidence_text: null, limitations: null, suggestion: null, strength: 'reasonable_inference', peak_strength: 'reasonable_inference',
     trend: 'new', status: 'active', times_observed: 1, runs_since_seen: 0, first_seen_at: day(1), last_seen_at: day(1), last_supported_at: day(1),

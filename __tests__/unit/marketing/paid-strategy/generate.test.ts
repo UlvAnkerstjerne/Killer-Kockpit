@@ -4,12 +4,12 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import type { LoadedSkill } from '@/lib/ai/skills/mesper'
 
 const mocks = vi.hoisted(() => ({ ai: vi.fn(), loadSkill: vi.fn() }))
-const insights = vi.hoisted(() => ({ prior: vi.fn(), capture: vi.fn(), informed: vi.fn() }))
+const insights = vi.hoisted(() => ({ prior: vi.fn(), capture: vi.fn(), informed: vi.fn(), checks: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/ai/paid-strategy', () => ({ callPaidStrategyAI: mocks.ai, PAID_STRATEGY_PROMPT_VERSION: 'test-v1' }))
 vi.mock('@/lib/ai/skills/mesper', () => ({ loadMesperSkill: mocks.loadSkill }))
 vi.mock('@/lib/marketing/insights/prior', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/prior')>()), loadPriorInsights: insights.prior }))
-vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), capturePaidRunById: insights.capture, recordInformedQuietly: insights.informed }))
+vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), capturePaidRunById: insights.capture, recordInformedQuietly: insights.informed, captureFacebookAdsChecks: insights.checks }))
 import { generatePaidStrategy } from '@/lib/marketing/paid-strategy/generate'
 
 const skill: LoadedSkill = { name: 'mesper-meta-ads', version: '2.1.0', ref: 'mesper-meta-ads@2.1.0#cbfc19c', hash: 'c'.repeat(64), text: 'skill' }
@@ -64,7 +64,7 @@ function storage(opts: { locked?: boolean; failedRead?: boolean; failedFinalWrit
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW)
   mocks.loadSkill.mockReturnValue(skill)
-  insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined)
+  insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined); insights.checks.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 })
   mocks.ai.mockResolvedValue({ ok: true, recommendations: [rec(1), rec(2, { title: 'Second distinct idea' }), rec(3, { title: 'Third distinct idea' })], model: 'synthetic-model', durationMs: 5 })
 })
 afterEach(() => vi.useRealTimers())
@@ -182,5 +182,29 @@ describe('CMO Insights around a Paid Strategy run', () => {
     await generatePaidStrategy(storage().db, 'admin-id')
     expect(insights.capture).not.toHaveBeenCalled()
     expect(insights.informed).not.toHaveBeenCalled()
+  })
+  it('evaluates the Meta Ads checklist on the very rows the run read, after saving the run', async () => {
+    const s = storage()
+    await generatePaidStrategy(s.db, 'admin-id')
+    expect(insights.checks).toHaveBeenCalledTimes(1)
+    const [db, input] = insights.checks.mock.calls[0]
+    expect(db).toBe(s.db)
+    expect(input).toMatchObject({ currency: 'DKK', campaigns: s.tables.meta_ad_campaigns, adSets: s.tables.meta_ad_sets, ads: s.tables.meta_ads })
+    expect(input.campaignInsights).toEqual(s.tables.meta_campaign_insights)
+    expect(s.tables[RUNS][0]).toMatchObject({ status: 'completed' })
+  })
+  it('never fails the run because the checklist failed, and still captures the run’s own insights', async () => {
+    insights.checks.mockRejectedValue(new Error('insights_storage'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const s = storage()
+    expect(await generatePaidStrategy(s.db, 'admin-id')).toMatchObject({ ok: true, recommendationCount: 3 })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('facebook-ads checklist'))
+    expect(insights.capture).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+  it('does not evaluate the checklist for a run that failed', async () => {
+    mocks.ai.mockResolvedValue({ ok: false, error: 'AI model did not return a valid response.' })
+    await generatePaidStrategy(storage().db, 'admin-id')
+    expect(insights.checks).not.toHaveBeenCalled()
   })
 })

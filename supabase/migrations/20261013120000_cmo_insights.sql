@@ -11,6 +11,9 @@
 CREATE TABLE public.marketing_insights (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   domain text NOT NULL CHECK (domain IN ('paid','organic','creative')),
+  -- The source that created it; only that source can count it as not reproduced. meta_account_checks = the deterministic
+  -- facebook-ads checklist evaluated on stored Meta data (no model involved).
+  origin_kind text NOT NULL CHECK (origin_kind IN ('creative_run','paid_strategy_run','meta_account_checks')),
   kind text NOT NULL CHECK (kind IN ('finding','content_opportunity','retargeting_hypothesis')),
   scope_key text NOT NULL CHECK (length(scope_key) BETWEEN 1 AND 120),
   stable_key text CHECK (stable_key IS NULL OR length(stable_key) BETWEEN 1 AND 600),
@@ -43,8 +46,8 @@ CREATE INDEX marketing_insights_recent_idx ON public.marketing_insights(last_sup
 CREATE TABLE public.marketing_insight_observations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   insight_id uuid NOT NULL REFERENCES public.marketing_insights(id) ON DELETE CASCADE,
-  source_kind text NOT NULL CHECK (source_kind IN ('creative_run','paid_strategy_run')),
-  -- Deliberately not a foreign key: the two source tables differ and run history is never pruned.
+  source_kind text NOT NULL CHECK (source_kind IN ('creative_run','paid_strategy_run','meta_account_checks')),
+  -- Deliberately not a foreign key: the sources differ (a checklist evaluation has no run row, only a deterministic id per day).
   source_run_id uuid NOT NULL,
   source_index integer CHECK (source_index IS NULL OR source_index BETWEEN 0 AND 20),
   observed_at timestamptz NOT NULL,
