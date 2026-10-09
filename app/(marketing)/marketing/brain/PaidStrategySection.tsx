@@ -3,6 +3,7 @@ import type { PaidStrategyData } from '@/lib/actions/marketing/paid-strategy'
 import type { StrategyImplementationData } from '@/lib/actions/marketing/paid-strategy-implementation'
 import ImplementationControl from './ImplementationControl'
 import type { PaidStrategyRecommendationType, PaidStrategyRun } from '@/lib/marketing/paid-strategy/types'
+import { compactSummary } from '@/lib/marketing/paid-strategy/summary'
 
 const TYPE_LABELS: Record<PaidStrategyRecommendationType, string> = {
   campaign_structure: 'Campaign structure', retargeting: 'Retargeting', audience: 'Audience', creative: 'Creative',
@@ -20,23 +21,39 @@ function Field({ label, children, tone = 'default' }: { label: string; children:
 
 type StoredRecommendation = PaidStrategyRun['recommendations'][number]
 
+/**
+ * Collapsed by default: what Brain suggests, why, and whether extra budget is involved. The implementation state and the
+ * Reject / Approve controls stay visible; every detailed field is still there, unchanged, behind "Read more".
+ * A native <details> keeps it keyboard accessible with no client code, and each card opens independently.
+ */
 function StrategyCard({ rec, rank, footer }: { rec: StoredRecommendation; rank: number; footer?: ReactNode }) {
+  const { action, reason } = compactSummary(rec)
+  const budget = rec.incremental_budget_dkk
   return <article className="rounded-2xl border border-kk-line bg-kk-panel p-5">
     <div className="flex items-start justify-between gap-3">
       <h3 className="text-base font-semibold leading-snug">{rank}. {rec.title}</h3>
       <span className="shrink-0 rounded-full bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted">{TYPE_LABELS[rec.recommendation_type] ?? rec.recommendation_type}</span>
     </div>
-    <dl className="mt-4 space-y-3">
-      <Field label="Facts · from our data">{rec.evidence}</Field>
-      <Field label="Interpretation · inference, not fact">{rec.interpretation}</Field>
-      <Field label="Hypothesis">{rec.hypothesis}</Field>
-      <Field label="Test or action">{rec.exact_test_or_action}</Field>
-      {typeof rec.incremental_budget_dkk === 'number'
-        ? <Field label="Extra budget needed">{rec.incremental_budget_dkk > 0 ? `${money(rec.incremental_budget_dkk)} DKK on top of existing spend` : 'None (no extra spend)'}</Field> : null}
-      <Field label="Success metric">{rec.success_metric}</Field>
-      <Field label="Evidence limitations" tone="muted">{rec.evidence_limitations}</Field>
-    </dl>
+    <p data-summary className="mt-3 text-sm leading-relaxed">{action}{action && reason ? ' ' : null}<span className="text-kk-muted">{reason}</span></p>
+    {typeof budget === 'number'
+      ? <p className="mt-3"><span data-budget className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-medium ${budget > 0 ? 'bg-kk-brand/10 text-kk-brand' : 'bg-kk-soft text-kk-muted'}`}>{budget > 0 ? `+${money(budget)} DKK test budget` : 'No extra spend'}</span></p> : null}
     {footer}
+    <details className="group mt-4 border-t border-kk-line pt-3">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-sm font-medium text-kk-muted hover:text-kk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="text-xs transition-transform group-open:rotate-90">▸</span>
+        <span className="group-open:hidden">Read more</span><span className="hidden group-open:inline">Show less</span>
+      </summary>
+      <dl className="mt-3 space-y-3">
+        <Field label="Facts · from our data">{rec.evidence}</Field>
+        <Field label="Interpretation · inference, not fact">{rec.interpretation}</Field>
+        <Field label="Hypothesis">{rec.hypothesis}</Field>
+        <Field label="Test or action">{rec.exact_test_or_action}</Field>
+        {typeof budget === 'number'
+          ? <Field label="Extra budget needed">{budget > 0 ? `${money(budget)} DKK on top of existing spend` : 'None (no extra spend)'}</Field> : null}
+        <Field label="Success metric">{rec.success_metric}</Field>
+        <Field label="Evidence limitations" tone="muted">{rec.evidence_limitations}</Field>
+      </dl>
+    </details>
   </article>
 }
 
@@ -79,7 +96,7 @@ export default function PaidStrategySection({ data, generateControl, implementat
       </div> : <>
         <RunMeta run={run} />
         {run.recommendations.length
-          ? <div className="grid gap-4 lg:grid-cols-3">{run.recommendations.map((rec, i) => <StrategyCard key={`${i}-${rec.title}`} rec={rec} rank={i + 1} footer={control(run.id, i, false, rec.title)} />)}</div>
+          ? <div className="grid items-start gap-4 lg:grid-cols-3">{run.recommendations.map((rec, i) => <StrategyCard key={`${i}-${rec.title}`} rec={rec} rank={i + 1} footer={control(run.id, i, false, rec.title)} />)}</div>
           : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted">The analysis found nothing worth recommending from the current data.</p>}
         {run.evidence?.data_gaps?.length ? <details className="rounded-xl border border-kk-line p-4 text-sm">
           <summary className="cursor-pointer font-medium">What this analysis could not see</summary>
@@ -89,7 +106,7 @@ export default function PaidStrategySection({ data, generateControl, implementat
           <summary className="cursor-pointer font-medium">Previous runs ({data.previous.length})</summary>
           <div className="mt-3 space-y-3">{data.previous.map(prev => <details key={prev.id} className="rounded-lg border border-kk-line p-3">
             <summary className="cursor-pointer">{day(prev.generated_at)} · {prev.recommendations.length} recommendation{prev.recommendations.length === 1 ? '' : 's'} · {prev.skill_ref}</summary>
-            <div className="mt-3 grid gap-4 lg:grid-cols-3">{prev.recommendations.map((rec, i) => <StrategyCard key={`${prev.id}-${i}`} rec={rec} rank={i + 1} footer={control(prev.id, i, true, rec.title)} />)}</div>
+            <div className="mt-3 grid items-start gap-4 lg:grid-cols-3">{prev.recommendations.map((rec, i) => <StrategyCard key={`${prev.id}-${i}`} rec={rec} rank={i + 1} footer={control(prev.id, i, true, rec.title)} />)}</div>
           </details>)}</div>
         </details> : null}
       </>}
