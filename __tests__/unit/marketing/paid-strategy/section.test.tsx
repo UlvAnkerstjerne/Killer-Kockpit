@@ -108,12 +108,12 @@ describe('PaidStrategyButton', () => {
   })
 })
 
-describe('inside the existing Marketing Brain', () => {
+describe('inside the existing CMO page', () => {
   const brain: BrainData = { allowed: true, canRefresh: false, run: null, latestAttempt: null, error: null }
   it('appears under the Brain header, alongside the unchanged Creative Intelligence content', () => {
     const html = renderToStaticMarkup(<BrainView data={brain} paidStrategy={<PaidStrategySection data={{ ...base, latest: run() }} />} />)
-    expect(html).toContain('Marketing Brain')
-    expect(html.indexOf('Paid strategy')).toBeGreaterThan(html.indexOf('Marketing Brain'))
+    expect(html).toContain('CMO')
+    expect(html.indexOf('Paid strategy')).toBeGreaterThan(html.indexOf('CMO'))
     expect(html.indexOf('Paid strategy')).toBeLessThan(html.indexOf('No Creative Intelligence run yet'))
   })
   it('leaves the Brain unchanged when no strategy section is supplied', () => {

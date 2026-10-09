@@ -7,7 +7,7 @@ import PaidStrategySection from './PaidStrategySection'
 import RefreshButton from './RefreshButton'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Marketing Brain | Killer Kockpit' }
+export const metadata = { title: 'CMO | Killer Kockpit' }
 
 export default async function MarketingBrainPage() {
   const [data, strategy, implementations] = await Promise.all([getCreativeIntelligence(), getPaidStrategy(), getStrategyImplementations()])

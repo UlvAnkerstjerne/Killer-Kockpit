@@ -8,6 +8,10 @@ import {
 import { getPlatformSnapshot } from '@/lib/actions/marketing/platform-snapshot'
 import type { PlatformSnapshotData } from '@/lib/actions/marketing/platform-snapshot'
 import RegenerateButton from './RegenerateButton'
+import CmoRecommendations from './CmoRecommendations'
+import { getPaidStrategy } from '@/lib/actions/marketing/paid-strategy'
+import { getStrategyImplementations } from '@/lib/actions/marketing/paid-strategy-implementation'
+import { cmoBriefData, type CmoBriefData } from '@/lib/marketing/paid-strategy/implementation/surface'
 import PlatformCards from './PlatformCards'
 import type {
   MorningBriefRow,
@@ -777,13 +781,14 @@ function LegacyBriefContent({ sections }: { sections: MorningBriefSections }) {
 // ── MorningBriefContent ───────────────────────────────────────────────────────
 // Dispatches between v2 (observations) and v1 (legacy) layouts.
 
-function MorningBriefContent({
-  brief, isStale, staleReason, snapshot,
+export function MorningBriefContent({
+  brief, isStale, staleReason, snapshot, cmo,
 }: {
   brief: MorningBriefRow
   isStale?: boolean
   staleReason?: string
   snapshot?: PlatformSnapshotData | null
+  cmo?: CmoBriefData | null
 }) {
   const sections = brief.sections_json
   // isBriefV2: observations field present (even if []) → v2; absent → v1 legacy
@@ -816,6 +821,8 @@ function MorningBriefContent({
       {sections && isV2 && (
         <>
           <WhatMattersTodaySection observations={sections.observations ?? []} />
+          {/* Live strategic state, read at render time (never stored in the brief). Hidden when nothing needs a decision. */}
+          {cmo && <CmoRecommendations data={cmo} />}
           <hr className="border-kk-line" />
           <DetailsSection sections={sections} />
         </>
@@ -823,7 +830,10 @@ function MorningBriefContent({
 
       {/* v1 fallback — render legacy dashboard layout for old briefs */}
       {sections && !isV2 && (
-        <LegacyBriefContent sections={sections} />
+        <>
+          {cmo && <CmoRecommendations data={cmo} />}
+          <LegacyBriefContent sections={sections} />
+        </>
       )}
     </div>
   )
@@ -848,13 +858,16 @@ function StatePanel({ title, detail, action }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function MorningBriefPage() {
-  const [user, latestBrief, snapshot, reviewDesk, savedReviews] = await Promise.all([
+  const [user, latestBrief, snapshot, reviewDesk, savedReviews, strategy, strategyImplementations] = await Promise.all([
     getCurrentUser(),
     getLatestMorningBrief(),
     getPlatformSnapshot(),
     getGbpReviewDesk(),
     getSavedGbpReviews(),
+    getPaidStrategy(),
+    getStrategyImplementations(),
   ])
+  const cmo = cmoBriefData(strategy, strategyImplementations)
 
   const isAdmin = user?.role === 'SUPER_ADMIN'
   const today   = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen' }).format(new Date())
@@ -923,8 +936,12 @@ export default async function MorningBriefPage() {
           isStale={isStale}
           staleReason={isStale ? staleReason : undefined}
           snapshot={snapshot}
+          cmo={cmo}
         />
       )}
+
+      {/* No brief to place it in (still generating, failed, none yet): the live recommendations are independent of it. */}
+      {!displayBrief && cmo && <div className="mb-5"><CmoRecommendations data={cmo} /></div>}
 
       {stateMessage === 'generating' && !displayBrief && (
         <StatePanel

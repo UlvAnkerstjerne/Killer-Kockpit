@@ -9,6 +9,12 @@ import { loadImplementationViews } from '@/lib/marketing/paid-strategy/implement
 import type { ImplementationView } from '@/lib/marketing/paid-strategy/implementation/types'
 import { activateImplementation, cancelImplementation, confirmImplementation, prepareImplementation, rejectImplementation, resumeImplementation, type ConfirmOutcome, type PrepareOutcome, type RejectOutcome } from '@/lib/marketing/paid-strategy/implementation/service'
 
+/** The same implementation rows are shown on the CMO page and on the Morning Brief, so both are refreshed after any action. */
+function revalidateStrategySurfaces() {
+  revalidatePath('/marketing/brain')
+  revalidatePath('/marketing')
+}
+
 export type PrepareResult = PrepareOutcome & { canConfirm?: boolean; owners?: { id: string; name: string }[] }
 
 type Authorized = { ok: true; userId: string; canApprove: boolean } | { ok: false; error: string }
@@ -43,7 +49,7 @@ export async function confirmStrategyImplementation(runId: string, index: number
   const auth = await authorize('paid_approve')
   if (!auth.ok) return auth
   const result = await confirmImplementation(createServiceClient(), auth.userId, String(runId), Number(index), inputs)
-  revalidatePath('/marketing/brain')
+  revalidateStrategySurfaces()
   return result
 }
 
@@ -52,7 +58,7 @@ export async function resumeStrategyImplementation(runId: string, index: number,
   const auth = await authorize('paid_approve')
   if (!auth.ok) return auth
   const result = await resumeImplementation(createServiceClient(), auth.userId, String(runId), Number(index), inputs)
-  revalidatePath('/marketing/brain')
+  revalidateStrategySurfaces()
   return result
 }
 
@@ -61,7 +67,7 @@ export async function activateStrategyImplementation(runId: string, index: numbe
   const auth = await authorize('paid_approve')
   if (!auth.ok) return auth
   const result = await activateImplementation(createServiceClient(), auth.userId, String(runId), Number(index))
-  revalidatePath('/marketing/brain')
+  revalidateStrategySurfaces()
   return result
 }
 
@@ -70,7 +76,7 @@ export async function cancelStrategyImplementation(runId: string, index: number)
   const auth = await authorize('paid_approve')
   if (!auth.ok) return auth
   const result = await cancelImplementation(createServiceClient(), auth.userId, String(runId), Number(index))
-  revalidatePath('/marketing/brain')
+  revalidateStrategySurfaces()
   return result
 }
 
@@ -82,7 +88,7 @@ export async function rejectStrategyImplementation(runId: string, index: number,
   const auth = await authorize('paid_approve')
   if (!auth.ok) return auth
   const result = await rejectImplementation(createServiceClient(), auth.userId, String(runId), Number(index), reason)
-  revalidatePath('/marketing/brain')
+  revalidateStrategySurfaces()
   return result
 }
 

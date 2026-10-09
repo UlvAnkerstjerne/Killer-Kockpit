@@ -272,8 +272,8 @@ export default function BrainView({ data, refreshControl, paidStrategy }: { data
   return <div className="space-y-6 text-kk-ink">
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight"><BrainIcon />Marketing Brain</h1>
-        <p className="mt-2 text-sm text-kk-muted">What we&rsquo;re learning from our marketing — and what to test next.</p>
+        <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight"><BrainIcon />CMO</h1>
+        <p className="mt-2 text-sm text-kk-muted">Your marketing strategist — what we&rsquo;re learning and what to do next.</p>
         <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-kk-muted">Creative Intelligence · Instagram Organic</p>
       </div>
       {data.canRefresh ? refreshControl : null}

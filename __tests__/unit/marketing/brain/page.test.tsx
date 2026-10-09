@@ -83,9 +83,9 @@ describe('Marketing Brain usability', () => {
     expect(html).not.toContain("What's working")
   })
 
-  it('shows page title "Marketing Brain" as primary heading with module label below', () => {
+  it('shows page title "CMO" as primary heading with module label below', () => {
     const html = renderToStaticMarkup(<BrainView data={{ ...base, run: savedRun() }} />)
-    expect(html).toContain('Marketing Brain')
+    expect(html).toContain('>CMO</h1>')
     expect(html).toContain('Creative Intelligence')
     expect(html).toContain('Instagram Organic')
   })

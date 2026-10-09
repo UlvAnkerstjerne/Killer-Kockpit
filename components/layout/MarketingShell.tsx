@@ -17,10 +17,10 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
  */
 const MARKETING_NAV = [
   { href: '/marketing',                         label: 'Morning Brief',          exact: true  },
+  { href: '/marketing/brain',                   label: 'CMO',                    exact: false },
   { href: '/marketing/needs-review',            label: 'Needs Review',           exact: false },
   { href: '/marketing/paid',                    label: 'Paid',                   exact: false },
   { href: '/marketing/organic',                 label: 'Organic',                exact: false },
-  { href: '/marketing/brain',                   label: 'Marketing Brain',        exact: false },
   { href: '/marketing/google',                  label: 'Google',                 exact: false },
   { href: '/marketing/google-business-profile', label: 'Google Business Profile', exact: false },
   { href: '/marketing/content',                 label: 'Content',                exact: false },
