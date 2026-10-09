@@ -28,8 +28,8 @@ export const FIELD_TARGET_CHARS = {
   display_title: 90, display_summary: 220,
 } as const
 export const FIELD_MAX_CHARS = {
-  title: 160, evidence: 900, interpretation: 800, hypothesis: 600,
-  exact_test_or_action: 1000, success_metric: 450, evidence_limitations: 800,
+  title: 240, evidence: 1200, interpretation: 1000, hypothesis: 800,
+  exact_test_or_action: 1400, success_metric: 600, evidence_limitations: 1000,
   display_title: 130, display_summary: 320,
 } as const
 

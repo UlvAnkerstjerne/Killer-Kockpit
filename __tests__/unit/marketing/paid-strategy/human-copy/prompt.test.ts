@@ -40,7 +40,7 @@ describe('the prompt asks for plain management language in the display fields on
     expect(section).toMatch(/Never write incremental budget, headroom or projected capacity/)
   })
   it('bumps the prompt version, keeps the system prompt ending with the Kockpit rules, and leaves the vendored skill text alone', () => {
-    expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-12-v8')
+    expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-12-v9')
     const prompt = buildPaidStrategySystemPrompt({ name: 'm', version: '1', ref: 'mesper-meta-ads@2.1.0#x', hash: 'h', text: 'SKILL BODY' })
     expect(prompt).toContain('SKILL BODY'); expect(prompt.endsWith(rules)).toBe(true)
   })

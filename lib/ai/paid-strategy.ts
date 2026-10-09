@@ -22,7 +22,7 @@ import { MONTHLY_CEILING_DKK, type PaidStrategyEvidence } from '@/lib/marketing/
 import { FIELD_TARGET_CHARS, PaidStrategyOutputSchema, type PaidStrategyRecommendation } from '@/lib/marketing/paid-strategy/types'
 
 /** Bump on any material change to KOCKPIT_RULES (including the voice of any field), the schema, or the vendored skill. */
-export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-12-v8'
+export const PAID_STRATEGY_PROMPT_VERSION = '2026-10-12-v9'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
