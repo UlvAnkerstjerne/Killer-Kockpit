@@ -77,6 +77,8 @@ export interface PlanInput {
 
 const blocked = (...b: Blocker[]) => ({ ok: false as const, blockers: b })
 const cap = (code: string, message: string, unblock: string): Blocker => ({ kind: 'capability', code, message, unblock })
+/** Meta returns "0" (not null) for a budget field that is not in use. */
+const hasBudget = (v: string | null | undefined) => v != null && Number(v) > 0
 const text = (v: unknown) => (typeof v === 'string' ? v : '')
 
 export function planCampaignClone(i: PlanInput): { ok: true; plan: ClonePlan } | { ok: false; blockers: Blocker[] } {
@@ -88,13 +90,13 @@ export function planCampaignClone(i: PlanInput): { ok: true; plan: ClonePlan } |
   const { campaign, adSets, ads } = i.source
   if (!SUPPORTED_OBJECTIVES.includes(campaign.objective as never)) b.push(cap('objective_unsupported', `Cloning ${campaign.objective ?? 'this'} campaigns is not supported yet.`, 'Only lead and traffic campaigns can be cloned.'))
   if (campaign.special_ad_categories.length > 0) b.push(cap('special_ad_category', 'The source campaign declares a special ad category, which needs a person to confirm for the new market.', 'Confirm the special ad category and country for the new market.'))
-  if (campaign.daily_budget || campaign.lifetime_budget) b.push(cap('campaign_budget_unsupported', 'The source campaign uses a campaign-level budget; only ad-set budgets can be cloned.', 'Not supported yet.'))
+  if (hasBudget(campaign.daily_budget) || hasBudget(campaign.lifetime_budget)) b.push(cap('campaign_budget_unsupported', 'The source campaign uses a campaign-level budget; only ad-set budgets can be cloned.', 'Not supported yet.'))
 
   const activeSets = adSets.filter(s => s.effective_status === 'ACTIVE' || s.status === 'ACTIVE')
   if (activeSets.length !== 1) b.push({ kind: 'input', code: 'source_adset', message: `The source campaign has ${activeSets.length} active ad sets; exactly one can be mirrored.`, unblock: 'Say which ad set to mirror.' })
   const adSet = activeSets[0]
   if (adSet) {
-    if (adSet.lifetime_budget) b.push(cap('adset_lifetime_budget', 'The source ad set uses a lifetime budget.', 'Not supported yet.'))
+    if (hasBudget(adSet.lifetime_budget)) b.push(cap('adset_lifetime_budget', 'The source ad set uses a lifetime budget.', 'Not supported yet.'))
     if (adSet.bid_strategy !== 'LOWEST_COST_WITHOUT_CAP') b.push(cap('bid_strategy', `Bid strategy ${adSet.bid_strategy ?? 'unknown'} needs a bid amount that cannot be cloned safely.`, 'Not supported yet.'))
     if (!adSet.promoted_object || !adSet.optimization_goal || !adSet.billing_event || !adSet.targeting) b.push(cap('adset_incomplete', 'The source ad set is missing the optimisation, promoted object or targeting needed to clone it.', 'Open the source ad set in Meta and check it is complete.'))
     if (adSet.is_dynamic_creative) b.push(cap('dynamic_creative', 'The source ad set uses dynamic creative.', 'Not supported yet.'))

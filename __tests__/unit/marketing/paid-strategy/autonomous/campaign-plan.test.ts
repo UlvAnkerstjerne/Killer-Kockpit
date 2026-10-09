@@ -54,6 +54,10 @@ describe('Malmö clone of the real C2 structure', () => {
 })
 
 describe('what blocks cloning, exactly', () => {
+  it('treats the "0" Meta returns for an unused budget field as not set (real C2 returns lifetime_budget "0")', () => {
+    expect(plan({ source: { campaign: sourceCampaign({ daily_budget: '0', lifetime_budget: '0' }), adSets: [sourceAdSet({ lifetime_budget: '0' })], ads: [sourceAd()] } }).ok).toBe(true)
+    expect(blockers({ source: { campaign: sourceCampaign(), adSets: [sourceAdSet({ lifetime_budget: '50000' })], ads: [sourceAd()] } }).map(b => b.code)).toContain('adset_lifetime_budget')
+  })
   it('account ownership, currency and unconfigured account are refused before anything else', () => {
     expect(blockers({ sourceAccountId: 'act_9' })[0]).toMatchObject({ code: 'account_mismatch' })
     expect(blockers({ configuredAccountId: undefined })[0]).toMatchObject({ code: 'account_unconfigured', kind: 'access' })
