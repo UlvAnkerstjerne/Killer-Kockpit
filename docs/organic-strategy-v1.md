@@ -48,6 +48,9 @@ The validator rejects URLs/IDs, demographic claims, invented retention or follow
 
 Two live answers took 128 s and 109 s (5,445 and 4,780 output tokens), so the call uses a 210 s timeout and `max_tokens` 8000. A timeout is never retried (it has already used its budget), and a failed answer is re-asked only if the failure came back in under 100 s, so one refresh cannot stack several multi-minute calls. A refresh now takes roughly 2.5 to 3.5 minutes.
 
+## Grounding of business facts
+The strategist may state a business fact (what is made in-house, how something is prepared, where it is sourced, durations, company history) only when a supplied post caption or company note states it for that same product. Otherwise the detail is removed, or the concept carries one short "confirm internally" note. `validateOrganicStrategy` enforces this conservatively: product plus fact-class proximity inside one source, durations that no source contains, and history phrases ("took us six years") that no source contains. Sentences that ask for confirmation, and the limitations field, are exempt. Prompt v3 also forbids generic platform lore as evidence and treats a repeated CTA as non-evidence; carousel concepts are optional and the expected answer with one measured carousel is none.
+
 ## Persistence
 
 Inside `marketing_creative_intelligence_runs.analytics` under `organic_strategy`: output, model, prompt version, skill name/version/ref/hash, evidence window, evidence summary, post reference table and quality counters. **No migration**: `analytics` is JSONB with a 2,000,000-byte CHECK and already holds `business_context`; the largest possible strategy is under 400 KB (proven against real PostgreSQL in `persistence.test.ts`).

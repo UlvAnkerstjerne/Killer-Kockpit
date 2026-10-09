@@ -32,10 +32,10 @@ export const FIELD_TARGET_CHARS = {
   opening_slide: 200, slide: 160,
 } as const
 export const FIELD_MAX_CHARS = {
-  title: 140, evidence: 800, interpretation: 650, limitations: 450,
-  why_now: 500, evidence_basis: 500, suggested_angle: 650,
-  hook: 320, core_idea: 550, execution: 1100, why_worth_testing: 550,
-  opening_slide: 320, slide: 260,
+  title: 180, evidence: 900, interpretation: 800, limitations: 500,
+  why_now: 600, evidence_basis: 550, suggested_angle: 750,
+  hook: 360, core_idea: 700, execution: 1300, why_worth_testing: 650,
+  opening_slide: 360, slide: 300,
 } as const
 const M = FIELD_MAX_CHARS
 

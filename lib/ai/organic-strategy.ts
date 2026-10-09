@@ -26,7 +26,7 @@ import {
 } from '@/lib/marketing/organic-strategy/types'
 
 /** Bump on any change to ORGANIC_RULES, the schema, the evidence shape, or the vendored skill. */
-export const ORGANIC_STRATEGY_PROMPT_VERSION = '2026-10-08-v2'
+export const ORGANIC_STRATEGY_PROMPT_VERSION = '2026-10-09-v3'
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,7 @@ export const ORGANIC_RULES = `\
 What you produce
 - Four lists, each possibly empty: main_learnings (at most ${MAX_LEARNINGS}), content_opportunities (at most ${MAX_OPPORTUNITIES}), reel_concepts (at most ${MAX_REELS}), carousel_concepts (at most ${MAX_CAROUSELS}). Do NOT fill slots to reach a maximum. One Reel idea and no carousel idea is a good answer when that is what the evidence supports.
 - Write in English. When you quote or refer to a caption, keep its own wording. No captions, hashtags, posting schedules, scores, 30/60/90 plans or audience profiles: those are not the deliverable.
+- Carousels: never infer carousel performance. When the data has only one measured carousel it supports no carousel conclusion at all. Carousel concepts are optional exploratory repurposing ideas, and returning NONE is the expected answer unless a subject clearly suits a carousel. Do not force them, and do not let them outweigh the Reel concepts.
 - Reel and carousel concepts must be specific enough that a content team could make them tomorrow: a concrete subject, a hook line, what happens, in what order. Not generic formats.
 
 Untrusted text
@@ -66,9 +67,19 @@ Blind spots: never invent what is not in the data
 - Counters are lifetime totals and older posts had longer to accumulate them. Views (video) and reach (other formats) are different denominators: compare rates and ratios only within the same format.
 - Visuals have not been seen. You may reason about what a caption says. You may not claim what the footage, thumbnail or editing looked like. Classifications are AI-derived from caption text only and unreviewed; treat them as hints, never as facts.
 
+Ground every business fact in the supplied sources
+- Any concrete claim about Killer Kebab's real-world operations, recipes, ingredients, preparation, process, history, timing, people, sourcing, locations or product facts must be supported by the supplied evidence. The ONLY supported sources are: the captions and data of measured posts (P), the captions of unmeasured posts (U), and the company notes in creative_context (B). If a fact is not in those sources, do NOT state it as true. Do not fill gaps from general knowledge, from what is typical for a restaurant, or by inference.
+- A detail stated for one product, step or post is not true of another. Never carry an ingredient, process, duration or standard from one product onto another because they seem alike.
+- Never state a number, duration (hours, months, years) or piece of company history that no source states. Never describe how long something took, how long people waited, or what has been "asked for years", unless a source says so.
+- Never state where something is made or from whom it is bought (made in-house, homemade, from scratch, sourced, supplied, bought, delivered from elsewhere) unless a source says so for that exact item. Do not write what the team does NOT make or source themselves.
+- Scripts, hooks, slide text and spoken lines are held to the same rule: do not put an unsupported fact in anyone's mouth. Use only facts the sources state, or neutral questions and framing.
+- When a concept would need an unknown fact, REMOVE the detail and keep the concept at the level the sources support (for example "explain what makes the preparation different", not an invented description of the preparation). Only when a detail is genuinely essential, add one short note such as "Confirm the exact preparation detail internally before using it". Do not scatter such warnings: the default is a concept written entirely from known facts.
+
 Priorities and what NOT to do
 - Weigh reach (views for video), shares and saves, and meaningful interaction, before likes. Judge comments only in relation to shares and saves in this data. Do not optimise for likes alone.
 - Do not give generic Instagram advice (best posting times, hashtags, "post consistently", call-to-action formulas, algorithm lore) unless Killer Kebab's own supplied data supports it. Do not claim comment prompts or other CTAs matter unless the data shows it.
+- Do not use general claims about how Instagram works (what the algorithm rewards, what "generally" performs) as evidence or as a reason, and do not write phrases such as "consistent with general algorithm reasoning". Only Killer Kebab's own supplied data can support a claim.
+- A call to action or closing question that appears in a post does NOT mean it helped. Do not recommend ending on the same question, a comment prompt or any CTA or hook pattern merely because it appears in successful posts. Elevate a hook or CTA mechanic only when the supplied data distinguishes the posts that used it from weaker posts that did not; if weaker posts used it too, it distinguishes nothing.
 - Look for what the strongest posts are ABOUT: the subject, the angle, the question or claim the caption makes. Derive this from the captions in the data. Do not use a fixed list of topics.
 
 Where the skill conflicts with Killer Kebab's evidence
@@ -153,6 +164,86 @@ function collectFields(o: OrganicStrategyOutput): Field[] {
   return out
 }
 
+// ── Grounding of business facts (conservative, deterministic) ─────────────────
+//
+// A regex cannot prove that a sentence is factually grounded, and this does not try to. It catches the
+// specific invention patterns seen in the first live evaluation: an ingredient/process, make-or-buy or
+// duration claim attached to a product that NO supplied caption or note makes for that product. The model
+// is also told the rule in the prompt; this is the backstop. A sentence that asks for confirmation is exempt.
+
+const NUMBER_WORDS: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12' }
+export function normaliseForGrounding(text: string): string {
+  return text.toLowerCase().replace(/[\u2010-\u2015\-]/g, ' ')
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g, w => NUMBER_WORDS[w])
+    .replace(/\s+/g, ' ')
+}
+
+/** Product words, grouped so that equivalent words ground each other (chicken/kylling, lamb/beef/meat, ...). */
+const PRODUCT_GROUPS: Record<string, string[]> = {
+  chicken: ['chicken', 'kylling'], meat: ['lamb', 'beef', 'meat'], falafel: ['falafel', 'falafels'], harissa: ['harissa'],
+  sauce: ['sauce', 'sauces', 'mayo', 'mayonnaise', 'dressing', 'dressings'], dough: ['dough'],
+  bread: ['flatbread', 'flatbreads', 'bread', 'sourdough', 'pita'], kebab: ['kebab', 'kebabs'], fries: ['fries'],
+  veg: ['vegetable', 'vegetables', 'veg', 'cucumber', 'cucumbers', 'cabbage', 'parsley', 'onion', 'onions', 'tomato', 'tomatoes', 'salad', 'salads'],
+  spread: ['hummus', 'spread', 'spreads'],
+}
+const GROUP_OF = new Map(Object.entries(PRODUCT_GROUPS).flatMap(([group, words]) => words.map(w => [w, group] as const)))
+const PRODUCT_RE = new RegExp(`\\b(${[...GROUP_OF.keys()].join('|')})\\b`, 'g')
+
+/** The kinds of operational fact that must come from a source for that same product. */
+const FACT_CLASSES: Record<string, RegExp> = {
+  'who makes it': /\b(homemade|home made|in house|house made|from scratch|our own|handmade|made (?:it |them |this |that |fresh )?(?:right )?in (?:the |our )|made by us|made ourselves)/g,
+  'where it is sourced': /\b(sourced|sourcing|suppliers?|imported|bought|purchased|externally|outsourced|locally grown|farms?|farmers?)\b/g,
+  'how it is prepared': /\b(marinad(?:e|es|ed|ing)|marinat(?:e|es|ed|ing)|yogh?urt|brined?|cured)\b|\b\d+ hours?\b/g,
+}
+const CONFIRMATION = /\b(confirm|verify|check with|ask the team|whether|to be confirmed|if it is|if they are|if this is)\b/
+const DURATION = /\b(\d+) (hour|year|month)s?\b/g
+const HISTORY = /\b(?:took|take|takes|waited|wait|spent|needed)\b[^.!?]{0,40}?\b\d+ (?:years?|months?)\b|\b\d+ (?:years?|months?) (?:to|before)\b|\bfor (?:years|months|a decade)\b|\bfor (?:the )?(?:last|past) \d+ (?:years?|months?)\b/g
+const PROXIMITY_CHARS = 80
+
+function nearInSource(source: string, groups: Set<string>, fact: RegExp): boolean {
+  const products = [...source.matchAll(PRODUCT_RE)].filter(m => groups.has(GROUP_OF.get(m[0])!)).map(m => m.index!)
+  if (!products.length) return false
+  const facts = [...source.matchAll(new RegExp(fact.source, 'g'))].map(m => m.index!)
+  return products.some(p => facts.some(f => Math.abs(p - f) <= PROXIMITY_CHARS))
+}
+
+/** The captions and notes the model was actually given: the ONLY sources a business fact may come from. */
+export function groundingSources(evidence: unknown): string[] {
+  const e = (evidence ?? {}) as {
+    posts?: { caption?: string }[]; recent_unmeasured_posts?: { caption?: string }[]
+    creative_context?: { items?: { project?: string; note?: string }[] }
+  }
+  return [
+    ...(e.posts ?? []).map(p => p.caption), ...(e.recent_unmeasured_posts ?? []).map(p => p.caption),
+    ...(e.creative_context?.items ?? []).flatMap(i => [i.project, i.note]),
+  ].filter((t): t is string => typeof t === 'string' && t.length > 0).map(t => normaliseForGrounding(t.replace(/^DATA:/, '')))
+}
+
+/** The first unsupported business fact in `text`, or null. */
+export function unsupportedBusinessFact(text: string, sources: string[]): string | null {
+  for (const sentence of sentencesOf(text)) {
+    const s = normaliseForGrounding(sentence)
+    if (CONFIRMATION.test(s)) continue
+    const groups = new Set([...s.matchAll(PRODUCT_RE)].map(m => GROUP_OF.get(m[0])!))
+    if (groups.size) {
+      for (const [kind, re] of Object.entries(FACT_CLASSES)) {
+        // Every product the sentence names must be supported on its own: "lamb and chicken" is not covered by the lamb.
+        const unsupported = [...groups].some(g => g !== 'kebab' && !sources.some(src => nearInSource(src, new Set([g]), re)))
+        if (new RegExp(re.source, 'g').test(s) && unsupported) {
+          return `states ${kind} for a product that no supplied caption or note says: "${sentence.trim().slice(0, 140)}"`
+        }
+      }
+    }
+    for (const [figure, n, unit] of s.matchAll(DURATION)) {
+      if (!sources.some(src => new RegExp(`\\b${n} ${unit}s?\\b`).test(src))) return `states a figure no source gives (${figure}): "${sentence.trim().slice(0, 140)}"`
+    }
+    for (const [phrase] of s.matchAll(HISTORY)) {
+      if (!sources.some(src => src.includes(phrase))) return `states company history no source gives ("${phrase.trim()}"): "${sentence.trim().slice(0, 140)}"`
+    }
+  }
+  return null
+}
+
 export interface ValidationContext { measuredInPrompt: number; unmeasuredInPrompt: number; businessItems: number }
 const distinctPostRefs = (text: string) => new Set(text.match(/\bP\d{1,3}\b/g) ?? []).size
 
@@ -223,6 +314,16 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
   ] as const) {
     const seen = new Set(titles.map(t => t.trim().toLowerCase()))
     if (seen.size !== titles.length) throw new OrganicStrategyValidationError(`${name}: duplicate titles.`)
+  }
+
+  // Business facts must come from the supplied captions and notes (only checkable when the evidence is supplied).
+  if (evidence !== undefined) {
+    const sources = groundingSources(evidence)
+    for (const field of collectFields(parsed)) {
+      if (field.kind === 'limitation') continue
+      const problem = unsupportedBusinessFact(field.text, sources)
+      if (problem) throw new OrganicStrategyValidationError(`${field.where}: ${problem}`)
+    }
   }
 
   // proven_pattern needs repeated evidence: at least 5 measured posts overall and 3 distinct posts cited.

@@ -161,7 +161,7 @@ describe('Organic Strategy output validation: strength is earned', () => {
 })
 
 describe('Organic Strategy output validation: figure check is telemetry, not a gate', () => {
-  const evidence = { posts: [{ metrics: { views: 90_021, shares: 700 }, rate: 7.8 }], sample: { measured_posts: 9 } }
+  const evidence = { posts: [{ caption: 'DATA:Why we marinate the chicken for 36 hours. Most places skip it.', metrics: { views: 90_021, shares: 700 }, rate: 7.8 }], sample: { measured_posts: 9 } }
   it('matches cited figures to the supplied data, including k/M rounding', () => {
     const o = validOutput({ main_learnings: [learning(1, { evidence: 'P1 reached about 90k views and 700 shares, a rate of 7.8 per 1,000. Nine posts, 2026.' })] })
     expect(unmatchedFigures(o, evidence)).toEqual([])
