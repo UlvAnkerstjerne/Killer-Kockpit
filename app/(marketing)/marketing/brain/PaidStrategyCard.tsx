@@ -8,6 +8,41 @@ const TYPE_LABELS: Record<PaidStrategyRecommendationType, string> = {
   campaign_structure: 'Campaign structure', retargeting: 'Retargeting', audience: 'Audience', creative: 'Creative',
   copy: 'Copy', budget: 'Budget', tracking: 'Tracking', funnel: 'Funnel',
 }
+/**
+ * Visual treatment only (no logic): a subtly tinted header with a small icon, keyed by recommendation_type so the cards are
+ * quicker to scan. Class names are written out in full so Tailwind can see them. Unknown types fall back to a neutral style.
+ */
+type TypeStyle = { header: string; line: string; accent: string; tile: string; icon: ReactNode }
+const svg = (children: ReactNode) => <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
+const ICONS = {
+  target: svg(<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.5" /><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" /></>),
+  spark: svg(<><path d="M10 4l1.9 5.1L17 11l-5.1 1.9L10 18l-1.9-5.1L3 11l5.1-1.9z" /><path d="M18.5 3.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" /></>),
+  funnel: svg(<path d="M3 4.5h18l-7 8.2V19l-4 2v-8.3z" />),
+  layers: svg(<><path d="M12 3l9 5-9 5-9-5z" /><path d="M3 12.5l9 5 9-5" /><path d="M3 16.8l9 5 9-5" /></>),
+  users: svg(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" /><circle cx="17.5" cy="9" r="2.5" /><path d="M17.5 14c2.4 0 4 1.7 4 4.5" /></>),
+  wallet: svg(<><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H19v14H5.5A2.5 2.5 0 0 1 3 16.5z" /><path d="M19 9.5h2v5h-2a2.5 2.5 0 0 1 0-5z" /></>),
+  compass: svg(<><circle cx="12" cy="12" r="9" /><path d="M15.5 8.5l-2 5-5 2 2-5z" /></>),
+}
+const TONES = {
+  blue:   { header: 'bg-[#EEF5FF]', line: 'border-[#3B6FA8]/15', accent: 'text-[#3B6FA8]', tile: 'bg-[#3B6FA8]/12' },
+  coral:  { header: 'bg-[#FFF1EC]', line: 'border-[#C95A35]/15', accent: 'text-[#C95A35]', tile: 'bg-[#C95A35]/12' },
+  green:  { header: 'bg-[#EEF6EF]', line: 'border-[#4F7A5A]/15', accent: 'text-[#4F7A5A]', tile: 'bg-[#4F7A5A]/12' },
+  plum:   { header: 'bg-[#F4F0FA]', line: 'border-[#745D8C]/15', accent: 'text-[#745D8C]', tile: 'bg-[#745D8C]/12' },
+  ochre:  { header: 'bg-[#FFF8E5]', line: 'border-[#9B762B]/15', accent: 'text-[#9B762B]', tile: 'bg-[#9B762B]/12' },
+  kraft:  { header: 'bg-[#F5F1EB]', line: 'border-[#7B664E]/15', accent: 'text-[#7B664E]', tile: 'bg-[#7B664E]/12' },
+  neutral:{ header: 'bg-[#F3F1EE]', line: 'border-[#6B665F]/15', accent: 'text-[#6B665F]', tile: 'bg-[#6B665F]/12' },
+}
+const TYPE_STYLES: Record<string, TypeStyle> = {
+  tracking:           { ...TONES.blue,  icon: ICONS.target },
+  creative:           { ...TONES.coral, icon: ICONS.spark },
+  copy:               { ...TONES.coral, icon: ICONS.spark },   // messaging belongs with creative
+  funnel:             { ...TONES.green, icon: ICONS.funnel },
+  retargeting:        { ...TONES.green, icon: ICONS.funnel },  // a path back through the funnel
+  campaign_structure: { ...TONES.plum,  icon: ICONS.layers },
+  audience:           { ...TONES.ochre, icon: ICONS.users },
+  budget:             { ...TONES.kraft, icon: ICONS.wallet },
+}
+const FALLBACK_STYLE: TypeStyle = { ...TONES.neutral, icon: ICONS.compass }
 export const money = (n: number) => new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 }).format(n)
 export const day = (value: string) => new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
 
@@ -31,12 +66,15 @@ export function StrategyCard({ rec, rank, footer }: { rec: StoredRecommendation;
   const human = rec.display_title && rec.display_summary ? { title: rec.display_title, summary: rec.display_summary } : null
   const { action, reason } = human ? { action: null, reason: null } : compactSummary(rec)
   const budget = rec.incremental_budget_dkk
-  return <article className="rounded-2xl border border-kk-line bg-kk-panel p-5">
-    <div className="flex items-start justify-between gap-3">
-      <h3 className="text-base font-semibold leading-snug">{rank}. {human ? human.title : rec.title}</h3>
-      <span className="shrink-0 rounded-full bg-kk-soft px-2.5 py-1 text-[11px] font-medium text-kk-muted">{TYPE_LABELS[rec.recommendation_type] ?? rec.recommendation_type}</span>
+  const look = TYPE_STYLES[rec.recommendation_type] ?? FALLBACK_STYLE
+  return <article className="overflow-hidden rounded-2xl border border-kk-line bg-kk-panel">
+    <div data-card-header data-type={rec.recommendation_type} className={`flex items-start gap-2.5 border-b px-4 py-3 ${look.header} ${look.line}`}>
+      <span aria-hidden className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${look.tile} ${look.accent}`}>{look.icon}</span>
+      <h3 className="min-w-0 flex-1 text-base font-semibold leading-snug">{rank}. {human ? human.title : rec.title}</h3>
+      <span className={`shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10.5px] font-medium ${look.accent}`}>{TYPE_LABELS[rec.recommendation_type] ?? rec.recommendation_type}</span>
     </div>
-    <p data-summary className="mt-3 text-sm leading-relaxed">{human ? human.summary : <>{action}{action && reason ? ' ' : null}<span className="text-kk-muted">{reason}</span></>}</p>
+    <div className="p-5 pt-4">
+    <p data-summary className="text-sm leading-relaxed">{human ? human.summary : <>{action}{action && reason ? ' ' : null}<span className="text-kk-muted">{reason}</span></>}</p>
     {typeof budget === 'number'
       ? <p className="mt-3"><span data-budget className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-medium ${budget > 0 ? 'bg-kk-brand/10 text-kk-brand' : 'bg-kk-soft text-kk-muted'}`}>{budget > 0 ? `+${money(budget)} DKK test budget` : 'No extra spend'}</span></p> : null}
     {footer}
@@ -57,6 +95,7 @@ export function StrategyCard({ rec, rank, footer }: { rec: StoredRecommendation;
         <Field label="Evidence limitations" tone="muted">{rec.evidence_limitations}</Field>
       </dl>
     </details>
+    </div>
   </article>
 }
 
