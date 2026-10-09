@@ -254,13 +254,25 @@ function CoverageSummary({ run, analytics }: { run: { generated_at: string; anal
 // Main component
 // ---------------------------------------------------------------------------
 
+/** Decorative (the heading already says what this is). Lucide "brain" outline, drawn in the text colour at the headline's size. */
+function BrainIcon() {
+  return <svg data-brain-icon width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true" focusable="false">
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+    <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" /><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+    <path d="M3.477 10.896a4 4 0 0 1 .585-.396" /><path d="M19.938 10.5a4 4 0 0 1 .585.396" />
+    <path d="M6 18a4 4 0 0 1-1.967-.516" /><path d="M19.967 17.484A4 4 0 0 1 18 18" />
+  </svg>
+}
+
 export default function BrainView({ data, refreshControl, paidStrategy }: { data: BrainData; refreshControl?: ReactNode; paidStrategy?: ReactNode }) {
   const run = data.run
   const analytics = run?.analytics
   return <div className="space-y-6 text-kk-ink">
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Marketing Brain</h1>
+        <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight"><BrainIcon />Marketing Brain</h1>
         <p className="mt-2 text-sm text-kk-muted">What we&rsquo;re learning from our marketing — and what to test next.</p>
         <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-kk-muted">Creative Intelligence · Instagram Organic</p>
       </div>
