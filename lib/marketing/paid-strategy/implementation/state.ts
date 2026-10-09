@@ -28,6 +28,7 @@ export function stateLabel(v: Pick<ImplementationView, 'status' | 'mode' | 'bloc
     case 'cancelled': return 'Cancelled · budget released'
     case 'needs_attention': return `Needs attention · check before retrying${v.message ? `: ${v.message}` : ''}`
     case 'failed': return 'Failed · nothing was changed'
+    case 'rejected': return 'Rejected'
   }
 }
 

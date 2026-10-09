@@ -16,7 +16,7 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import { callPaidStrategyAI, PAID_STRATEGY_PROMPT_VERSION } from '@/lib/ai/paid-strategy'
 import { loadMesperSkill, type LoadedSkill } from '@/lib/ai/skills/mesper'
 import {
-  buildPaidStrategyEvidence, strategyWindows,
+  buildPaidStrategyEvidence, strategyWindows, HUMAN_DECISION_WINDOW_DAYS, MAX_HUMAN_DECISIONS, type HumanStrategyDecisionInput,
   type StrategyAd, type StrategyAdInsight, type StrategyAdSet, type StrategyCampaign, type StrategyCampaignInsight,
 } from './evidence'
 
@@ -56,6 +56,26 @@ export async function loadPaidStrategyInputs(db: Db, now: Date) {
   return { now, currency: accounts[0]?.currency ?? 'DKK', campaigns, adSets, ads, campaignInsights, adInsights }
 }
 
+/**
+ * Recent human rejections, so the next analysis knows what the business has decided against. Read-only.
+ * A failure here must not block an analysis (it only loses context), so it degrades to none and says so in the log.
+ */
+export async function loadHumanStrategyDecisions(db: Db, now: Date): Promise<HumanStrategyDecisionInput[]> {
+  try {
+    const since = new Date(now.getTime() - HUMAN_DECISION_WINDOW_DAYS * 86_400_000).toISOString()
+    const res = await db.from('marketing_paid_strategy_implementations')
+      .select('recommendation_snapshot,rejection_reason,rejected_at')
+      .eq('status', 'rejected').gte('rejected_at', since).order('rejected_at', { ascending: false }).limit(MAX_HUMAN_DECISIONS)
+    if (res.error || !Array.isArray(res.data)) return []
+    return (res.data as { recommendation_snapshot: { title?: unknown; recommendation_type?: unknown } | null; rejection_reason: string | null; rejected_at: string }[])
+      .filter(r => typeof r.recommendation_snapshot?.title === 'string' && r.rejected_at)
+      .map(r => ({ title: String(r.recommendation_snapshot!.title), recommendation_type: typeof r.recommendation_snapshot!.recommendation_type === 'string' ? r.recommendation_snapshot!.recommendation_type : null, reason: r.rejection_reason, rejected_at: r.rejected_at }))
+  } catch {
+    console.warn('[paid-strategy/generate] Human strategy decisions could not be read; continuing without them.')
+    return []
+  }
+}
+
 export async function generatePaidStrategy(
   db: Db,
   actorId: string,
@@ -88,7 +108,7 @@ export async function generatePaidStrategy(
     if (claim.error || !claim.data) throw new Error('storage')
     runId = claim.data.id as string
 
-    const evidence = buildPaidStrategyEvidence(await loadPaidStrategyInputs(db, now))
+    const evidence = buildPaidStrategyEvidence({ ...(await loadPaidStrategyInputs(db, now)), humanDecisions: await loadHumanStrategyDecisions(db, now) })
     if (evidence.budget.spend_current_28d + evidence.budget.spend_prior_28d <= 0) {
       return await fail(db, runId, 'No stored Meta Ads spend was found in the last 56 days, so there is nothing to analyse.')
     }

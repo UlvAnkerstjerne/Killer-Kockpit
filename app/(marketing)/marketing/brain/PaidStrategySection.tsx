@@ -54,8 +54,8 @@ function RunMeta({ run }: { run: PaidStrategyRun }) {
 export default function PaidStrategySection({ data, generateControl, implementations }: { data: PaidStrategyData; generateControl?: ReactNode; implementations?: StrategyImplementationData }) {
   if (!data.allowed) return null
   const run = data.latest
-  const control = (runId: string, index: number, superseded: boolean) => implementations && !implementations.error
-    ? <ImplementationControl runId={runId} index={index} canApprove={implementations.canApprove} superseded={superseded}
+  const control = (runId: string, index: number, superseded: boolean, title: string) => implementations && !implementations.error
+    ? <ImplementationControl runId={runId} index={index} canApprove={implementations.canApprove} superseded={superseded} title={title}
         view={implementations.views.find(v => v.strategyRunId === runId && v.recommendationIndex === index)} />
     : null
   return <section aria-labelledby="paid-strategy-title" className="space-y-4">
@@ -79,7 +79,7 @@ export default function PaidStrategySection({ data, generateControl, implementat
       </div> : <>
         <RunMeta run={run} />
         {run.recommendations.length
-          ? <div className="grid gap-4 lg:grid-cols-3">{run.recommendations.map((rec, i) => <StrategyCard key={`${i}-${rec.title}`} rec={rec} rank={i + 1} footer={control(run.id, i, false)} />)}</div>
+          ? <div className="grid gap-4 lg:grid-cols-3">{run.recommendations.map((rec, i) => <StrategyCard key={`${i}-${rec.title}`} rec={rec} rank={i + 1} footer={control(run.id, i, false, rec.title)} />)}</div>
           : <p className="rounded-xl border border-kk-line bg-kk-panel p-5 text-sm text-kk-muted">The analysis found nothing worth recommending from the current data.</p>}
         {run.evidence?.data_gaps?.length ? <details className="rounded-xl border border-kk-line p-4 text-sm">
           <summary className="cursor-pointer font-medium">What this analysis could not see</summary>
@@ -89,7 +89,7 @@ export default function PaidStrategySection({ data, generateControl, implementat
           <summary className="cursor-pointer font-medium">Previous runs ({data.previous.length})</summary>
           <div className="mt-3 space-y-3">{data.previous.map(prev => <details key={prev.id} className="rounded-lg border border-kk-line p-3">
             <summary className="cursor-pointer">{day(prev.generated_at)} · {prev.recommendations.length} recommendation{prev.recommendations.length === 1 ? '' : 's'} · {prev.skill_ref}</summary>
-            <div className="mt-3 grid gap-4 lg:grid-cols-3">{prev.recommendations.map((rec, i) => <StrategyCard key={`${prev.id}-${i}`} rec={rec} rank={i + 1} footer={control(prev.id, i, true)} />)}</div>
+            <div className="mt-3 grid gap-4 lg:grid-cols-3">{prev.recommendations.map((rec, i) => <StrategyCard key={`${prev.id}-${i}`} rec={rec} rank={i + 1} footer={control(prev.id, i, true, rec.title)} />)}</div>
           </details>)}</div>
         </details> : null}
       </>}

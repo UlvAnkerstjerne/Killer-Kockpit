@@ -37,8 +37,15 @@ export interface StrategyAdInsight {
   spend: number | string | null; actions_json: MetaInsightActionItem[] | null
 }
 
+/** A recommendation a person rejected. Human business decision, not performance evidence. No platform IDs. */
+export interface HumanStrategyDecisionInput { title: string; recommendation_type: string | null; reason: string | null; rejected_at: string }
+export const HUMAN_DECISION_WINDOW_DAYS = 180
+export const MAX_HUMAN_DECISIONS = 10
+
 export interface StrategyInputs {
   now: Date
+  /** Recently rejected recommendations. Optional: absent behaves as none. */
+  humanDecisions?: HumanStrategyDecisionInput[]
   currency: string
   campaigns: StrategyCampaign[]
   adSets: StrategyAdSet[]
@@ -444,8 +451,22 @@ export function buildPaidStrategyEvidence(input: StrategyInputs) {
     campaigns,
     ad_sets,
     top_ads,
+    human_strategy_decisions: humanDecisionsEvidence(input.humanDecisions ?? [], input.now),
     data_gaps,
   }
+}
+
+/** Recent rejections only (last 180 days, at most 10, newest first). Free text is labelled untrusted data. */
+export function humanDecisionsEvidence(decisions: HumanStrategyDecisionInput[], now: Date) {
+  const since = now.getTime() - HUMAN_DECISION_WINDOW_DAYS * 86_400_000
+  return decisions
+    .filter(d => { const t = Date.parse(d.rejected_at); return Number.isFinite(t) && t >= since && t <= now.getTime() + 86_400_000 })
+    .sort((a, b) => Date.parse(b.rejected_at) - Date.parse(a.rejected_at))
+    .slice(0, MAX_HUMAN_DECISIONS)
+    .map(d => ({
+      decision: 'rejected' as const, recommendation: dataText(d.title, 160), recommendation_type: d.recommendation_type,
+      reason: d.reason ? dataText(d.reason, 300) : null, rejected_on: d.rejected_at.slice(0, 10),
+    }))
 }
 
 export type PaidStrategyEvidence = ReturnType<typeof buildPaidStrategyEvidence>

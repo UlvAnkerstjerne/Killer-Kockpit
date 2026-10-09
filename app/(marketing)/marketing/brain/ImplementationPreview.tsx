@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type { ClientPreview, PickerTarget } from '@/lib/marketing/paid-strategy/implementation/service'
-import type { ActivationReview } from '@/lib/marketing/paid-strategy/implementation/types'
+import { REJECTION_REASON_MAX, type ActivationReview } from '@/lib/marketing/paid-strategy/implementation/types'
 import type { Blocker } from '@/lib/marketing/paid-strategy/autonomous/types'
 
 export const dkk = (n: number) => `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 }).format(n)} DKK`
@@ -134,4 +134,23 @@ export function DialogFrame({ id, kicker, title, onClose, children, actions }: {
       <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-kk-line px-5 py-3">{actions}</div>
     </div>
   </div>
+}
+
+/** A rejection is a decision about the idea, so this is a compact confirmation with an optional reason, not a form. */
+export function RejectDialog({ id, title, reason, onReason, pending, error, reservedDkk, metaObjectsExist, onCancel, onReject, cancelRef, reasonRef }: {
+  id: string; title: string; reason: string; onReason: (v: string) => void; pending: boolean; error: string; reservedDkk: number; metaObjectsExist: boolean
+  onCancel: () => void; onReject: () => void; cancelRef?: RefObject<HTMLButtonElement | null>; reasonRef?: RefObject<HTMLTextAreaElement | null>
+}) {
+  return <DialogFrame id={id} kicker="Reject strategy" title={title} onClose={onCancel}
+    actions={<>
+      <button ref={cancelRef} type="button" onClick={onCancel} className="rounded-xl border border-kk-line px-4 py-2.5 text-sm">Cancel</button>
+      <button type="button" disabled={pending} onClick={onReject} className="rounded-xl bg-kk-ink px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60">{pending ? 'Rejecting…' : 'Reject strategy'}</button>
+    </>}>
+    <label htmlFor={`${id}-reason`} className="mt-4 block text-sm font-medium">Reason (optional)</label>
+    <textarea id={`${id}-reason`} ref={reasonRef} value={reason} onChange={e => onReason(e.target.value)} maxLength={REJECTION_REASON_MAX} rows={3}
+      placeholder={'e.g. "Not strategically relevant", "We do not want to offer catering in Malmö", "Wrong priority right now"'}
+      className="mt-1 w-full rounded-lg border border-kk-line bg-kk-panel px-3 py-2 text-sm" />
+    <p className="mt-2 text-xs leading-relaxed text-kk-muted">Future strategy analyses will see this as your decision, not as a performance result. It can still be proposed again if new evidence changes the case.{reservedDkk > 0 ? ` The ${dkk(reservedDkk)} reserved for it is released.` : ''}{metaObjectsExist ? ' Nothing is activated or deleted: the paused objects already created in Meta remain and cannot spend.' : ''}</p>
+    {error ? <p role="alert" className="mt-3 text-sm">{error}</p> : null}
+  </DialogFrame>
 }

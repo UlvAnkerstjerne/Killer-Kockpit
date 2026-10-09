@@ -26,11 +26,12 @@ export type ImplementationMode = (typeof IMPLEMENTATION_MODES)[number]
  * needs_attention          uncertain or unexpected state; nothing is retried blindly
  * failed                   nothing was changed; can be approved again
  * cancelled                released; reservation freed (objects already created stay paused in Meta)
+ * rejected               a human decided this recommendation should not be pursued; reserves nothing (objects already created stay paused in Meta)
  * started                  kept for rows created by v1
  */
 export const IMPLEMENTATION_STATUSES = [
   'prepared', 'needs_input', 'approved', 'planning', 'executing', 'verifying', 'waiting_for_input', 'waiting_for_access',
-  'ready_to_activate', 'started', 'in_motion', 'completed', 'cancelled', 'needs_attention', 'failed',
+  'ready_to_activate', 'started', 'in_motion', 'completed', 'cancelled', 'needs_attention', 'failed', 'rejected',
 ] as const
 export type ImplementationStatus = (typeof IMPLEMENTATION_STATUSES)[number]
 
@@ -39,6 +40,9 @@ export const RESERVING_STATUSES: readonly ImplementationStatus[] = ['approved', 
 /** Statuses from which Kockpit can continue after a blocker is cleared, or an interruption. */
 export const RESUMABLE_STATUSES: readonly ImplementationStatus[] = ['waiting_for_input', 'waiting_for_access', 'needs_attention']
 export const IN_FLIGHT_STATUSES: readonly ImplementationStatus[] = ['approved', 'planning', 'executing', 'verifying']
+/** A rejection is a decision about the idea, so it is possible whenever nothing is running or live. A cancelled one can still be rejected. */
+export const REJECTABLE_STATUSES: readonly ImplementationStatus[] = ['prepared', 'needs_input', 'waiting_for_input', 'waiting_for_access', 'ready_to_activate', 'needs_attention', 'failed', 'cancelled']
+export const REJECTION_REASON_MAX = 500
 export const CANCELLABLE_STATUSES: readonly ImplementationStatus[] = ['prepared', 'needs_input', 'waiting_for_input', 'waiting_for_access', 'ready_to_activate', 'needs_attention', 'failed']
 
 export const PlatformChoiceSchema = z.object({
@@ -126,6 +130,11 @@ export interface ImplementationView {
   /** Present when ready_to_activate: exactly what activation would switch on. */
   review: ActivationReview | null
   linkedTaskId: string | null
+  /** Set when status is rejected. */
+  rejectedAt?: string | null
+  rejectionReason?: string | null
+  /** Paused Meta objects were already created for this implementation. They stay paused after a rejection and cannot spend. */
+  metaObjectsExist?: boolean
 }
 
 export interface ActivationReview {

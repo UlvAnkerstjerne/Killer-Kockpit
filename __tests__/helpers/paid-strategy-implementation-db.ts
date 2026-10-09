@@ -15,7 +15,7 @@ export const evidence = (headroom: number | null = 8800, reliable = true) => ({
   data_gaps: [],
 })
 
-/** Real PostgreSQL: the two real migrations plus only the platform tables they depend on, synthetic and minimal. */
+/** Real PostgreSQL: the real Paid Strategy migrations plus only the platform tables they depend on, synthetic and minimal. */
 export async function implementationDatabase() {
   const db = new PGlite({ extensions: { pgcrypto } })
   await db.exec(`
@@ -41,6 +41,7 @@ export async function implementationDatabase() {
   await db.exec(migrationSql('20261008160000_marketing_paid_strategy_runs.sql'))
   await db.exec(migrationSql('20261009120000_marketing_paid_strategy_implementations.sql'))
   await db.exec(migrationSql('20261010120000_paid_strategy_autonomous_execution.sql'))
+  await db.exec(migrationSql('20261011120000_paid_strategy_rejection.sql'))
   for (let n = 1; n <= 6; n++) {
     await db.query('INSERT INTO auth.users(id) VALUES ($1)', [uid(n)])
     await db.query(`INSERT INTO app_users(id,auth_user_id,email,display_name,role,marketing_access,active) VALUES ($1,$1,$2,$3,$4,$5,$6)`,

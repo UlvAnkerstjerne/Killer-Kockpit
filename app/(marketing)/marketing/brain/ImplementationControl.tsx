@@ -3,22 +3,25 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  activateStrategyImplementation, cancelStrategyImplementation, confirmStrategyImplementation, prepareStrategyImplementation, resumeStrategyImplementation, type PrepareResult,
+  activateStrategyImplementation, cancelStrategyImplementation, confirmStrategyImplementation, prepareStrategyImplementation, rejectStrategyImplementation, resumeStrategyImplementation, type PrepareResult,
 } from '@/lib/actions/marketing/paid-strategy-implementation'
 import { confirmLabel, modeLabel, stateLabel } from '@/lib/marketing/paid-strategy/implementation/state'
 import type { ImplementationInputs, ImplementationView } from '@/lib/marketing/paid-strategy/implementation/types'
-import PreviewPanel, { ActivationPanel, BlockerList, DialogFrame, dkk } from './ImplementationPreview'
+import PreviewPanel, { ActivationPanel, BlockerList, DialogFrame, dkk, RejectDialog } from './ImplementationPreview'
 
 type Ready = Extract<PrepareResult, { alreadyStarted: false }>
 /** Nothing to approve any more: show the state. */
 const SETTLED = new Set(['approved', 'planning', 'executing', 'verifying', 'in_motion', 'completed', 'cancelled', 'started'])
 const BLOCKED = new Set(['waiting_for_access', 'waiting_for_input', 'needs_attention'])
 
-export default function ImplementationControl({ runId, index, canApprove, superseded, view }: {
-  runId: string; index: number; canApprove: boolean; superseded: boolean; view?: ImplementationView
+const REJECT_BUTTON = 'rounded-xl border border-kk-line px-4 py-2.5 text-sm font-medium text-kk-ink hover:bg-kk-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand disabled:opacity-60'
+
+export default function ImplementationControl({ runId, index, canApprove, superseded, view, title }: {
+  runId: string; index: number; canApprove: boolean; superseded: boolean; view?: ImplementationView; title?: string
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState<'' | 'confirm' | 'activate'>('')
+  const [open, setOpen] = useState<'' | 'confirm' | 'activate' | 'reject'>('')
+  const [reason, setReason] = useState('')
   const [pending, startTransition] = useTransition()
   const [ready, setReady] = useState<Ready | null>(null)
   const [error, setError] = useState('')
@@ -65,6 +68,24 @@ export default function ImplementationControl({ runId, index, canApprove, supers
     })
   }
   const confirm = () => run(() => confirmStrategyImplementation(runId, index, collect()), close)
+  const canReject = canApprove && !superseded
+  const reasonRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { if (open === 'reject') reasonRef.current?.focus() }, [open])
+  // Disabled while the request runs and the server treats a repeat as a no-op, so a double click or reload cannot undo or repeat it.
+  const reject = () => run(() => rejectStrategyImplementation(runId, index, reason), () => { close(); setReason('') })
+  const rejectButton = canReject ? <button type="button" disabled={pending} onClick={() => { setError(''); setOpen('reject') }} className={REJECT_BUTTON}>Reject</button> : null
+  const reserved = view?.budgetReservedDkk ?? 0
+  const rejectDialog = open === 'reject' ? <RejectDialog id={`rej-title-${runId}-${index}`} title={title ?? 'This recommendation'} reason={reason} onReason={setReason} pending={pending} error={error}
+    reservedDkk={reserved} metaObjectsExist={!!view?.metaObjectsExist} onCancel={close} onReject={reject} cancelRef={cancelRef} reasonRef={reasonRef} /> : null
+
+  // ── A rejected strategy: the decision, not a button ───────────────────────────
+  if (view?.status === 'rejected') {
+    return <div className="mt-4 space-y-2 border-t border-kk-line pt-3 text-sm" aria-label="Strategy decision">
+      <p><span className="text-[11px] font-semibold uppercase tracking-wide text-kk-muted">Strategy decision</span><br /><span className="font-medium">{stateLabel(view)}</span></p>
+      {view.rejectionReason ? <p>&ldquo;{view.rejectionReason}&rdquo;</p> : null}
+      {view.metaObjectsExist ? <p className="text-xs text-kk-muted">Paused objects created earlier in Meta remain and cannot spend. Nothing was activated or deleted.</p> : null}
+    </div>
+  }
 
   // ── State instead of a button once there is something to show ─────────────────
   if (view && (SETTLED.has(view.status) || BLOCKED.has(view.status) || view.status === 'ready_to_activate')) {
@@ -78,12 +99,15 @@ export default function ImplementationControl({ runId, index, canApprove, supers
       {canApprove && (blocked || view.status === 'planning' || view.status === 'executing') ? <div className="flex flex-wrap gap-2">
         <button type="button" disabled={pending} onClick={() => run(() => resumeStrategyImplementation(runId, index, collect()))} className="rounded-lg border border-kk-line px-3 py-2 disabled:opacity-60">Check again</button>
         {blocked ? <button type="button" disabled={pending} onClick={() => run(() => cancelStrategyImplementation(runId, index))} className="rounded-lg border border-kk-line px-3 py-2 text-kk-muted disabled:opacity-60">Cancel and release budget</button> : null}
+        {blocked ? rejectButton : null}
       </div> : null}
+      {rejectDialog}
       {view.status === 'ready_to_activate' && view.review ? <>
         <p className="text-xs text-kk-muted">{view.message}</p>
         {canApprove ? <div className="flex flex-wrap gap-2">
           <button ref={opener} type="button" onClick={() => setOpen('activate')} className="rounded-xl bg-kk-brand px-4 py-2.5 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand">Review &amp; activate</button>
           <button type="button" disabled={pending} onClick={() => run(() => cancelStrategyImplementation(runId, index))} className="rounded-lg border border-kk-line px-3 py-2 text-kk-muted disabled:opacity-60">Cancel</button>
+          {rejectButton}
         </div> : null}
         {open === 'activate' ? <DialogFrame id={`act-title-${runId}-${index}`} kicker="Ready to activate" title={view.review.title} onClose={close}
           actions={<>
@@ -102,10 +126,16 @@ export default function ImplementationControl({ runId, index, canApprove, supers
   const p = ready?.preview
   const needsInput = p?.mode === 'needs_input'
   return <div className="mt-4 border-t border-kk-line pt-3">
-    <button ref={opener} type="button" onClick={() => { setOpen('confirm'); load() }}
-      className="rounded-xl bg-kk-brand px-4 py-2.5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand">
-      Approve &amp; implement
-    </button>
+    <div className="flex flex-wrap gap-2">
+      {rejectButton}
+      <button ref={opener} type="button" onClick={() => { setOpen('confirm'); load() }}
+        className="rounded-xl bg-kk-brand px-4 py-2.5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand">
+        Approve &amp; implement
+      </button>
+    </div>
+    {error && !open ? <p role="alert" className="mt-2 text-sm">{error}</p> : null}
+    {note && !open ? <p role="status" className="mt-2 text-sm text-kk-muted">{note}</p> : null}
+    {rejectDialog}
     {open === 'confirm' ? <DialogFrame id={`impl-title-${runId}-${index}`} kicker="Approve & implement" title={p ? modeLabel(p.mode) : 'Preparing…'} onClose={close}
       actions={<>
         <button ref={cancelRef} type="button" onClick={close} className="rounded-xl border border-kk-line px-4 py-2.5 text-sm">Cancel</button>

@@ -7,6 +7,8 @@
  *   resume    continue from the step ledger after a blocker is cleared or an interruption. Never repeats a completed step.
  *   activate  a separate approval that switches on the verified PAUSED structure through the trusted executor.
  *   cancel    release the reservation. Objects already created stay paused in Meta.
+ *   reject    a human decision that the recommendation should not be pursued. Releases the reservation, never touches Meta,
+ *             and is remembered: later analyses receive it as a human business decision.
  *
  * The model is involved in exactly one place: writing creative words (lib/ai/paid-strategy-creative). It never sees or
  * returns an ID, and its output is validated before anything is built from it.
@@ -18,7 +20,7 @@ import { recordImplementationAudit } from './audit'
 import { compileImplementation, toMajor, type CompileInput, type StoredRecommendation, type SyncedAdSet, type SyncedCampaign } from './compile'
 import { activateClaimed, runClaimed, type Claim } from './execute'
 import {
-  CANCELLABLE_STATUSES, ImplementationInputsSchema, IN_FLIGHT_STATUSES, RESUMABLE_STATUSES,
+  CANCELLABLE_STATUSES, ImplementationInputsSchema, IN_FLIGHT_STATUSES, REJECTION_REASON_MAX, RESUMABLE_STATUSES,
   type CompiledImplementation, type ImplementationInputs, type ImplementationMode, type ImplementationStatus, type InputRequirement,
 } from './types'
 import type { Capability } from '../autonomous/capabilities'
@@ -199,6 +201,7 @@ export async function confirmImplementation(db: Db, actorId: string, runId: stri
 
   const ctx = await loadContext(db, runId, index, inputs, now, injected)
   if (!ctx.ok) return ctx
+  if (ctx.existing?.status === 'rejected') return { ok: false, error: 'This recommendation was rejected. It cannot be implemented.' }
   if (ctx.existing && !REPREPARABLE.includes(ctx.existing.status)) return { ok: true, duplicate: true, status: ctx.existing.status, message: 'This recommendation is already being implemented. Nothing was duplicated.' }
   const compiled = compileImplementation(ctx.compileInput, index)
   await savePreparation(db, actorId, runId, index, ctx.recommendation, inputs, compiled, ctx.existing)
@@ -213,6 +216,7 @@ export async function confirmImplementation(db: Db, actorId: string, runId: stri
   })
   const outcome = (claim.data ?? null) as { result?: string; id?: string; status?: ImplementationStatus; available?: number } | null
   if (claim.error || !outcome?.result) return { ok: false, error: 'The implementation could not be started. Nothing was changed.' }
+  if (outcome.result === 'already_claimed' && outcome.status === 'rejected') return { ok: false, error: 'This recommendation was rejected. It cannot be implemented.' }
   if (outcome.result === 'already_claimed') return { ok: true, duplicate: true, status: outcome.status ?? 'approved', message: 'This recommendation is already being implemented. Nothing was duplicated.' }
   if (outcome.result === 'exceeds_headroom') return { ok: false, error: `That would exceed the shared spend headroom. ${new Intl.NumberFormat('en-GB').format(outcome.available ?? 0)} DKK is still available.`, needsInput: [{ key: 'reserve_budget', label: 'Extra budget' }] }
   if (outcome.result !== 'claimed' || !outcome.id) return { ok: false, error: REFUSALS[outcome.result ?? ''] ?? 'The implementation could not be started. Nothing was changed.' }
@@ -266,10 +270,51 @@ export async function cancelImplementation(db: Db, actorId: string, runId: strin
   const existing = await db.from(TABLE).select('id,status,execution').eq('strategy_run_id', runId).eq('recommendation_index', index).maybeSingle()
   const row = existing.data as { id: string; status: ImplementationStatus; execution?: ExecutionLedger } | null
   if (existing.error || !row) return { ok: false, error: 'Nothing has been started for this recommendation.' }
+  if (row.status === 'rejected') return { ok: true, duplicate: true, status: 'rejected', message: 'Already rejected. Nothing is reserved.' }
   if (!CANCELLABLE_STATUSES.includes(row.status)) return row.status === 'cancelled' ? { ok: true, duplicate: true, status: 'cancelled', message: 'Already cancelled.' } : { ok: false, error: 'This is being worked on or is live and cannot be cancelled from here.' }
   const done = await db.from(TABLE).update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', row.id).eq('status', row.status).select('id').maybeSingle()
   if (done.error || !done.data) return { ok: true, duplicate: true, status: row.status, message: 'Its state changed just now. Reload to see it.' }
   const created = (row.execution?.evidence?.created ?? null) as Record<string, unknown> | null
   await recordImplementationAudit(db, actorId, 'cancelled', row.id, { strategy_run_id: runId, recommendation_index: index, from_status: row.status, meta_objects_left_paused: !!created })
   return { ok: true, duplicate: false, status: 'cancelled', message: created ? 'Cancelled. The budget is released. The paused objects already created in Meta stay paused and cannot spend.' : 'Cancelled. The budget is released.' }
+}
+
+export type RejectOutcome =
+  | { ok: true; duplicate: boolean; status: 'rejected'; message: string; budgetReleasedDkk: number; metaObjectsExist: boolean }
+  | { ok: false; error: string }
+
+const REJECT_REFUSALS: Record<string, string> = {
+  superseded: 'Superseded by a newer strategy. Only the latest strategy can be rejected.',
+  not_found: 'That recommendation does not exist.',
+  actor_inactive: 'Your account is not active.',
+  reason_too_long: `The reason is too long (${REJECTION_REASON_MAX} characters at most).`,
+  in_flight: 'Kockpit is working on this right now. Wait for it to finish or stop, then reject it.',
+  live: 'This is live or finished. Rejecting is only for ideas that are not running. Stopping something live is a separate step.',
+  conflict: 'Its state changed just now. Reload to see it.',
+}
+
+/** Free text from a person: strip control characters and surrounding space. An empty reason is valid. */
+export const cleanRejectionReason = (raw: unknown): string | null => {
+  const text = typeof raw === 'string' ? raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/ {2,}/g, ' ').trim() : ''
+  return text || null
+}
+
+/**
+ * A human decision that this recommendation should not be pursued. One atomic database function does the whole thing:
+ * latest-run check, the row (created if none exists), the reservation release and the audit event. Repeating it is a no-op.
+ * Nothing here calls Meta: objects that already exist stay paused and cannot spend.
+ */
+export async function rejectImplementation(db: Db, actorId: string, runId: string, index: number, rawReason?: unknown): Promise<RejectOutcome> {
+  if (!Number.isInteger(index) || index < 0 || index > 2 || !/^[0-9a-f-]{36}$/i.test(runId)) return { ok: false, error: 'That recommendation does not exist.' }
+  const reason = cleanRejectionReason(rawReason)
+  if (reason && reason.length > REJECTION_REASON_MAX) return { ok: false, error: REJECT_REFUSALS.reason_too_long }
+  const res = await db.rpc('reject_paid_strategy_implementation', { p_run_id: runId, p_index: index, p_actor: actorId, p_reason: reason })
+  const out = (res.data ?? null) as { result?: string; released?: number | string; meta_objects_existed?: boolean } | null
+  if (res.error || !out?.result) return { ok: false, error: 'The rejection could not be saved. Nothing was changed.' }
+  const paused = out.meta_objects_existed === true
+  const note = paused ? ' The paused objects already created in Meta remain and cannot spend.' : ''
+  if (out.result === 'already_rejected') return { ok: true, duplicate: true, status: 'rejected', message: `Already rejected.${note}`, budgetReleasedDkk: 0, metaObjectsExist: paused }
+  if (out.result !== 'rejected') return { ok: false, error: REJECT_REFUSALS[out.result] ?? 'The rejection could not be saved. Nothing was changed.' }
+  const released = Number(out.released) || 0
+  return { ok: true, duplicate: false, status: 'rejected', message: `Rejected.${released > 0 ? ' The reserved budget is released.' : ''}${note}`, budgetReleasedDkk: released, metaObjectsExist: paused }
 }

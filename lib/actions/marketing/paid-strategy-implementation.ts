@@ -7,7 +7,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getUserMarketingPermissions } from '@/lib/actions/marketing/permissions'
 import { loadImplementationViews } from '@/lib/marketing/paid-strategy/implementation/read'
 import type { ImplementationView } from '@/lib/marketing/paid-strategy/implementation/types'
-import { activateImplementation, cancelImplementation, confirmImplementation, prepareImplementation, resumeImplementation, type ConfirmOutcome, type PrepareOutcome } from '@/lib/marketing/paid-strategy/implementation/service'
+import { activateImplementation, cancelImplementation, confirmImplementation, prepareImplementation, rejectImplementation, resumeImplementation, type ConfirmOutcome, type PrepareOutcome, type RejectOutcome } from '@/lib/marketing/paid-strategy/implementation/service'
 
 export type PrepareResult = PrepareOutcome & { canConfirm?: boolean; owners?: { id: string; name: string }[] }
 
@@ -70,6 +70,18 @@ export async function cancelStrategyImplementation(runId: string, index: number)
   const auth = await authorize('paid_approve')
   if (!auth.ok) return auth
   const result = await cancelImplementation(createServiceClient(), auth.userId, String(runId), Number(index))
+  revalidatePath('/marketing/brain')
+  return result
+}
+
+/**
+ * A human decision that this strategy should not be pursued. Requires paid_approve, enforced here on the server.
+ * Releases any reservation, never touches Meta, and is remembered by later analyses.
+ */
+export async function rejectStrategyImplementation(runId: string, index: number, reason?: string): Promise<RejectOutcome> {
+  const auth = await authorize('paid_approve')
+  if (!auth.ok) return auth
+  const result = await rejectImplementation(createServiceClient(), auth.userId, String(runId), Number(index), reason)
   revalidatePath('/marketing/brain')
   return result
 }
