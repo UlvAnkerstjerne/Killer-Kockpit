@@ -20,7 +20,7 @@ export function postgresClient(db: PGlite) {
     },
     from: (table: string) => {
       calls.push({ table }); ident(table)
-      let columns = '*', operation = 'select', patch: Record<string, unknown> = {}, single = false, limit = '', order = ''
+      let columns = '*', operation = 'select', patch: Record<string, unknown> = {}, single = false, limit = '', order = '', conflict = ''
       const where: string[] = [], values: unknown[] = []
       const bind = (value: unknown) => { values.push(value); return `$${values.length}` }
       const query = {
@@ -38,11 +38,13 @@ export function postgresClient(db: PGlite) {
         maybeSingle: () => { single = true; return query },
         update: (value: Record<string, unknown>) => { operation = 'update'; patch = value; return query },
         insert: (value: Record<string, unknown>) => { operation = 'insert'; patch = value; return query },
+        upsert: (value: Record<string, unknown>, options?: { onConflict?: string }) => { operation = 'upsert'; patch = value; conflict = ident(options?.onConflict ?? 'id'); return query },
         then: async (resolve: (value: unknown) => unknown) => {
           try {
             const filter = where.length ? ` WHERE ${where.join(' AND ')}` : ''
             let sql: string
             if (operation === 'update') sql = `UPDATE ${table} SET ${Object.entries(patch).map(([key, value]) => `${ident(key)} = ${bind(value)}`).join(',')} ${filter} RETURNING *`
+            else if (operation === 'upsert') { const keys = Object.keys(patch); sql = `INSERT INTO ${table} (${keys.map(ident).join(',')}) VALUES (${Object.values(patch).map(bind).join(',')}) ON CONFLICT (${conflict}) DO UPDATE SET ${keys.filter(k => k !== conflict).map(k => `${k} = EXCLUDED.${k}`).join(',')} RETURNING *` }
             else if (operation === 'insert') sql = `INSERT INTO ${table} (${Object.keys(patch).map(ident).join(',')}) VALUES (${Object.values(patch).map(bind).join(',')}) RETURNING *`
             else sql = `SELECT ${columns} FROM ${table}${filter}${order}${limit}`
             const result = await db.query(sql, values)

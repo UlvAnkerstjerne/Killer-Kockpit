@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react'
 import type { ClientPreview, PickerTarget } from '@/lib/marketing/paid-strategy/implementation/service'
+import type { ActivationReview } from '@/lib/marketing/paid-strategy/implementation/types'
+import type { Blocker } from '@/lib/marketing/paid-strategy/autonomous/types'
 
 export const dkk = (n: number) => `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 }).format(n)} DKK`
 
 export interface PreviewForm {
-  owner: string; due: string; reserve: string; targetId: string; action: string; newBudget: string; location: string
-  set: (key: 'owner' | 'due' | 'reserve' | 'targetId' | 'action' | 'newBudget' | 'location', value: string) => void
+  owner: string; due: string; targetId: string; action: string; newBudget: string; dailyBudget: string; days: string
+  set: (key: 'owner' | 'due' | 'targetId' | 'action' | 'newBudget' | 'dailyBudget' | 'days', value: string) => void
 }
 
 function List({ title, items }: { title: string; items: string[] }) {
@@ -16,22 +18,35 @@ function List({ title, items }: { title: string; items: string[] }) {
   </div>
 }
 
-/** What Kockpit will and will not do, in plain words. Presentational: all state lives in ImplementationControl. */
-export default function PreviewPanel({ preview: p, targets, owners, minDate, form, pending = false, onCheck, onReserveCommit }: {
+export function BlockerList({ title, blockers }: { title: string; blockers: Blocker[] }) {
+  if (!blockers.length) return null
+  return <div>
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-kk-muted">{title}</p>
+    <ul className="mt-1 space-y-2 text-sm leading-relaxed">{blockers.map(b => <li key={b.code} className="rounded-lg border border-kk-line p-3">
+      <p>{b.message}</p>
+      <p className="mt-1 text-kk-muted"><span className="font-medium text-current">Smallest unblock:</span> {b.unblock}</p>
+    </li>)}</ul>
+  </div>
+}
+
+/** What Kockpit will do itself, where it expects to stop, and exactly who it will ask for what. Presentational. */
+export default function PreviewPanel({ preview: p, targets, owners, minDate, form, pending = false, onCheck }: {
   preview: ClientPreview; targets: PickerTarget[]; owners: { id: string; name: string }[]; minDate: string
-  form: PreviewForm; pending?: boolean; onCheck?: () => void; onReserveCommit?: () => void
+  form: PreviewForm; pending?: boolean; onCheck?: () => void
 }) {
   const needsInput = p.mode === 'needs_input'
   const platformMode = p.intendedMode === 'platform_action'
   const chosen = targets.find(t => t.id === form.targetId)
   const field = 'mt-1 w-full rounded-lg border border-kk-line bg-transparent px-3 py-2'
+  const askForSpend = p.missing.some(m => m.key === 'daily_budget' || m.key === 'duration')
+  const showWillDo = !needsInput || p.willDo.length > 0
   return <div className="mt-3 space-y-4">
     <p className="text-sm leading-relaxed">{p.headline}</p>
-    {!needsInput ? <List title="Kockpit will" items={p.willDo} /> : null}
+    {showWillDo ? <List title="Kockpit will" items={p.willDo} /> : null}
     <List title="Kockpit will not" items={p.willNot} />
-    <List title={needsInput ? 'Needed before this can go ahead' : 'A person must'}
-      items={needsInput ? (p.missing.length ? p.missing.map(m => m.detail ? `${m.label}: ${m.detail}` : m.label) : p.needsPerson) : p.needsPerson} />
-    <List title="Kockpit cannot automate" items={p.cannotAutomate} />
+    <BlockerList title={needsInput ? 'Needed before this can go ahead' : 'Where this will stop today'} blockers={p.expectedBlockers} />
+    {needsInput && !p.expectedBlockers.length ? <List title="Needed before this can go ahead" items={p.missing.map(m => m.detail ? `${m.label}: ${m.detail}` : m.label)} /> : null}
+    <List title="A person will be asked to" items={needsInput ? [] : p.peopleNeeded} />
 
     {platformMode ? <fieldset className="space-y-3 rounded-xl border border-kk-line p-3">
       <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-kk-muted">Existing Meta object</legend>
@@ -55,31 +70,53 @@ export default function PreviewPanel({ preview: p, targets, owners, minDate, for
       <button type="button" disabled={pending || !form.targetId || !form.action} onClick={onCheck} className="rounded-lg border border-kk-line px-3 py-2 text-sm disabled:opacity-60">Check this change</button>
     </fieldset> : null}
 
-    {p.package && !p.package.market ? <label className="block text-sm">Target location (optional)
-      <input value={form.location} onChange={e => form.set('location', e.target.value)} maxLength={120} className={field} />
-    </label> : null}
+    {askForSpend ? <fieldset className="space-y-3 rounded-xl border border-kk-line p-3">
+      <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-kk-muted">Spend</legend>
+      <label className="block text-sm">Daily budget (DKK)
+        <input inputMode="decimal" value={form.dailyBudget} onChange={e => form.set('dailyBudget', e.target.value)} className={field} />
+      </label>
+      <label className="block text-sm">Days to run
+        <input inputMode="numeric" value={form.days} onChange={e => form.set('days', e.target.value)} className={field} />
+      </label>
+      <button type="button" disabled={pending || !form.dailyBudget || !form.days} onClick={onCheck} className="rounded-lg border border-kk-line px-3 py-2 text-sm disabled:opacity-60">Check this plan</button>
+    </fieldset> : null}
 
-    {!p.changesMeta && !needsInput ? <div className="grid gap-3 sm:grid-cols-2">
-      <label className="block text-sm">Owner
+    {p.intendedMode === 'creative_execution' && !needsInput ? <div className="grid gap-3 sm:grid-cols-2">
+      <label className="block text-sm">If filming is needed, assign it to
         <select value={form.owner} onChange={e => form.set('owner', e.target.value)} className={field}>
           {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </label>
-      <label className="block text-sm">Due
+      <label className="block text-sm">Needed by
         <input type="date" value={form.due} min={minDate} onChange={e => form.set('due', e.target.value)} className={field} />
       </label>
     </div> : null}
 
     <div className="rounded-xl bg-kk-soft p-3 text-sm">
-      <p className="font-medium">{p.platform ? 'Extra paid-media budget this can add this month' : 'Extra paid-media budget'}: {dkk(p.platform ? p.platform.incrementalDkk : p.budget.requestedDkk)}</p>
-      {!p.platform && p.budget.proposedDkk > 0 ? <label className="mt-2 block">Reserve up to (DKK, at most {dkk(p.budget.proposedDkk)})
-        <input inputMode="decimal" value={form.reserve} onChange={e => form.set('reserve', e.target.value)} onBlur={onReserveCommit} className={field} />
-      </label> : null}
+      <p className="font-medium">
+        {p.platform ? `Extra paid-media budget this can add this month: ${dkk(p.platform.incrementalDkk)}`
+          : p.spend ? `Extra paid-media budget reserved: ${dkk(p.spend.totalDkk)} (${dkk(p.spend.dailyBudgetDkk)} a day for ${p.spend.durationDays} days)`
+          : `Extra paid-media budget: ${dkk(p.budget.requestedDkk)}`}
+      </p>
       <p className="mt-1 text-xs text-kk-muted">
         {p.budget.availableDkk == null ? 'No reliable spend headroom this month: no extra paid budget can be approved.' : `${dkk(p.budget.availableDkk)} of the shared headroom is available (${dkk(p.budget.reservedByOthersDkk)} already reserved by other approved work).`}
         {' '}The 15,000 DKK monthly ceiling is a hard cap, not a target.
       </p>
     </div>
+  </div>
+}
+
+/** The activation review: exactly what will be switched on and what is held constant. */
+export function ActivationPanel({ review, totalReserved }: { review: ActivationReview; totalReserved: number }) {
+  return <div className="mt-3 space-y-4">
+    <dl className="space-y-2.5 text-sm">
+      {review.lines.map(l => <div key={l.label}>
+        <dt className="text-[11px] font-semibold uppercase tracking-wide text-kk-muted">{l.label}</dt>
+        <dd className="mt-0.5 whitespace-pre-line leading-relaxed">{l.value}</dd>
+      </div>)}
+    </dl>
+    <List title="Before you switch it on" items={review.notes} />
+    <p className="rounded-xl bg-kk-soft p-3 text-sm"><span className="font-medium">Budget reserved: {dkk(totalReserved)}.</span> <span className="text-xs text-kk-muted">Activating starts spending within it. The 15,000 DKK monthly ceiling is a hard cap.</span></p>
   </div>
 }
 

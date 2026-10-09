@@ -5,7 +5,7 @@ type Db = ReturnType<typeof createServiceClient>
 
 /** Audit event for a Paid Strategy implementation. Never throws, never carries secrets or tokens. */
 export async function recordImplementationAudit(
-  db: Db, actorId: string, action: 'prepared' | 'executed' | 'started' | 'failed' | 'needs_attention' | 'in_motion' | 'completed',
+  db: Db, actorId: string, action: 'prepared' | 'executed' | 'started' | 'failed' | 'needs_attention' | 'in_motion' | 'completed' | 'blocked' | 'ready_to_activate' | 'resumed' | 'activated' | 'cancelled',
   implementationId: string, after: Record<string, unknown>, before?: Record<string, unknown>,
 ) {
   try {

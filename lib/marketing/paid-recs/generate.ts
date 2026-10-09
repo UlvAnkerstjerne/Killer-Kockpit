@@ -28,6 +28,7 @@ import {
 } from './signals'
 import { callPaidRecommendationsAI, PAID_REC_PROMPT_VERSION } from '@/lib/ai/paid-recommendations'
 import type { PaidRecSignal, PaidRemediationPlan } from './types'
+import { metaBudgetToMajor } from '@/lib/meta/money'
 import { compileExecutionPlan, type SyncedTarget, type ConfiguredAccounts } from './compile-plan'
 import { GOOGLE_ADS_CUSTOMER_ID } from '@/lib/google/ads-sync'
 import { diagnosePerformance, buildRemediationPlan, type AdInsightRow, type MetaAdWithSet, type MetaAdSetInfo, type RemediationCampaignContext } from './diagnose-performance'
@@ -396,7 +397,7 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
         adAccountId: campaignInput.campaign.ad_account_id,
         objective: campaignInput.campaign.objective ?? 'OUTCOME_AWARENESS',
         currency: signal.currency,
-        dailyBudget: campaignInput.campaign.daily_budget ? Number(campaignInput.campaign.daily_budget) : null,
+        dailyBudget: metaBudgetToMajor(campaignInput.campaign.daily_budget),
         ads: diagData.ads,
         adSets: diagData.adSets,
         currentAdInsights: diagData.currentAdInsights,
@@ -407,7 +408,7 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
         id: signal.campaign_id,
         adAccountId: campaignInput.campaign.ad_account_id,
         currency: signal.currency,
-        dailyBudget: campaignInput.campaign.daily_budget ? Number(campaignInput.campaign.daily_budget) : null,
+        dailyBudget: metaBudgetToMajor(campaignInput.campaign.daily_budget),
         adSets: diagData.adSets,
       }
       const plan = buildRemediationPlan(diagnosis, campaignContext)
@@ -435,7 +436,7 @@ export async function generatePaidRecommendations(now = new Date()): Promise<Gen
     const newRecCampaignKeys = new Set(recommendations.map(r => `${r.platform}:${r.campaign_id}`))
     await clearStaleReviews(db, newRecCampaignKeys)
     const targets = new Map<string, SyncedTarget>()
-    for (const input of metaInputs) targets.set(`meta:${input.campaign.id}`, { platform: 'meta', campaignId: input.campaign.id, accountId: input.campaign.ad_account_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget ? Number(input.campaign.daily_budget) : null })
+    for (const input of metaInputs) targets.set(`meta:${input.campaign.id}`, { platform: 'meta', campaignId: input.campaign.id, accountId: input.campaign.ad_account_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: metaBudgetToMajor(input.campaign.daily_budget) })
     for (const input of googleInputs) targets.set(`google:${input.campaign.campaign_id}`, { platform: 'google', campaignId: input.campaign.campaign_id, accountId: input.campaign.customer_id, status: input.campaign.status, currency: input.campaign.currency, dailyBudget: input.campaign.daily_budget_micros ? input.campaign.daily_budget_micros / 1_000_000 : null, campaignBudgetResourceName: input.campaign.budget_resource_name ?? undefined, sharedBudget: input.campaign.budget_explicitly_shared ?? undefined })
     const configuredAccounts: ConfiguredAccounts = {
       metaAdAccountId: process.env.META_AD_ACCOUNT_ID,

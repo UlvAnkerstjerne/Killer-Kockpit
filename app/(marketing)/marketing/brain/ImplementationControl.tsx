@@ -2,62 +2,54 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { confirmStrategyImplementation, prepareStrategyImplementation, type PrepareResult } from '@/lib/actions/marketing/paid-strategy-implementation'
+import {
+  activateStrategyImplementation, cancelStrategyImplementation, confirmStrategyImplementation, prepareStrategyImplementation, resumeStrategyImplementation, type PrepareResult,
+} from '@/lib/actions/marketing/paid-strategy-implementation'
 import { confirmLabel, modeLabel, stateLabel } from '@/lib/marketing/paid-strategy/implementation/state'
-import PreviewPanel, { DialogFrame, dkk } from './ImplementationPreview'
 import type { ImplementationInputs, ImplementationView } from '@/lib/marketing/paid-strategy/implementation/types'
+import PreviewPanel, { ActivationPanel, BlockerList, DialogFrame, dkk } from './ImplementationPreview'
 
 type Ready = Extract<PrepareResult, { alreadyStarted: false }>
-const IN_FLIGHT = new Set(['approved', 'started', 'in_motion', 'completed', 'cancelled', 'needs_attention'])
+/** Nothing to approve any more: show the state. */
+const SETTLED = new Set(['approved', 'planning', 'executing', 'verifying', 'in_motion', 'completed', 'cancelled', 'started'])
+const BLOCKED = new Set(['waiting_for_access', 'waiting_for_input', 'needs_attention'])
 
 export default function ImplementationControl({ runId, index, canApprove, superseded, view }: {
   runId: string; index: number; canApprove: boolean; superseded: boolean; view?: ImplementationView
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState<'' | 'confirm' | 'activate'>('')
   const [pending, startTransition] = useTransition()
   const [ready, setReady] = useState<Ready | null>(null)
   const [error, setError] = useState('')
-  const [owner, setOwner] = useState('')
-  const [due, setDue] = useState('')
-  const [reserve, setReserve] = useState('')
-  const [targetId, setTargetId] = useState('')
-  const [action, setAction] = useState<'' | 'pause_campaign' | 'resume_campaign' | 'set_daily_budget'>('')
-  const [newBudget, setNewBudget] = useState('')
-  const [location, setLocation] = useState('')
-  const opener = useRef<HTMLButtonElement>(null)
-  const cancelRef = useRef<HTMLButtonElement>(null)
+  const [note, setNote] = useState('')
+  const [owner, setOwner] = useState(''); const [due, setDue] = useState('')
+  const [targetId, setTargetId] = useState(''); const [action, setAction] = useState<'' | 'pause_campaign' | 'resume_campaign' | 'set_daily_budget'>(''); const [newBudget, setNewBudget] = useState('')
+  const [dailyBudget, setDailyBudget] = useState(''); const [days, setDays] = useState('')
+  const opener = useRef<HTMLButtonElement>(null); const cancelRef = useRef<HTMLButtonElement>(null)
 
-  const close = () => { setOpen(false); setReady(null); setError(''); opener.current?.focus() }
+  const close = () => { setOpen(''); setReady(null); setError(''); opener.current?.focus() }
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
-  useEffect(() => { if (ready) cancelRef.current?.focus() }, [ready])
-
-  // Settled or in-flight work shows its state instead of a button; nothing can be approved twice from the card.
-  if (view && IN_FLIGHT.has(view.status)) {
-    return <div className="mt-4 border-t border-kk-line pt-3 text-sm" aria-label="Implementation state">
-      <p><span className="text-[11px] font-semibold uppercase tracking-wide text-kk-muted">Implementation</span><br />
-        <span className="font-medium">{stateLabel(view)}</span>{view.budgetReservedDkk > 0 ? <span className="text-kk-muted"> · {dkk(view.budgetReservedDkk)} reserved</span> : null}</p>
-      {view.linkedTaskId ? <p className="mt-1"><Link href={`/tasks/${view.linkedTaskId}`} className="text-kk-brand underline">Open the task</Link></p> : null}
-      {view.error ? <p className="mt-1 text-xs text-kk-muted">{view.error}</p> : null}
-    </div>
-  }
-  if (superseded) return <p className="mt-4 border-t border-kk-line pt-3 text-xs text-kk-muted">Superseded by newer strategy. Not implementable.</p>
-  if (!canApprove) return null
+  useEffect(() => { if (ready || open === 'activate') cancelRef.current?.focus() }, [ready, open])
 
   const collect = (): ImplementationInputs => ({
     ...(owner ? { ownerUserId: owner } : {}), ...(due ? { dueDate: due } : {}),
-    ...(reserve !== '' && Number.isFinite(Number(reserve)) ? { reserveBudgetDkk: Number(reserve) } : {}),
-    ...(targetId && action ? { platform: {
-      action, targetType: ready?.targets.find(t => t.id === targetId)?.type ?? 'campaign', targetId,
-      ...(newBudget !== '' && Number.isFinite(Number(newBudget)) ? { targetDailyBudget: Number(newBudget) } : {}),
-    } } : {}),
-    ...(location.trim() ? { package: { location: location.trim() } } : {}),
+    ...(targetId && action ? { platform: { action, targetType: ready?.targets.find(t => t.id === targetId)?.type ?? 'campaign', targetId, ...(newBudget !== '' && Number.isFinite(Number(newBudget)) ? { targetDailyBudget: Number(newBudget) } : {}) } } : {}),
+    ...(dailyBudget !== '' || days !== '' ? { campaign: { ...(dailyBudget !== '' && Number.isFinite(Number(dailyBudget)) ? { dailyBudgetDkk: Number(dailyBudget) } : {}), ...(days !== '' && Number.isInteger(Number(days)) ? { durationDays: Number(days) } : {}) } } : {}),
+  })
+
+  const run = (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>, after?: () => void) => startTransition(async () => {
+    setError(''); setNote('')
+    try {
+      const res = await fn()
+      if (!res.ok) { setError(res.error ?? 'That did not work. Nothing was changed.'); return }
+      setNote(res.message ?? ''); after?.(); router.refresh()
+    } catch { setError('The result is unknown. Reload to check this recommendation before trying again.') }
   })
 
   function load(inputs?: ImplementationInputs) {
@@ -67,45 +59,63 @@ export default function ImplementationControl({ runId, index, canApprove, supers
         const res = await prepareStrategyImplementation(runId, index, inputs)
         if (!res.ok) { setError(res.error); return }
         if (res.alreadyStarted) { router.refresh(); close(); return }
-        setReady(res)
-        setOwner(o => o || res.defaults.ownerUserId); setDue(d => d || res.defaults.dueDate)
-        setReserve(r => r !== '' ? r : String(res.preview.budget.requestedDkk))
-        const suggested = res.targets.find(t => t.suggested)
-        setTargetId(t => t || suggested?.id || '')
+        setReady(res); setOwner(o => o || res.defaults.ownerUserId); setDue(d => d || res.defaults.dueDate)
+        const suggested = res.targets.find(t => t.suggested); setTargetId(t => t || suggested?.id || '')
       } catch { setError('Could not prepare this. Nothing was changed.') }
     })
   }
+  const confirm = () => run(() => confirmStrategyImplementation(runId, index, collect()), close)
 
-  function confirm() {
-    startTransition(async () => {
-      setError('')
-      try {
-        const res = await confirmStrategyImplementation(runId, index, collect())
-        if (!res.ok) { setError(res.error); if (res.needsInput) load(collect()); return }
-        router.refresh(); close()
-      } catch { setError('The result is unknown. Reload to check this recommendation before trying again.') }
-    })
+  // ── State instead of a button once there is something to show ─────────────────
+  if (view && (SETTLED.has(view.status) || BLOCKED.has(view.status) || view.status === 'ready_to_activate')) {
+    const blocked = BLOCKED.has(view.status)
+    return <div className="mt-4 space-y-3 border-t border-kk-line pt-3 text-sm" aria-label="Implementation state">
+      <p><span className="text-[11px] font-semibold uppercase tracking-wide text-kk-muted">Implementation · {modeLabel(view.mode)}</span><br />
+        <span className="font-medium">{stateLabel(view)}</span>{view.budgetReservedDkk > 0 ? <span className="text-kk-muted"> · {dkk(view.budgetReservedDkk)} reserved</span> : null}</p>
+      {blocked && view.blockers.length ? <BlockerList title={view.status === 'waiting_for_access' ? 'What is missing' : 'What is needed'} blockers={view.blockers} /> : null}
+      {view.status === 'needs_attention' && view.message ? <p className="text-xs text-kk-muted">{view.message}</p> : null}
+      {error ? <p role="alert">{error}</p> : null}{note ? <p role="status" className="text-kk-muted">{note}</p> : null}
+      {canApprove && (blocked || view.status === 'planning' || view.status === 'executing') ? <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={pending} onClick={() => run(() => resumeStrategyImplementation(runId, index, collect()))} className="rounded-lg border border-kk-line px-3 py-2 disabled:opacity-60">Check again</button>
+        {blocked ? <button type="button" disabled={pending} onClick={() => run(() => cancelStrategyImplementation(runId, index))} className="rounded-lg border border-kk-line px-3 py-2 text-kk-muted disabled:opacity-60">Cancel and release budget</button> : null}
+      </div> : null}
+      {view.status === 'ready_to_activate' && view.review ? <>
+        <p className="text-xs text-kk-muted">{view.message}</p>
+        {canApprove ? <div className="flex flex-wrap gap-2">
+          <button ref={opener} type="button" onClick={() => setOpen('activate')} className="rounded-xl bg-kk-brand px-4 py-2.5 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand">Review &amp; activate</button>
+          <button type="button" disabled={pending} onClick={() => run(() => cancelStrategyImplementation(runId, index))} className="rounded-lg border border-kk-line px-3 py-2 text-kk-muted disabled:opacity-60">Cancel</button>
+        </div> : null}
+        {open === 'activate' ? <DialogFrame id={`act-title-${runId}-${index}`} kicker="Ready to activate" title={view.review.title} onClose={close}
+          actions={<>
+            <button ref={cancelRef} type="button" onClick={close} className="rounded-xl border border-kk-line px-4 py-2.5 text-sm">Not yet</button>
+            <button type="button" disabled={pending} onClick={() => run(() => activateStrategyImplementation(runId, index), close)} className="rounded-xl bg-kk-brand px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60">{pending ? 'Activating…' : view.review.kind === 'campaign' ? 'Activate · spending starts' : 'Activate the ad'}</button>
+          </>}>
+          <ActivationPanel review={view.review} totalReserved={view.budgetReservedDkk} />
+          {error ? <p role="alert" className="mt-3 text-sm">{error}</p> : null}
+        </DialogFrame> : null}
+      </> : null}
+    </div>
   }
+  if (superseded) return <p className="mt-4 border-t border-kk-line pt-3 text-xs text-kk-muted">Superseded by newer strategy. Not implementable.</p>
+  if (!canApprove) return null
 
   const p = ready?.preview
   const needsInput = p?.mode === 'needs_input'
-  const confirmText = confirmLabel(!!p?.changesMeta)
-
   return <div className="mt-4 border-t border-kk-line pt-3">
-    <button ref={opener} type="button" onClick={() => { setOpen(true); load() }}
+    <button ref={opener} type="button" onClick={() => { setOpen('confirm'); load() }}
       className="rounded-xl bg-kk-brand px-4 py-2.5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand">
       Approve &amp; implement
     </button>
-    {open ? <DialogFrame id={`impl-title-${runId}-${index}`} kicker="Approve & implement" title={p ? modeLabel(p.mode) : 'Preparing…'} onClose={close}
+    {open === 'confirm' ? <DialogFrame id={`impl-title-${runId}-${index}`} kicker="Approve & implement" title={p ? modeLabel(p.mode) : 'Preparing…'} onClose={close}
       actions={<>
         <button ref={cancelRef} type="button" onClick={close} className="rounded-xl border border-kk-line px-4 py-2.5 text-sm">Cancel</button>
         <button type="button" disabled={pending || !p || needsInput || !ready?.canConfirm} onClick={confirm}
-          className="rounded-xl bg-kk-brand px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60">{pending && p ? 'Working…' : confirmText}</button>
+          className="rounded-xl bg-kk-brand px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60">{pending && p ? 'Working…' : confirmLabel(p?.mode, !!p?.changesMeta)}</button>
       </>}>
-      {!p ? <p role="status" className="mt-3 text-sm text-kk-muted">{error || 'Compiling what Kockpit would do. Nothing is changed yet.'}</p>
+      {!p ? <p role="status" className="mt-3 text-sm text-kk-muted">{error || 'Working out what Kockpit would do. Nothing is changed yet.'}</p>
         : <PreviewPanel preview={p} targets={ready!.targets} owners={ready!.owners ?? []} minDate={new Date().toISOString().slice(0, 10)} pending={pending}
-            form={{ owner, due, reserve, targetId, action, newBudget, location, set: (key, value) => ({ owner: setOwner, due: setDue, reserve: setReserve, targetId: setTargetId, action: (v: string) => setAction(v as typeof action), newBudget: setNewBudget, location: setLocation })[key](value) }}
-            onCheck={() => load(collect())} onReserveCommit={() => load(collect())} />}
+            form={{ owner, due, targetId, action, newBudget, dailyBudget, days, set: (key, value) => ({ owner: setOwner, due: setDue, targetId: setTargetId, action: (v: string) => setAction(v as typeof action), newBudget: setNewBudget, dailyBudget: setDailyBudget, days: setDays })[key](value) }}
+            onCheck={() => load(collect())} />}
       {error && p ? <p role="alert" className="mt-3 text-sm">{error}</p> : null}
     </DialogFrame> : null}
   </div>

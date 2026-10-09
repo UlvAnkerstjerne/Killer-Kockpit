@@ -93,7 +93,7 @@ export default function PaidStrategySection({ data, generateControl, implementat
           </details>)}</div>
         </details> : null}
       </>}
-      <p className="text-xs text-kk-muted">Advisory only. Nothing here changes a campaign. Operational changes still go through Paid Recommendations and Needs Review.{implementations?.canApprove ? ' Implementing a recommendation only creates a task or launch package, or applies a guardrailed change to an existing campaign, after you confirm.' : null}</p>
+      <p className="text-xs text-kk-muted">Advisory only. Nothing here changes a campaign. Operational changes still go through Paid Recommendations and Needs Review.{implementations?.canApprove ? ' "Approve & implement" lets Kockpit do the work itself after you confirm: everything it creates in Meta is paused until you activate it, and it stops only for an access it lacks, a decision only you can make, or a physical act.' : null}</p>
     </>}
   </section>
 }

@@ -7,7 +7,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getUserMarketingPermissions } from '@/lib/actions/marketing/permissions'
 import { loadImplementationViews } from '@/lib/marketing/paid-strategy/implementation/read'
 import type { ImplementationView } from '@/lib/marketing/paid-strategy/implementation/types'
-import { confirmImplementation, prepareImplementation, type ConfirmOutcome, type PrepareOutcome } from '@/lib/marketing/paid-strategy/implementation/service'
+import { activateImplementation, cancelImplementation, confirmImplementation, prepareImplementation, resumeImplementation, type ConfirmOutcome, type PrepareOutcome } from '@/lib/marketing/paid-strategy/implementation/service'
 
 export type PrepareResult = PrepareOutcome & { canConfirm?: boolean; owners?: { id: string; name: string }[] }
 
@@ -47,6 +47,33 @@ export async function confirmStrategyImplementation(runId: string, index: number
   return result
 }
 
+/** Continue after a blocker is cleared or an interruption. Never repeats a finished step. Requires paid_approve. */
+export async function resumeStrategyImplementation(runId: string, index: number, inputs?: unknown): Promise<ConfirmOutcome> {
+  const auth = await authorize('paid_approve')
+  if (!auth.ok) return auth
+  const result = await resumeImplementation(createServiceClient(), auth.userId, String(runId), Number(index), inputs)
+  revalidatePath('/marketing/brain')
+  return result
+}
+
+/** Switch on the verified paused structure. A separate approval from creation. Requires paid_approve. */
+export async function activateStrategyImplementation(runId: string, index: number): Promise<ConfirmOutcome> {
+  const auth = await authorize('paid_approve')
+  if (!auth.ok) return auth
+  const result = await activateImplementation(createServiceClient(), auth.userId, String(runId), Number(index))
+  revalidatePath('/marketing/brain')
+  return result
+}
+
+/** Release the reservation. Objects already created stay paused in Meta. Requires paid_approve. */
+export async function cancelStrategyImplementation(runId: string, index: number): Promise<ConfirmOutcome> {
+  const auth = await authorize('paid_approve')
+  if (!auth.ok) return auth
+  const result = await cancelImplementation(createServiceClient(), auth.userId, String(runId), Number(index))
+  revalidatePath('/marketing/brain')
+  return result
+}
+
 export interface StrategyImplementationData {
   /** Whether the Approve & implement button is offered. The server re-checks on every call. */
   canApprove: boolean
@@ -62,6 +89,6 @@ export async function getStrategyImplementations(): Promise<StrategyImplementati
   const userDb = await createClient()
   const runs = await userDb.from('marketing_paid_strategy_runs').select('id').eq('status', 'completed').order('generated_at', { ascending: false }).limit(6)
   if (runs.error) return { ...none, canApprove: auth.canApprove, error: 'Implementation state is unavailable. Confirm the migration is activated.' }
-  const loaded = await loadImplementationViews(userDb, createServiceClient(), ((runs.data ?? []) as { id: string }[]).map(r => r.id))
+  const loaded = await loadImplementationViews(userDb, ((runs.data ?? []) as { id: string }[]).map(r => r.id))
   return { canApprove: auth.canApprove, views: loaded.views, error: loaded.error ? 'Implementation state is unavailable. Confirm the migration is activated.' : null }
 }

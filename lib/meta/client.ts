@@ -119,7 +119,7 @@ export class MetaRateLimitError extends Error {
 
 // ── Internal fetch helper ──────────────────────────────────────────────────────
 
-async function graphFetch(path: string, params: Record<string, string> = {}): Promise<unknown> {
+export async function graphFetch(path: string, params: Record<string, string> = {}): Promise<unknown> {
   const headers = getMetaAuthHeaders()
   if (!headers) throw new MetaApiError('META_SYSTEM_USER_TOKEN not configured')
 
@@ -188,6 +188,12 @@ export async function updateMetaCampaignBudget(id: string, dailyBudgetMinor: num
 export async function updateMetaAdSetBudget(id: string, dailyBudgetMinor: number) {
   if (!Number.isSafeInteger(dailyBudgetMinor) || dailyBudgetMinor <= 0) throw new MetaApiError('Invalid Meta daily budget')
   return graphWrite(id, new URLSearchParams({ daily_budget: String(dailyBudgetMinor) }))
+}
+
+export async function updateMetaAdSetEndTime(id: string, endTimeIso: string) {
+  if (!/^\d{1,30}$/.test(id)) throw new MetaApiError('Invalid Meta ad set ID')
+  if (!Number.isFinite(Date.parse(endTimeIso))) throw new MetaApiError('Invalid end time')
+  return graphWrite(id, new URLSearchParams({ end_time: endTimeIso }))
 }
 
 // ── Pagination helper ──────────────────────────────────────────────────────────
