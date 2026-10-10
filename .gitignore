@@ -63,3 +63,4 @@ UI - design/
 /.e2e-fixtures/
 /test-results/
 /playwright-report/
+scripts/.ig-insights-backfill-state.json

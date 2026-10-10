@@ -54,6 +54,7 @@ import {
 import { fetchIgMedia, fetchIgMediaInsights, fetchIgAccountDailyInsights } from './ig-client'
 import { fetchPageDailyInsights, fetchFbPosts, fetchFbPostInsights, fetchLinkedIgAccountId, fetchPageToken } from './fb-client'
 import { hasMetaCredentials } from './auth'
+import { refreshIgInsights, IG_REFRESH_MAX_CALLS_PER_SYNC } from './ig-insights-refresh'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -494,6 +495,35 @@ async function syncIgOrganicDeep(db: Db, igAccountId: string, now: string): Prom
           }).eq('id', item.id)
         }
       }
+    }
+
+    // Refresh lifetime insights for ALL stored posts in the lookback window
+    // (not only newly discovered ones) — lifetime counters keep growing after
+    // discovery. Bounded to IG_REFRESH_MAX_CALLS_PER_SYNC calls; a rate limit
+    // stops the refresh cleanly without failing the sync (idempotent, retried next run).
+    const refreshed = new Set(media.map((m) => m.id))
+    const { data: recentRows } = await db
+      .from('meta_ig_media')
+      .select('id, media_type, published_at')
+      .eq('ig_account_id', igAccountId)
+      .gte('published_at', insightsCutoff)
+      .order('published_at', { ascending: false })
+      .limit(IG_REFRESH_MAX_CALLS_PER_SYNC + refreshed.size)
+    const refreshTargets = ((recentRows ?? []) as Array<{ id: string; media_type: string }>)
+      .filter((r) => !refreshed.has(r.id))
+    const refreshOutcome = await refreshIgInsights({
+      targets:       refreshTargets,
+      maxCalls:      IG_REFRESH_MAX_CALLS_PER_SYNC,
+      fetchInsights: async (t) => {
+        const ins = await fetchIgMediaInsights(t.id, t.media_type)
+        return ins ? { kind: 'ok', insights: ins } : { kind: 'unavailable' }
+      },
+      writePatch: async (id, patch) => {
+        await db.from('meta_ig_media').update({ ...patch, synced_at: now }).eq('id', id)
+      },
+    })
+    if (refreshOutcome.rateLimited) {
+      console.warn('[meta/sync] Rate limit hit during IG insights refresh — remaining posts refresh next run')
     }
 
     await upsertInstitutionalSyncState(db, 'meta_ig_organic_deep', {

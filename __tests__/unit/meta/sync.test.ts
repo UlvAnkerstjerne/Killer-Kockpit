@@ -51,7 +51,7 @@ const mocks = vi.hoisted(() => {
   const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null })
 
   // Default chain: all sync state queries return null (no existing row → insert path)
-  mockEq.mockReturnValue({ eq: mockEq, is: mockIs, maybeSingle: mockMaybeSingle, single: vi.fn().mockResolvedValue({ data: null }) })
+  mockEq.mockReturnValue({ eq: mockEq, is: mockIs, gte: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [] }) }) }), maybeSingle: mockMaybeSingle, single: vi.fn().mockResolvedValue({ data: null }) })
   mockIs.mockReturnValue({ maybeSingle: mockMaybeSingle })
   mockUpdate.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
 
