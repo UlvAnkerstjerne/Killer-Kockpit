@@ -237,5 +237,16 @@ describe('Organic Strategy validation: asserted claims are rejected, negated or 
       expect(assertsClaim('Nothing here.', causal)).toBe(false)
       expect(assertsClaim('Cannot confirm anything; P3 caused it.', causal)).toBe(true)
     })
+    it('lets a denial reach back across a long clause, but a "but" ends its scope (live false positive)', () => {
+      const visual = /\b(visual(?:ly)?|footage)\b/i
+      expect(assertsClaim('No measured or unmeasured post has used raw cuts as the primary visual subject.', visual)).toBe(false)
+      expect(assertsClaim('No retention data exists, but the opening footage clearly held attention.', visual)).toBe(true)
+      expect(assertsClaim('P5 used raw cuts as the primary visual subject.', visual)).toBe(true)
+    })
+    it('does not read a caption explaining the brand as a causal claim, but still rejects "explains why it performed"', () => {
+      const out = (evidence: string) => ({ ...validOutput(), main_learnings: [{ ...validOutput().main_learnings[0], evidence }] })
+      expect(() => validateOrganicStrategy(out('P1: the caption explains why Killer Kebab uses the word kebab, and drew 90,000 views.'), ctx)).not.toThrow()
+      expect(() => validateOrganicStrategy(out('P1: the opening line explains why it performed so well.'), ctx)).toThrow('causal language')
+    })
   })
 })

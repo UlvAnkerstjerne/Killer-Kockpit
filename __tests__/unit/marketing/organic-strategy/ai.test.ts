@@ -223,7 +223,7 @@ describe('callOrganicStrategyAI', () => {
     mocks.parse.mockResolvedValue({ parsed_output: bad })
     const result = await callOrganicStrategyAI(skill, evidence, ctx)
     expect(result.ok).toBe(false)
-    if (!result.ok) { expect(result.error).toBe('Organic Strategy analysis failed. Please try again.'); expect(result.error).not.toContain('https') }
+    if (!result.ok) { expect(result.error).toBe('Organic Strategy analysis failed (validation: leaked_identifier). Please try again.'); expect(result.error).not.toContain('https') }
     expect(mocks.parse).toHaveBeenCalledTimes(2)
   })
 

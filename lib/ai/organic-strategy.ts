@@ -106,27 +106,49 @@ export function buildOrganicUserMessage(evidence: OrganicEvidence): string {
 
 // ── Validation ─────────────────────────────────────────────────────────────────
 
-export class OrganicStrategyValidationError extends Error {}
+/** Fixed failure categories. Stored in the run so a failure is diagnosable; never contains model text. */
+export type OrganicFailureCategory =
+  | 'timeout' | 'api_error' | 'no_parsed_output' | 'schema_mismatch'
+  | 'validation: leaked_identifier' | 'validation: payload_shape' | 'validation: demographic_claim'
+  | 'validation: invented_data' | 'validation: visual_claim' | 'validation: causal_language'
+  | 'validation: unknown_post_ref' | 'validation: duplicate_titles' | 'validation: ungrounded_business_fact'
+  | 'validation: other'
+
+export class OrganicStrategyValidationError extends Error {
+  constructor(message: string, readonly category: OrganicFailureCategory = 'validation: other') { super(message) }
+}
+
+/** Maps any thrown error to a fixed category. */
+export function organicFailureCategory(err: unknown): OrganicFailureCategory {
+  if (err instanceof OrganicStrategyValidationError) return err.category
+  const e = err as { name?: string } | null
+  if (e?.name === 'ZodError') return 'schema_mismatch'
+  if (e?.name === 'APIConnectionTimeoutError') return 'timeout'
+  return 'api_error'
+}
 
 const LEAKED_IDENTIFIER = /https?:\/\/|www\.|\bact_\d+|\b\d{12,}\b|access[_ ]?token|bearer\s/i
 const PAYLOAD_SHAPE = /["']?(media_id|ig_account_id|permalink|campaign_id|access_token)["']?\s*[:=]/i
 const DEMOGRAPHICS = /\b(demograph\w*|gender|women|woman|female|male|millennials?|gen[- ]?z|teen(?:s|agers?)?|students?|parents?|affluent|income|aged?\s*\d{1,2}|\d{2}\s*(?:-|to)\s*\d{2}\s*year[- ]olds?|age group)\b/i
 const INVENTED_DATA = /\b(retention|watch[- ]?time|watch rate|(?:average|avg\.?) (?:view|watch) (?:duration|time)|completion rate|drop[- ]?off|skip rate|hook rate|non-?followers?|new audiences? reached)\b/i
 const VISUAL_CLAIM = /\b(thumbnail|cover image|visual(?:ly)?|footage|lighting|colou?r(?:s|ful)?|camera angle|b-?roll|on-?camera|talking[- ]head|close-?ups?)\b/i
-const CAUSAL = /\b(caused?|causing|because of|due to|led to|leads to|drove|drives|driving|resulted in|proves?|proved|guarantees?|is why|explains why)\b/i
+const CAUSAL = /\b(caused?|causing|because of|due to|led to|leads to|drove|drives|driving|resulted in|proves?|proved|guarantees?|is why|explains why(?!\s+(?:killer|we|the (?:brand|company|team)|they)\b))\b/i
 
 // A claim is only a violation when it is ASSERTED. Careful sentences that deny or hedge it are exactly
 // what we want from the model ("cannot confirm the opening line drove reach", "visual-first is
 // untested", "there is no retention data"). The first live evaluation showed bare keyword matching
 // rejecting such sentences. A negation/hedge within a short window of the keyword clears it;
 // assertions without one are still rejected.
+const CLAUSE_BREAK = /\bbut\b|\bhowever\b|\bwhereas\b|\bwhile\b|\bthough\b/gi
 const NEGATION = /\b(no|not|n't|never|without|lacks?|lacking|unavailable|unknown|missing|cannot|can't|untested|unverified|unclear|whether|impossible)\b/i
 const sentencesOf = (text: string) => text.split(/(?<=[.!?;:])\s+|\s[—–]\s/).filter(Boolean)
 export function assertsClaim(text: string, pattern: RegExp): boolean {
   const re = new RegExp(pattern.source, 'gi')
   for (const sentence of sentencesOf(text)) {
     for (const m of sentence.matchAll(re)) {
-      const before = sentence.slice(Math.max(0, m.index - 60), m.index)
+      // The denial must sit in the SAME clause as the keyword and in front of it ("No post has used raw cuts as the primary
+      // visual"). A "but" ends the denial's scope: "no retention data, but P5 had strong retention" still asserts.
+      const before = (sentence.slice(Math.max(0, m.index - 120), m.index).split(CLAUSE_BREAK).pop() ?? '')
       const after = sentence.slice(m.index + m[0].length, m.index + m[0].length + 40)
       if (!NEGATION.test(before) && !NEGATION.test(after)) return true
     }
@@ -200,10 +222,20 @@ const FACT_CLASSES: Record<string, RegExp> = {
   'where it is sourced': /\b(sourced|sourcing|suppliers?|imported|bought|purchased|externally|outsourced|locally grown|farms?|farmers?)\b/g,
   'how it is prepared': /\b(marinad(?:e|es|ed|ing)|marinat(?:e|es|ed|ing)|yogh?urt|brined?|cured)\b|\b\d+ hours?\b/g,
 }
-const CONFIRMATION = /\b(confirm|verify|check with|ask the team|whether|to be confirmed|if it is|if they are|if this is)\b/
+const CONFIRMATION = /\b(confirm|verify|check with|ask the team|whether|to be confirmed|if it is|if they are|if this is|only if|unless)\b/
 const DURATION = /\b(\d+) (hour|year|month)s?\b/g
 const HISTORY = /\b(?:took|take|takes|waited|wait|spent|needed)\b[^.!?]{0,40}?\b\d+ (?:years?|months?)\b|\b\d+ (?:years?|months?) (?:to|before)\b|\bfor (?:years|months|a decade)\b|\bfor (?:the )?(?:last|past) \d+ (?:years?|months?)\b/g
 const PROXIMITY_CHARS = 80
+/** A fact word that the sentence DENIES ("No post applies this to the marinade", "but not the marinade again") is not a claim. */
+const DENIAL = /\b(no|not|never|none|neither|nor|without|lacks?|lacking|missing|unconfirmed|unverified)\b|n't\b/
+function assertsFact(sentence: string, re: RegExp): boolean {
+  for (const m of sentence.matchAll(new RegExp(re.source, 'g'))) {
+    // Only the clause the fact word sits in counts: "no data, but the lamb is marinated" still asserts.
+    const clause = sentence.slice(0, m.index).split(CLAUSE_BREAK).pop() ?? ''
+    if (!DENIAL.test(clause)) return true
+  }
+  return false
+}
 
 function nearInSource(source: string, groups: Set<string>, fact: RegExp): boolean {
   const products = [...source.matchAll(PRODUCT_RE)].filter(m => groups.has(GROUP_OF.get(m[0])!)).map(m => m.index!)
@@ -234,7 +266,7 @@ export function unsupportedBusinessFact(text: string, sources: string[]): string
       for (const [kind, re] of Object.entries(FACT_CLASSES)) {
         // Every product the sentence names must be supported on its own: "lamb and chicken" is not covered by the lamb.
         const unsupported = [...groups].some(g => g !== 'kebab' && !sources.some(src => nearInSource(src, new Set([g]), re)))
-        if (new RegExp(re.source, 'g').test(s) && unsupported) {
+        if (assertsFact(s, re) && unsupported) {
           return `states ${kind} for a product that no supplied caption or note says: "${sentence.trim().slice(0, 140)}"`
         }
       }
@@ -295,20 +327,20 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
 
   for (const field of collectFields(parsed)) {
     const where = field.where
-    if (LEAKED_IDENTIFIER.test(field.text)) throw new OrganicStrategyValidationError(`${where}: URL, platform ID or credential-like string.`)
-    if (PAYLOAD_SHAPE.test(field.text)) throw new OrganicStrategyValidationError(`${where}: looks like a platform payload.`)
-    if (field.kind !== 'limitation' && DEMOGRAPHICS.test(field.text)) throw new OrganicStrategyValidationError(`${where}: demographic or audience claim; no such data exists.`)
-    if (field.kind === 'evidence' && assertsClaim(field.text, INVENTED_DATA)) throw new OrganicStrategyValidationError(`${where}: retention or follower-split data is not available.`)
-    if (field.kind === 'evidence' && assertsClaim(field.text, VISUAL_CLAIM)) throw new OrganicStrategyValidationError(`${where}: visual claim; visuals were not analysed.`)
-    if (field.kind === 'evidence' && assertsClaim(field.text, CAUSAL)) throw new OrganicStrategyValidationError(`${where}: causal language in an evidence field.`)
+    if (LEAKED_IDENTIFIER.test(field.text)) throw new OrganicStrategyValidationError(`${where}: URL, platform ID or credential-like string.`, 'validation: leaked_identifier')
+    if (PAYLOAD_SHAPE.test(field.text)) throw new OrganicStrategyValidationError(`${where}: looks like a platform payload.`, 'validation: payload_shape')
+    if (field.kind !== 'limitation' && DEMOGRAPHICS.test(field.text)) throw new OrganicStrategyValidationError(`${where}: demographic or audience claim; no such data exists.`, 'validation: demographic_claim')
+    if (field.kind === 'evidence' && assertsClaim(field.text, INVENTED_DATA)) throw new OrganicStrategyValidationError(`${where}: retention or follower-split data is not available.`, 'validation: invented_data')
+    if (field.kind === 'evidence' && assertsClaim(field.text, VISUAL_CLAIM)) throw new OrganicStrategyValidationError(`${where}: visual claim; visuals were not analysed.`, 'validation: visual_claim')
+    if (field.kind === 'evidence' && assertsClaim(field.text, CAUSAL)) throw new OrganicStrategyValidationError(`${where}: causal language in an evidence field.`, 'validation: causal_language')
     for (const [, letter, n] of field.text.matchAll(/\b([PUB])(\d{1,3})\b/g)) {
       const max = letter === 'P' ? ctx.measuredInPrompt : letter === 'U' ? ctx.unmeasuredInPrompt : ctx.businessItems
-      if (Number(n) < 1 || Number(n) > max) throw new OrganicStrategyValidationError(`${where}: cites ${letter}${n}, which is not in the data.`)
+      if (Number(n) < 1 || Number(n) > max) throw new OrganicStrategyValidationError(`${where}: cites ${letter}${n}, which is not in the data.`, 'validation: unknown_post_ref')
     }
   }
   // Interpretation is inference, but must still not invent unavailable data.
   parsed.main_learnings.forEach((l, i) => {
-    if (assertsClaim(l.interpretation, INVENTED_DATA)) throw new OrganicStrategyValidationError(`main_learnings[${i}].interpretation: retention or follower-split data is not available.`)
+    if (assertsClaim(l.interpretation, INVENTED_DATA)) throw new OrganicStrategyValidationError(`main_learnings[${i}].interpretation: retention or follower-split data is not available.`, 'validation: invented_data')
   })
 
   for (const [name, titles] of [
@@ -318,7 +350,7 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
     ['carousel_concepts', parsed.carousel_concepts.map(x => x.concept_title)],
   ] as const) {
     const seen = new Set(titles.map(t => t.trim().toLowerCase()))
-    if (seen.size !== titles.length) throw new OrganicStrategyValidationError(`${name}: duplicate titles.`)
+    if (seen.size !== titles.length) throw new OrganicStrategyValidationError(`${name}: duplicate titles.`, 'validation: duplicate_titles')
   }
 
   // Business facts must come from the supplied captions and notes (only checkable when the evidence is supplied).
@@ -327,7 +359,7 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
     for (const field of collectFields(parsed)) {
       if (field.kind === 'limitation') continue
       const problem = unsupportedBusinessFact(field.text, sources)
-      if (problem) throw new OrganicStrategyValidationError(`${field.where}: ${problem}`)
+      if (problem) throw new OrganicStrategyValidationError(`${field.where}: ${problem}`, 'validation: ungrounded_business_fact')
     }
   }
 
@@ -359,7 +391,7 @@ const MAX_ATTEMPTS = 2
  */
 export const ORGANIC_REQUEST_TIMEOUT_MS = 210_000
 export const ORGANIC_MAX_TOKENS = 8000
-export const RETRY_ONLY_IF_FAILED_FASTER_THAN_MS = 100_000
+export const RETRY_ONLY_IF_FAILED_FASTER_THAN_MS = 130_000
 
 /** A timeout has already used its whole budget: stacking more 3.5-minute SDK-style retries would hang the refresh. */
 function neverRetryTimeouts<T>(call: () => Promise<T>): () => Promise<T> {
@@ -386,6 +418,7 @@ export async function callOrganicStrategyAI(
   const user = buildOrganicUserMessage(evidence)
   const startMs = Date.now()
   let lastError = ''
+  let lastCategory: OrganicFailureCategory = 'api_error'
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -398,15 +431,17 @@ export async function callOrganicStrategyAI(
       })), { attemptOffset: (attempt - 1) * (SDK_DEFAULT_MAX_RETRIES + 1) })
 
       if (!response.parsed_output) {
+        lastCategory = 'no_parsed_output'
         return { ok: false, error: 'AI model did not return a valid response.', errorDetail: `stop_reason: ${response.stop_reason ?? 'unknown'}` }
       }
       return { ok: true, validated: validateOrganicStrategy(response.parsed_output, ctx, evidence), model, durationMs: Date.now() - startMs }
     } catch (err) {
       lastError = err instanceof Error ? err.message : 'Unknown error'
+      lastCategory = organicFailureCategory(err)
       if (Date.now() - startMs > RETRY_ONLY_IF_FAILED_FASTER_THAN_MS) break // too slow to risk a second long call inside one refresh
       if (attempt < MAX_ATTEMPTS) console.warn(`[ai/organic-strategy] Attempt ${attempt} failed (${lastError.slice(0, 300)}), retrying…`)
     }
   }
   console.error('[ai/organic-strategy] All attempts failed:', lastError.slice(0, 1000))
-  return { ok: false, error: 'Organic Strategy analysis failed. Please try again.', errorDetail: lastError }
+  return { ok: false, error: `Organic Strategy analysis failed (${lastCategory}). Please try again.`, errorDetail: lastError }
 }

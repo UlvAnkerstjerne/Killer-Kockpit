@@ -66,11 +66,52 @@ describe('Creative interpretation AI boundary', () => {
     await callCreativeInterpretation([])
     expect(parse).toHaveBeenCalledTimes(1)
   })
+  it('accepts a sentence that DENIES a certainty word, and still rejects one that asserts it (live false positive)', () => {
+    const signals = strongSample().signals
+    const hedged = "Two reels stand out. I'd treat this as a strong lead rather than a proven formula, and I wouldn't call it proven yet."
+    expect(validateInterpretation({ ...output(), brain_take: hedged }, signals).brain_take).toBe(hedged)
+    expect(() => validateInterpretation({ ...output(), brain_take: 'This proves the founder hook drives shares.' }, signals)).toThrow('Unsupported number or causal claim')
+    expect(() => validateInterpretation({ ...output(), brain_take: 'It is a proven formula, not a fluke.' }, signals)).toThrow('Unsupported number or causal claim')
+    expect(() => validateInterpretation({ ...output(), brain_take: 'Shares rose by 40% on these reels, which is worth a look.' }, signals)).toThrow('Unsupported number or causal claim')
+  })
+  it('stores a fixed failure category, never provider or model text', async () => {
+    const signals = strongSample().signals
+    parse.mockResolvedValue({ parsed_output: { ...output(), brain_take: 'This proves the founder hook drives shares.' } })
+    expect(await callCreativeInterpretation(signals)).toEqual({ ok: false, error: 'Interpretation unavailable (validation: unsupported_claim). Deterministic evidence is still available.' })
+    expect(parse).toHaveBeenCalledTimes(2) // one re-ask after a rejected answer
+    parse.mockResolvedValue({ parsed_output: null })
+    expect(await callCreativeInterpretation(signals)).toMatchObject({ ok: false, error: expect.stringContaining('(schema_mismatch)') })
+    parse.mockRejectedValue(Object.assign(new Error('sensitive provider payload'), { name: 'APIConnectionTimeoutError' }))
+    expect(await callCreativeInterpretation(signals)).toMatchObject({ ok: false, error: expect.stringContaining('(timeout)') })
+    parse.mockRejectedValue(new Error('sensitive provider payload'))
+    const failed = await callCreativeInterpretation(signals)
+    expect(JSON.stringify(failed)).not.toContain('sensitive')
+    expect(failed).toMatchObject({ error: expect.stringContaining('(api_error)') })
+    expect(parse).toHaveBeenCalledTimes(2 + 2 + 1 + 1) // provider errors and timeouts are not re-asked
+  })
+  it('re-asks once when the first answer fails validation, then succeeds', async () => {
+    parse.mockResolvedValueOnce({ parsed_output: { ...output(), brain_take: 'This proves the founder hook drives shares.' } }).mockResolvedValueOnce({ parsed_output: output() })
+    expect(await callCreativeInterpretation(strongSample().signals)).toMatchObject({ ok: true })
+    expect(parse).toHaveBeenCalledTimes(2)
+  })
   it('returns a safe partial failure rather than exposing SDK errors', async () => {
     parse.mockRejectedValue(new Error('sensitive provider payload'))
     const result = await callCreativeInterpretation(strongSample().signals)
     expect(result.ok).toBe(false)
     expect(JSON.stringify(result)).not.toContain('sensitive')
     expect(parse).toHaveBeenCalledTimes(1)
+  })
+})
+describe('interpretation number checks (live false positives)', () => {
+  it('allows "the other five" (measured minus the signals) and durations in a suggestion, but not invented counts or multiples', () => {
+    const signals = strongSample().signals.slice(0, 1)
+    const facts = { posts_in_analysis: 12, measured_posts: 12 }
+    const base = output()
+    const ok = { ...base, insights: [{ ...base.insights[0], signal_ids: [signals[0].id], take: 'This post is well ahead of the other eight posts in the set.', next_move: 'Watch it back and note the first three seconds, then keep the next one under thirty seconds.' }] }
+    expect(() => validateInterpretation(ok, signals, undefined, facts)).not.toThrow()
+    const bad = (take: string, next_move = ok.insights[0].next_move) => ({ ...base, insights: [{ ...ok.insights[0], take, next_move }] })
+    expect(() => validateInterpretation(bad('This post is eleven times the average of the set.'), signals, undefined, facts)).toThrow('Invented number in take')
+    expect(() => validateInterpretation(bad('This post beat the other nine posts by a wide margin.'), signals, undefined, facts)).toThrow('Invented number in take')
+    expect(() => validateInterpretation(bad(ok.insights[0].take, 'Repeat the three posts that worked and compare them side by side.'), signals, undefined, facts)).toThrow('Invented number in next_move')
   })
 })

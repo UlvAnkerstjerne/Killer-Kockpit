@@ -155,3 +155,27 @@ describe('prompt contract: the strategist is told the grounding rule', () => {
     expect(ORGANIC_RULES).not.toMatch(/kylling|chicken|harissa|falafel|yogh?urt|marinade|catering|killer ?kraft|gentrif|shawarma|d[oö]ner/i)
   })
 })
+
+// Live false positives (production evidence, 10 Oct): sentences that DENY or condition a fact word were rejected as if
+// they asserted it. A genuinely unsupported assertion must still be rejected.
+describe('denied or conditional fact words are not assertions', () => {
+  it.each([
+    'No equivalent measured post applies this framing to falafel ingredients, marinade composition, harissa or the flatbread dough.',
+    'Unmeasured posts cover falafel process (P4) and sourdough (P3) but not the marinade again.',
+    'The mayo pairing could be revisited with a different serve, but only if a sourced combination exists to feature.',
+  ])('passes: %s', sentence => { expect(unsupportedBusinessFact(sentence, sources)).toBeNull() })
+
+  it.each([
+    'The falafel is marinated overnight before it is fried.',
+    'There is no extra data, but the falafel is marinated overnight.',
+    'The harissa is made in-house and the falafel is homemade.',
+    'Our vegetables are sourced from local farms.',
+  ])('still rejects: %s', sentence => { expect(unsupportedBusinessFact(sentence, sources)).not.toBeNull() })
+
+  it('stamps the rejection with a fixed category', () => {
+    const bad = validOutput({ reel_concepts: [reel({ execution: 'The falafel is marinated overnight before it is fried.' })] })
+    try { validateOrganicStrategy(bad, ctx, evidence); expect.unreachable() } catch (e) {
+      expect((e as { category?: string }).category).toBe('validation: ungrounded_business_fact')
+    }
+  })
+})

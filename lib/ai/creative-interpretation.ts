@@ -84,7 +84,21 @@ export function buildInterpretationMessage(
 
 // Conservative output guards. A word filter cannot prove factual correctness; every suggestion still needs human review.
 const DEMOGRAPHICS = /\b(demograph\w*|women|woman|men|male|female|gender|teen\w*|millennial\w*|gen\s*z|students?|parents?|income|affluent|age[ds]?)\b/i
-const OVERCLAIMS = /\b(proves?|proven|guarantee\w*|always|definitely|which is why|that'?s why|due to|thanks to|clearly caused)\b|\d|%|\b(percent|per cent|double[sd]?|triple[sd]?|tenfold|twice)\b/i
+// Certainty words are only an overclaim when ASSERTED. A sentence that denies them ("a strong lead rather than a proven
+// formula", "I wouldn't call it proven") is exactly the honesty we want. Digits, percentages and multipliers are always rejected.
+const CERTAINTY_WORDS = /\b(proves?|proven|guarantee\w*|always|definitely|which is why|that'?s why|due to|thanks to|clearly caused)\b/gi
+const NUMERIC_OVERCLAIMS = /\d|%|\b(percent|per cent|double[sd]?|triple[sd]?|tenfold|twice)\b/i
+const CERTAINTY_DENIAL = /\b(no|not|never|rather than|instead of|without|neither|nor|cannot|unproven|yet to be)\b|n't\b/i
+export function overclaims(text: string): boolean {
+  if (NUMERIC_OVERCLAIMS.test(text)) return true
+  for (const sentence of sentences(text)) {
+    for (const m of sentence.matchAll(CERTAINTY_WORDS)) {
+      const before = sentence.slice(Math.max(0, m.index - 60), m.index)
+      if (!CERTAINTY_DENIAL.test(before)) return true
+    }
+  }
+  return false
+}
 const PERFORMANCE_VERBS = /\b(perform\w*|outperform\w*|works?|worked|resonat\w*|drives?|driving|boosts?|boosted|popular|engag\w*|converts?)\b/i
 const BRAND_WORDS = new Set(['killer', 'kebab', 'kockpit'])
 const NUMBER_WORDS: Record<string, number> = {
@@ -99,14 +113,25 @@ function allowedCounts(signals: CreativeSignal[], facts?: InterpretationFacts): 
   for (const s of signals) { set.add(s.sample_size); set.add(s.comparison_sample_size) }
   if (facts?.posts_in_analysis) set.add(facts.posts_in_analysis)
   if (facts?.measured_posts) set.add(facts.measured_posts)
+  // "The other five" for seven measured posts of which two are the signals: a complement is arithmetic on supplied counts, not an invention.
+  if (facts?.measured_posts) {
+    const rest = facts.measured_posts - signals.reduce((sum, s) => sum + s.sample_size, 0)
+    if (rest > 0) set.add(rest)
+    for (const s of signals) if (facts.measured_posts > s.sample_size) set.add(facts.measured_posts - s.sample_size)
+  }
   return set
 }
 
+/** In a suggestion, "the first three seconds" or "under thirty seconds" is a duration to try, not a count of anything in the data. */
+const SUGGESTED_DURATION = /^\s*(?:-\s*)?(?:second|minute)s?\b/
+
 function checkText(label: string, text: string, signals: CreativeSignal[], facts?: InterpretationFacts) {
   if (DEMOGRAPHICS.test(text)) throw new Error(`Unsupported demographic claim in ${label}`)
-  if (OVERCLAIMS.test(text)) throw new Error(`Unsupported number or causal claim in ${label}`)
+  if (overclaims(text)) throw new Error(`Unsupported number or causal claim in ${label}`)
   const allowed = allowedCounts(signals, facts)
-  for (const m of text.toLowerCase().matchAll(/\b(three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred)\b/g)) {
+  const lower = text.toLowerCase()
+  for (const m of lower.matchAll(/\b(three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred)\b/g)) {
+    if (label === 'next_move' && SUGGESTED_DURATION.test(lower.slice(m.index! + m[0].length))) continue
     if (!allowed.has(NUMBER_WORDS[m[1]])) throw new Error(`Invented number in ${label}`)
   }
 }
@@ -159,6 +184,23 @@ export function validateInterpretation(
   return { brain_take: parsed.brain_take, insights }
 }
 
+/** Fixed failure categories, stored in the run's error. Derived from the error kind only, never from model text. */
+export type InterpretationFailureCategory =
+  | 'timeout' | 'api_error' | 'schema_mismatch' | 'validation: demographic_claim' | 'validation: unsupported_claim'
+  | 'validation: invented_number' | 'validation: context_as_evidence' | 'validation: bad_signal_reference'
+export function interpretationFailureCategory(err: unknown): InterpretationFailureCategory {
+  const e = err as { name?: string; message?: string } | null
+  if (e?.name === 'ZodError') return 'schema_mismatch'
+  if (e?.name === 'APIConnectionTimeoutError') return 'timeout'
+  const m = e?.message ?? ''
+  if (m.startsWith('Unsupported demographic')) return 'validation: demographic_claim'
+  if (m.startsWith('Unsupported number or causal')) return 'validation: unsupported_claim'
+  if (m.startsWith('Invented number')) return 'validation: invented_number'
+  if (m.startsWith('Business context cannot')) return 'validation: context_as_evidence'
+  if (m.startsWith('Insight')) return 'validation: bad_signal_reference'
+  return 'api_error'
+}
+
 export async function callCreativeInterpretation(
   signals: CreativeSignal[],
   businessContext?: MarketingBusinessContextItem[],
@@ -176,15 +218,21 @@ export async function callCreativeInterpretation(
     ? INTERPRETATION_SYSTEM_PROMPT + BUSINESS_CONTEXT_ADDENDUM
     : INTERPRETATION_SYSTEM_PROMPT
 
-  // One interpretation request per refresh. If it fails, persist the evidence
-  // without AI prose and let the next explicit refresh retry.
-  try {
-    const response = await trackAiCall({ feature: 'creative_interpretation', model }, () => client.messages.parse({ model, max_tokens: 2400,
-      system: systemPrompt, messages: [{ role: 'user', content: buildInterpretationMessage(signals, businessContext, facts) }],
-      output_config: { format: zodOutputFormat(InterpretationSchema) } }))
-    const out = validateInterpretation(response.parsed_output, signals, businessContext, facts)
-    return { ok: true, ...out, model }
-  } catch {
-    return { ok: false, error: 'Interpretation unavailable. Deterministic evidence is still available.' }
+  // One request per refresh, plus a single re-ask when the answer came back (fast, ~10 s) but failed our own validation:
+  // the model varies run to run, and a rejected answer is cheap to redo. Provider errors and timeouts are never retried here.
+  // If it still fails, persist the evidence without AI prose and let the next explicit refresh retry.
+  let category: InterpretationFailureCategory = 'api_error'
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await trackAiCall({ feature: 'creative_interpretation', model }, () => client.messages.parse({ model, max_tokens: 2400,
+        system: systemPrompt, messages: [{ role: 'user', content: buildInterpretationMessage(signals, businessContext, facts) }],
+        output_config: { format: zodOutputFormat(InterpretationSchema) } }))
+      const out = validateInterpretation(response.parsed_output, signals, businessContext, facts)
+      return { ok: true, ...out, model }
+    } catch (err) {
+      category = interpretationFailureCategory(err)
+      if (!category.startsWith('validation') && category !== 'schema_mismatch') break
+    }
   }
+  return { ok: false, error: `Interpretation unavailable (${category}). Deterministic evidence is still available.` }
 }

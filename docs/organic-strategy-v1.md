@@ -46,7 +46,11 @@ The validator rejects URLs/IDs, demographic claims, invented retention or follow
 
 ## Latency (measured on live data)
 
-Two live answers took 128 s and 109 s (5,445 and 4,780 output tokens), so the call uses a 210 s timeout and `max_tokens` 8000. A timeout is never retried (it has already used its budget), and a failed answer is re-asked only if the failure came back in under 100 s, so one refresh cannot stack several multi-minute calls. A refresh now takes roughly 2.5 to 3.5 minutes.
+Two live answers took 128 s and 109 s (5,445 and 4,780 output tokens), so the call uses a 210 s timeout and `max_tokens` 8000. A timeout is never retried (it has already used its budget), and a failed answer is re-asked only if the failure came back in under 130 s (live answers take 90 to 110 s, so 100 s meant a rejected answer was almost never re-asked), so one refresh cannot stack several multi-minute calls. A refresh now takes roughly 2.5 to 3.5 minutes.
+
+## Stored failure reasons
+
+An `unavailable` strategy stores `Organic Strategy analysis failed (<category>). Please try again.`; the creative interpretation stores `Interpretation unavailable (<category>). ...`. The category comes from a fixed list (`timeout`, `api_error`, `no_parsed_output`, `schema_mismatch`, `validation: ungrounded_business_fact`, `validation: causal_language`, ...) and never contains model text. A denial ("no post has...", "but not the marinade") clears a claim only inside its own clause; a "but" ends its scope.
 
 ## Grounding of business facts
 The strategist may state a business fact (what is made in-house, how something is prepared, where it is sourced, durations, company history) only when a supplied post caption or company note states it for that same product. Otherwise the detail is removed, or the concept carries one short "confirm internally" note. `validateOrganicStrategy` enforces this conservatively: product plus fact-class proximity inside one source, durations that no source contains, and history phrases ("took us six years") that no source contains. Sentences that ask for confirmation, and the limitations field, are exempt. Prompt v3 also forbids generic platform lore as evidence and treats a repeated CTA as non-evidence; carousel concepts are optional and the expected answer with one measured carousel is none.
