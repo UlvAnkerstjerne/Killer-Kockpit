@@ -20,6 +20,7 @@ beforeAll(async () => {
     -- Model broad Supabase defaults: the migration must explicitly revoke access.
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
     CREATE TABLE public.app_users (id uuid PRIMARY KEY, auth_user_id uuid, email text, display_name text, role text, marketing_access boolean NOT NULL DEFAULT false, active boolean NOT NULL DEFAULT true);
+    CREATE TABLE public.tasks (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
     CREATE TABLE public.user_marketing_permissions (user_id uuid REFERENCES public.app_users(id), permission text, PRIMARY KEY (user_id, permission));
     CREATE FUNCTION public.get_my_app_user_id() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT id FROM public.app_users WHERE auth_user_id = auth.uid() $$;
   `)
@@ -44,12 +45,12 @@ async function asUser(n: number, check: () => Promise<void>) {
   await db.exec('SET ROLE authenticated')
   try { await check() } finally { await db.exec('RESET ROLE') }
 }
-const TABLES = ['marketing_insights', 'marketing_insight_observations', 'marketing_insight_links']
+const TABLES = ['marketing_insights', 'marketing_insight_observations', 'marketing_insight_links', 'marketing_insight_actions']
 
 describe('CMO Insights real PostgreSQL migration', () => {
   it('replays after current main and grants reads to the same people as Creative Intelligence (active SUPER_ADMIN, or marketing access + paid_manage)', async () => {
     for (let n = 1; n <= 5; n++) await asUser(n, async () => {
-      for (const table of TABLES) expect((await db.query(`SELECT * FROM ${table}`)).rows).toHaveLength(n <= 2 ? 1 : 0)
+      for (const table of TABLES) expect((await db.query(`SELECT * FROM ${table}`)).rows.length).toBe(n <= 2 ? (table === 'marketing_insight_actions' ? 0 : 1) : 0)
     })
   })
   it('denies anon entirely and every direct authenticated mutation, including SUPER_ADMIN', async () => {
@@ -96,6 +97,45 @@ describe('CMO Insights real PostgreSQL migration', () => {
       await db.query(`INSERT INTO marketing_insight_observations(insight_id,source_kind,source_run_id,observed_at,strength,change,statement)
         VALUES ('88000000-0000-4000-8000-000000000002','meta_account_checks','${RUN}','2026-10-01','weak_signal','new','S')`)
       await db.query("DELETE FROM marketing_insights WHERE id='88000000-0000-4000-8000-000000000002'")
+    } finally { await db.exec('RESET ROLE') }
+  })
+  it('keeps actions honest: one chosen option per draft, vocabularies closed, implement rows point at a recommendation, briefs carry a brief', async () => {
+    await db.exec('SET ROLE service_role')
+    try {
+      const A = '99000000-0000-4000-8000-0000000000'
+      const batch = '99000000-0000-4000-8000-0000000000b1'
+      const insert = (n: number, over: { kind?: string; status?: string; brief?: string; run?: string; idx?: string; chosen?: string; outcome?: string } = {}) => db.query(
+        `INSERT INTO marketing_insight_actions(id,insight_id,batch_id,kind,status,title,why,brief,target_run_id,target_index,chosen_at,outcome)
+         VALUES ($1,'${INSIGHT}','${batch}',$2,$3,'Title','Why',${over.brief ?? 'NULL'},${over.run ?? 'NULL'},${over.idx ?? 'NULL'},${over.chosen ?? 'NULL'},${over.outcome ?? 'NULL'})`,
+        [`${A}${String(n).padStart(2, '0')}`, over.kind ?? 'manual_task', over.status ?? 'proposed'])
+      await insert(1); await insert(2)                                                                                // two drafts of one batch
+      await expect(insert(3, { kind: 'bogus' })).rejects.toThrow()
+      await expect(insert(3, { status: 'bogus' })).rejects.toThrow()
+      await expect(insert(3, { kind: 'implement_recommendation' })).rejects.toThrow()                                 // needs a recommendation target
+      await expect(insert(3, { kind: 'manual_task', run: `'${RUN}'`, idx: '1' })).rejects.toThrow()                  // only implement rows have one
+      await expect(insert(3, { kind: 'content_brief' })).rejects.toThrow()                                           // a brief needs its brief
+      await expect(insert(3, { brief: `'{"concept":"x"}'::jsonb` })).rejects.toThrow()                               // only a content brief has one
+      await expect(insert(3, { status: 'chosen' })).rejects.toThrow()                                                // chosen needs chosen_at
+      await expect(insert(3, { status: 'completed', chosen: 'now()' })).rejects.toThrow()                            // finished needs an outcome
+      await insert(3, { kind: 'implement_recommendation', run: `'${RUN}'`, idx: '1' })
+      await db.query(`UPDATE marketing_insight_actions SET status='chosen', chosen_at=now() WHERE id='${A}01'`)
+      await expect(db.query(`UPDATE marketing_insight_actions SET status='chosen', chosen_at=now() WHERE id='${A}02'`)).rejects.toThrow('duplicate key') // the second choice loses
+      await db.query(`UPDATE marketing_insight_actions SET status='not_chosen' WHERE id='${A}02'`)                    // siblings can be set aside
+      await db.query(`UPDATE marketing_insight_actions SET status='completed', completed_at=now(), outcome='{"source":"task"}'::jsonb WHERE id='${A}01'`)
+      await expect(db.query(`UPDATE marketing_insight_actions SET status='chosen', chosen_at=now() WHERE id='${A}03'`)).rejects.toThrow('duplicate key') // still one per draft once finished
+    } finally { await db.exec('RESET ROLE') }
+  })
+  it('one task carries out at most one action, a deleted task only unlinks it, and a deleted insight takes its actions with it', async () => {
+    await db.exec('SET ROLE service_role')
+    try {
+      const task = '77000000-0000-4000-8000-0000000000aa'
+      await db.query('INSERT INTO tasks(id) VALUES ($1)', [task])
+      const B = '99000000-0000-4000-8000-0000000000b2'
+      const row = (id: string) => db.query(`INSERT INTO marketing_insight_actions(id,insight_id,batch_id,kind,status,title,why,linked_task_id,chosen_at) VALUES ($1,'${INSIGHT}',$2,'manual_task','chosen','T','W',$3,now())`, [id, B, task])
+      await row('99000000-0000-4000-8000-0000000000c1')
+      await expect(row('99000000-0000-4000-8000-0000000000c2')).rejects.toThrow('duplicate key')
+      await db.query('DELETE FROM tasks WHERE id=$1', [task])
+      expect((await db.query("SELECT linked_task_id FROM marketing_insight_actions WHERE id='99000000-0000-4000-8000-0000000000c1'")).rows[0]).toEqual({ linked_task_id: null })
     } finally { await db.exec('RESET ROLE') }
   })
   it('records one observation per insight and source run, so a replayed capture cannot double count', async () => {

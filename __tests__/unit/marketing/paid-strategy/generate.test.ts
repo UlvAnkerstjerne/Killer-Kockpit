@@ -4,12 +4,12 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import type { LoadedSkill } from '@/lib/ai/skills/mesper'
 
 const mocks = vi.hoisted(() => ({ ai: vi.fn(), loadSkill: vi.fn() }))
-const insights = vi.hoisted(() => ({ prior: vi.fn(), capture: vi.fn(), informed: vi.fn(), checks: vi.fn() }))
+const insights = vi.hoisted(() => ({ sync: vi.fn(), prior: vi.fn(), capture: vi.fn(), informed: vi.fn(), checks: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/ai/paid-strategy', () => ({ callPaidStrategyAI: mocks.ai, PAID_STRATEGY_PROMPT_VERSION: 'test-v1' }))
 vi.mock('@/lib/ai/skills/mesper', () => ({ loadMesperSkill: mocks.loadSkill }))
 vi.mock('@/lib/marketing/insights/prior', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/prior')>()), loadPriorInsights: insights.prior }))
-vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), capturePaidRunById: insights.capture, recordInformedQuietly: insights.informed, captureFacebookAdsChecks: insights.checks }))
+vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), capturePaidRunById: insights.capture, recordInformedQuietly: insights.informed, syncInsightActionResults: insights.sync, captureFacebookAdsChecks: insights.checks }))
 import { generatePaidStrategy } from '@/lib/marketing/paid-strategy/generate'
 
 const skill: LoadedSkill = { name: 'mesper-meta-ads', version: '2.1.0', ref: 'mesper-meta-ads@2.1.0#cbfc19c', hash: 'c'.repeat(64), text: 'skill' }
@@ -64,7 +64,7 @@ function storage(opts: { locked?: boolean; failedRead?: boolean; failedFinalWrit
 beforeEach(() => {
   vi.clearAllMocks(); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW)
   mocks.loadSkill.mockReturnValue(skill)
-  insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined); insights.checks.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 })
+  insights.sync.mockResolvedValue({ completed: 0, abandoned: 0 }); insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined); insights.checks.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 })
   mocks.ai.mockResolvedValue({ ok: true, recommendations: [rec(1), rec(2, { title: 'Second distinct idea' }), rec(3, { title: 'Third distinct idea' })], model: 'synthetic-model', durationMs: 5 })
 })
 afterEach(() => vi.useRealTimers())
@@ -206,5 +206,16 @@ describe('CMO Insights around a Paid Strategy run', () => {
     mocks.ai.mockResolvedValue({ ok: false, error: 'AI model did not return a valid response.' })
     await generatePaidStrategy(storage().db, 'admin-id')
     expect(insights.checks).not.toHaveBeenCalled()
+  })
+  it('records how chosen actions ended BEFORE loading prior insights, so what people did is in front of this analysis', async () => {
+    const s = storage()
+    await generatePaidStrategy(s.db, 'admin-id')
+    expect(insights.sync).toHaveBeenCalledWith(s.db)
+    expect(insights.sync.mock.invocationCallOrder[0]).toBeLessThan(insights.prior.mock.invocationCallOrder[0])
+  })
+  it('never fails the run because recording action results failed', async () => {
+    insights.sync.mockRejectedValue(new Error('insight_actions_storage')); const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await generatePaidStrategy(storage().db, 'admin-id')).toMatchObject({ ok: true })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('action results')); warn.mockRestore()
   })
 })

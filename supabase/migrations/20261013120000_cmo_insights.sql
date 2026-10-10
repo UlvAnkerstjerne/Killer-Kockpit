@@ -79,12 +79,56 @@ CREATE TABLE public.marketing_insight_links (
 );
 CREATE INDEX marketing_insight_links_target_idx ON public.marketing_insight_links(target_type, target_run_id);
 
+-- "Do something about it": the options drafted for an insight and the one a person chose. One row per option. An action points at
+-- the task or the Paid Strategy recommendation that carries out the work and never copies their state; its outcome records how it
+-- ended and what the insight looked like then, so later analyses can learn from what people did. Nothing is executed from here.
+CREATE TABLE public.marketing_insight_actions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  insight_id uuid NOT NULL REFERENCES public.marketing_insights(id) ON DELETE CASCADE,
+  batch_id uuid NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('implement_recommendation','manual_task','content_brief')),
+  status text NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','superseded','not_chosen','chosen','completed','abandoned')),
+  title text NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
+  why text NOT NULL CHECK (length(why) BETWEEN 1 AND 1200),
+  steps jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(steps) = 'array' AND jsonb_array_length(steps) <= 8 AND octet_length(steps::text) <= 6000),
+  success_signal text CHECK (success_signal IS NULL OR length(success_signal) <= 800),
+  brief jsonb CHECK (brief IS NULL OR (jsonb_typeof(brief) = 'object' AND octet_length(brief::text) <= 6000)),
+  -- Only implement_recommendation points at a Paid Strategy recommendation (run + index 0-2); the existing flow does the work.
+  target_run_id uuid,
+  target_index integer CHECK (target_index IS NULL OR target_index BETWEEN 0 AND 20),
+  linked_task_id uuid REFERENCES public.tasks(id) ON DELETE SET NULL,
+  owner_user_id uuid REFERENCES public.app_users(id) ON DELETE SET NULL,
+  due_on date,
+  model text CHECK (model IS NULL OR length(model) <= 120),
+  prompt_version text CHECK (prompt_version IS NULL OR length(prompt_version) <= 80),
+  proposed_by_user_id uuid REFERENCES public.app_users(id) ON DELETE SET NULL,
+  proposed_at timestamptz NOT NULL DEFAULT now(),
+  chosen_by_user_id uuid REFERENCES public.app_users(id) ON DELETE SET NULL,
+  chosen_at timestamptz,
+  completed_at timestamptz,
+  outcome jsonb CHECK (outcome IS NULL OR (jsonb_typeof(outcome) = 'object' AND octet_length(outcome::text) <= 4000)),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((kind = 'implement_recommendation') = (target_run_id IS NOT NULL AND target_index IS NOT NULL)),
+  CHECK ((kind = 'content_brief') = (brief IS NOT NULL)),
+  CHECK (status IN ('proposed','superseded','not_chosen') OR chosen_at IS NOT NULL),
+  CHECK (status NOT IN ('completed','abandoned') OR outcome IS NOT NULL),
+  CHECK (linked_task_id IS NULL OR kind <> 'implement_recommendation')
+);
+-- A task carries out at most one action.
+CREATE UNIQUE INDEX marketing_insight_actions_task_idx ON public.marketing_insight_actions(linked_task_id) WHERE linked_task_id IS NOT NULL;
+-- ONE choice per draft, enforced by the database: two people (or two tabs) choosing different options at the same moment cannot both win.
+CREATE UNIQUE INDEX marketing_insight_actions_one_choice_idx ON public.marketing_insight_actions(batch_id) WHERE status IN ('chosen','completed','abandoned');
+CREATE INDEX marketing_insight_actions_insight_idx ON public.marketing_insight_actions(insight_id, proposed_at DESC);
+CREATE INDEX marketing_insight_actions_open_idx ON public.marketing_insight_actions(status) WHERE status = 'chosen';
+
 ALTER TABLE public.marketing_insights ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_insight_observations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_insight_links ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.marketing_insights, public.marketing_insight_observations, public.marketing_insight_links FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON public.marketing_insights, public.marketing_insight_observations, public.marketing_insight_links TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_insights, public.marketing_insight_observations, public.marketing_insight_links TO service_role;
+ALTER TABLE public.marketing_insight_actions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.marketing_insights, public.marketing_insight_observations, public.marketing_insight_links, public.marketing_insight_actions FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.marketing_insights, public.marketing_insight_observations, public.marketing_insight_links, public.marketing_insight_actions TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.marketing_insights, public.marketing_insight_observations, public.marketing_insight_links, public.marketing_insight_actions TO service_role;
 
 -- Same access as Creative Intelligence: active SUPER_ADMIN, or workspace access + paid_manage.
 CREATE POLICY marketing_insights_read ON public.marketing_insights FOR SELECT TO authenticated
@@ -102,6 +146,13 @@ USING (EXISTS (
     )))
 ));
 CREATE POLICY marketing_insight_links_read ON public.marketing_insight_links FOR SELECT TO authenticated
+USING (EXISTS (
+  SELECT 1 FROM public.app_users u WHERE u.id = (SELECT public.get_my_app_user_id()) AND u.active
+    AND (u.role = 'SUPER_ADMIN' OR (u.marketing_access AND EXISTS (
+      SELECT 1 FROM public.user_marketing_permissions p WHERE p.user_id = u.id AND p.permission = 'paid_manage'
+    )))
+));
+CREATE POLICY marketing_insight_actions_read ON public.marketing_insight_actions FOR SELECT TO authenticated
 USING (EXISTS (
   SELECT 1 FROM public.app_users u WHERE u.id = (SELECT public.get_my_app_user_id()) AND u.active
     AND (u.role = 'SUPER_ADMIN' OR (u.marketing_access AND EXISTS (

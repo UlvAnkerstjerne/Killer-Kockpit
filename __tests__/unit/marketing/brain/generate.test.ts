@@ -5,14 +5,14 @@ import type { Media } from '@/lib/marketing/brain/types'
 import type { createServiceClient } from '@/lib/supabase/server'
 import { FingerprintSchema } from '@/lib/marketing/brain/taxonomy'
 const mocks = vi.hoisted(() => ({ classify: vi.fn(), interpret: vi.fn(), loadCtx: vi.fn(), organic: vi.fn(), followers: vi.fn() }))
-const insights = vi.hoisted(() => ({ prior: vi.fn(), capture: vi.fn(), informed: vi.fn() }))
+const insights = vi.hoisted(() => ({ sync: vi.fn(), prior: vi.fn(), capture: vi.fn(), informed: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/ai/creative-classifier', () => ({ callCreativeClassifier: mocks.classify }))
 vi.mock('@/lib/ai/creative-interpretation', () => ({ callCreativeInterpretation: mocks.interpret }))
 vi.mock('@/lib/marketing/brain/business-context', () => ({ loadMarketingBusinessContext: mocks.loadCtx }))
 vi.mock('@/lib/marketing/organic-strategy/generate', () => ({ runOrganicStrategy: mocks.organic, loadLatestFollowers: mocks.followers }))
 vi.mock('@/lib/marketing/insights/prior', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/prior')>()), loadPriorInsights: insights.prior }))
-vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), captureCreativeRunById: insights.capture, recordInformedQuietly: insights.informed }))
+vi.mock('@/lib/marketing/insights/service', async orig => ({ ...(await orig<typeof import('@/lib/marketing/insights/service')>()), captureCreativeRunById: insights.capture, recordInformedQuietly: insights.informed, syncInsightActionResults: insights.sync }))
 import { generateCreativeIntelligence } from '@/lib/marketing/brain/generate'
 
 // A transport fake for orchestration/error sequencing. SQL semantics and RLS are
@@ -61,7 +61,7 @@ beforeEach(() => {
   mocks.loadCtx.mockResolvedValue([])
   mocks.organic.mockResolvedValue(storedStrategy())
   mocks.followers.mockResolvedValue(5000)
-  insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined)
+  insights.sync.mockResolvedValue({ completed: 0, abandoned: 0 }); insights.prior.mockResolvedValue([]); insights.capture.mockResolvedValue({ skipped: false, created: 0, updated: 0, unconfirmed: 0 }); insights.informed.mockResolvedValue(undefined)
   mocks.classify.mockImplementation(async inputs => ({ ok: true, model: 'synthetic', items: inputs.map((i: { media_id: string }) => {
     const f = fingerprint(strongSample().posts.find(p => p.id === i.media_id)!)
     return Object.fromEntries(Object.entries(f).filter(([key]) => key in FingerprintSchema.shape))
@@ -284,5 +284,16 @@ describe('CMO Insights around a Creative Intelligence refresh', () => {
     const s = storage(strongSample().posts, { failedFinalWrite: true })
     expect(await generateCreativeIntelligence(s.db, 'admin-id', { now: NOW })).toMatchObject({ ok: false })
     expect(insights.capture).not.toHaveBeenCalled()
+  })
+  it('records how chosen actions ended BEFORE loading prior insights, so what people did is in front of the next analysis', async () => {
+    const s = storage(strongSample().posts)
+    await generateCreativeIntelligence(s.db, 'admin-id', { now: NOW })
+    expect(insights.sync).toHaveBeenCalledWith(s.db)
+    expect(insights.sync.mock.invocationCallOrder[0]).toBeLessThan(insights.prior.mock.invocationCallOrder[0])
+  })
+  it('never fails the refresh because recording action results failed', async () => {
+    insights.sync.mockRejectedValue(new Error('insight_actions_storage')); const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await generateCreativeIntelligence(storage(strongSample().posts).db, 'admin-id', { now: NOW })).toMatchObject({ ok: true })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('action results')); warn.mockRestore()
   })
 })

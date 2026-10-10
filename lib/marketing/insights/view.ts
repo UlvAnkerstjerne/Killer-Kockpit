@@ -6,11 +6,12 @@
 import type { PaidStrategyData } from '@/lib/actions/marketing/paid-strategy'
 import type { StrategyImplementationData } from '@/lib/actions/marketing/paid-strategy-implementation'
 import { stateLabel } from '@/lib/marketing/paid-strategy/implementation/state'
+import type { ActionView } from './actions/types'
 import type { InsightKind, InsightRow, LinkRow, ObservationRow } from './types'
 
 export type InsightHistoryEntry = Pick<ObservationRow, 'observed_at' | 'strength' | 'change'>
 export type InsightLink = Pick<LinkRow, 'target_type' | 'target_run_id' | 'target_index' | 'relation'>
-export interface InsightView extends InsightRow { history: InsightHistoryEntry[]; links: InsightLink[] }
+export interface InsightView extends InsightRow { history: InsightHistoryEntry[]; links: InsightLink[]; actions: ActionView[] }
 
 export const KIND_ORDER: InsightKind[] = ['finding', 'content_opportunity', 'retargeting_hypothesis']
 

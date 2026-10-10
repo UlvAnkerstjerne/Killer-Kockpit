@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { canAccessMarketing } from '@/lib/permissions'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { backfillInsights } from '@/lib/marketing/insights/service'
+import type { ActionRow, ActionView, LiveState } from '@/lib/marketing/insights/actions/types'
 import type { InsightRow, LinkRow, ObservationRow } from '@/lib/marketing/insights/types'
 import type { InsightView } from '@/lib/marketing/insights/view'
 
@@ -26,11 +27,13 @@ export async function getMarketingInsights(): Promise<InsightsData> {
   const rows = (found.data ?? []) as InsightRow[]
   if (!rows.length) return base
   const ids = rows.map(r => r.id)
-  const [history, links] = await Promise.all([
+  const [history, links, actions] = await Promise.all([
     db.from('marketing_insight_observations').select('insight_id,observed_at,strength,change').in('insight_id', ids).order('observed_at', { ascending: false }).limit(1000),
     db.from('marketing_insight_links').select('insight_id,target_type,target_run_id,target_index,relation').in('insight_id', ids).limit(1000),
+    // Drafts, the chosen action and how it ended. Superseded / not-chosen drafts are history nobody needs on the card.
+    db.from('marketing_insight_actions').select('*').in('insight_id', ids).in('status', ['proposed', 'chosen', 'completed', 'abandoned']).order('proposed_at', { ascending: false }).limit(400),
   ])
-  if (history.error || links.error) return { ...base, error: 'Insights storage is unavailable. Confirm the migration is activated.' }
+  if (history.error || links.error || actions.error) return { ...base, error: 'Insights storage is unavailable. Confirm the migration is activated.' }
   const historyBy = new Map<string, InsightView['history']>()
   for (const h of (history.data ?? []) as Pick<ObservationRow, 'insight_id' | 'observed_at' | 'strength' | 'change'>[]) {
     historyBy.set(h.insight_id, [...(historyBy.get(h.insight_id) ?? []), { observed_at: h.observed_at, strength: h.strength, change: h.change }])
@@ -39,7 +42,18 @@ export async function getMarketingInsights(): Promise<InsightsData> {
   for (const l of (links.data ?? []) as Pick<LinkRow, 'insight_id' | 'target_type' | 'target_run_id' | 'target_index' | 'relation'>[]) {
     linksBy.set(l.insight_id, [...(linksBy.get(l.insight_id) ?? []), { target_type: l.target_type, target_run_id: l.target_run_id, target_index: l.target_index, relation: l.relation }])
   }
-  return { ...base, insights: rows.map(r => ({ ...r, history: historyBy.get(r.id) ?? [], links: linksBy.get(r.id) ?? [] })) }
+  // The state of the task a chosen action created. Read for exactly the rows the user's own RLS just returned, so no id comes from the
+  // browser; the user may not own the task (RLS on tasks), but they are entitled to see how work chosen from their insights stands.
+  const actionRows = (actions.data ?? []) as ActionRow[]
+  const taskIds = [...new Set(actionRows.flatMap(a => (a.linked_task_id ? [a.linked_task_id] : [])))]
+  const taskLive = new Map<string, LiveState>()
+  if (taskIds.length) {
+    const tasks = await createServiceClient().from('tasks').select('id,status,due_at,completed_at').in('id', taskIds)
+    for (const t of (tasks.data ?? []) as { id: string; status: string; due_at: string | null; completed_at: string | null }[]) taskLive.set(t.id, { source: 'task', status: t.status, dueAt: t.due_at, completedAt: t.completed_at })
+  }
+  const actionsBy = new Map<string, ActionView[]>()
+  for (const a of actionRows) actionsBy.set(a.insight_id, [...(actionsBy.get(a.insight_id) ?? []), { ...a, live: a.linked_task_id ? taskLive.get(a.linked_task_id) ?? null : null }])
+  return { ...base, insights: rows.map(r => ({ ...r, history: historyBy.get(r.id) ?? [], links: linksBy.get(r.id) ?? [], actions: actionsBy.get(r.id) ?? [] })) }
 }
 
 export type CaptureInsightsResult = { ok: true; message: string } | { ok: false; error: string }

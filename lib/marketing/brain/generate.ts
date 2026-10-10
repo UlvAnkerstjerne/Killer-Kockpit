@@ -7,7 +7,7 @@ import { loadLatestFollowers, runOrganicStrategy } from '@/lib/marketing/organic
 import type { OrganicStrategyStatus } from '@/lib/marketing/organic-strategy/types'
 import { loadMarketingBusinessContext } from './business-context'
 import { loadPriorInsights } from '@/lib/marketing/insights/prior'
-import { captureCreativeRunById, captureQuietly, recordInformedQuietly } from '@/lib/marketing/insights/service'
+import { captureCreativeRunById, captureQuietly, recordInformedQuietly, syncInsightActionResults } from '@/lib/marketing/insights/service'
 import { classifyLibrary } from './classification'
 import { buildCreativeSignals } from './signals'
 import { CLASSIFICATION_VERSION, INTERPRETATION_PROMPT_VERSION, type FingerprintRow } from './taxonomy'
@@ -81,6 +81,7 @@ export async function generateCreativeIntelligence(db: Db, actorId: string, opti
     await heartbeat()
     // Organic Strategy: a second, specialist layer on top of the evidence above. It never throws, so a
     // failure here leaves the deterministic run and the interpretation untouched; the next refresh retries.
+    await captureQuietly('action results', () => syncInsightActionResults(db))
     const priorInsights = await loadPriorInsights(db, ['organic', 'creative'])
     const organic = await runOrganicStrategy({ media, fingerprints: classified.fingerprints, businessContext, followersLatest: await loadLatestFollowers(db), now, priorInsights })
     await heartbeat()

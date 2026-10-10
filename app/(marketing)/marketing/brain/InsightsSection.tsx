@@ -8,7 +8,9 @@ import { EVALUATED_CHECK_IDS, FACEBOOK_ADS_NOT_ASSESSED, FACEBOOK_ADS_SKILL_REF 
 import { clip } from '@/lib/marketing/insights/text'
 import { KIND_ORDER, linkedRecommendations, splitInsights, type InsightView } from '@/lib/marketing/insights/view'
 import { instagramLink } from './BrainView'
+import { stateLabel } from '@/lib/marketing/paid-strategy/implementation/state'
 import CaptureInsightsButton from './CaptureInsightsButton'
+import InsightActions from './InsightActions'
 
 /** Long statements are shortened on the card for scanning; the full text stays one click away. */
 const STATEMENT_PREVIEW_CHARS = 300
@@ -47,6 +49,13 @@ function InsightCard({ insight, strategy, implementations }: { insight: InsightV
   const linked = linkedRecommendations(insight, strategy, implementations)
   const history = insight.history.slice(0, 6)
   const clipped = insight.statement.length > STATEMENT_PREVIEW_CHARS
+  // Where a direct (Paid Strategy) action is in the existing implementation flow is read live from that flow, never copied.
+  const implementAction = insight.actions.find(a => a.kind === 'implement_recommendation' && a.status === 'chosen')
+  const implView = implementAction && implementAction.target_run_id !== null && implementAction.target_index !== null && !implementations.error
+    ? implementations.views.find(v => v.strategyRunId === implementAction.target_run_id && v.recommendationIndex === implementAction.target_index) : undefined
+  const targetRun = implementAction ? [strategy.latest, ...strategy.previous].find(r => r?.id === implementAction.target_run_id) : undefined
+  const actions = insight.actions.map(a => (a.kind === 'implement_recommendation' && a.status === 'chosen'
+    ? { ...a, live: { source: 'implementation' as const, label: implView ? stateLabel(implView) : 'Not started' } } : a))
   return <article data-insight data-kind={insight.kind} className="rounded-2xl border border-kk-line bg-kk-panel p-5">
     <div className="flex flex-wrap items-center gap-2">
       <p className="mr-auto text-[11px] font-semibold uppercase tracking-wide text-kk-muted">{DOMAIN_LABEL[insight.domain]} · {KIND_LABEL[insight.kind]}{insight.origin_kind === 'meta_account_checks' ? ` · ${ORIGIN_LABEL.meta_account_checks}` : ''}</p>
@@ -58,6 +67,9 @@ function InsightCard({ insight, strategy, implementations }: { insight: InsightV
     {insight.suggestion ? <p className="mt-3 text-sm leading-relaxed"><span className="block text-[11px] font-semibold uppercase tracking-wide text-kk-muted">Suggested angle · an idea to try, not a result</span>{insight.suggestion}</p> : null}
     {linked.length ? <ul className="mt-3 space-y-1 text-xs text-kk-muted">{linked.map(l => <li key={`${l.runId}-${l.index}`}>
       Behind recommendation: <span className="font-medium text-kk-ink">{l.title}</span> · {l.state}</li>)}</ul> : null}
+    <InsightActions insightId={insight.id} actions={actions} current={{ strength: insight.strength, times_observed: insight.times_observed }}
+      implementation={implementAction && targetRun && implementAction.target_index !== null ? { runId: targetRun.id, index: implementAction.target_index, canApprove: implementations.canApprove, superseded: strategy.latest?.id !== targetRun.id,
+        title: targetRun.recommendations[implementAction.target_index]?.display_title ?? targetRun.recommendations[implementAction.target_index]?.title ?? implementAction.title, view: implView } : null} />
     <details className="group mt-4 border-t border-kk-line pt-3">
       <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-sm font-medium text-kk-muted hover:text-kk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kk-brand [&::-webkit-details-marker]:hidden">
         <span aria-hidden className="text-xs transition-transform group-open:rotate-90">▸</span>

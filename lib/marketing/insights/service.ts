@@ -2,6 +2,8 @@ import 'server-only'
 import type { createServiceClient } from '@/lib/supabase/server'
 import type { CreativeRun } from '@/lib/marketing/brain/types'
 import type { PaidStrategyRun } from '@/lib/marketing/paid-strategy/types'
+import { createActionStore } from './actions/repo'
+import { syncActionResults } from './actions/sync'
 import { captureRun, recordInformed, type CaptureResult } from './capture'
 import { extractFromCreativeRun, extractFromPaidRun } from './extract'
 import { evaluateFacebookAdsChecks, type MetaChecksInput } from './skill-checks/facebook-ads'
@@ -45,6 +47,34 @@ export async function captureQuietly(label: string, work: () => Promise<unknown>
   }
 }
 
+/**
+ * Records how chosen actions ended (task done or cancelled, implementation completed or stopped) together with what the insight
+ * looked like then. Read-only toward tasks and implementations. Called before prior insights are loaded for a new run, and by
+ * the capture button, so what people did is in front of the next analysis.
+ */
+export async function syncInsightActionResults(db: Db) {
+  return syncActionResults({
+    store: createActionStore(db),
+    readTasks: async ids => {
+      if (!ids.length) return []
+      const { data, error } = await db.from('tasks').select('id,status,completed_at,approved_at,updated_at').in('id', ids)
+      if (error) throw new Error('insight_actions_storage')
+      return (data ?? []) as Awaited<ReturnType<Parameters<typeof syncActionResults>[0]['readTasks']>>
+    },
+    readImplementations: async keys => {
+      if (!keys.length) return []
+      const { data, error } = await db.from('marketing_paid_strategy_implementations').select('strategy_run_id,recommendation_index,status,completed_at,updated_at').in('strategy_run_id', [...new Set(keys.map(k => k.runId))])
+      if (error) throw new Error('insight_actions_storage')
+      return (data ?? []) as Awaited<ReturnType<Parameters<typeof syncActionResults>[0]['readImplementations']>>
+    },
+    readInsights: async ids => {
+      const { data, error } = await db.from('marketing_insights').select('id,strength,trend,times_observed,last_supported_at').in('id', ids)
+      if (error) throw new Error('insight_actions_storage')
+      return (data ?? []) as Awaited<ReturnType<Parameters<typeof syncActionResults>[0]['readInsights']>>
+    },
+  })
+}
+
 export async function recordInformedQuietly(db: Db, insightIds: string[], target: { type: 'paid_strategy_run' | 'creative_run'; runId: string }): Promise<void> {
   await captureQuietly('informed links', () => recordInformed(createInsightStore(db), insightIds, target))
 }
@@ -64,6 +94,7 @@ export async function backfillInsights(db: Db): Promise<{ creative: number; paid
   }
   for (const row of [...(creative.data ?? [])].reverse()) tally('creative', await captureCreativeRunById(db, row.id as string))
   for (const row of [...(paid.data ?? [])].reverse()) tally('paid', await capturePaidRunById(db, row.id as string))
+  await captureQuietly('action results', () => syncInsightActionResults(db))
   // The checklist reads today's stored data, so it is evaluated once, last.
   tally('checklist', await captureFacebookAdsChecks(db, await loadMetaChecksInput(db, new Date())))
   return out

@@ -37,7 +37,7 @@ export function insightRow(over: Partial<InsightRow> = {}): InsightRow {
 }
 
 export function insightView(over: Partial<InsightView> = {}): InsightView {
-  return { ...insightRow(), history: [], links: [], ...over }
+  return { ...insightRow(), history: [], links: [], actions: [], ...over }
 }
 
 /** In-memory InsightStore with the same observable behaviour the Supabase repo has (ids, unique observations and links). */

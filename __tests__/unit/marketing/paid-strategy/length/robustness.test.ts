@@ -49,7 +49,7 @@ describe('hard maximum is a safety ceiling, the target is what the model is told
     expect(KOCKPIT_RULES).not.toMatch(/\b(1400|1200|1000)\b/)
     expect(KOCKPIT_RULES).toMatch(/Stay inside these budgets/)
   })
-  it('the prompt version moved to v10', () => { expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-13-v10') })
+  it('the prompt version moved to v11', () => { expect(PAID_STRATEGY_PROMPT_VERSION).toBe('2026-10-14-v11') })
   it('nothing is silently truncated: an over-ceiling string is rejected, not cut', () => {
     const r = PaidStrategyRecommendationSchema.safeParse(rec(1, { success_metric: text(2000) }))
     expect(r.success).toBe(false); expect(() => validatePaidStrategy({ recommendations: [rec(1, { success_metric: text(2000) })] })).toThrow()

@@ -16,7 +16,7 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import { callPaidStrategyAI, PAID_STRATEGY_PROMPT_VERSION } from '@/lib/ai/paid-strategy'
 import { loadMesperSkill, type LoadedSkill } from '@/lib/ai/skills/mesper'
 import { loadPriorInsights } from '@/lib/marketing/insights/prior'
-import { captureFacebookAdsChecks, capturePaidRunById, captureQuietly, recordInformedQuietly } from '@/lib/marketing/insights/service'
+import { captureFacebookAdsChecks, capturePaidRunById, captureQuietly, recordInformedQuietly, syncInsightActionResults } from '@/lib/marketing/insights/service'
 import {
   buildPaidStrategyEvidence, strategyWindows, HUMAN_DECISION_WINDOW_DAYS, MAX_HUMAN_DECISIONS, type HumanStrategyDecisionInput,
   type StrategyAd, type StrategyAdInsight, type StrategyAdSet, type StrategyCampaign, type StrategyCampaignInsight,
@@ -110,6 +110,8 @@ export async function generatePaidStrategy(
     if (claim.error || !claim.data) throw new Error('storage')
     runId = claim.data.id as string
 
+    // What people did about earlier insights (and how it ended) goes in front of this analysis, so it is recorded first.
+    await captureQuietly('action results', () => syncInsightActionResults(db))
     const priorInsights = await loadPriorInsights(db, ['paid'])
     const loaded = await loadPaidStrategyInputs(db, now)
     const evidence = buildPaidStrategyEvidence({ ...loaded, humanDecisions: await loadHumanStrategyDecisions(db, now), priorInsights })
