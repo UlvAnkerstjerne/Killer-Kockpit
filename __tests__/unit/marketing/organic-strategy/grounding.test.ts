@@ -170,6 +170,7 @@ describe('denied or conditional fact words are not assertions', () => {
     'There is no extra data, but the falafel is marinated overnight.',
     'The harissa is made in-house and the falafel is homemade.',
     'Our vegetables are sourced from local farms.',
+    'Show the falafel marinade only if the team likes it.',
   ])('still rejects: %s', sentence => { expect(unsupportedBusinessFact(sentence, sources)).not.toBeNull() })
 
   it('stamps the rejection with a fixed category', () => {

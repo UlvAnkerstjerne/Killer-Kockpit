@@ -247,6 +247,8 @@ describe('Organic Strategy validation: asserted claims are rejected, negated or 
       const out = (evidence: string) => ({ ...validOutput(), main_learnings: [{ ...validOutput().main_learnings[0], evidence }] })
       expect(() => validateOrganicStrategy(out('P1: the caption explains why Killer Kebab uses the word kebab, and drew 90,000 views.'), ctx)).not.toThrow()
       expect(() => validateOrganicStrategy(out('P1: the opening line explains why it performed so well.'), ctx)).toThrow('causal language')
+      expect(() => validateOrganicStrategy(out('P1: this explains why the brand Reels outperform.'), ctx)).toThrow('causal language')
+      expect(() => validateOrganicStrategy(out('P1: the caption explains why it performed so well.'), ctx)).toThrow('causal language')
     })
   })
 })

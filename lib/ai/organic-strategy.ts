@@ -132,13 +132,15 @@ const PAYLOAD_SHAPE = /["']?(media_id|ig_account_id|permalink|campaign_id|access
 const DEMOGRAPHICS = /\b(demograph\w*|gender|women|woman|female|male|millennials?|gen[- ]?z|teen(?:s|agers?)?|students?|parents?|affluent|income|aged?\s*\d{1,2}|\d{2}\s*(?:-|to)\s*\d{2}\s*year[- ]olds?|age group)\b/i
 const INVENTED_DATA = /\b(retention|watch[- ]?time|watch rate|(?:average|avg\.?) (?:view|watch) (?:duration|time)|completion rate|drop[- ]?off|skip rate|hook rate|non-?followers?|new audiences? reached)\b/i
 const VISUAL_CLAIM = /\b(thumbnail|cover image|visual(?:ly)?|footage|lighting|colou?r(?:s|ful)?|camera angle|b-?roll|on-?camera|talking[- ]head|close-?ups?)\b/i
-const CAUSAL = /\b(caused?|causing|because of|due to|led to|leads to|drove|drives|driving|resulted in|proves?|proved|guarantees?|is why|explains why(?!\s+(?:killer|we|the (?:brand|company|team)|they)\b))\b/i
+const CAUSAL = /\b(caused?|causing|because of|due to|led to|leads to|drove|drives|driving|resulted in|proves?|proved|guarantees?|is why|explains why)\b/i
 
 // A claim is only a violation when it is ASSERTED. Careful sentences that deny or hedge it are exactly
 // what we want from the model ("cannot confirm the opening line drove reach", "visual-first is
 // untested", "there is no retention data"). The first live evaluation showed bare keyword matching
 // rejecting such sentences. A negation/hedge within a short window of the keyword clears it;
 // assertions without one are still rejected.
+// A caption describing its own wording ("P6 caption explains why Killer Kebab uses the word kebab") is not a causal claim about performance.
+const CAPTION_EXPLAINS = /\b(?:[PUB]\d{1,3}\s+)?(?:the\s+)?(?:captions?|notes?)\s+explains\s+why(?=\s+(?:killer kebab|we|the brand)\b)/gi
 const CLAUSE_BREAK = /\bbut\b|\bhowever\b|\bwhereas\b|\bwhile\b|\bthough\b/gi
 const NEGATION = /\b(no|not|n't|never|without|lacks?|lacking|unavailable|unknown|missing|cannot|can't|untested|unverified|unclear|whether|impossible)\b/i
 const sentencesOf = (text: string) => text.split(/(?<=[.!?;:])\s+|\s[—–]\s/).filter(Boolean)
@@ -222,7 +224,7 @@ const FACT_CLASSES: Record<string, RegExp> = {
   'where it is sourced': /\b(sourced|sourcing|suppliers?|imported|bought|purchased|externally|outsourced|locally grown|farms?|farmers?)\b/g,
   'how it is prepared': /\b(marinad(?:e|es|ed|ing)|marinat(?:e|es|ed|ing)|yogh?urt|brined?|cured)\b|\b\d+ hours?\b/g,
 }
-const CONFIRMATION = /\b(confirm|verify|check with|ask the team|whether|to be confirmed|if it is|if they are|if this is|only if|unless)\b/
+const CONFIRMATION = /\b(confirm|verify|check with|ask the team|whether|to be confirmed|if it is|if they are|if this is)\b|\bonly if\b[^.!?]{0,30}\b(?:sourced|confirmed|verified|supported|stated)\b|\bunless\b[^.!?]{0,30}\b(?:sourced|confirmed|verified|supported|stated)\b/
 const DURATION = /\b(\d+) (hour|year|month)s?\b/g
 const HISTORY = /\b(?:took|take|takes|waited|wait|spent|needed)\b[^.!?]{0,40}?\b\d+ (?:years?|months?)\b|\b\d+ (?:years?|months?) (?:to|before)\b|\bfor (?:years|months|a decade)\b|\bfor (?:the )?(?:last|past) \d+ (?:years?|months?)\b/g
 const PROXIMITY_CHARS = 80
@@ -332,7 +334,7 @@ export function validateOrganicStrategy(raw: unknown, ctx: ValidationContext, ev
     if (field.kind !== 'limitation' && DEMOGRAPHICS.test(field.text)) throw new OrganicStrategyValidationError(`${where}: demographic or audience claim; no such data exists.`, 'validation: demographic_claim')
     if (field.kind === 'evidence' && assertsClaim(field.text, INVENTED_DATA)) throw new OrganicStrategyValidationError(`${where}: retention or follower-split data is not available.`, 'validation: invented_data')
     if (field.kind === 'evidence' && assertsClaim(field.text, VISUAL_CLAIM)) throw new OrganicStrategyValidationError(`${where}: visual claim; visuals were not analysed.`, 'validation: visual_claim')
-    if (field.kind === 'evidence' && assertsClaim(field.text, CAUSAL)) throw new OrganicStrategyValidationError(`${where}: causal language in an evidence field.`, 'validation: causal_language')
+    if (field.kind === 'evidence' && assertsClaim(field.text.replace(CAPTION_EXPLAINS, ''), CAUSAL)) throw new OrganicStrategyValidationError(`${where}: causal language in an evidence field.`, 'validation: causal_language')
     for (const [, letter, n] of field.text.matchAll(/\b([PUB])(\d{1,3})\b/g)) {
       const max = letter === 'P' ? ctx.measuredInPrompt : letter === 'U' ? ctx.unmeasuredInPrompt : ctx.businessItems
       if (Number(n) < 1 || Number(n) > max) throw new OrganicStrategyValidationError(`${where}: cites ${letter}${n}, which is not in the data.`, 'validation: unknown_post_ref')
